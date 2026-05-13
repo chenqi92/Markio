@@ -14,6 +14,7 @@ const SECTIONS = [
   { id: "wechat", label: "微信公众号", icon: "message" },
   { id: "lobster", label: "腾讯龙虾", icon: "bot" },
   { id: "ai", label: "AI 助手", icon: "sparkle" },
+  { id: "rag", label: "本地知识库", icon: "search" },
   { id: "export", label: "导入 / 导出", icon: "upload" },
   { id: "about", label: "关于", icon: "info" },
 ] as const satisfies readonly { id: string; label: string; icon: IconName }[];
@@ -139,6 +140,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
             {section === "wechat" && <WeChat />}
             {section === "lobster" && <Lobster />}
             {section === "ai" && <AI />}
+            {section === "rag" && <RagSettings />}
             {section === "export" && <ImportExport />}
             {section === "about" && <About />}
           </div>
@@ -1120,6 +1122,538 @@ function AI() {
       </div>
     </>
   );
+}
+
+function RagSettings() {
+  const provider = useSettings((s) => s.ragProvider);
+  const enabled = useSettings((s) => s.ragEnabled);
+  const autoOnSave = useSettings((s) => s.ragAutoReindexOnSave);
+  const topK = useSettings((s) => s.ragTopK);
+  const expandLinks = useSettings((s) => s.ragExpandLinks);
+  const ollamaBaseUrl = useSettings((s) => s.ragOllamaBaseUrl);
+  const ollamaModel = useSettings((s) => s.ragOllamaModel);
+  const ollamaDim = useSettings((s) => s.ragOllamaDim);
+  const openaiBaseUrl = useSettings((s) => s.ragOpenaiBaseUrl);
+  const openaiModel = useSettings((s) => s.ragOpenaiModel);
+  const openaiDim = useSettings((s) => s.ragOpenaiDim);
+  const setPreference = useSettings((s) => s.setPreference);
+
+  const [openaiKeyDraft, setOpenaiKeyDraft] = useState("");
+  const [openaiKeyConfigured, setOpenaiKeyConfigured] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  // 当前活动 workspace
+  const wsLoaded = useWorkspaceForRag();
+  const ws = wsLoaded.ws;
+  const status = wsLoaded.status;
+  const refresh = wsLoaded.refresh;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { api } = await import("@/lib/api");
+        const has = await api.secretHas("embed:openai");
+        if (!cancelled) setOpenaiKeyConfigured(has);
+      } catch {
+        if (!cancelled) setOpenaiKeyConfigured(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const saveOpenaiKey = async () => {
+    if (!openaiKeyDraft) return;
+    setSavingKey(true);
+    try {
+      const { api } = await import("@/lib/api");
+      await api.secretSet("embed:openai", openaiKeyDraft);
+      setOpenaiKeyConfigured(true);
+      setOpenaiKeyDraft("");
+      setMsg("✓ OpenAI API Key 已存入系统钥匙串");
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const clearOpenaiKey = async () => {
+    if (!window.confirm("清除 OpenAI Embedding 的 API Key？")) return;
+    try {
+      const { api } = await import("@/lib/api");
+      await api.secretDelete("embed:openai");
+      setOpenaiKeyConfigured(false);
+      setMsg("已清除");
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
+  const triggerReindex = async () => {
+    if (!ws) {
+      setMsg("请先打开一个仓库");
+      return;
+    }
+    const { useRag } = await import("@/stores/rag");
+    try {
+      await useRag.getState().reindex(ws.path);
+      setMsg("已触发重建，可继续使用 markio，索引在后台进行");
+      refresh();
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
+  const triggerClear = async () => {
+    if (!ws) return;
+    if (
+      !window.confirm("确认清空索引库？已索引的向量会全部丢失，下次需要重建。")
+    )
+      return;
+    const { useRag } = await import("@/stores/rag");
+    try {
+      await useRag.getState().clear(ws.id, ws.path);
+      setMsg("索引已清空");
+      refresh();
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
+  const progress = status?.progress;
+  const progressPct = progress?.total
+    ? Math.round((progress.processed / Math.max(1, progress.total)) * 100)
+    : 0;
+  const dbSizeKb = status ? Math.max(1, Math.round(status.dbSize / 1024)) : 0;
+
+  return (
+    <>
+      <h2 className="settings-h">本地知识库</h2>
+      <p className="settings-sub">
+        在当前仓库下 .markio/rag.db 建立向量索引（sqlite-vec），AI
+        问答与「@仓库」检索都会用到。索引/查询完全本地完成。
+      </p>
+
+      <div className="settings-card">
+        <div className="settings-card-h">总开关</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">启用本地知识库</div>
+            <div className="settings-help">
+              关闭后 AI 检索退化为纯关键词 grep
+            </div>
+          </div>
+          <Toggle on={enabled} onChange={(v) => setPreference("ragEnabled", v)} />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">保存后增量更新</div>
+            <div className="settings-help">
+              保存当前笔记时自动重新嵌入它的 chunk，不影响其他文件
+            </div>
+          </div>
+          <Toggle
+            on={autoOnSave}
+            onChange={(v) => setPreference("ragAutoReindexOnSave", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">引用图谱扩展</div>
+            <div className="settings-help">
+              检索结果命中的笔记，沿 [[wiki]] / md 链接再带回相关 chunk
+            </div>
+          </div>
+          <Toggle
+            on={expandLinks}
+            onChange={(v) => setPreference("ragExpandLinks", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">检索返回条数</div>
+            <div className="settings-help">{topK} 条</div>
+          </div>
+          <Slider
+            value={topK}
+            min={3}
+            max={20}
+            onChange={(v) => setPreference("ragTopK", v)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">Embedding 提供方</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 8,
+            padding: "10px 16px",
+          }}
+        >
+          {[
+            {
+              id: "ollama" as const,
+              n: "本地 Ollama",
+              sub: "免费、离线、推荐",
+            },
+            {
+              id: "openai" as const,
+              n: "OpenAI 兼容",
+              sub: "需 API Key，联网调用",
+            },
+          ].map((p) => (
+            <button
+              type="button"
+              key={p.id}
+              onClick={() => setPreference("ragProvider", p.id)}
+              style={{
+                position: "relative",
+                padding: "9px 12px",
+                background:
+                  provider === p.id ? "var(--accent-glow)" : "var(--bg-pane-2)",
+                border:
+                  "1px solid " +
+                  (provider === p.id ? "var(--accent)" : "var(--border)"),
+                borderRadius: 9,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}
+              >
+                {p.n}
+              </div>
+              <div
+                style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}
+              >
+                {p.sub}
+              </div>
+              {provider === p.id && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 8,
+                    color: "var(--accent)",
+                    fontWeight: 700,
+                  }}
+                >
+                  ✓
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {provider === "ollama" ? (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">Ollama 端点</div>
+                <div className="settings-help">需要先 `ollama serve`</div>
+              </div>
+              <TextInput
+                value={ollamaBaseUrl}
+                placeholder="http://127.0.0.1:11434"
+                onChange={(v) => setPreference("ragOllamaBaseUrl", v)}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">Embedding 模型</div>
+                <div className="settings-help">
+                  推荐 `nomic-embed-text`（768 维，需先 `ollama pull
+                  nomic-embed-text`）
+                </div>
+              </div>
+              <TextInput
+                value={ollamaModel}
+                placeholder="nomic-embed-text"
+                onChange={(v) => setPreference("ragOllamaModel", v)}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">向量维度</div>
+                <div className="settings-help">
+                  模型实际维度。改维度会触发整库重建
+                </div>
+              </div>
+              <NumberInput
+                value={ollamaDim}
+                onChange={(v) => setPreference("ragOllamaDim", v)}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">Base URL</div>
+                <div className="settings-help">兼容 OpenAI Embedding 协议</div>
+              </div>
+              <TextInput
+                value={openaiBaseUrl}
+                placeholder="https://api.openai.com"
+                onChange={(v) => setPreference("ragOpenaiBaseUrl", v)}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">Embedding 模型</div>
+                <div className="settings-help">
+                  默认 text-embedding-3-small（1536 维）
+                </div>
+              </div>
+              <TextInput
+                value={openaiModel}
+                placeholder="text-embedding-3-small"
+                onChange={(v) => setPreference("ragOpenaiModel", v)}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">向量维度</div>
+                <div className="settings-help">改维度会触发整库重建</div>
+              </div>
+              <NumberInput
+                value={openaiDim}
+                onChange={(v) => setPreference("ragOpenaiDim", v)}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">API Key</div>
+                <div className="settings-help">
+                  {openaiKeyConfigured
+                    ? "已存入系统钥匙串"
+                    : "未配置；点击下方按钮保存"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={openaiKeyDraft}
+                  placeholder="sk-..."
+                  onChange={(e) => setOpenaiKeyDraft(e.target.value)}
+                  style={inputStyle}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!openaiKeyDraft || savingKey}
+                  onClick={saveOpenaiKey}
+                >
+                  保存
+                </button>
+                {openaiKeyConfigured && (
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={clearOpenaiKey}
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">索引状态</div>
+        {!ws ? (
+          <div className="settings-row" style={{ color: "var(--text-3)" }}>
+            未打开任何仓库
+          </div>
+        ) : (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">已索引文档</div>
+                <div className="settings-help">
+                  {status?.totalDocs ?? 0} 份 · {status?.totalChunks ?? 0} 个 chunk
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                {status?.indexedAt
+                  ? new Date(status.indexedAt * 1000).toLocaleString()
+                  : "未索引"}
+              </div>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">数据库大小</div>
+                <div className="settings-help">
+                  {status?.embeddingProvider ?? "—"} ·{" "}
+                  {status?.embeddingModel ?? "—"}（{status?.embeddingDim ?? "?"}{" "}
+                  维）
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                {dbSizeKb} KB
+              </div>
+            </div>
+            {progress?.running && (
+              <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+                <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                  正在索引{" "}
+                  {progress.currentFile
+                    ? progress.currentFile.split("/").slice(-1)[0]
+                    : ""}{" "}
+                  · {progress.processed}/{progress.total}（{progressPct}%）
+                </div>
+                <div
+                  style={{
+                    height: 4,
+                    background: "var(--bg-pane-2)",
+                    borderRadius: 999,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${progressPct}%`,
+                      height: "100%",
+                      background: "var(--accent)",
+                      transition: "width .25s",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                padding: "10px 16px",
+              }}
+            >
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={triggerReindex}
+                disabled={progress?.running}
+              >
+                {status?.totalDocs ? "重新索引整个仓库" : "构建索引"}
+              </button>
+              <button type="button" className="btn-ghost" onClick={triggerClear}>
+                清空索引
+              </button>
+            </div>
+          </>
+        )}
+        {msg && (
+          <div
+            style={{
+              padding: "8px 16px 12px",
+              fontSize: 11,
+              color: msg.startsWith("✗")
+                ? "var(--danger)"
+                : "var(--text-3)",
+            }}
+          >
+            {msg}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function TextInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      style={inputStyle}
+    />
+  );
+}
+
+function NumberInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => {
+        const n = Number(e.target.value);
+        if (Number.isFinite(n) && n > 0) onChange(Math.round(n));
+      }}
+      style={{ ...inputStyle, width: 100 }}
+    />
+  );
+}
+
+const inputStyle: CSSProperties = {
+  background: "var(--bg-pane-2)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  padding: "5px 8px",
+  fontSize: 12,
+  color: "var(--text)",
+  outline: "none",
+  minWidth: 180,
+};
+
+function useWorkspaceForRag() {
+  const [tick, setTick] = useState(0);
+  const refresh = () => setTick((t) => t + 1);
+  const [ws, setWs] = useState<{ id: string; path: string } | null>(null);
+  const [status, setStatus] = useState<import("@/lib/api").RagStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { useWorkspace } = await import("@/stores/workspace");
+      const active = useWorkspace.getState().activeWorkspace();
+      if (!active) {
+        if (!cancelled) {
+          setWs(null);
+          setStatus(null);
+        }
+        return;
+      }
+      if (!cancelled) setWs({ id: active.id, path: active.path });
+      try {
+        const { api } = await import("@/lib/api");
+        const r = await api.ragStatus(active.path);
+        if (!cancelled) setStatus(r);
+      } catch (e) {
+        console.warn("[rag.status] failed", e);
+      }
+    })();
+    const timer = window.setInterval(refresh, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tick]);
+  return { ws, status, refresh };
 }
 
 const IMPORT_SOURCES = [

@@ -134,13 +134,34 @@ fn level_u8(l: HeadingLevel) -> u8 {
     }
 }
 
-/// 主渲染入口：消费完整事件流，自定义代码块 / 标题输出
+/// 把 pulldown 输出的 HTML 走一次 ammonia 清洗，移除 script / iframe / on* 事件
+/// 与 javascript: 协议。即使 markdown 里硬塞 raw HTML 也被裁掉。
+fn sanitize(html: &str) -> String {
+    use ammonia::{Builder, UrlRelative};
+    let mut b = Builder::default();
+    b.add_tags(&[
+        "span", "mark", "div", "input", "section", "article",
+        "details", "summary", "figure", "figcaption",
+    ]);
+    b.add_generic_attributes(&[
+        "class", "id", "data-lang", "data-mermaid", "data-line",
+    ]);
+    b.add_tag_attributes("input", &["type", "checked", "disabled"]);
+    // 注意 ammonia 自己控制 <a rel>，写进来会 panic
+    b.add_tag_attributes("a", &["href", "title", "target", "id"]);
+    b.add_tag_attributes("img", &["src", "alt", "title", "width", "height"]);
+    // 防止相对 URL 被改写到任意路径
+    b.url_relative(UrlRelative::PassThrough);
+    b.clean(html).to_string()
+}
+
+/// 主渲染入口
 pub fn render(source: &str) -> RenderResult {
     let parser = Parser::new_ext(source, parser_options());
     let mut html = String::new();
     let mut outline: Vec<OutlineItem> = Vec::new();
 
-    let mut heading: Option<(u8, String)> = None; // (level, text-so-far)
+    let mut heading: Option<(u8, String)> = None;
     let mut heading_events: Vec<Event> = Vec::new();
 
     let mut code_buf = String::new();
@@ -149,7 +170,6 @@ pub fn render(source: &str) -> RenderResult {
     let mut id_counter: std::collections::HashMap<String, u32> =
         std::collections::HashMap::new();
 
-    // 一个临时收集器，遇到 heading 时改打到 heading_events，其它时候 flush 一段渲染
     let mut buffer: Vec<Event> = Vec::with_capacity(16);
 
     let flush = |buf: &mut Vec<Event>, html: &mut String| {
@@ -163,14 +183,11 @@ pub fn render(source: &str) -> RenderResult {
 
     for ev in parser {
         if let Some((_lvl, _)) = heading.as_mut() {
-            // 在 heading 内部
             match &ev {
                 Event::End(TagEnd::Heading(level)) => {
                     let (lvl, text) = heading.take().unwrap();
-                    let _ = level; // 用 lvl 而不是 level
                     let _ = lvl;
                     let mut anchor = slugify(&text);
-                    // 处理重名：append -2, -3 …
                     let cnt = id_counter.entry(anchor.clone()).or_insert(0);
                     if *cnt > 0 {
                         anchor = format!("{}-{}", anchor, *cnt + 1);
@@ -182,10 +199,8 @@ pub fn render(source: &str) -> RenderResult {
                         text: text.clone(),
                         anchor: anchor.clone(),
                     });
-                    // 渲染 heading 内部内容（不含外层 hN）
                     let mut inner = String::new();
                     pulldown_cmark::html::push_html(&mut inner, heading_events.drain(..));
-                    // pulldown 的 push_html 不带 hN 包裹（因为我们没把 Start 放进去），所以手动包
                     html.push_str(&format!(
                         "<h{l} id=\"{a}\">{i}</h{l}>",
                         l = lvl_u8,
@@ -254,6 +269,7 @@ pub fn render(source: &str) -> RenderResult {
 
     let words = count_words(source);
     let reading_minutes = ((words as f32 / 220.0).ceil() as u32).max(1);
+    let html = sanitize(&html);
 
     RenderResult {
         html,

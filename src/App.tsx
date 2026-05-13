@@ -27,6 +27,23 @@ export default function App() {
   const setTheme = useSettings((s) => s.setTheme);
   const darkVariant = useSettings((s) => s.darkVariant);
   const lightVariant = useSettings((s) => s.lightVariant);
+  const hydrate = useWorkspace((s) => s.hydrate);
+  const setAi = useSettings((s) => s.setAi);
+
+  // App 启动时把 localStorage 里的仓库列表 / AI 配置状态同步到 Rust
+  useEffect(() => {
+    hydrate();
+    (async () => {
+      try {
+        const { api } = await import("./lib/api");
+        const provider = useSettings.getState().aiProvider;
+        const has = await api.secretHas(`ai:${provider}`);
+        setAi({ aiKeyConfigured: has });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [hydrate, setAi]);
 
   // 跟随系统亮 / 暗
   useEffect(() => {
@@ -96,9 +113,19 @@ export default function App() {
       } else if (mod && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
         if (activeDirty) {
-          saveActive().then(() => {
-            setToast({ stage: "done", message: "已保存" });
-            setTimeout(() => setToast(null), 1500);
+          saveActive().then((outcome) => {
+            if (outcome === "ok") {
+              setToast({ stage: "done", message: "已保存" });
+              setTimeout(() => setToast(null), 1500);
+            } else if (outcome === "conflict") {
+              const force = window.confirm(
+                "文件已被外部修改。继续保存会覆盖磁盘版本。点确认覆盖，取消则放弃保存。",
+              );
+              if (force) {
+                const id = useTabs.getState().activeId;
+                if (id) useTabs.getState().saveTab(id, true);
+              }
+            }
           });
         }
       } else if (mod && (e.key === "n" || e.key === "N")) {
@@ -115,18 +142,26 @@ export default function App() {
           const fname = name.endsWith(".md") ? name : `${name}.md`;
           const path = `${ws.path}/${fname}`;
           try {
-            await api.writeText(
-              path,
-              `# ${fname.replace(/\.md$/i, "")}\n\n`,
-            );
+            await api.createNew(path, `# ${fname.replace(/\.md$/i, "")}\n\n`);
             await useWorkspace.getState().refreshTree(ws.id);
             await useTabs.getState().openFile(ws.id, path);
           } catch (err) {
-            setToast({
-              stage: "error",
-              message: `创建失败：${(err as Error).message}`,
-            });
-            setTimeout(() => setToast(null), 2500);
+            const { parseError } = await import("./lib/api");
+            const e2 = parseError(err);
+            if (e2.code === "ALREADY_EXISTS") {
+              const reuse = window.confirm(
+                `${fname} 已存在。打开它？`,
+              );
+              if (reuse) {
+                await useTabs.getState().openFile(ws.id, path);
+              }
+            } else {
+              setToast({
+                stage: "error",
+                message: `创建失败：${e2.message}`,
+              });
+              setTimeout(() => setToast(null), 2500);
+            }
           }
         })();
       } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {

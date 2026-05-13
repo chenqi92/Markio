@@ -92,11 +92,19 @@ export function FileTree() {
               const fname = name.endsWith(".md") ? name : `${name}.md`;
               const path = `${ws.path}/${fname}`;
               try {
-                await api.writeText(path, `# ${fname.replace(/\.md$/i, "")}\n\n`);
+                await api.createNew(path, `# ${fname.replace(/\.md$/i, "")}\n\n`);
                 await useWorkspace.getState().refreshTree(ws.id);
                 await useTabs.getState().openFile(ws.id, path);
               } catch (e) {
-                window.alert(`创建失败：${(e as Error).message}`);
+                const { parseError } = await import("@/lib/api");
+                const err = parseError(e);
+                if (err.code === "ALREADY_EXISTS") {
+                  const reuse = window.confirm(`${fname} 已存在。打开它？`);
+                  if (reuse)
+                    await useTabs.getState().openFile(ws.id, path);
+                } else {
+                  window.alert(`创建失败：${err.message}`);
+                }
               }
             }}
           >

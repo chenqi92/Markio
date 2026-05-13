@@ -39,9 +39,127 @@ pub struct ChatResponse {
 pub async fn chat(req: ChatRequest) -> Result<ChatResponse, String> {
     match req.provider.as_str() {
         "anthropic" => call_anthropic(req).await,
+        "google" => call_google(req).await,
         // openai 兼容协议覆盖 openai / deepseek / ollama / custom
         _ => call_openai_compat(req).await,
     }
+}
+
+async fn call_google(req: ChatRequest) -> Result<ChatResponse, String> {
+    let key = req
+        .api_key
+        .clone()
+        .ok_or_else(|| "缺少 API Key".to_string())?;
+    let endpoint = req
+        .endpoint
+        .clone()
+        .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+    let model = if req.model.is_empty() {
+        "gemini-2.5-flash".to_string()
+    } else {
+        req.model.clone()
+    };
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent?key={}",
+        endpoint.trim_end_matches('/'),
+        model,
+        urlencode_val(&key)
+    );
+
+    let contents: Vec<serde_json::Value> = req
+        .messages
+        .iter()
+        .map(|m| {
+            let role = match m.role {
+                Role::Assistant => "model",
+                _ => "user",
+            };
+            serde_json::json!({
+                "role": role,
+                "parts": [{ "text": m.content }],
+            })
+        })
+        .collect();
+
+    let mut payload = serde_json::json!({
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": req.max_tokens.unwrap_or(4096),
+        }
+    });
+    if let Some(t) = req.temperature {
+        payload["generationConfig"]["temperature"] = serde_json::json!(t);
+    }
+    if let Some(sys) = req.system.as_ref() {
+        payload["systemInstruction"] =
+            serde_json::json!({ "parts": [{ "text": sys }] });
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!("Google API {}: {}", status, truncate(&body, 400)));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+    let text = v
+        .get("candidates")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default();
+    let usage = v.get("usageMetadata").cloned();
+    let input_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("promptTokenCount"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    let output_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("candidatesTokenCount"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    Ok(ChatResponse {
+        text,
+        model: Some(model),
+        input_tokens,
+        output_tokens,
+    })
+}
+
+fn urlencode_val(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
 }
 
 async fn call_anthropic(req: ChatRequest) -> Result<ChatResponse, String> {

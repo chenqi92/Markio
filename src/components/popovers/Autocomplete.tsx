@@ -49,11 +49,14 @@ const TRIGGER_LABEL: Record<AcKind, { badge: string; title: string }> = {
 
 function walkMd(node: FileEntry, out: Item[]) {
   if (!node.isDir) {
+    const name = node.name.replace(/\.md$/i, "");
     out.push({
       icon: "note",
-      l1: node.name.replace(/\.md$/i, ""),
+      l1: name,
       l2: node.path,
-      insert: node.name.replace(/\.md$/i, "") + "]] ",
+      // 由于 commit 时会先吃掉触发字符 [[ 和 query，
+      // 这里 insert 必须把 [[ 与 ]] 一起补回去
+      insert: `[[${name}]] `,
     });
     return;
   }

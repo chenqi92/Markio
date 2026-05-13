@@ -20,9 +20,13 @@ const MAX_DIR_CHILDREN: usize = 2_000;
 
 /// 这些目录一旦遇到就完整跳过，不再下钻。
 /// 目的：避免 walker 卡在 node_modules / cargo target / build cache 等海量目录里。
+///
+/// Windows / macOS 大小写不敏感文件系统上 "Node_Modules" 也算 "node_modules"，
+/// 这里做小写归一化。
 fn is_skip_dir(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
     matches!(
-        name,
+        n.as_str(),
         "node_modules"
             | "target"
             | "dist"
@@ -46,8 +50,8 @@ fn is_skip_dir(name: &str) -> bool {
             | ".idea"
             | ".vscode"
             | ".vs"
-            | "DerivedData"
-            | "Pods"
+            | "derivedata"
+            | "pods"
             | ".bundle"
             | ".terraform"
             | "vendor"
@@ -233,6 +237,10 @@ pub fn walk_tree(root_path: &str) -> Result<FileEntry, String> {
 }
 
 pub fn read_text(path: &str) -> Result<String, String> {
+    read_text_path(Path::new(path))
+}
+
+pub fn read_text_path(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return String::from_utf8(bytes[3..].to_vec()).map_err(|e| e.to_string());
@@ -244,12 +252,58 @@ pub fn read_text(path: &str) -> Result<String, String> {
     Ok(cow.into_owned())
 }
 
+#[allow(dead_code)]
 pub fn write_text(path: &str, content: &str) -> Result<(), String> {
-    let p = PathBuf::from(path);
-    if let Some(parent) = p.parent() {
-        let _ = fs::create_dir_all(parent);
+    atomic_write(Path::new(path), content)
+}
+
+/// 原子写：写到 .markio-tmp-<pid>-<ts> → fsync → rename
+pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "路径没有父目录".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let ts = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+    let pid = std::process::id();
+    let tmp = parent.join(format!(".markio-tmp-{pid}-{ts}"));
+    {
+        let mut f = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        f.write_all(content.as_bytes()).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            e.to_string()
+        })?;
+        // fsync 把内容真正落盘；某些 fs 不支持就忽略
+        let _ = f.sync_all();
     }
-    fs::write(path, content).map_err(|e| e.to_string())
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })?;
+    Ok(())
+}
+
+/// 创建：若目标文件已存在直接返回 ALREADY_EXISTS:<path>，不覆盖
+pub fn create_new(path: &Path, content: &str) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "路径没有父目录".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut f = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(format!("ALREADY_EXISTS:{}", path.display()))
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+    let _ = f.sync_all();
+    Ok(())
 }
 
 pub fn rename(from: &str, to: &str) -> Result<(), String> {
@@ -660,6 +714,45 @@ const MAX_GREP_FILE_SIZE: u64 = 2 * 1024 * 1024; // 2 MB
 const MAX_GREP_FILES: usize = 3_000;
 
 /// 简易 grep：扫描根目录下所有 markdown 文件，找文件名或文件内容里的 needle。
+/// 为 AI 上下文挖周边 N 行（默认 ±3）。命中文件名时会取整篇前 1000 字。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiContext {
+    pub path: String,
+    pub name: String,
+    pub line: u32,
+    pub snippet: String,
+}
+
+pub fn retrieve_context(root: &str, query: &str, k: usize) -> Vec<AiContext> {
+    let hits = grep(root, query, k.max(1));
+    let mut out: Vec<AiContext> = Vec::with_capacity(hits.len());
+    for h in hits {
+        let content = match std::fs::read_to_string(&h.path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let snippet = if h.line == 0 {
+            // 文件名命中：取整篇前 1000 字
+            let n = content.chars().count().min(1000);
+            content.chars().take(n).collect::<String>()
+        } else {
+            let lines: Vec<&str> = content.lines().collect();
+            let idx = (h.line as usize).saturating_sub(1).min(lines.len().saturating_sub(1));
+            let from = idx.saturating_sub(3);
+            let to = (idx + 4).min(lines.len());
+            lines[from..to].join("\n")
+        };
+        out.push(AiContext {
+            path: h.path,
+            name: h.name,
+            line: h.line,
+            snippet,
+        });
+    }
+    out
+}
+
 pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
     if query.is_empty() {
         return Vec::new();

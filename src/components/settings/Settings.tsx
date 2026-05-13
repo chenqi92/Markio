@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Icon, type IconName } from "../ui/Icon";
-import { Toggle, Slider, SelectBtn } from "../ui/controls";
+import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
 import { useSettings } from "@/stores/settings";
 import { THEMES } from "@/themes";
 
@@ -19,6 +19,88 @@ const SECTIONS = [
 ] as const satisfies readonly { id: string; label: string; icon: IconName }[];
 
 type SectionId = (typeof SECTIONS)[number]["id"];
+
+const STARTUP_OPTIONS = [
+  { value: "restoreTabs", label: "上次打开的文档" },
+  { value: "lastWorkspace", label: "只恢复上次仓库" },
+  { value: "welcome", label: "显示欢迎页" },
+] as const satisfies readonly SelectOption<"restoreTabs" | "lastWorkspace" | "welcome">[];
+
+const CLOSE_LAST_TAB_OPTIONS = [
+  { value: "keepWindow", label: "保留窗口" },
+  { value: "showWelcome", label: "显示欢迎页" },
+  { value: "quitApp", label: "退出应用" },
+] as const satisfies readonly SelectOption<"keepWindow" | "showWelcome" | "quitApp">[];
+
+const AUTOSAVE_DELAY_OPTIONS = [
+  { value: 500, label: "500 ms · 实时" },
+  { value: 800, label: "800 ms · 平衡" },
+  { value: 1500, label: "1.5 秒 · 安静" },
+  { value: 3000, label: "3 秒 · 手动感" },
+] as const satisfies readonly SelectOption<500 | 800 | 1500 | 3000>[];
+
+const SYNC_CONFLICT_OPTIONS = [
+  { value: "ask", label: "弹出对比窗口让我选择" },
+  { value: "newest", label: "保留最新修改" },
+  { value: "local", label: "优先保留本机版本" },
+  { value: "remote", label: "优先保留远端版本" },
+] as const satisfies readonly SelectOption<"ask" | "newest" | "local" | "remote">[];
+
+const SYNC_FREQUENCY_OPTIONS = [
+  { value: "manual", label: "手动同步" },
+  { value: "30s", label: "每 30 秒" },
+  { value: "1m", label: "每 1 分钟" },
+  { value: "5m", label: "每 5 分钟" },
+] as const satisfies readonly SelectOption<"manual" | "30s" | "1m" | "5m">[];
+
+const PICGO_ENDPOINT_OPTIONS = [
+  { value: "http://127.0.0.1:36677", label: "http://127.0.0.1:36677" },
+  { value: "http://localhost:36677", label: "http://localhost:36677" },
+  { value: "http://127.0.0.1:36678", label: "http://127.0.0.1:36678" },
+] as const satisfies readonly SelectOption<
+  "http://127.0.0.1:36677" | "http://localhost:36677" | "http://127.0.0.1:36678"
+>[];
+
+const WECHAT_STYLE_OPTIONS = [
+  { value: "warmMagazine", label: "暖橘 · 杂志" },
+  { value: "cleanTech", label: "清爽 · 科技" },
+  { value: "inkClassic", label: "墨色 · 经典" },
+  { value: "minimal", label: "极简 · 文章" },
+] as const satisfies readonly SelectOption<"warmMagazine" | "cleanTech" | "inkClassic" | "minimal">[];
+
+const WECHAT_AUTHOR_OPTIONS = [
+  { value: "unset", label: "未设置" },
+  { value: "appName", label: "markio" },
+  { value: "systemUser", label: "系统用户名" },
+] as const satisfies readonly SelectOption<"unset" | "appName" | "systemUser">[];
+
+const LOBSTER_MODEL_OPTIONS = [
+  { value: "aiDefault", label: "跟随 AI 助手默认" },
+  { value: "currentClaude", label: "当前 Claude 配置" },
+  { value: "currentOpenAI", label: "当前 OpenAI 配置" },
+  { value: "localOllama", label: "本地 Ollama" },
+] as const satisfies readonly SelectOption<"aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama">[];
+
+const LOBSTER_LIMIT_OPTIONS = [
+  { value: 50, label: "50 条 / 天" },
+  { value: 100, label: "100 条 / 天" },
+  { value: 200, label: "200 条 / 天" },
+  { value: 500, label: "500 条 / 天" },
+  { value: 1000, label: "1000 条 / 天" },
+] as const satisfies readonly SelectOption<50 | 100 | 200 | 500 | 1000>[];
+
+const EXPORT_PDF_THEME_OPTIONS = [
+  { value: "current", label: "跟随当前主题" },
+  { value: "light", label: "浅色打印" },
+  { value: "dark", label: "深色预览" },
+  { value: "print", label: "黑白打印" },
+] as const satisfies readonly SelectOption<"current" | "light" | "dark" | "print">[];
+
+const EXPORT_PDF_MARGIN_OPTIONS = [
+  { value: "standard", label: "标准 · 1 英寸" },
+  { value: "narrow", label: "窄边距 · 0.5 英寸" },
+  { value: "wide", label: "宽边距 · 1.25 英寸" },
+] as const satisfies readonly SelectOption<"standard" | "narrow" | "wide">[];
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<SectionId>("appear");
@@ -130,6 +212,9 @@ function Appearance() {
 function General() {
   const showLive = useSettings((s) => s.showLiveCursors);
   const setShowLive = useSettings((s) => s.setShowLiveCursors);
+  const startupBehavior = useSettings((s) => s.startupBehavior);
+  const closeLastTabBehavior = useSettings((s) => s.closeLastTabBehavior);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">通用</h2>
@@ -146,13 +231,21 @@ function General() {
           <div className="settings-row-l">
             <div className="settings-label">启动时打开</div>
           </div>
-          <SelectBtn value="上次打开的文档" />
+          <SelectBtn
+            value={startupBehavior}
+            options={STARTUP_OPTIONS}
+            onChange={(v) => setPreference("startupBehavior", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">关闭最后一个标签时</div>
           </div>
-          <SelectBtn value="保留窗口" />
+          <SelectBtn
+            value={closeLastTabBehavior}
+            options={CLOSE_LAST_TAB_OPTIONS}
+            onChange={(v) => setPreference("closeLastTabBehavior", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -170,8 +263,10 @@ function Editor() {
   const setMode = useSettings((s) => s.setDefaultMode);
   const autosave = useSettings((s) => s.autosave);
   const setAutosave = useSettings((s) => s.setAutosave);
+  const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const setShortcutStyle = useSettings((s) => s.setShortcutStyle);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">编辑器</h2>
@@ -290,7 +385,11 @@ function Editor() {
           <div className="settings-row-l">
             <div className="settings-label">自动保存间隔</div>
           </div>
-          <SelectBtn value="500 ms · 实时" />
+          <SelectBtn
+            value={autosaveDelayMs}
+            options={AUTOSAVE_DELAY_OPTIONS}
+            onChange={(v) => setPreference("autosaveDelayMs", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -348,6 +447,9 @@ function BrandMark({
 }
 
 function Sync() {
+  const conflict = useSettings((s) => s.syncConflictStrategy);
+  const frequency = useSettings((s) => s.syncFrequency);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">同步</h2>
@@ -383,13 +485,22 @@ function Sync() {
           <div className="settings-row-l">
             <div className="settings-label">冲突时</div>
           </div>
-          <SelectBtn value="弹出对比窗口让我选择" />
+          <SelectBtn
+            value={conflict}
+            options={SYNC_CONFLICT_OPTIONS}
+            onChange={(v) => setPreference("syncConflictStrategy", v)}
+            minMenuWidth={220}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">同步频率</div>
           </div>
-          <SelectBtn value="每 30 秒" />
+          <SelectBtn
+            value={frequency}
+            options={SYNC_FREQUENCY_OPTIONS}
+            onChange={(v) => setPreference("syncFrequency", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -449,6 +560,8 @@ function Shortcuts() {
 }
 
 function Picgo() {
+  const endpoint = useSettings((s) => s.picgoEndpoint);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">图片上传</h2>
@@ -466,7 +579,12 @@ function Picgo() {
           <div className="settings-row-l">
             <div className="settings-label">API 端点</div>
           </div>
-          <SelectBtn value="http://127.0.0.1:36677" />
+          <SelectBtn
+            value={endpoint}
+            options={PICGO_ENDPOINT_OPTIONS}
+            onChange={(v) => setPreference("picgoEndpoint", v)}
+            minMenuWidth={230}
+          />
         </div>
       </div>
       <div className="settings-card">
@@ -512,6 +630,9 @@ function Picgo() {
 }
 
 function WeChat() {
+  const style = useSettings((s) => s.wechatStyle);
+  const author = useSettings((s) => s.wechatAuthor);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">微信公众号</h2>
@@ -532,13 +653,21 @@ function WeChat() {
           <div className="settings-row-l">
             <div className="settings-label">默认导出样式</div>
           </div>
-          <SelectBtn value="暖橘 · 杂志" />
+          <SelectBtn
+            value={style}
+            options={WECHAT_STYLE_OPTIONS}
+            onChange={(v) => setPreference("wechatStyle", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">默认作者署名</div>
           </div>
-          <SelectBtn value="未设置" />
+          <SelectBtn
+            value={author}
+            options={WECHAT_AUTHOR_OPTIONS}
+            onChange={(v) => setPreference("wechatAuthor", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -553,6 +682,9 @@ function WeChat() {
 }
 
 function Lobster() {
+  const modelSource = useSettings((s) => s.lobsterModelSource);
+  const dailyLimit = useSettings((s) => s.lobsterDailyLimit);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">腾讯龙虾</h2>
@@ -573,7 +705,11 @@ function Lobster() {
           <div className="settings-row-l">
             <div className="settings-label">回答使用的模型</div>
           </div>
-          <SelectBtn value="跟随 AI 助手默认" />
+          <SelectBtn
+            value={modelSource}
+            options={LOBSTER_MODEL_OPTIONS}
+            onChange={(v) => setPreference("lobsterModelSource", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -585,7 +721,11 @@ function Lobster() {
           <div className="settings-row-l">
             <div className="settings-label">每日消息上限</div>
           </div>
-          <SelectBtn value="200 条 / 天" />
+          <SelectBtn
+            value={dailyLimit}
+            options={LOBSTER_LIMIT_OPTIONS}
+            onChange={(v) => setPreference("lobsterDailyLimit", v)}
+          />
         </div>
       </div>
     </>
@@ -603,7 +743,7 @@ const AI_PROVIDERS = [
 
 function AI() {
   const provider = useSettings((s) => s.aiProvider);
-  const apiKey = useSettings((s) => s.aiApiKey);
+  const keyConfigured = useSettings((s) => s.aiKeyConfigured);
   const endpoint = useSettings((s) => s.aiEndpoint);
   const model = useSettings((s) => s.aiModel);
   const temperature = useSettings((s) => s.aiTemperature);
@@ -611,14 +751,63 @@ function AI() {
   const setAi = useSettings((s) => s.setAi);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+
+  // 切换 provider 时刷新"是否已配"
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { api } = await import("@/lib/api");
+        const has = await api.secretHas(`ai:${provider}`);
+        if (!cancelled) setAi({ aiKeyConfigured: has });
+      } catch {
+        if (!cancelled) setAi({ aiKeyConfigured: false });
+      }
+    })();
+    setKeyDraft("");
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, setAi]);
+
+  const saveKey = async () => {
+    if (!keyDraft) return;
+    setSavingKey(true);
+    try {
+      const { api } = await import("@/lib/api");
+      await api.secretSet(`ai:${provider}`, keyDraft);
+      setAi({ aiKeyConfigured: true });
+      setKeyDraft("");
+      setTestResult("✓ 已存入系统钥匙串");
+    } catch (e) {
+      setTestResult(`✗ ${(e as Error).message}`);
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const clearKey = async () => {
+    if (!window.confirm(`清除 ${provider} 的 API Key？`)) return;
+    try {
+      const { api } = await import("@/lib/api");
+      await api.secretDelete(`ai:${provider}`);
+      setAi({ aiKeyConfigured: false });
+      setKeyDraft("");
+      setTestResult("已清除");
+    } catch (e) {
+      setTestResult(`✗ ${(e as Error).message}`);
+    }
+  };
 
   const test = async () => {
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await (await import("@/lib/api")).api.aiChat({
+      const { api } = await import("@/lib/api");
+      const r = await api.aiChat({
         provider,
-        apiKey: apiKey || undefined,
         endpoint: endpoint || undefined,
         model,
         maxTokens: 32,
@@ -633,10 +822,42 @@ function AI() {
     }
   };
 
+  const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
+  const useWorkspace = useSettings((s) => s.aiUseWorkspace);
+
   return (
     <>
       <h2 className="settings-h">AI 助手</h2>
       <p className="settings-sub">配置模型、API 与提示词。</p>
+
+      <div className="settings-card">
+        <div className="settings-card-h">回答时的上下文</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">把当前笔记发给 AI</div>
+            <div className="settings-help">
+              系统 prompt 里包含当前打开 .md 的前 6000 字
+            </div>
+          </div>
+          <Toggle
+            on={useCurrentFile}
+            onChange={(v) => setAi({ aiUseCurrentFile: v })}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">用仓库做关键词检索</div>
+            <div className="settings-help">
+              问 AI 时先在整个仓库 grep 用户问题里的关键词，把命中片段（±3 行）一起发给模型。
+              开启后会把片段明文上传给 AI 提供方；真·语义检索（本地嵌入 + 向量库）见 docs/ARCHITECTURE.md
+            </div>
+          </div>
+          <Toggle
+            on={useWorkspace}
+            onChange={(v) => setAi({ aiUseWorkspace: v })}
+          />
+        </div>
+      </div>
 
       <div className="settings-card">
         <div className="settings-card-h">API 提供方</div>
@@ -700,19 +921,41 @@ function AI() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">API Key</div>
+            <div className="settings-label">
+              API Key
+              {keyConfigured && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: "1px 6px",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    background: "var(--accent-glow)",
+                    color: "var(--accent)",
+                    borderRadius: 4,
+                  }}
+                >
+                  已配置
+                </span>
+              )}
+            </div>
             <div className="settings-help">
               {provider === "ollama"
                 ? "本地 Ollama 不需要 Key"
-                : "明文保存在本机 localStorage，离线优先"}
+                : "存在系统钥匙串（macOS Keychain / Win Credential / Linux Secret Service），不进 localStorage"}
             </div>
           </div>
           <input
             type="password"
-            value={apiKey}
-            onChange={(e) => setAi({ aiApiKey: e.target.value })}
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            onBlur={() => {
+              if (keyDraft) saveKey();
+            }}
             placeholder={
-              provider === "anthropic"
+              keyConfigured
+                ? "已保存 · 输入新值替换"
+                : provider === "anthropic"
                 ? "sk-ant-…"
                 : provider === "openai"
                 ? "sk-…"
@@ -789,16 +1032,27 @@ function AI() {
               测试连接
             </div>
             <div className="settings-help">
-              {testResult ?? "发送一次 ping 请求"}
+              {testResult ?? "发送一次 ping 请求验证 Key 与 Endpoint"}
             </div>
           </div>
-          <button
-            className="settings-btn primary"
-            onClick={test}
-            disabled={testing}
-          >
-            {testing ? "测试中…" : "测试"}
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            {keyConfigured && (
+              <button
+                className="settings-btn"
+                onClick={clearKey}
+                disabled={savingKey || testing}
+              >
+                清除 Key
+              </button>
+            )}
+            <button
+              className="settings-btn primary"
+              onClick={test}
+              disabled={testing || savingKey}
+            >
+              {testing ? "测试中…" : "测试"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -857,6 +1111,9 @@ const IMPORT_SOURCES = [
 ];
 
 function ImportExport() {
+  const pdfTheme = useSettings((s) => s.exportPdfTheme);
+  const pdfMargin = useSettings((s) => s.exportPdfMargin);
+  const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">导入 / 导出</h2>
@@ -867,13 +1124,21 @@ function ImportExport() {
           <div className="settings-row-l">
             <div className="settings-label">PDF 主题</div>
           </div>
-          <SelectBtn value="跟随当前主题" />
+          <SelectBtn
+            value={pdfTheme}
+            options={EXPORT_PDF_THEME_OPTIONS}
+            onChange={(v) => setPreference("exportPdfTheme", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">PDF 页边距</div>
           </div>
-          <SelectBtn value="标准 · 1 英寸" />
+          <SelectBtn
+            value={pdfMargin}
+            options={EXPORT_PDF_MARGIN_OPTIONS}
+            onChange={(v) => setPreference("exportPdfMargin", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">

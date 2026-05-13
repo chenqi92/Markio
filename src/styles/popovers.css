@@ -167,15 +167,24 @@
 }
 .findbar button:hover { background: var(--bg-hover); color: var(--text); }
 
-/* AI 全屏面板 */
+/* AI 全屏面板 —— 不透出编辑器 */
 .ai-panel {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-pane-2);
+  background: var(--bg-deep);
+  background-image: var(--bg-image);
   z-index: 70;
+  isolation: isolate;
   animation: aiIn 280ms cubic-bezier(.2,.8,.2,1);
+}
+.ai-panel::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: var(--bg-window);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  z-index: -1;
 }
 @keyframes aiIn {
   from { transform: translateY(12px); opacity: 0; }

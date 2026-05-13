@@ -21,15 +21,17 @@ const SUGGESTIONS = [
 
 export function AIPanel({ onClose }: { onClose: () => void }) {
   const provider = useSettings((s) => s.aiProvider);
-  const apiKey = useSettings((s) => s.aiApiKey);
+  const keyConfigured = useSettings((s) => s.aiKeyConfigured);
   const endpoint = useSettings((s) => s.aiEndpoint);
   const model = useSettings((s) => s.aiModel);
   const temperature = useSettings((s) => s.aiTemperature);
   const maxTokens = useSettings((s) => s.aiMaxTokens);
+  const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
+  const useWorkspace = useSettings((s) => s.aiUseWorkspace);
   const tab = useTabs((s) => s.activeTab());
   const openSettings = useUI((s) => s.openSettings);
 
-  const configured = provider === "ollama" || apiKey.trim().length > 0;
+  const configured = provider === "ollama" || keyConfigured;
 
   const greeting = configured
     ? `已连接 ${provider} · ${model}。我可以帮你阅读 / 改写 / 总结当前笔记。`
@@ -81,14 +83,44 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    const system = tab
-      ? `你正在帮用户处理一篇 markdown 笔记。文件名：${tab.title}\n以下是当前笔记内容（节选前 4000 字符）：\n\n${tab.content.slice(0, 4000)}`
-      : undefined;
+    // ─── 组装 system prompt ─────────────────────────────────────────
+    const parts: string[] = [];
+    parts.push(
+      "你是 markio 内嵌的写作助手。回答简洁、直接；遇到 markdown 用 markdown 回复。",
+    );
+    if (tab && useCurrentFile) {
+      const head = tab.content.slice(0, 6000);
+      parts.push(
+        `当前打开的笔记：${tab.title}\n相对路径：${tab.path}\n\n--- 笔记内容（前 6000 字符）---\n${head}`,
+      );
+    }
+    if (useWorkspace) {
+      try {
+        const { useWorkspace: wsStore } = await import("@/stores/workspace");
+        const ws = wsStore.getState().activeWorkspace();
+        if (ws) {
+          const hits = await api.aiRetrieve(ws.path, text, 5);
+          if (hits.length > 0) {
+            const ctx = hits
+              .map(
+                (h, i) =>
+                  `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
+              )
+              .join("\n\n---\n\n");
+            parts.push(
+              `以下是仓库里跟用户提问相关的片段（关键词检索，可能并不精准）：\n\n${ctx}`,
+            );
+          }
+        }
+      } catch {
+        /* 检索失败不致命，继续问 */
+      }
+    }
+    const system = parts.length > 1 ? parts.join("\n\n") : undefined;
 
     try {
       const r = await api.aiChat({
         provider,
-        apiKey: apiKey || undefined,
         endpoint: endpoint || undefined,
         model,
         maxTokens,

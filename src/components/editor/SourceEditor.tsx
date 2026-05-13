@@ -8,6 +8,7 @@ import { languages } from "@codemirror/language-data";
 import { EditorView as CMView } from "@codemirror/view";
 import { useSettings } from "@/stores/settings";
 import { registerEditor } from "@/lib/editor-bridge";
+import { wysiwygMarkdown } from "./wysiwyg";
 
 interface Props {
   value: string;
@@ -32,6 +33,8 @@ interface Props {
         }
       | null,
   ) => void;
+  /** 是否启用 WYSIWYG 装饰（隐藏 markdown 标记 + 行级样式） */
+  wysiwyg?: boolean;
 }
 
 export function SourceEditor({
@@ -41,6 +44,7 @@ export function SourceEditor({
   onSelectionChange,
   onSlashTrigger,
   onAutocompleteUpdate,
+  wysiwyg = false,
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
   const ref = useRef<ReactCodeMirrorRef>(null);
@@ -49,6 +53,7 @@ export function SourceEditor({
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       EditorView.lineWrapping,
+      ...(wysiwyg ? [wysiwygMarkdown] : []),
       EditorView.updateListener.of((u) => {
         if (u.selectionSet && onSelectionChange) {
           const sel = u.state.selection.main;
@@ -112,7 +117,7 @@ export function SourceEditor({
         { dark: false },
       ),
     ],
-    [fontSize, onSelectionChange, onAutocompleteUpdate],
+    [fontSize, onSelectionChange, onAutocompleteUpdate, wysiwyg],
   );
 
   useEffect(() => {
@@ -165,7 +170,11 @@ export function SourceEditor({
   }, [onSlashTrigger]);
 
   return (
-    <div className="cm-host" style={{ height: "100%" }}>
+    <div
+      className="cm-host"
+      style={{ height: "100%" }}
+      data-mode={wysiwyg ? "wysiwyg" : "source"}
+    >
       <CodeMirror
         ref={ref}
         value={value}
@@ -173,10 +182,10 @@ export function SourceEditor({
         theme="none"
         extensions={extensions}
         basicSetup={{
-          lineNumbers: true,
-          foldGutter: true,
+          lineNumbers: !wysiwyg,
+          foldGutter: !wysiwyg,
           highlightActiveLine: true,
-          highlightActiveLineGutter: true,
+          highlightActiveLineGutter: !wysiwyg,
           autocompletion: false,
           bracketMatching: true,
           closeBrackets: true,

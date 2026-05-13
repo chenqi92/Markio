@@ -35,9 +35,24 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
 
   const onSave = async () => {
     if (!dirty) return;
-    await saveActive();
-    setToast({ stage: "done", message: "已保存" });
-    setTimeout(() => setToast(null), 1500);
+    const outcome = await saveActive();
+    if (outcome === "ok") {
+      setToast({ stage: "done", message: "已保存" });
+      setTimeout(() => setToast(null), 1500);
+    } else if (outcome === "conflict") {
+      const force = window.confirm(
+        "文件已被外部修改。继续保存会覆盖磁盘版本。",
+      );
+      if (force) {
+        const id = useTabs.getState().activeId;
+        if (id) await useTabs.getState().saveTab(id, true);
+        setToast({ stage: "done", message: "已强制覆盖" });
+        setTimeout(() => setToast(null), 1500);
+      }
+    } else {
+      setToast({ stage: "error", message: "保存失败" });
+      setTimeout(() => setToast(null), 2000);
+    }
   };
 
   const editable = mode !== "preview";

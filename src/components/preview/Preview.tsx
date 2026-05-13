@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { debounce } from "@/lib/utils";
 import { renderMermaidIn } from "@/lib/mermaid";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
@@ -97,31 +96,49 @@ export function Preview({ source, onMeta, onScroll }: Props) {
     hits.forEach((h, i) => h.classList.toggle("current", i === safeIdx));
   }, [html, findQuery, findIndex]);
 
+  // 稳定 debounce：timer 在整个组件生命周期内只有一个；source 变化时
+  // reset timer，先前的渲染如果还没发就直接被替换。
+  const timerRef = useRef<number | null>(null);
+  const seqRef = useRef(0);
+  const onMetaRef = useRef(onMeta);
   useEffect(() => {
-    let cancelled = false;
-    const render = debounce(async (src: string) => {
+    onMetaRef.current = onMeta;
+  }, [onMeta]);
+
+  useEffect(() => {
+    if (timerRef.current != null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const seq = ++seqRef.current;
+    timerRef.current = window.setTimeout(async () => {
+      timerRef.current = null;
       try {
-        const r = await api.renderMarkdown(src);
-        if (cancelled) return;
+        const r = await api.renderMarkdown(source);
+        if (seq !== seqRef.current) return; // 期间又输入了，丢弃
         setHtml(r.html);
-        onMeta?.({
+        onMetaRef.current?.({
           outline: r.outline,
           words: r.words,
           readingMinutes: r.readingMinutes,
         });
       } catch (e) {
-        if (!cancelled) {
-          setHtml(
-            `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${(e as Error).message}</pre>`,
-          );
-        }
+        if (seq !== seqRef.current) return;
+        setHtml(
+          `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${(e as Error).message}</pre>`,
+        );
       }
     }, 60);
-    render(source);
     return () => {
-      cancelled = true;
+      if (timerRef.current != null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [source, onMeta]);
+  }, [source]);
+
+  // 不再依赖 onMeta 引用变化触发 effect
+  void useMemo(() => onMeta, []);
 
   useEffect(() => {
     const el = containerRef.current;

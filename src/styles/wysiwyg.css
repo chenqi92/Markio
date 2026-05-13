@@ -1,0 +1,159 @@
+/* WYSIWYG mode styles
+ *
+ * Only applied when the CM host has data-mode="wysiwyg". Source mode stays
+ * mono-spaced + plain.
+ */
+
+.cm-host[data-mode="wysiwyg"] {
+  background: transparent;
+}
+.cm-host[data-mode="wysiwyg"] .cm-editor {
+  background: transparent;
+}
+.cm-host[data-mode="wysiwyg"] .cm-gutters {
+  display: none;
+}
+.cm-host[data-mode="wysiwyg"] .cm-scroller {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.75;
+  padding: 0;
+}
+.cm-host[data-mode="wysiwyg"] .cm-content {
+  padding: 48px clamp(20px, 8%, 80px) 200px;
+  max-width: 820px;
+  margin: 0 auto;
+  caret-color: var(--accent);
+}
+
+/* line-level decorations */
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h1 {
+  font-family: var(--font-sans);
+  font-size: 2em;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  margin: 0 0 6px;
+}
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h2 {
+  font-family: var(--font-sans);
+  font-size: 1.45em;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  margin: 24px 0 8px;
+  position: relative;
+}
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h3 {
+  font-family: var(--font-sans);
+  font-size: 1.18em;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 18px 0 6px;
+}
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h4,
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h5,
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-h6 {
+  font-family: var(--font-sans);
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 14px 0 4px;
+}
+
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-quote-line {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-pane-2);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-2);
+  font-style: italic;
+  padding-left: 14px;
+}
+
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-codeblock {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  color: var(--text);
+}
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-codeblock:first-of-type,
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-codeblock:last-of-type {
+  /* round corners on the first / last line of a code block sequence */
+}
+
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-hr {
+  text-align: center;
+  color: transparent;
+}
+.cm-md-hr-line {
+  display: inline-block;
+  width: 60%;
+  height: 1px;
+  background: var(--border);
+  vertical-align: middle;
+}
+
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-task-line.done {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+/* inline marks */
+.cm-host[data-mode="wysiwyg"] .cm-md-bold { font-weight: 700; color: var(--text); }
+.cm-host[data-mode="wysiwyg"] .cm-md-italic { font-style: italic; }
+.cm-host[data-mode="wysiwyg"] .cm-md-strike { text-decoration: line-through; opacity: 0.65; }
+.cm-host[data-mode="wysiwyg"] .cm-md-code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--code-bg);
+  border: 0.5px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--syntax-k);
+}
+.cm-host[data-mode="wysiwyg"] .cm-md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-glow);
+  text-underline-offset: 3px;
+}
+.cm-host[data-mode="wysiwyg"] .cm-md-image {
+  color: var(--accent-2);
+}
+
+/* fake checkbox replacing `- [ ]` */
+.cm-md-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg-input);
+  vertical-align: -3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  transition: all 120ms;
+}
+.cm-md-task.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cm-md-task:hover {
+  border-color: var(--accent);
+}
+
+/* 把活动行的 marker 显形时颜色调淡，明显区分原文 */
+.cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-bold,
+.cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-italic,
+.cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-strike,
+.cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-code,
+.cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-link {
+  /* keep markers visible on active line; do nothing - they show through */
+}

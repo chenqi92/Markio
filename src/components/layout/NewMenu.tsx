@@ -93,14 +93,21 @@ export function NewMenu({ onClose }: { onClose: () => void }) {
     const fname = userName.endsWith(".md") ? userName : `${userName}.md`;
     const path = `${ws.path}/${fname}`;
     try {
-      await api.writeText(path, content);
+      await api.createNew(path, content);
       await useWorkspace.getState().refreshTree(ws.id);
       await useTabs.getState().openFile(ws.id, path);
       setToast({ stage: "done", message: "已创建" });
       setTimeout(() => setToast(null), 1500);
     } catch (e) {
-      setToast({ stage: "error", message: `创建失败：${(e as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
+      const { parseError } = await import("@/lib/api");
+      const err = parseError(e);
+      if (err.code === "ALREADY_EXISTS") {
+        const reuse = window.confirm(`${fname} 已存在。打开它？`);
+        if (reuse) await useTabs.getState().openFile(ws.id, path);
+      } else {
+        setToast({ stage: "error", message: `创建失败：${err.message}` });
+        setTimeout(() => setToast(null), 2500);
+      }
     }
     onClose();
   };

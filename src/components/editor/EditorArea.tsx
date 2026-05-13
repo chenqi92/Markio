@@ -29,6 +29,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const saveTab = useTabs((s) => s.saveTab);
   const mode = useUI((s) => s.mode);
   const autosave = useSettings((s) => s.autosave);
+  const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const [meta, setMeta] = useState<{
     outline: OutlineItem[];
@@ -53,12 +54,9 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     [onMeta],
   );
 
-  const renderMode = useMemo<ViewMode>(() => {
-    if (mode === "wysiwyg") return "preview";
-    return mode;
-  }, [mode]);
+  const renderMode = mode;
 
-  // 自动保存：内容变化 800ms 后写盘
+  // 自动保存：按设置里的延迟写盘
   const tabId = tab?.id;
   const dirty = tab?.dirty;
   const debouncedSave = useMemo(
@@ -66,8 +64,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       debounce((id: string) => {
         if (!useSettings.getState().autosave) return;
         saveTab(id).catch(() => undefined);
-      }, 800),
-    [saveTab],
+      }, autosaveDelayMs),
+    [autosaveDelayMs, saveTab],
   );
   useEffect(() => {
     if (!autosave || !tabId || !dirty) return;
@@ -78,7 +76,10 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     return null;
   }
 
-  const showSource = renderMode === "source" || renderMode === "split";
+  const showSource =
+    renderMode === "source" ||
+    renderMode === "split" ||
+    renderMode === "wysiwyg";
   const showPreview = renderMode === "preview" || renderMode === "split";
 
   const allowBubble =
@@ -91,6 +92,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         <div className="editor-pane">
           <SourceEditor
             value={tab.content}
+            wysiwyg={renderMode === "wysiwyg"}
             onChange={(v) => updateContent(tab.id, v)}
             onSelectionChange={(info) => {
               if (!allowBubble) {

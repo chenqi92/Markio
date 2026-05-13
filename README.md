@@ -178,6 +178,10 @@ md-view/
 └── docs/                 # ARCHITECTURE.md / PACKAGING.md / MARKIO_DESIGN.md（旧设计稿）
 ```
 
+## 路线图
+
+后续功能与近期规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。简版：流式 AI / Git 同步 / 应用更新 / Mac App Store 上架 → RAG Reranker / 文件监听增量 / 导入 Notion·Obsidian → Windows MSIX / 性能优化 / i18n。
+
 ## 数据怎么存
 
 ```

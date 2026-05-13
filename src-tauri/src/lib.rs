@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use ai::{ChatRequest, ChatResponse};
-use fs_ops::{AiContext, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
+use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 
@@ -212,6 +212,19 @@ fn fs_reveal(
     fs_ops::reveal_in_os(&canon.to_string_lossy())
 }
 
+#[tauri::command]
+fn fs_list_attachments(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    max: Option<usize>,
+) -> Result<Vec<Attachment>, String> {
+    let canon = validate_path(&state, &workspace)?;
+    Ok(fs_ops::list_attachments(
+        &canon.to_string_lossy(),
+        max.unwrap_or(200),
+    ))
+}
+
 // ─── 历史快照 ───────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -392,6 +405,7 @@ pub fn run() {
             fs_mkdir,
             fs_grep,
             fs_reveal,
+            fs_list_attachments,
             history_save,
             history_list,
             history_read,

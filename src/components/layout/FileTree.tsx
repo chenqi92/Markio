@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { Icon, isIconName } from "../ui/Icon";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { IconPicker } from "../popovers/IconPicker";
+import { AttachmentSection } from "./AttachmentSection";
 import { RecentSection } from "./RecentSection";
 import { TrashSection } from "./TrashSection";
 import { useWorkspace } from "@/stores/workspace";
@@ -125,6 +126,7 @@ export function FileTree() {
             }}
           />
         ))}
+        <AttachmentSection />
         <TrashSection />
       </div>
       {ctx && (

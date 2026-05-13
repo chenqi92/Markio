@@ -74,6 +74,23 @@ export interface TrashItem {
   size: number;
 }
 
+export interface Attachment {
+  path: string;
+  name: string;
+  size: number;
+  modified: number;
+  kind:
+    | "pdf"
+    | "image"
+    | "svg"
+    | "video"
+    | "audio"
+    | "word"
+    | "sheet"
+    | "slides"
+    | "archive";
+}
+
 export interface ThemeDef {
   id: string;
   name: string;

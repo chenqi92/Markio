@@ -5,6 +5,7 @@
  * 前端只负责拼接 UI 与状态。
  */
 import type {
+  Attachment,
   Backlink,
   FileEntry,
   GrepHit,
@@ -114,6 +115,9 @@ export const api = {
   grep: (root: string, query: string, max = 80) =>
     invoke<GrepHit[]>("fs_grep", { root, query, max }),
   reveal: (path: string) => invoke<void>("fs_reveal", { path }),
+
+  listAttachments: (workspace: string, max = 200) =>
+    invoke<Attachment[]>("fs_list_attachments", { workspace, max }),
 
   historySave: (workspace: string, file: string, content: string) =>
     invoke<void>("history_save", { workspace, file, content }),

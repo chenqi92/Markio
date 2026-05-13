@@ -70,6 +70,26 @@ fn is_markdown(name: &str) -> bool {
         || lower.ends_with(".mkd")
 }
 
+/// 当作"附件"看待的扩展名 —— 不在主文件树里、但放进侧边栏的「附件」分区
+fn attachment_kind(name: &str) -> Option<&'static str> {
+    let lower = name.to_ascii_lowercase();
+    let ext = lower.rsplit('.').next()?;
+    match ext {
+        "pdf" => Some("pdf"),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "tif" | "heic" | "avif" => {
+            Some("image")
+        }
+        "svg" => Some("svg"),
+        "mp4" | "mov" | "m4v" | "webm" | "avi" | "mkv" => Some("video"),
+        "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" => Some("audio"),
+        "docx" | "doc" | "pages" => Some("word"),
+        "xlsx" | "xls" | "numbers" | "csv" => Some("sheet"),
+        "pptx" | "ppt" | "key" => Some("slides"),
+        "zip" | "tar" | "gz" | "7z" | "rar" => Some("archive"),
+        _ => None,
+    }
+}
+
 fn modified_ms(p: &Path) -> i64 {
     p.metadata()
         .and_then(|m| m.modified())
@@ -722,6 +742,76 @@ pub struct AiContext {
     pub name: String,
     pub line: u32,
     pub snippet: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub modified: i64,
+    /// "pdf" / "image" / "svg" / "video" / "audio" / "word" / "sheet" / "slides" / "archive"
+    pub kind: String,
+}
+
+/// 平铺扫整个 workspace 里的非 markdown 附件文件，按修改时间倒序。
+pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
+    let mut out: Vec<Attachment> = Vec::new();
+
+    fn visit(
+        dir: &Path,
+        depth: usize,
+        out: &mut Vec<Attachment>,
+        max: usize,
+    ) {
+        if out.len() >= max || depth > MAX_DEPTH {
+            return;
+        }
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            if out.len() >= max {
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_hidden(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                if is_skip_dir(&name) {
+                    continue;
+                }
+                visit(&path, depth + 1, out, max);
+            } else if ft.is_file() {
+                let Some(kind) = attachment_kind(&name) else {
+                    continue;
+                };
+                let meta = entry.metadata().ok();
+                out.push(Attachment {
+                    path: path.to_string_lossy().to_string(),
+                    name: name.clone(),
+                    size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                    modified: modified_ms(&path),
+                    kind: kind.to_string(),
+                });
+            }
+        }
+    }
+
+    visit(Path::new(root), 0, &mut out, max);
+    out.sort_by(|a, b| b.modified.cmp(&a.modified));
+    out
 }
 
 pub fn retrieve_context(root: &str, query: &str, k: usize) -> Vec<AiContext> {

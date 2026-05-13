@@ -7,6 +7,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useAISessions, type AIMsgRecord } from "@/stores/aiSessions";
 import { api } from "@/lib/api";
 import { AISidebar } from "./AISidebar";
+import { AIAssistantMessage } from "./AIAssistantMessage";
 
 function nowTimeStr(ts: number) {
   const d = new Date(ts);
@@ -395,17 +396,36 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
               ) : (
-                history.map((m) => (
-                  <div key={m.id} className={"ai-msg " + m.role}>
-                    <div className={"ai-msg-avatar " + m.role}>
-                      {m.role === "user" ? "你" : "✦"}
-                    </div>
-                    <div className="ai-msg-body">
-                      <div className="ai-msg-text">{m.text}</div>
-                      <div className="ai-msg-time">{nowTimeStr(m.time)}</div>
-                    </div>
-                  </div>
-                ))
+                history.map((m, idx) => {
+                  if (m.role === "user") {
+                    return (
+                      <div key={m.id} className="ai-msg user">
+                        <div className="ai-msg-avatar user">你</div>
+                        <div className="ai-msg-body">
+                          <div className="ai-msg-text">{m.text}</div>
+                          <div className="ai-msg-time">{nowTimeStr(m.time)}</div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  // 找到前一条 user 消息作为"重生成"的源
+                  let prevUser: string | undefined;
+                  for (let i = idx - 1; i >= 0; i--) {
+                    if (history[i].role === "user") {
+                      prevUser = history[i].text;
+                      break;
+                    }
+                  }
+                  return (
+                    <AIAssistantMessage
+                      key={m.id}
+                      text={m.text}
+                      time={m.time}
+                      prevUserText={prevUser}
+                      onRegenerate={(t) => send(t)}
+                    />
+                  );
+                })
               )}
               {busy && (
                 <div className="ai-msg assistant">

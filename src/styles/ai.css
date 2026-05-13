@@ -422,8 +422,58 @@
 
 .ai-msg-time {
   font-size: 10.5px; color: var(--text-4);
-  margin-top: 6px;
 }
+
+.ai-msg-foot {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px;
+  min-height: 18px;
+}
+.ai-msg-actions-row {
+  display: flex; align-items: center; gap: 4px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 160ms;
+}
+.ai-msg:hover .ai-msg-actions-row { opacity: 1; }
+.ai-act-mini {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.ai-act-mini:hover { background: var(--bg-hover); color: var(--text); }
+
+/* assistant message 走 markdown 渲染，借用 .preview 的样式但收紧间距 */
+.ai-msg-md.preview {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.ai-msg-md.preview h1,
+.ai-msg-md.preview h2,
+.ai-msg-md.preview h3,
+.ai-msg-md.preview h4 { margin-top: 14px; margin-bottom: 6px; }
+.ai-msg-md.preview h1 { font-size: 18px; }
+.ai-msg-md.preview h2 { font-size: 16px; margin-top: 16px; }
+.ai-msg-md.preview h2::before { display: none; }
+.ai-msg-md.preview h3 { font-size: 14px; color: var(--text); }
+.ai-msg-md.preview p { margin: 0 0 8px; }
+.ai-msg-md.preview ul,
+.ai-msg-md.preview ol { margin: 4px 0 8px; padding-left: 22px; }
+.ai-msg-md.preview li { margin: 2px 0; }
+.ai-msg-md.preview pre {
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.ai-msg-md.preview blockquote { margin: 8px 0; padding: 8px 12px; font-size: 13px; }
+.ai-msg-md.preview table { font-size: 13px; margin: 8px 0; }
 
 @keyframes aiIn {
   from { transform: translateY(12px); opacity: 0; }

@@ -7,6 +7,7 @@ import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { insertBlock } from "@/lib/editor-bridge";
+import type { AIMsgRef } from "@/stores/aiSessions";
 
 interface Props {
   text: string;
@@ -17,6 +18,8 @@ interface Props {
   onRegenerate?: (text: string) => void;
   /** 点击 [[wiki]] 时回调，由 AIPanel 在右侧打开 AIPreview */
   onWikiClick?: (name: string) => void;
+  /** 本条助手回复用到的仓库片段 */
+  refs?: AIMsgRef[];
 }
 
 function fmtTime(ts: number) {
@@ -36,7 +39,11 @@ export function AIAssistantMessage({
   prevUserText,
   onRegenerate,
   onWikiClick,
+  refs,
 }: Props) {
+  const [refsOpen, setRefsOpen] = useState(false);
+  const openFile = useTabs((s) => s.openFile);
+  const wsForRefs = useWorkspace((s) => s.activeWorkspace());
   const [html, setHtml] = useState<string>("");
   const ref = useRef<HTMLDivElement>(null);
   const theme = useSettings((s) => s.theme);
@@ -152,6 +159,51 @@ export function AIAssistantMessage({
         <Icon name="sparkle" size={13} />
       </div>
       <div className="ai-msg-body">
+        {refs && refs.length > 0 && (
+          <div className="ai-msg-refs">
+            <button
+              type="button"
+              className="ai-msg-refs-h"
+              onClick={() => setRefsOpen((v) => !v)}
+            >
+              <Icon name="search" size={11} />
+              <span>引用 {refs.length} 个仓库片段</span>
+              <span className="ai-msg-refs-chev">{refsOpen ? "▾" : "▸"}</span>
+            </button>
+            {refsOpen && (
+              <div className="ai-msg-refs-list">
+                {refs.map((r, i) => {
+                  const file = r.path.split("/").slice(-1)[0] ?? r.path;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className="ai-msg-ref-item"
+                      onClick={() => {
+                        if (wsForRefs) {
+                          void openFile(wsForRefs.id, r.path);
+                        }
+                      }}
+                      title={r.path}
+                    >
+                      <div className="ai-msg-ref-h">
+                        <span className="ai-msg-ref-file">{file}</span>
+                        <span className="ai-msg-ref-src">{r.source}</span>
+                      </div>
+                      {r.heading && (
+                        <div className="ai-msg-ref-heading">{r.heading}</div>
+                      )}
+                      <div className="ai-msg-ref-body">
+                        {r.body.slice(0, 180)}
+                        {r.body.length > 180 ? "…" : ""}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <div
           ref={ref}
           className="ai-msg-md preview"

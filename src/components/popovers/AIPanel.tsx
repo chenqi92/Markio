@@ -4,7 +4,8 @@ import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
-import { useAISessions, type AIMsgRecord } from "@/stores/aiSessions";
+import { useAISessions, type AIMsgRecord, type AIMsgRef } from "@/stores/aiSessions";
+import { useRag } from "@/stores/rag";
 import { api } from "@/lib/api";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
@@ -215,22 +216,61 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         `当前打开的笔记：${tab.title}\n路径：${tab.path}\n\n--- 内容（前 6000 字符）---\n${tab.content.slice(0, 6000)}`,
       );
     }
+    let collectedRefs: AIMsgRef[] = [];
     if ((useWorkspaceCtx || scope !== "open") && ws) {
-      try {
-        const hits = await api.aiRetrieve(ws.path, text, 5);
-        if (hits.length > 0) {
-          const ctx = hits
-            .map(
-              (h, i) =>
-                `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
-            )
-            .join("\n\n---\n\n");
-          parts.push(
-            `仓库相关片段（关键词检索，可能并不精准）：\n\n${ctx}`,
-          );
+      const ragEnabled = useSettings.getState().ragEnabled;
+      let used = false;
+      if (ragEnabled) {
+        try {
+          const hits = await useRag.getState().search(ws.path, text);
+          if (hits.length > 0) {
+            collectedRefs = hits.map((h) => ({
+              path: h.path,
+              heading: h.heading,
+              body: h.body,
+              score: h.score,
+              source: h.source,
+            }));
+            const ctx = hits
+              .map((h, i) => {
+                const file = h.path.split("/").slice(-1)[0] ?? h.path;
+                const head = h.heading ? `\n小节：${h.heading}` : "";
+                return `### 片段 ${i + 1} · ${file} (${h.source})${head}\n\n${h.body}`;
+              })
+              .join("\n\n---\n\n");
+            parts.push(
+              `仓库相关片段（混合检索：向量 + 关键词 + 引用图）：\n\n${ctx}`,
+            );
+            used = true;
+          }
+        } catch (e) {
+          console.warn("[ai.send] rag.search failed, fallback to grep", e);
         }
-      } catch {
-        /* ignore */
+      }
+      if (!used) {
+        try {
+          const hits = await api.aiRetrieve(ws.path, text, 5);
+          if (hits.length > 0) {
+            collectedRefs = hits.map((h) => ({
+              path: h.path,
+              heading: h.line ? `第 ${h.line} 行` : "",
+              body: h.snippet,
+              score: 0,
+              source: "grep",
+            }));
+            const ctx = hits
+              .map(
+                (h, i) =>
+                  `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
+              )
+              .join("\n\n---\n\n");
+            parts.push(
+              `仓库相关片段（关键词检索，可能并不精准；建议在"设置 · 本地知识库"里构建向量索引）：\n\n${ctx}`,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
       }
     }
     const system = parts.join("\n\n");
@@ -256,6 +296,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         role: "assistant",
         text: r.text || "（空响应）",
         time: Date.now(),
+        refs: collectedRefs.length > 0 ? collectedRefs : undefined,
       });
     } catch (e) {
       appendMessage(sessionId, {
@@ -430,6 +471,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                       key={m.id}
                       text={m.text}
                       time={m.time}
+                      refs={m.refs}
                       prevUserText={prevUser}
                       onRegenerate={(t) => send(t)}
                       onWikiClick={(n) => setPreviewName(n)}

@@ -307,7 +307,10 @@ function TreeContextMenu({
         try {
           await api.rename(node.path, to);
           flash("已重命名");
-          if (ws) await refreshTree(ws.id);
+          if (ws) {
+            void ragRemoveSilently(ws.path, node.path);
+            await refreshTree(ws.id);
+          }
         } catch (e) {
           setToast({
             stage: "error",
@@ -334,6 +337,7 @@ function TreeContextMenu({
         try {
           await api.trashMove(ws.path, node.path);
           closeTabsForPath(node.path);
+          void ragRemoveSilently(ws.path, node.path);
           flash("已移到回收站");
           await refreshTree(ws.id);
         } catch (e) {
@@ -357,8 +361,11 @@ function TreeContextMenu({
         try {
           await api.remove(node.path);
           closeTabsForPath(node.path);
+          if (ws) {
+            void ragRemoveSilently(ws.path, node.path);
+            await refreshTree(ws.id);
+          }
           flash("已永久删除");
-          if (ws) await refreshTree(ws.id);
         } catch (e) {
           setToast({
             stage: "error",
@@ -371,6 +378,16 @@ function TreeContextMenu({
   ];
 
   return <ContextMenu x={x} y={y} items={items} onClose={onClose} />;
+}
+
+/** 顺手把 RAG 索引里的旧记录擦掉；失败仅吞掉 */
+async function ragRemoveSilently(workspace: string, file: string) {
+  try {
+    const { useRag } = await import("@/stores/rag");
+    await useRag.getState().removeFile(workspace, file);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** 删除文件后顺手关闭已打开的相关 tab */

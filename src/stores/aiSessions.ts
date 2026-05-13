@@ -3,11 +3,21 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 export type AIScope = "all" | "folder" | "open" | "tag" | "custom";
 
+export interface AIMsgRef {
+  path: string;
+  heading: string;
+  body: string;
+  score: number;
+  source: string;
+}
+
 export interface AIMsgRecord {
   id: string;
   role: "user" | "assistant";
   text: string;
   time: number;
+  /** 助手消息可携带本次回答用到的仓库片段 */
+  refs?: AIMsgRef[];
 }
 
 export interface AISession {

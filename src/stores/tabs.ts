@@ -136,6 +136,18 @@ export const useTabs = create<TabsState>((set, get) => ({
         api
           .historySave(ws.path, tab.path, tab.content)
           .catch(() => undefined);
+        // 增量更新 RAG 索引（受设置开关控制；遵循 fire-and-forget）
+        void (async () => {
+          try {
+            const { useSettings } = await import("./settings");
+            const s = useSettings.getState();
+            if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
+            const { useRag } = await import("./rag");
+            await useRag.getState().reindexFile(ws.path, tab.path);
+          } catch (err) {
+            console.warn("[rag.reindexFile] post-save failed", err);
+          }
+        })();
       }
       set((s) => ({
         tabs: s.tabs.map((t) =>

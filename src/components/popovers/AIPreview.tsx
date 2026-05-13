@@ -110,7 +110,9 @@ export function AIPreview({ name, onClose }: Props) {
           </div>
         </div>
         <div className="ai-preview-empty">
-          <div className="icn">📭</div>
+          <div className="icn">
+            <Icon name="archive" size={28} />
+          </div>
           <div>
             仓库内没有名为
             <br />
@@ -169,7 +171,8 @@ export function AIPreview({ name, onClose }: Props) {
           onClick={insertCitation}
           title="在当前编辑器光标处插入 [[名字]]"
         >
-          ⊕ 插入引用
+          <Icon name="link" size={12} />
+          <span>插入引用</span>
         </button>
         <button
           type="button"
@@ -177,7 +180,8 @@ export function AIPreview({ name, onClose }: Props) {
           onClick={openInEditor}
           title="退出 AI、在主编辑器中打开此笔记"
         >
-          ↗ 在主编辑器中打开
+          <Icon name="external" size={12} />
+          <span>在主编辑器中打开</span>
         </button>
       </div>
     </aside>

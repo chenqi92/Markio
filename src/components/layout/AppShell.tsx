@@ -61,31 +61,34 @@ export function AppShell() {
         }
       >
         <TitleBar />
-        <div className={classNames("body", !sidebarOpen && "no-sidebar")}>
-          {sidebarOpen && <Sidebar />}
-          {sidebarOpen && <SidebarResizer />}
-          <div className={classNames("main", focusMode && "focus")}>
-            {tab ? (
-              <>
-                <TabStrip />
-                <Toolbar
-                  onAi={() => openAi(true)}
-                  onWechat={() => openWechat(true)}
-                />
-                <Crumb />
-                <EditorArea
-                  onMeta={(m) => setMeta(m)}
-                  onAskAi={() => openAi(true)}
-                />
-              </>
-            ) : (
-              <Welcome />
-            )}
-            <FindBar />
-            <HistorySheet />
-            {aiOpen && <AIPanel onClose={() => openAi(false)} />}
+        {aiOpen ? (
+          <AIPanel onClose={() => openAi(false)} />
+        ) : (
+          <div className={classNames("body", !sidebarOpen && "no-sidebar")}>
+            {sidebarOpen && <Sidebar />}
+            {sidebarOpen && <SidebarResizer />}
+            <div className={classNames("main", focusMode && "focus")}>
+              {tab ? (
+                <>
+                  <TabStrip />
+                  <Toolbar
+                    onAi={() => openAi(true)}
+                    onWechat={() => openWechat(true)}
+                  />
+                  <Crumb />
+                  <EditorArea
+                    onMeta={(m) => setMeta(m)}
+                    onAskAi={() => openAi(true)}
+                  />
+                </>
+              ) : (
+                <Welcome />
+              )}
+              <FindBar />
+              <HistorySheet />
+            </div>
           </div>
-        </div>
+        )}
         <StatusBar words={meta.words} readingMinutes={meta.readingMinutes} />
       </div>
 

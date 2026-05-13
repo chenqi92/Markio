@@ -1,8 +1,10 @@
-/* AI 全屏工作区 —— 覆盖 .main 区域 */
+/* AI 全屏工作区 —— 替代普通 body 区域 */
 
 .ai-workspace {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg-window);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
@@ -80,6 +82,17 @@
 .ai-scope-meta {
   font-size: 10.5px; color: var(--text-3); margin-top: 1px;
 }
+.ai-scope-switch {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  color: var(--text-3);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ai-scope-switch:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 .ai-scope-modes {
   display: flex; flex-direction: column; gap: 2px;
   padding: 0 8px 12px;
@@ -103,7 +116,14 @@
   background: var(--bg-selected);
   color: var(--text);
 }
-.ai-scope-mode .ic { font-size: 12px; opacity: 0.85; text-align: center; }
+.ai-scope-mode .ic {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .ai-scope-mode .l { font-weight: 500; }
 .ai-scope-mode .s {
   font-size: 10.5px; color: var(--text-3);
@@ -524,7 +544,15 @@
   border-radius: 999px;
   max-width: 180px;
 }
-.ai-ctx-chip .ico { font-size: 11px; opacity: 0.8; }
+.ai-ctx-chip .ico {
+  width: 12px;
+  height: 12px;
+  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .ai-ctx-chip .lbl {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -754,6 +782,10 @@
   color: var(--text);
   cursor: pointer;
   text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 .ai-preview-action:hover { background: var(--bg-elev); }
 
@@ -763,4 +795,10 @@
   color: var(--text-3);
   font-size: 12px;
 }
-.ai-preview-empty .icn { font-size: 28px; margin-bottom: 12px; opacity: 0.6; }
+.ai-preview-empty .icn {
+  margin-bottom: 12px;
+  opacity: 0.6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

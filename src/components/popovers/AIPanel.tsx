@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "../ui/Icon";
+import { Icon, type IconName } from "../ui/Icon";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
@@ -27,17 +27,17 @@ type AIMode =
   | "code"
   | "proof";
 
-const MODES: Array<{ id: AIMode; label: string; sub: string; ico: string }> = [
-  { id: "ask", label: "提问", sub: "结合仓库回答", ico: "?" },
-  { id: "summarize", label: "总结", sub: "把多份笔记压缩成要点", ico: "≣" },
-  { id: "draft", label: "续写", sub: "基于已有内容继续", ico: "✎" },
-  { id: "write", label: "写作", sub: "从零起草长文", ico: "✦" },
-  { id: "rewrite", label: "重写", sub: "换语气 / 风格 / 长度", ico: "↻" },
-  { id: "translate", label: "翻译", sub: "中英互译，保留 markdown", ico: "文" },
-  { id: "explain", label: "解释", sub: "把选中片段拆解给我听", ico: "ⓘ" },
-  { id: "brainstorm", label: "头脑风暴", sub: "对一个主题发散 N 个想法", ico: "✺" },
-  { id: "code", label: "代码", sub: "生成 / 解释 / 重构代码", ico: "</>" },
-  { id: "proof", label: "校对", sub: "找错别字、病句、不通顺", ico: "✓" },
+const MODES: Array<{ id: AIMode; label: string; sub: string; icon: IconName }> = [
+  { id: "ask", label: "提问", sub: "结合仓库回答", icon: "message" },
+  { id: "summarize", label: "总结", sub: "把多份笔记压缩成要点", icon: "list" },
+  { id: "draft", label: "续写", sub: "基于已有内容继续", icon: "edit" },
+  { id: "write", label: "写作", sub: "从零起草长文", icon: "wand" },
+  { id: "rewrite", label: "重写", sub: "换语气 / 风格 / 长度", icon: "sync" },
+  { id: "translate", label: "翻译", sub: "中英互译，保留 markdown", icon: "type" },
+  { id: "explain", label: "解释", sub: "把选中片段拆解给我听", icon: "info" },
+  { id: "brainstorm", label: "头脑风暴", sub: "对一个主题发散 N 个想法", icon: "lightbulb" },
+  { id: "code", label: "代码", sub: "生成 / 解释 / 重构代码", icon: "code" },
+  { id: "proof", label: "校对", sub: "找错别字、病句、不通顺", icon: "check-square" },
 ];
 
 const MODE_SYSTEM: Record<AIMode, string> = {
@@ -290,7 +290,9 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               onClick={() => setAIMode(m.id)}
               title={m.sub}
             >
-              <span className="ico">{m.ico}</span>
+              <span className="ico">
+                <Icon name={m.icon} size={11} />
+              </span>
               <span>{m.label}</span>
             </button>
           ))}
@@ -394,7 +396,9 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                         onClick={() => send(s)}
                         disabled={busy}
                       >
-                        <span className="ai-sug-ico">✦</span>
+                        <span className="ai-sug-ico">
+                          <Icon name="sparkle" size={12} />
+                        </span>
                         <span>{s}</span>
                       </button>
                     ))}
@@ -435,7 +439,9 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               )}
               {busy && (
                 <div className="ai-msg assistant">
-                  <div className="ai-msg-avatar assistant">✦</div>
+                  <div className="ai-msg-avatar assistant">
+                    <Icon name="sparkle" size={13} />
+                  </div>
                   <div className="ai-msg-body">
                     <span className="ai-dot" />
                     <span className="ai-dot" />
@@ -587,7 +593,7 @@ function AIInputBar({
                   title={c.id}
                 >
                   <span className="ico">
-                    {c.pinned ? "📌" : "📄"}
+                    <Icon name={c.pinned ? "pin" : "note"} size={11} />
                   </span>
                   <span className="lbl">{c.label}</span>
                   {c.pinned && (

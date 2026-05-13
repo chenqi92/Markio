@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { Icon } from "../ui/Icon";
+import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useAISessions, type AIScope } from "@/stores/aiSessions";
 
 interface ScopeMode {
   id: AIScope;
-  ico: string;
+  icon: IconName;
   label: string;
   hint: (ctx: { fileCount: number; folder: string | null; openCount: number }) => string;
 }
@@ -14,31 +14,31 @@ interface ScopeMode {
 const SCOPE_MODES: ScopeMode[] = [
   {
     id: "all",
-    ico: "▦",
+    icon: "database",
     label: "整个仓库",
     hint: ({ fileCount }) => `${fileCount} 篇`,
   },
   {
     id: "folder",
-    ico: "📁",
+    icon: "folder",
     label: "当前文件夹",
     hint: ({ folder }) => (folder ? folder : "未选中文件"),
   },
   {
     id: "open",
-    ico: "📝",
+    icon: "note",
     label: "当前打开的笔记",
     hint: ({ openCount }) => `${openCount} 个标签页`,
   },
   {
     id: "tag",
-    ico: "🏷",
+    icon: "tag",
     label: "按标签",
     hint: () => "选择标签…",
   },
   {
     id: "custom",
-    ico: "✦",
+    icon: "sparkle",
     label: "手动选择",
     hint: ({}) => "0 篇",
   },
@@ -113,6 +113,14 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
               <div className="ai-scope-name">{ws.name}</div>
               <div className="ai-scope-meta">{fileCount} 篇 · 本地索引</div>
             </div>
+            <button
+              type="button"
+              className="ai-scope-switch"
+              title="使用整个仓库索引"
+              onClick={() => setScope("all")}
+            >
+              <Icon name="sync" size={12} />
+            </button>
           </div>
         ) : (
           <div
@@ -138,7 +146,9 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
               className={"ai-scope-mode" + (m.id === scope ? " active" : "")}
               onClick={() => setScope(m.id)}
             >
-              <span className="ic">{m.ico}</span>
+              <span className="ic">
+                <Icon name={m.icon} size={13} />
+              </span>
               <span className="l">{m.label}</span>
               <span className="s">
                 {m.hint({

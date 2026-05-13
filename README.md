@@ -48,7 +48,11 @@
 | | 微信公众号样式预览 + 复制 | ✅ |
 | **AI** | Anthropic / OpenAI / Gemini / DeepSeek / Ollama / 自定义 | ✅ |
 | | API Key 进 OS 钥匙串（不进 localStorage） | ✅ |
-| | 把当前笔记前 4000 字作 system prompt | ✅ |
+| | 把当前笔记前 6000 字作 system prompt | ✅ |
+| **本地知识库** | sqlite-vec 向量索引（每仓库一份 `.markio/rag.db`） | ✅ |
+| | 嵌入模型：本地 Ollama / OpenAI 兼容（用户在设置里切换） | ✅ |
+| | 混合检索：向量 + FTS5 关键词 + 引用图谱 → RRF 融合 | ✅ |
+| | 保存笔记后自动增量更新；删除 / 移入回收站自动清理 | ✅ |
 | **平台** | macOS（含 Mac App Store 打包脚本） | ✅ |
 | | Windows MSI / NSIS | ✅（脚本就绪，需要 Windows 机器跑） |
 | | Linux AppImage / deb | ✅ |
@@ -157,7 +161,14 @@ md-view/
 │   │   ├── fs_ops.rs     # 文件遍历 / grep / 原子写 / 回收站 / 快照
 │   │   ├── markdown.rs   # pulldown-cmark + syntect + ammonia 清洗
 │   │   ├── ai.rs         # Anthropic / OpenAI / Gemini / Ollama 代理
-│   │   └── secrets.rs    # keyring wrapper（macOS Keychain / Win Credential / Linux SS）
+│   │   ├── secrets.rs    # keyring wrapper（macOS Keychain / Win Credential / Linux SS）
+│   │   └── rag/          # sqlite-vec 向量索引 + 混合检索 + 引用图谱
+│   │       ├── db.rs     # 5 张表 + sqlite-vec 扩展加载 + 维度变更迁移
+│   │       ├── chunk.rs  # 按 ATX 标题层级 + 段落聚合的 markdown 分块
+│   │       ├── embed.rs  # Ollama / OpenAI 兼容 embedding provider
+│   │       ├── index.rs  # 全量 / 增量索引 + 进度上报
+│   │       ├── search.rs # 向量 + FTS5 + RRF 融合 + 引用图扩展
+│   │       └── graph.rs  # [[wiki]] / md 链接提取 + 反查
 │   ├── entitlements/     # macOS App Sandbox + 直发 entitlements
 │   ├── capabilities/     # Tauri 权限定义
 │   └── tauri.conf.json
@@ -175,7 +186,8 @@ md-view/
     ├── *.md                      # 普通文件，所见即所得
     └── .markio/                  # 仓库私有数据（不入 Git 时记得 .gitignore）
         ├── history/              # 历史快照，每次保存一份，每个文件最多 30
-        └── trash/                # 软删的文件 + 元数据
+        ├── trash/                # 软删的文件 + 元数据
+        └── rag.db                # sqlite-vec 向量索引 + FTS5 关键词索引 + 引用图谱
 
 ~/Library/Application Support/markio/   # macOS（Windows 在 %APPDATA%）
 └── （目前只有 keyring 入口；不写实际文件）
@@ -189,9 +201,8 @@ localStorage                     # 浏览器存储，跨重启
 └── markio.fileIcons.v1          # 文件树自定义图标
 
 OS Keychain（com.welape.mdview）  # 真正的密钥
-├── ai:anthropic
-├── ai:openai
-└── ai:* （按 provider 命名）
+├── ai:anthropic / ai:openai / ai:* （AI 聊天用 key）
+└── embed:openai （RAG 嵌入用 key，单独存以便和聊天 key 区分）
 ```
 
 ## 安全模型

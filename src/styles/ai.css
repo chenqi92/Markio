@@ -479,3 +479,174 @@
   from { transform: translateY(12px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+
+/* 输入栏：上下文 chip + 工具 + meta */
+.ai-input-wrap {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  padding: 12px clamp(20px, 6%, 80px) 12px;
+  border-top: 0.5px solid var(--border);
+  background: var(--bg-pane);
+}
+.ai-input-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 4px;
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.ai-input-shell:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.ai-ctx-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px 0;
+  flex-wrap: wrap;
+}
+.ai-ctx-l {
+  font-size: 10px; font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-right: 2px;
+}
+.ai-ctx-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 4px 2px 8px;
+  font-size: 11px; color: var(--text);
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  max-width: 180px;
+}
+.ai-ctx-chip .ico { font-size: 11px; opacity: 0.8; }
+.ai-ctx-chip .lbl {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ai-ctx-chip .x {
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ai-ctx-chip .x:hover { background: var(--bg-active); color: var(--text); }
+.ai-ctx-chip.pinned { background: var(--accent-glow); border-color: var(--accent); }
+.ai-ctx-chip.pinned .lbl { color: var(--accent); font-weight: 600; }
+
+.ai-ctx-add {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px; color: var(--text-3);
+  background: transparent;
+  border: 0.5px dashed var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ai-ctx-add:hover { color: var(--accent); border-color: var(--accent); }
+.ai-ctx-meta {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.ai-input-textarea-wrap {
+  padding: 4px 10px;
+}
+.ai-input-textarea-wrap textarea {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  font-family: inherit;
+  min-height: 22px;
+  max-height: 180px;
+}
+.ai-input-textarea-wrap textarea::placeholder { color: var(--text-3); }
+
+.ai-input-foot {
+  display: flex; align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px;
+}
+.ai-input-tools {
+  display: flex; align-items: center; gap: 2px;
+  flex-wrap: wrap;
+}
+.ai-tool {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.ai-tool:hover { background: var(--bg-hover); color: var(--text); }
+.ai-tool.chip {
+  width: auto; padding: 0 8px;
+  font-size: 11px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  display: inline-flex; gap: 4px; align-items: center;
+  color: var(--text-2);
+}
+.ai-input-sep {
+  width: 1px; height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.ai-input-actions {
+  display: flex; align-items: center; gap: 8px;
+  margin-left: auto;
+}
+.ai-char-count {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ai-char-count.over { color: var(--accent-2); }
+
+.ai-send {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  border: 0;
+}
+.ai-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ai-input-meta {
+  display: flex; align-items: center; gap: 8px;
+  max-width: 760px;
+  margin: 8px auto 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+  flex-wrap: wrap;
+}
+.meta-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.meta-chip .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #28c840;
+  box-shadow: 0 0 4px rgba(40, 200, 64, 0.6);
+}

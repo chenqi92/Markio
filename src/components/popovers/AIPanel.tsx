@@ -440,42 +440,286 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          <div className="ai-input-wrap">
-            <div className="ai-input">
-              <textarea
-                placeholder={
-                  aiMode === "ask"
-                    ? "问点什么，⌘↩ 发送…"
-                    : `描述你想 "${MODES.find((m) => m.id === aiMode)?.label}" 的内容…`
-                }
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    send(draft);
-                  }
-                }}
-                rows={2}
-              />
-              <button
-                type="button"
-                className="ai-send"
-                onClick={() => send(draft)}
-                disabled={!draft.trim() || busy}
-              >
-                <Icon name="sparkle" size={13} />
-                <span>发送</span>
-              </button>
-            </div>
-          </div>
+          <AIInputBar
+            aiMode={aiMode}
+            currentTab={
+              tab
+                ? { title: tab.title, path: tab.path, content: tab.content }
+                : null
+            }
+            draft={draft}
+            setDraft={setDraft}
+            busy={busy}
+            onSend={send}
+            scope={scope}
+            wsName={ws?.name ?? null}
+            indexedCount={
+              useTabs.getState().tabs.length /* 临时：直到 RAG 接入再换索引数 */
+            }
+            configured={configured}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function nowStr() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+interface InputBarProps {
+  aiMode: AIMode;
+  currentTab: { title: string; path: string; content: string } | null;
+  draft: string;
+  setDraft: (v: string) => void;
+  busy: boolean;
+  onSend: (text: string) => void;
+  scope: string;
+  wsName: string | null;
+  indexedCount: number;
+  configured: boolean;
+}
+
+function estimateTokens(text: string): number {
+  // 中文按 1.5 tokens/字、英文按 1.3 tokens/word 估
+  let cjk = 0;
+  let words = 0;
+  let inWord = false;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    const isCjk =
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf);
+    if (isCjk) {
+      cjk++;
+      inWord = false;
+    } else if (/\w/.test(ch)) {
+      if (!inWord) words++;
+      inWord = true;
+    } else {
+      inWord = false;
+    }
+  }
+  return Math.round(cjk * 1.5 + words * 1.3);
+}
+
+function AIInputBar({
+  aiMode,
+  currentTab,
+  draft,
+  setDraft,
+  busy,
+  onSend,
+  scope,
+  wsName,
+  indexedCount,
+  configured,
+}: InputBarProps) {
+  const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
+  const useWsCtx = useSettings((s) => s.aiUseWorkspace);
+  const setAi = useSettings((s) => s.setAi);
+  const setToast = useUI((s) => s.setToast);
+  const model = useSettings((s) => s.aiModel);
+
+  // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab
+  const ctxChips = useMemo(() => {
+    const list: Array<{ id: string; label: string; pinned?: boolean }> = [];
+    if (useCurrentFile && currentTab) {
+      list.push({
+        id: currentTab.path,
+        label: currentTab.title.replace(/\.md$/i, ""),
+        pinned: true,
+      });
+    }
+    if (scope === "open") {
+      const allTabs = useTabs.getState().tabs;
+      for (const t of allTabs) {
+        if (t.path === currentTab?.path) continue;
+        list.push({ id: t.path, label: t.title.replace(/\.md$/i, "") });
+      }
+    }
+    return list;
+  }, [useCurrentFile, currentTab, scope]);
+
+  const tokens = useMemo(() => {
+    let total = estimateTokens(draft);
+    if (useCurrentFile && currentTab) {
+      total += estimateTokens(currentTab.content.slice(0, 6000));
+    }
+    if (scope === "open") {
+      for (const t of useTabs.getState().tabs) {
+        if (t.path === currentTab?.path) continue;
+        total += estimateTokens(t.content.slice(0, 4000));
+      }
+    }
+    return total;
+  }, [draft, useCurrentFile, currentTab, scope]);
+
+  const placeholder =
+    aiMode === "ask"
+      ? "问点什么，⌘↩ 发送，⇧↩ 换行…"
+      : `描述你想 "${MODES.find((m) => m.id === aiMode)?.label}" 的内容…`;
+
+  return (
+    <>
+      <div className="ai-input-wrap">
+        <div className="ai-input-shell">
+          <div className="ai-ctx-row">
+            <span className="ai-ctx-l">上下文</span>
+            {ctxChips.length === 0 ? (
+              <span style={{ fontSize: 11, color: "var(--text-4)" }}>
+                {useWsCtx ? "仓库 grep 检索 + 用户问题" : "仅用户问题"}
+              </span>
+            ) : (
+              ctxChips.map((c) => (
+                <span
+                  key={c.id}
+                  className={"ai-ctx-chip" + (c.pinned ? " pinned" : "")}
+                  title={c.id}
+                >
+                  <span className="ico">
+                    {c.pinned ? "📌" : "📄"}
+                  </span>
+                  <span className="lbl">{c.label}</span>
+                  {c.pinned && (
+                    <button
+                      type="button"
+                      className="x"
+                      title="不再把当前笔记当上下文"
+                      onClick={() => setAi({ aiUseCurrentFile: false })}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              ))
+            )}
+            <button
+              type="button"
+              className="ai-ctx-add"
+              title="切换 scope = 当前打开，把所有打开的 tab 当上下文"
+              onClick={() => {
+                if (scope !== "open") {
+                  useAISessions.getState().setScope("open");
+                  setToast({
+                    stage: "done",
+                    message: "已切到「当前打开的笔记」",
+                  });
+                  setTimeout(() => setToast(null), 1500);
+                } else {
+                  setAi({ aiUseWorkspace: !useWsCtx });
+                  setToast({
+                    stage: "done",
+                    message: useWsCtx
+                      ? "已关闭仓库检索"
+                      : "已开启仓库 grep 检索",
+                  });
+                  setTimeout(() => setToast(null), 1500);
+                }
+              }}
+            >
+              <span style={{ fontSize: 12 }}>＠</span>
+              <span>添加</span>
+            </button>
+            <span className="ai-ctx-meta">
+              {ctxChips.length} 篇 · 约 {tokens.toLocaleString()} tokens
+            </span>
+          </div>
+
+          <div className="ai-input-textarea-wrap">
+            <textarea
+              placeholder={placeholder}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                  // 单按 Enter 发送，Shift+Enter 换行（按设计稿）
+                  e.preventDefault();
+                  onSend(draft);
+                }
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  onSend(draft);
+                }
+              }}
+              rows={1}
+            />
+          </div>
+
+          <div className="ai-input-foot">
+            <div className="ai-input-tools">
+              <button
+                type="button"
+                className="ai-tool chip"
+                onClick={() => {
+                  setAi({ aiUseWorkspace: !useWsCtx });
+                }}
+                title={
+                  useWsCtx
+                    ? "已开启仓库 grep 检索，点击关闭"
+                    : "开启时把仓库 grep 命中片段一起发给 AI"
+                }
+              >
+                <Icon name="database" size={11} />
+                <span>
+                  {useWsCtx ? "仓库检索 ✓" : "仓库检索 ⨯"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="ai-tool chip"
+                title="当前模型，点 pill 切换"
+              >
+                <Icon name="sparkle" size={11} />
+                <span>{model || "未选模型"}</span>
+              </button>
+            </div>
+            <div className="ai-input-actions">
+              <span
+                className={
+                  "ai-char-count" + (draft.length > 4000 ? " over" : "")
+                }
+              >
+                {draft.length.toLocaleString()} / 4,000
+              </span>
+              <button
+                type="button"
+                className="ai-send"
+                onClick={() => onSend(draft)}
+                disabled={!draft.trim() || busy}
+                title="发送（⌘↩ 或 ↩）"
+              >
+                <span>↑</span>
+                <span>发送</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="ai-input-meta">
+          <span className="meta-chip">
+            <span
+              className="dot"
+              style={configured ? undefined : { background: "var(--text-4)", boxShadow: "none" }}
+            />
+            {configured ? `已连接 · ${wsName ?? "未选仓库"}` : "未配置 API"}
+          </span>
+          <span style={{ flex: 1 }} />
+          <span className="meta-chip">
+            索引模式 ·{" "}
+            {scope === "all"
+              ? "整个仓库"
+              : scope === "folder"
+              ? "当前文件夹"
+              : scope === "open"
+              ? "当前打开"
+              : scope === "tag"
+              ? "按标签"
+              : "手动选择"}{" "}
+            · {indexedCount} 篇
+          </span>
+          <span className="meta-chip" style={{ color: "var(--text-4)" }}>
+            ⌘↩ 发送 · ⇧↩ 换行
+          </span>
+        </div>
+      </div>
+    </>
+  );
 }

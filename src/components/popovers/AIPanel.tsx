@@ -4,13 +4,13 @@ import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
+import { useAISessions, type AIMsgRecord } from "@/stores/aiSessions";
 import { api } from "@/lib/api";
+import { AISidebar } from "./AISidebar";
 
-interface Msg {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  time: string;
+function nowTimeStr(ts: number) {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 type AIMode =
@@ -117,16 +117,28 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const temperature = useSettings((s) => s.aiTemperature);
   const maxTokens = useSettings((s) => s.aiMaxTokens);
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
-  const useWorkspace = useSettings((s) => s.aiUseWorkspace);
+  const useWorkspaceCtx = useSettings((s) => s.aiUseWorkspace);
   const tab = useTabs((s) => s.activeTab());
   const openSettings = useUI((s) => s.openSettings);
 
   const [aiMode, setAIMode] = useState<AIMode>("ask");
-  const [history, setHistory] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const ws = useWorkspace((s) => s.activeWorkspace());
+  const sessions = useAISessions((s) => s.sessions);
+  const activeSessionId = useAISessions((s) => s.activeId);
+  const createSession = useAISessions((s) => s.createSession);
+  const appendMessage = useAISessions((s) => s.appendMessage);
+  const scope = useAISessions((s) => s.scope);
+
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId),
+    [sessions, activeSessionId],
+  );
+  const history: AIMsgRecord[] = activeSession?.messages ?? [];
 
   const configured = provider === "ollama" || keyConfigured;
 
@@ -155,61 +167,76 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
-    const userMsg: Msg = {
-      id: String(Date.now()),
+
+    // 确保有活动 session（首次发送时建一个）
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      sessionId = createSession(ws?.id ?? null, aiMode);
+    }
+
+    const now = Date.now();
+    const userMsg: AIMsgRecord = {
+      id: `m${now}`,
       role: "user",
       text,
-      time: nowStr(),
+      time: now,
     };
-    const nextMsgs = [...history, userMsg];
-    setHistory(nextMsgs);
+    appendMessage(sessionId, userMsg);
     setDraft("");
     setBusy(true);
 
     if (!configured) {
-      setHistory((m) => [
-        ...m,
-        {
-          id: String(Date.now() + 1),
-          role: "assistant",
-          text: "请先到 设置 → AI 助手 填好 API Key 再试。",
-          time: nowStr(),
-        },
-      ]);
+      appendMessage(sessionId, {
+        id: `m${now + 1}`,
+        role: "assistant",
+        text: "请先到 设置 → AI 助手 填好 API Key 再试。",
+        time: Date.now(),
+      });
       setBusy(false);
       return;
     }
 
-    // 组装 system prompt
+    // 组装 system prompt（按 scope）
     const parts: string[] = [MODE_SYSTEM[aiMode]];
-    if (tab && useCurrentFile) {
+    // scope = open: 把所有打开的 tab 内容塞进去；当前 tab 提到最前
+    if (scope === "open") {
+      const allTabs = useTabs.getState().tabs;
+      for (const t of allTabs.slice(0, 5)) {
+        parts.push(
+          `--- ${t.title} ---\n${t.content.slice(0, 4000)}`,
+        );
+      }
+    } else if (tab && useCurrentFile) {
+      // 默认与 all / folder / tag / custom 模式：单文件上下文（短期实现）
       parts.push(
         `当前打开的笔记：${tab.title}\n路径：${tab.path}\n\n--- 内容（前 6000 字符）---\n${tab.content.slice(0, 6000)}`,
       );
     }
-    if (useWorkspace) {
+    if ((useWorkspaceCtx || scope !== "open") && ws) {
       try {
-        const { useWorkspace: wsStore } = await import("@/stores/workspace");
-        const ws = wsStore.getState().activeWorkspace();
-        if (ws) {
-          const hits = await api.aiRetrieve(ws.path, text, 5);
-          if (hits.length > 0) {
-            const ctx = hits
-              .map(
-                (h, i) =>
-                  `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
-              )
-              .join("\n\n---\n\n");
-            parts.push(
-              `仓库相关片段（关键词检索，可能并不精准）：\n\n${ctx}`,
-            );
-          }
+        const hits = await api.aiRetrieve(ws.path, text, 5);
+        if (hits.length > 0) {
+          const ctx = hits
+            .map(
+              (h, i) =>
+                `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
+            )
+            .join("\n\n---\n\n");
+          parts.push(
+            `仓库相关片段（关键词检索，可能并不精准）：\n\n${ctx}`,
+          );
         }
       } catch {
         /* ignore */
       }
     }
     const system = parts.join("\n\n");
+
+    // 拿历史给 API（注意：appendMessage 已写入 store，但 history ref 还没更新）
+    const updated = useAISessions
+      .getState()
+      .sessions.find((s) => s.id === sessionId);
+    const msgs = updated?.messages ?? [];
 
     try {
       const r = await api.aiChat({
@@ -219,27 +246,21 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         maxTokens,
         temperature,
         system,
-        messages: nextMsgs.map((m) => ({ role: m.role, content: m.text })),
+        messages: msgs.map((m) => ({ role: m.role, content: m.text })),
       });
-      setHistory((m) => [
-        ...m,
-        {
-          id: String(Date.now() + 2),
-          role: "assistant",
-          text: r.text || "（空响应）",
-          time: nowStr(),
-        },
-      ]);
+      appendMessage(sessionId, {
+        id: `m${Date.now()}`,
+        role: "assistant",
+        text: r.text || "（空响应）",
+        time: Date.now(),
+      });
     } catch (e) {
-      setHistory((m) => [
-        ...m,
-        {
-          id: String(Date.now() + 3),
-          role: "assistant",
-          text: `请求失败：${(e as Error).message}`,
-          time: nowStr(),
-        },
-      ]);
+      appendMessage(sessionId, {
+        id: `m${Date.now()}`,
+        role: "assistant",
+        text: `请求失败：${(e as Error).message}`,
+        time: Date.now(),
+      });
     } finally {
       setBusy(false);
     }
@@ -340,7 +361,8 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <div className="ai-workspace-body no-sidebar">
+      <div className="ai-workspace-body">
+        <AISidebar aiMode={aiMode} />
         <div className="ai-main">
           <div className="ai-body scroll" ref={scrollRef}>
             <div className="ai-stream">
@@ -380,7 +402,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="ai-msg-body">
                       <div className="ai-msg-text">{m.text}</div>
-                      <div className="ai-msg-time">{m.time}</div>
+                      <div className="ai-msg-time">{nowTimeStr(m.time)}</div>
                     </div>
                   </div>
                 ))

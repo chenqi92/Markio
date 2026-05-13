@@ -1,6 +1,7 @@
 mod ai;
 mod fs_ops;
 mod markdown;
+mod rag;
 mod secrets;
 mod state;
 
@@ -599,6 +600,232 @@ async fn ai_chat(req: ChatRequest) -> Result<ChatResponse, String> {
     ai::chat(req).await
 }
 
+// ─── RAG 向量索引 / 混合检索 ────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagEmbedConfigDto {
+    pub provider: String,
+    pub model: String,
+    pub dim: u32,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagReindexRequest {
+    pub workspace: String,
+    pub config: RagEmbedConfigDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagReindexFileRequest {
+    pub workspace: String,
+    pub path: String,
+    pub config: RagEmbedConfigDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagSearchRequest {
+    pub workspace: String,
+    pub query: String,
+    pub limit: Option<usize>,
+    pub expand_links: Option<bool>,
+    pub config: RagEmbedConfigDto,
+}
+
+fn build_embed_config(
+    dto: RagEmbedConfigDto,
+) -> Result<(rag::embed::EmbedConfig, usize), String> {
+    let dim = dto.dim.max(1) as usize;
+    let provider = rag::embed::Provider::parse(&dto.provider)
+        .ok_or_else(|| format!("未知 embedding provider：{}", dto.provider))?;
+    let mut api_key = dto.api_key;
+    if api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
+        // 先看 embed:<provider>，再回落 ai:<provider>
+        if let Ok(Some(v)) = secrets::get(&format!("embed:{}", dto.provider)) {
+            api_key = Some(v);
+        } else if let Ok(Some(v)) = secrets::get(&format!("ai:{}", dto.provider)) {
+            api_key = Some(v);
+        }
+    }
+    Ok((
+        rag::embed::EmbedConfig {
+            provider,
+            model: dto.model,
+            base_url: dto.base_url,
+            api_key,
+        },
+        dim,
+    ))
+}
+
+#[tauri::command]
+async fn rag_status(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<rag::IndexStatus, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    let result = tokio::task::spawn_blocking(move || -> Result<rag::IndexStatus, String> {
+        let stored_dim = peek_embed_dim(Path::new(&ws_str)).unwrap_or(768);
+        let handle = rag::rag_handle(&ws_str, stored_dim)?;
+        let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
+        let total_docs = db.doc_count();
+        let total_chunks = db.chunk_count();
+        let indexed_at = db.last_indexed_at();
+        let model = db.get_meta("embedding_model");
+        let provider = db.get_meta("embedding_provider");
+        let dim = db.get_meta("embedding_dim").and_then(|v| v.parse().ok());
+        let progress = db.progress.clone();
+        Ok(rag::IndexStatus {
+            workspace: ws_str.clone(),
+            total_docs,
+            total_chunks,
+            indexed_at,
+            embedding_model: model,
+            embedding_provider: provider,
+            embedding_dim: dim,
+            db_size: rag::db::db_size(Path::new(&ws_str)),
+            progress,
+        })
+    })
+    .await
+    .map_err(|e| format!("rag_status join 失败：{e}"))?;
+    result
+}
+
+fn peek_embed_dim(workspace: &Path) -> Option<usize> {
+    let path = rag::db::db_path(workspace);
+    if !path.exists() {
+        return None;
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    conn.query_row(
+        "SELECT v FROM schema_meta WHERE k='embedding_dim'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()?
+    .parse()
+    .ok()
+}
+
+#[tauri::command]
+async fn rag_reindex(
+    state: tauri::State<'_, AppState>,
+    req: RagReindexRequest,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &req.workspace)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    let (cfg, dim) = build_embed_config(req.config)?;
+    // 异步触发，不阻塞 IPC 调用方；前端再 poll rag_status
+    std::thread::spawn(move || {
+        let handle = match rag::rag_handle(&ws_str, dim) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("[rag.reindex] handle 打开失败：{e}");
+                return;
+            }
+        };
+        if let Err(e) = rag::index::reindex_workspace(handle, cfg) {
+            eprintln!("[rag.reindex] {e}");
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn rag_reindex_file(
+    state: tauri::State<'_, AppState>,
+    req: RagReindexFileRequest,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &req.workspace)?;
+    let path = validate_path(&state, &req.path)?;
+    if !path.starts_with(&ws) {
+        return Err("文件不在所选仓库中".to_string());
+    }
+    let ws_str = ws.to_string_lossy().to_string();
+    let (cfg, dim) = build_embed_config(req.config)?;
+    tokio::task::spawn_blocking(move || {
+        let handle = rag::rag_handle(&ws_str, dim)?;
+        rag::index::reindex_file(handle, cfg, &path)?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("join 失败：{e}"))??;
+    Ok(())
+}
+
+#[tauri::command]
+async fn rag_remove_file(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    path: String,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &workspace)?;
+    let p = validate_path(&state, &path)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    let dim = peek_embed_dim(&ws).unwrap_or(768);
+    tokio::task::spawn_blocking(move || {
+        let handle = rag::rag_handle(&ws_str, dim)?;
+        rag::index::remove_file(handle, &p)?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("join 失败：{e}"))??;
+    Ok(())
+}
+
+#[tauri::command]
+async fn rag_search(
+    state: tauri::State<'_, AppState>,
+    req: RagSearchRequest,
+) -> Result<Vec<rag::SearchHit>, String> {
+    let ws = validate_path(&state, &req.workspace)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    let (cfg, dim) = build_embed_config(req.config)?;
+    let query = req.query;
+    let limit = req.limit.unwrap_or(8);
+    let expand_links = req.expand_links.unwrap_or(true);
+    let hits = tokio::task::spawn_blocking(move || -> Result<Vec<rag::SearchHit>, String> {
+        let handle = rag::rag_handle(&ws_str, dim)?;
+        rag::search::search(handle, cfg, &query, limit, expand_links)
+    })
+    .await
+    .map_err(|e| format!("join 失败：{e}"))??;
+    Ok(hits)
+}
+
+#[tauri::command]
+async fn rag_clear(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        rag::drop_handle(&ws_str);
+        let path = rag::db::db_path(Path::new(&ws_str));
+        // 包括 WAL/-shm 一并清掉
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("join 失败：{e}"))??;
+    Ok(())
+}
+
+
 // ─── 入口 ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -639,6 +866,12 @@ pub fn run() {
             secret_delete,
             ai_chat,
             ai_retrieve,
+            rag_status,
+            rag_reindex,
+            rag_reindex_file,
+            rag_remove_file,
+            rag_search,
+            rag_clear,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

@@ -67,6 +67,45 @@ export interface PasteImageResult {
   warning?: string | null;
 }
 
+export type RagProvider = "ollama" | "openai";
+export interface RagEmbedConfig {
+  provider: RagProvider;
+  model: string;
+  dim: number;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+export interface RagIndexProgress {
+  running: boolean;
+  processed: number;
+  total: number;
+  currentFile?: string | null;
+  lastError?: string | null;
+}
+
+export interface RagStatus {
+  workspace: string;
+  totalDocs: number;
+  totalChunks: number;
+  indexedAt?: number | null;
+  embeddingModel?: string | null;
+  embeddingProvider?: string | null;
+  embeddingDim?: number | null;
+  dbSize: number;
+  progress?: RagIndexProgress | null;
+}
+
+export interface RagHit {
+  path: string;
+  heading: string;
+  body: string;
+  score: number;
+  source: string;
+  charStart: number;
+  charEnd: number;
+}
+
 /** 把 Rust 返回的错误 string 拆开 */
 export function parseError(e: unknown): {
   code: "CONFLICT" | "ALREADY_EXISTS" | "DENIED" | "OTHER";
@@ -190,6 +229,25 @@ export const api = {
     invoke<
       Array<{ path: string; name: string; line: number; snippet: string }>
     >("ai_retrieve", { workspace, query, k }),
+
+  // RAG 向量索引 / 混合检索
+  ragStatus: (workspace: string) =>
+    invoke<RagStatus>("rag_status", { workspace }),
+  ragReindex: (workspace: string, config: RagEmbedConfig) =>
+    invoke<void>("rag_reindex", { req: { workspace, config } }),
+  ragReindexFile: (workspace: string, path: string, config: RagEmbedConfig) =>
+    invoke<void>("rag_reindex_file", { req: { workspace, path, config } }),
+  ragRemoveFile: (workspace: string, path: string) =>
+    invoke<void>("rag_remove_file", { workspace, path }),
+  ragSearch: (req: {
+    workspace: string;
+    query: string;
+    limit?: number;
+    expandLinks?: boolean;
+    config: RagEmbedConfig;
+  }) => invoke<RagHit[]>("rag_search", { req }),
+  ragClear: (workspace: string) =>
+    invoke<void>("rag_clear", { workspace }),
 
   // 兼容别名：旧代码里直接 readText/writeText 的地方挂上来
   readText: (path: string) =>

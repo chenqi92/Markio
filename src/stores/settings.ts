@@ -20,7 +20,18 @@ type PreferenceKey =
   | "lobsterModelSource"
   | "lobsterDailyLimit"
   | "exportPdfTheme"
-  | "exportPdfMargin";
+  | "exportPdfMargin"
+  | "ragEnabled"
+  | "ragAutoReindexOnSave"
+  | "ragProvider"
+  | "ragOllamaBaseUrl"
+  | "ragOllamaModel"
+  | "ragOllamaDim"
+  | "ragOpenaiBaseUrl"
+  | "ragOpenaiModel"
+  | "ragOpenaiDim"
+  | "ragTopK"
+  | "ragExpandLinks";
 
 interface SettingsState {
   theme: string;
@@ -60,6 +71,22 @@ interface SettingsState {
   aiUseCurrentFile: boolean;
   /** AI 回答时是否在仓库做关键词检索并把片段塞进 system prompt */
   aiUseWorkspace: boolean;
+  /** 知识库（RAG）总开关 */
+  ragEnabled: boolean;
+  /** 保存后是否自动增量更新当前文件的索引 */
+  ragAutoReindexOnSave: boolean;
+  /** embedding 提供方 */
+  ragProvider: "ollama" | "openai";
+  ragOllamaBaseUrl: string;
+  ragOllamaModel: string;
+  ragOllamaDim: number;
+  ragOpenaiBaseUrl: string;
+  ragOpenaiModel: string;
+  ragOpenaiDim: number;
+  /** 检索时返回 top-K 条 chunk */
+  ragTopK: number;
+  /** 是否启用引用图谱扩展（命中文档的 forward link 也带回） */
+  ragExpandLinks: boolean;
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
@@ -120,6 +147,17 @@ export const useSettings = create<SettingsState>()(
       aiMaxTokens: 4096,
       aiUseCurrentFile: true,
       aiUseWorkspace: false,
+      ragEnabled: true,
+      ragAutoReindexOnSave: true,
+      ragProvider: "ollama",
+      ragOllamaBaseUrl: "http://127.0.0.1:11434",
+      ragOllamaModel: "nomic-embed-text",
+      ragOllamaDim: 768,
+      ragOpenaiBaseUrl: "https://api.openai.com",
+      ragOpenaiModel: "text-embedding-3-small",
+      ragOpenaiDim: 1536,
+      ragTopK: 6,
+      ragExpandLinks: true,
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });

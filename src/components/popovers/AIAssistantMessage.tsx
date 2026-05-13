@@ -15,6 +15,8 @@ interface Props {
   /** 用户上一次的提问，用于"重生成" */
   prevUserText?: string;
   onRegenerate?: (text: string) => void;
+  /** 点击 [[wiki]] 时回调，由 AIPanel 在右侧打开 AIPreview */
+  onWikiClick?: (name: string) => void;
 }
 
 function fmtTime(ts: number) {
@@ -33,6 +35,7 @@ export function AIAssistantMessage({
   busy,
   prevUserText,
   onRegenerate,
+  onWikiClick,
 }: Props) {
   const [html, setHtml] = useState<string>("");
   const ref = useRef<HTMLDivElement>(null);
@@ -46,7 +49,19 @@ export function AIAssistantMessage({
       .renderMarkdown(text)
       .then((r) => {
         if (cancelled) return;
-        setHtml(r.html);
+        // 把回复里的 [[xxx]] 文本替换为可点击的 wikilink
+        const enhanced = r.html.replace(
+          /\[\[([^\]]+?)\]\]/g,
+          (_m, name: string) => {
+            const safe = name
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;");
+            return `<a class="wikilink" href="#" data-wiki="${safe}">${safe}</a>`;
+          },
+        );
+        setHtml(enhanced);
       })
       .catch(() => {
         if (cancelled) return;
@@ -68,6 +83,21 @@ export function AIAssistantMessage({
       });
     renderMermaidIn(ref.current).catch(() => undefined);
   }, [html, theme]);
+
+  // 拦截 wikilink 点击
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !onWikiClick) return;
+    const handler = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest("a.wikilink");
+      if (!a) return;
+      e.preventDefault();
+      const name = a.getAttribute("data-wiki");
+      if (name) onWikiClick(name);
+    };
+    el.addEventListener("click", handler);
+    return () => el.removeEventListener("click", handler);
+  }, [html, onWikiClick]);
 
   const copy = async () => {
     try {

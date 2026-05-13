@@ -8,6 +8,7 @@ import { useAISessions, type AIMsgRecord } from "@/stores/aiSessions";
 import { api } from "@/lib/api";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
+import { AIPreview } from "./AIPreview";
 
 function nowTimeStr(ts: number) {
   const d = new Date(ts);
@@ -126,6 +127,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [previewName, setPreviewName] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const ws = useWorkspace((s) => s.activeWorkspace());
@@ -365,7 +367,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       <div className="ai-workspace-body">
         <AISidebar aiMode={aiMode} />
         <div className="ai-main">
-          <div className="ai-body scroll" ref={scrollRef}>
+          <div
+            className={"ai-body scroll" + (previewName ? " with-preview" : "")}
+            ref={scrollRef}
+          >
             <div className="ai-stream">
               {history.length === 0 ? (
                 <div className="ai-welcome">
@@ -423,6 +428,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                       time={m.time}
                       prevUserText={prevUser}
                       onRegenerate={(t) => send(t)}
+                      onWikiClick={(n) => setPreviewName(n)}
                     />
                   );
                 })
@@ -438,6 +444,12 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
+            {previewName && (
+              <AIPreview
+                name={previewName}
+                onClose={() => setPreviewName(null)}
+              />
+            )}
           </div>
 
           <AIInputBar

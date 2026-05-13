@@ -6,5 +6,6 @@
 @import "./styles/main.css";
 @import "./styles/markdown.css";
 @import "./styles/wysiwyg.css";
+@import "./styles/ai.css";
 @import "./styles/popovers.css";
 @import "./styles/settings.css";

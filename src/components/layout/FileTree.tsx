@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { Icon, isIconName } from "../ui/Icon";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { IconPicker } from "../popovers/IconPicker";
+import { RecentSection } from "./RecentSection";
 import { TrashSection } from "./TrashSection";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
@@ -77,6 +78,7 @@ export function FileTree() {
   return (
     <>
       <div className="tree scroll">
+        <RecentSection />
         <div className="tree-section">
           <span style={{ flex: 1 }}>文件</span>
           <span className="count">{countMd(tree)}</span>

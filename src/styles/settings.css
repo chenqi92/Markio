@@ -1,0 +1,231 @@
+/* settings window */
+.settings-window {
+  width: 880px; max-width: 92vw;
+  height: 620px; max-height: 86vh;
+  background: var(--bg-window);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-deep);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.settings-titlebar {
+  display: flex; align-items: center;
+  padding: 0 14px;
+  height: 44px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-title {
+  flex: 1; text-align: center;
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.settings-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  overflow: hidden;
+}
+.settings-nav {
+  padding: 14px 0;
+  background: var(--bg-pane-2);
+  border-right: 0.5px solid var(--border);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 12px;
+  margin: 1px 8px;
+  font-size: 12.5px; color: var(--text-2);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all var(--tr);
+  width: calc(100% - 16px);
+  text-align: left;
+}
+.settings-nav-item .ico {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.settings-nav-item.active { background: var(--accent); color: white; }
+
+.settings-main {
+  padding: 28px 36px 48px;
+  overflow-y: auto;
+}
+.settings-h {
+  font-size: 22px; font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.settings-sub {
+  font-size: 12.5px; color: var(--text-3);
+  margin: 0 0 18px;
+}
+.settings-card {
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.settings-card-h {
+  padding: 9px 16px;
+  font-size: 10.5px; font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  background: var(--bg-pane-2);
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-row {
+  display: flex; align-items: center;
+  padding: 10px 16px;
+  gap: 14px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-row:last-child { border-bottom: 0; }
+.settings-row-l { flex: 1; min-width: 0; }
+.settings-label { font-size: 13px; color: var(--text); font-weight: 500; }
+.settings-help { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.brand-mark {
+  border-radius: 6px;
+  background: #fff;
+  color: var(--brand-color);
+  border: 0.5px solid rgba(0,0,0,0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.brand-mark img {
+  width: 68%;
+  height: 68%;
+  object-fit: contain;
+  display: block;
+}
+.brand-mark svg { color: currentColor; }
+
+/* theme swatches */
+.theme-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  padding: 16px;
+}
+.theme-tile {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid transparent;
+  transition: all var(--tr);
+  text-align: center;
+}
+.theme-tile:hover { background: var(--bg-hover); }
+.theme-tile.active { border-color: var(--accent); background: var(--bg-hover); }
+.theme-preview {
+  aspect-ratio: 4/3;
+  border-radius: 7px;
+  border: 0.5px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.theme-preview .tp-text {
+  position: absolute; bottom: 14px; left: 10px; font-size: 18px; font-weight: 700;
+  font-family: var(--font-serif);
+}
+.theme-preview .tp-dot {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+}
+.theme-preview .tp-dot:nth-of-type(1) { right: 10px; top: 12px; }
+.theme-preview .tp-dot:nth-of-type(2) { right: 28px; top: 6px; }
+.theme-name {
+  margin-top: 6px;
+  font-size: 11.5px; color: var(--text); font-weight: 500;
+}
+.theme-check {
+  position: absolute; top: 2px; right: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: white;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  border: 2px solid var(--bg-pane);
+}
+
+/* form controls */
+.sw {
+  width: 36px; height: 22px; border-radius: 999px;
+  background: var(--border-strong);
+  padding: 2px;
+  display: inline-flex; align-items: center;
+  transition: background var(--tr);
+  flex-shrink: 0;
+}
+.sw > span {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  transition: transform var(--tr);
+}
+.sw.on { background: var(--accent); }
+.sw.on > span { transform: translateX(14px); }
+
+.select-btn {
+  font-size: 12px; color: var(--text);
+  padding: 5px 10px;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  min-width: 120px;
+  text-align: left;
+  cursor: pointer;
+}
+.select-btn:hover { background: var(--bg-elev); }
+
+.slider-wrap { width: 140px; }
+.slider {
+  position: relative;
+  height: 4px;
+  background: var(--border);
+  border-radius: 999px;
+}
+.slider > div { height: 100%; background: var(--accent); border-radius: 999px; }
+.slider .thumb {
+  position: absolute; top: 50%; width: 16px; height: 16px;
+  border-radius: 50%; background: white;
+  border: 0.5px solid var(--border-strong);
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  transform: translate(-50%, -50%);
+}
+
+.kbd-group { display: inline-flex; gap: 4px; }
+.kbd-group .kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 7px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-2);
+  min-width: 20px; text-align: center;
+}
+
+.settings-btn {
+  font-size: 12px; color: var(--text);
+  padding: 6px 12px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.settings-btn:hover { background: var(--bg-elev); }
+.settings-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.settings-btn.primary:hover { filter: brightness(1.05); }

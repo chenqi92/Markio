@@ -1,0 +1,193 @@
+import { api } from "./api";
+import { useSettings } from "@/stores/settings";
+
+/** 拼一个独立 HTML 字符串：标题 + 主题 token + 渲染后的 markdown */
+async function buildStandaloneHtml(title: string, source: string): Promise<string> {
+  const r = await api.renderMarkdown(source);
+  const theme = useSettings.getState().theme;
+  // 用渲染主题对应的关键 token 内联到导出文件里，保证打开后样式自洽
+  const tokens = readThemeTokens();
+  const css = `
+:root { color-scheme: light dark; }
+${Object.entries(tokens)
+  .map(([k, v]) => `  ${k}: ${v};`)
+  .join("\n")}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  background: var(--bg-deep, #fff);
+  color: var(--text, #1d1d1f);
+  font-family: var(--font-serif, "New York", "Iowan Old Style", Georgia, "Songti SC", serif);
+  font-size: 16px; line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 820px; margin: 0 auto; padding: 60px 32px 80px; }
+h1, h2, h3, h4 {
+  font-family: var(--font-sans, -apple-system, "PingFang SC", sans-serif);
+  letter-spacing: -0.01em;
+}
+h1 { font-size: 32px; margin: 0 0 8px; }
+h2 { font-size: 22px; margin: 32px 0 10px; position: relative; }
+h2::before {
+  content: ""; position: absolute; left: -14px; top: 6px; width: 4px; height: 18px;
+  background: var(--accent, #0a84ff); border-radius: 2px;
+}
+h3 { font-size: 17px; margin: 24px 0 8px; color: var(--text-2, #444); }
+p { margin: 0 0 14px; }
+a { color: var(--accent, #0a84ff); }
+strong { font-weight: 700; }
+em { font-style: italic; }
+mark { background: var(--hl-mark, rgba(255,224,102,0.55)); padding: 0 3px; border-radius: 2px; }
+code:not(pre code) {
+  font-family: var(--font-mono, "SF Mono", Menlo, monospace);
+  font-size: 0.86em; padding: 2px 6px;
+  background: var(--code-bg, rgba(0,0,0,0.04));
+  border: 0.5px solid var(--border, rgba(0,0,0,0.1));
+  border-radius: 5px;
+  color: var(--syntax-k, #aa0d91);
+}
+pre {
+  background: var(--code-bg, rgba(0,0,0,0.04));
+  border: 0.5px solid var(--border, rgba(0,0,0,0.1));
+  border-radius: 12px;
+  padding: 14px 18px;
+  overflow-x: auto;
+  margin: 18px 0;
+  font-family: var(--font-mono, "SF Mono", Menlo, monospace);
+  font-size: 13px; line-height: 1.55;
+}
+blockquote {
+  margin: 16px 0; padding: 10px 16px;
+  border-left: 3px solid var(--accent, #0a84ff);
+  background: var(--bg-pane-2, rgba(0,0,0,0.03));
+  border-radius: 0 8px 8px 0;
+  font-style: italic; color: var(--text-2, #444);
+}
+table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px;
+  font-family: var(--font-sans, sans-serif); }
+th, td { padding: 8px 12px; border-bottom: 0.5px solid var(--border, rgba(0,0,0,0.1)); text-align: left; }
+th { font-weight: 600; background: var(--bg-pane-2, rgba(0,0,0,0.03)); }
+hr { border: 0; height: 1px; background: var(--border, rgba(0,0,0,0.1)); margin: 28px 0; }
+ul, ol { padding-left: 22px; margin: 0 0 14px; }
+li { margin: 4px 0; }
+img { max-width: 100%; }
+
+@media print {
+  body { background: white; color: #111; }
+  .wrap { max-width: 100%; padding: 0; }
+  pre { page-break-inside: avoid; }
+}
+`;
+  const escapedTitle = title
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>${escapedTitle}</title>
+<meta name="generator" content="markio" />
+<style>${css}</style>
+</head>
+<body>
+<main class="wrap">
+${r.html}
+</main>
+</body>
+</html>`;
+}
+
+/** 把项目里 themes.css 当前激活主题的 token 抽出来。 */
+function readThemeTokens(): Record<string, string> {
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const keys = [
+    "--bg-deep",
+    "--bg-window",
+    "--bg-pane",
+    "--bg-pane-2",
+    "--bg-elev",
+    "--bg-input",
+    "--bg-hover",
+    "--border",
+    "--border-strong",
+    "--text",
+    "--text-2",
+    "--text-3",
+    "--text-4",
+    "--accent",
+    "--accent-2",
+    "--accent-glow",
+    "--syntax-k",
+    "--syntax-s",
+    "--syntax-c",
+    "--syntax-h",
+    "--syntax-n",
+    "--code-bg",
+    "--hl-mark",
+    "--font-sans",
+    "--font-serif",
+    "--font-mono",
+  ];
+  const out: Record<string, string> = {};
+  for (const k of keys) {
+    const v = style.getPropertyValue(k).trim();
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
+export async function exportHtml(title: string, source: string): Promise<void> {
+  const html = await buildStandaloneHtml(title, source);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  triggerDownload(blob, sanitizeFileName(title) + ".html");
+}
+
+export async function exportPdf(title: string, source: string): Promise<void> {
+  const html = await buildStandaloneHtml(title, source);
+  // 用新窗口走原生 print → 用户在打印对话框里选"保存为 PDF"。
+  // 这样既不引入额外依赖，又能完全沿用上面那套样式。
+  const win = window.open("", "_blank", "noopener,noreferrer,width=920,height=900");
+  if (!win) throw new Error("无法打开打印窗口（可能被浏览器拦截）");
+  win.document.write(html);
+  win.document.close();
+  // 等渲染稳定后唤起 print
+  setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      /* ignore */
+    }
+  }, 300);
+}
+
+export async function copyMarkdown(source: string): Promise<void> {
+  await navigator.clipboard.writeText(source);
+}
+
+export async function copyHtml(title: string, source: string): Promise<void> {
+  const html = await buildStandaloneHtml(title, source);
+  await navigator.clipboard.writeText(html);
+}
+
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/\.md$/i, "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .trim() || "untitled";
+}
+
+function triggerDownload(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 500);
+}

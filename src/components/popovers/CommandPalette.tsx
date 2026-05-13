@@ -1,0 +1,295 @@
+import { useEffect, useMemo, useState } from "react";
+import { Icon, type IconName } from "../ui/Icon";
+import { useUI } from "@/stores/ui";
+import { useTabs } from "@/stores/tabs";
+import { useWorkspace } from "@/stores/workspace";
+import { useSettings } from "@/stores/settings";
+import { useRecents } from "@/stores/recents";
+import { pickDirectory } from "@/lib/api";
+import type { FileEntry, ViewMode } from "@/types";
+import { THEMES } from "@/themes";
+
+interface Cmd {
+  id: string;
+  group: string;
+  l1: string;
+  l2: string;
+  kbd?: string[];
+  ico: IconName;
+  run: () => void;
+}
+
+/** 在已扫好的文件树里做客户端过滤，避免每次输入触发一次 Rust grep。 */
+function findFiles(tree: FileEntry | undefined, q: string, limit: number): FileEntry[] {
+  if (!tree || !q) return [];
+  const needle = q.toLowerCase();
+  const out: FileEntry[] = [];
+  const visit = (node: FileEntry) => {
+    if (out.length >= limit) return;
+    if (!node.isDir && node.name.toLowerCase().includes(needle)) {
+      out.push(node);
+    }
+    if (node.children) {
+      for (const c of node.children) {
+        if (out.length >= limit) return;
+        visit(c);
+      }
+    }
+  };
+  visit(tree);
+  return out;
+}
+
+export function CommandPalette({ onClose }: { onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const ws = useWorkspace((s) => s.activeWorkspace());
+  const tree = useWorkspace((s) => s.activeTree());
+  const recents = useRecents((s) => s.items);
+  const setMode = useUI((s) => s.setMode);
+  const toggleFocus = useUI((s) => s.toggleFocus);
+  const openSettings = useUI((s) => s.openSettings);
+  const openFind = useUI((s) => s.openFind);
+  const setTheme = useSettings((s) => s.setTheme);
+  const addWorkspace = useWorkspace((s) => s.addWorkspace);
+  const openFile = useTabs((s) => s.openFile);
+  const saveActive = useTabs((s) => s.saveActive);
+
+  const baseCommands: Cmd[] = useMemo(
+    () => [
+      {
+        id: "view-source",
+        group: "视图",
+        l1: "切换到源码模式",
+        l2: "纯 markdown 源码",
+        kbd: ["⌘", "1"],
+        ico: "code",
+        run: () => setMode("source" as ViewMode),
+      },
+      {
+        id: "view-split",
+        group: "视图",
+        l1: "切换到分屏模式",
+        l2: "左源码 · 右预览",
+        kbd: ["⌘", "2"],
+        ico: "split",
+        run: () => setMode("split" as ViewMode),
+      },
+      {
+        id: "view-wysiwyg",
+        group: "视图",
+        l1: "切换到所见即所得",
+        l2: "行内渲染（暂以预览替代）",
+        kbd: ["⌘", "3"],
+        ico: "sparkle",
+        run: () => setMode("wysiwyg" as ViewMode),
+      },
+      {
+        id: "view-preview",
+        group: "视图",
+        l1: "切换到阅读模式",
+        l2: "只读阅读视图",
+        kbd: ["⌘", "4"],
+        ico: "book",
+        run: () => setMode("preview" as ViewMode),
+      },
+      {
+        id: "focus",
+        group: "视图",
+        l1: "切换专注模式",
+        l2: "隐藏工具栏与面包屑",
+        kbd: ["⌘", "."],
+        ico: "focus",
+        run: () => toggleFocus(),
+      },
+      {
+        id: "find",
+        group: "文档",
+        l1: "在当前文档中查找…",
+        l2: "高亮匹配项",
+        kbd: ["⌘", "F"],
+        ico: "search",
+        run: () => openFind(true),
+      },
+      {
+        id: "save",
+        group: "文档",
+        l1: "保存当前文档",
+        l2: "写入磁盘",
+        kbd: ["⌘", "S"],
+        ico: "save",
+        run: () => saveActive(),
+      },
+      {
+        id: "open-folder",
+        group: "仓库",
+        l1: "打开文件夹…",
+        l2: "选择一个目录作为新的仓库",
+        ico: "folder-open",
+        run: async () => {
+          const dir = await pickDirectory();
+          if (dir) await addWorkspace(dir);
+        },
+      },
+      {
+        id: "settings",
+        group: "应用",
+        l1: "打开设置",
+        l2: "主题、字号、快捷键…",
+        kbd: ["⌘", ","],
+        ico: "settings",
+        run: () => openSettings(true),
+      },
+      ...THEMES.map(
+        (t): Cmd => ({
+          id: `theme-${t.id}`,
+          group: "主题",
+          l1: `切换到 ${t.name}`,
+          l2: t.isDark ? "深色调色板" : "浅色调色板",
+          ico: "palette",
+          run: () => setTheme(t.id),
+        }),
+      ),
+    ],
+    [
+      setMode,
+      toggleFocus,
+      openFind,
+      saveActive,
+      addWorkspace,
+      openSettings,
+      setTheme,
+    ],
+  );
+
+  // 客户端文件名过滤 —— 不再触发 Rust grep，瞬时返回
+  const fileMatches = useMemo(() => {
+    if (q.length < 1) return [];
+    return findFiles(tree, q, 25);
+  }, [q, tree]);
+
+  const visible: Cmd[] = useMemo(() => {
+    const lower = q.toLowerCase();
+    const filtered = q
+      ? baseCommands.filter(
+          (c) =>
+            c.l1.toLowerCase().includes(lower) ||
+            c.l2.toLowerCase().includes(lower),
+        )
+      : baseCommands;
+    const fileCmds: Cmd[] = fileMatches.map((h) => ({
+      id: `file:${h.path}`,
+      group: "文件",
+      l1: h.name,
+      l2: h.path,
+      ico: "note",
+      run: () => {
+        if (ws) openFile(ws.id, h.path);
+      },
+    }));
+    if (q) return [...fileCmds, ...filtered];
+    // 无 query 时把最近打开排前
+    const recentCmds: Cmd[] = recents
+      .filter((r) => !ws || r.workspaceId === ws.id)
+      .slice(0, 8)
+      .map((r) => ({
+        id: `recent:${r.path}`,
+        group: "最近打开",
+        l1: r.name,
+        l2: r.path,
+        ico: "clock",
+        run: () => {
+          if (ws) openFile(ws.id, r.path);
+        },
+      }));
+    return [...recentCmds, ...filtered];
+  }, [q, baseCommands, fileMatches, recents, ws, openFile]);
+
+  useEffect(() => {
+    setSel(0);
+  }, [q]);
+
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSel((s) => Math.min(visible.length - 1, s + 1));
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSel((s) => Math.max(0, s - 1));
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        visible[sel]?.run();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [visible, sel, onClose]);
+
+  const grouped: Record<string, Cmd[]> = {};
+  visible.forEach((c) => {
+    (grouped[c.group] = grouped[c.group] || []).push(c);
+  });
+
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div className="cmdk" onClick={(e) => e.stopPropagation()}>
+        <div className="cmdk-search">
+          <Icon name="search" size={16} />
+          <input
+            autoFocus
+            placeholder="搜索命令、文件、主题…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <span className="esc">esc</span>
+        </div>
+        <div className="cmdk-body">
+          {visible.length === 0 ? (
+            <div className="cmdk-empty">没有匹配项</div>
+          ) : (
+            Object.entries(grouped).map(([g, items]) => (
+              <div key={g}>
+                <div className="cmdk-group-h">{g}</div>
+                {items.map((it) => {
+                  const idx = visible.indexOf(it);
+                  return (
+                    <button
+                      type="button"
+                      key={it.id}
+                      className={"cmdk-item" + (idx === sel ? " sel" : "")}
+                      onClick={() => {
+                        it.run();
+                        onClose();
+                      }}
+                      onMouseEnter={() => setSel(idx)}
+                    >
+                      <div className="ico">
+                        <Icon name={it.ico} size={14} />
+                      </div>
+                      <div className="lbl">
+                        <div className="l1">{it.l1}</div>
+                        <div className="l2">{it.l2}</div>
+                      </div>
+                      {it.kbd && (
+                        <div className="kbd">
+                          {it.kbd.map((k, i) => (
+                            <span key={i}>{k}</span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

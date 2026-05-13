@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "markio",
+  "version": "0.1.0",
+  "identifier": "com.welape.mdview",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "markio",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 920,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$HOME/**",
+          "$DOCUMENT/**",
+          "$DESKTOP/**",
+          "$DOWNLOAD/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "本地优先的 Markdown 阅读器",
+    "longDescription": "markio 是一款本地优先的 Markdown 阅读器，支持 8 套主题、源码/分屏/阅读三种视图、命令面板与全文搜索。",
+    "copyright": "© 2026 welape",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "entitlements/macos.entitlements",
+      "exceptionDomain": null,
+      "frameworks": [],
+      "providerShortName": null
+    },
+    "windows": {
+      "wix": {
+        "language": ["zh-CN", "en-US"]
+      }
+    }
+  }
+}

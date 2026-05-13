@@ -1,0 +1,322 @@
+use pulldown_cmark::{
+    CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+};
+use serde::Serialize;
+use std::sync::OnceLock;
+use syntect::html::{ClassStyle, ClassedHTMLGenerator};
+use syntect::parsing::SyntaxSet;
+use syntect::util::LinesWithEndings;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OutlineItem {
+    pub level: u8,
+    pub text: String,
+    pub anchor: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RenderResult {
+    pub html: String,
+    pub outline: Vec<OutlineItem>,
+    pub words: usize,
+    #[serde(rename = "readingMinutes")]
+    pub reading_minutes: u32,
+}
+
+fn syntax_set() -> &'static SyntaxSet {
+    static S: OnceLock<SyntaxSet> = OnceLock::new();
+    S.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last_dash = false;
+    for ch in s.chars() {
+        if ch.is_alphanumeric() {
+            for c in ch.to_lowercase() {
+                out.push(c);
+            }
+            last_dash = false;
+        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
+            if !last_dash && !out.is_empty() {
+                out.push('-');
+                last_dash = true;
+            }
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push_str("section");
+    }
+    out
+}
+
+fn escape_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+fn escape_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn highlight_code(code: &str, lang: &str) -> String {
+    let ss = syntax_set();
+    let syntax = if lang.is_empty() {
+        ss.find_syntax_plain_text()
+    } else {
+        ss.find_syntax_by_token(lang)
+            .or_else(|| ss.find_syntax_by_name(lang))
+            .unwrap_or_else(|| ss.find_syntax_plain_text())
+    };
+    let mut generator =
+        ClassedHTMLGenerator::new_with_class_style(syntax, ss, ClassStyle::Spaced);
+    for line in LinesWithEndings::from(code) {
+        let _ = generator.parse_html_for_line_which_includes_newline(line);
+    }
+    let html = generator.finalize();
+    format!(
+        "<pre class=\"hljs\" data-lang=\"{lang_attr}\"><code class=\"language-{lang_attr}\">{html}</code></pre>",
+        lang_attr = escape_attr(lang),
+        html = html
+    )
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+fn parser_options() -> Options {
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    opts.insert(Options::ENABLE_SMART_PUNCTUATION);
+    opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+    opts.insert(Options::ENABLE_MATH);
+    opts.insert(Options::ENABLE_GFM);
+    opts
+}
+
+fn level_u8(l: HeadingLevel) -> u8 {
+    match l {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+/// 主渲染入口：消费完整事件流，自定义代码块 / 标题输出
+pub fn render(source: &str) -> RenderResult {
+    let parser = Parser::new_ext(source, parser_options());
+    let mut html = String::new();
+    let mut outline: Vec<OutlineItem> = Vec::new();
+
+    let mut heading: Option<(u8, String)> = None; // (level, text-so-far)
+    let mut heading_events: Vec<Event> = Vec::new();
+
+    let mut code_buf = String::new();
+    let mut code_lang = String::new();
+    let mut in_code = false;
+    let mut id_counter: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+
+    // 一个临时收集器，遇到 heading 时改打到 heading_events，其它时候 flush 一段渲染
+    let mut buffer: Vec<Event> = Vec::with_capacity(16);
+
+    let flush = |buf: &mut Vec<Event>, html: &mut String| {
+        if buf.is_empty() {
+            return;
+        }
+        let mut piece = String::new();
+        pulldown_cmark::html::push_html(&mut piece, buf.drain(..));
+        html.push_str(&piece);
+    };
+
+    for ev in parser {
+        if let Some((_lvl, _)) = heading.as_mut() {
+            // 在 heading 内部
+            match &ev {
+                Event::End(TagEnd::Heading(level)) => {
+                    let (lvl, text) = heading.take().unwrap();
+                    let _ = level; // 用 lvl 而不是 level
+                    let _ = lvl;
+                    let mut anchor = slugify(&text);
+                    // 处理重名：append -2, -3 …
+                    let cnt = id_counter.entry(anchor.clone()).or_insert(0);
+                    if *cnt > 0 {
+                        anchor = format!("{}-{}", anchor, *cnt + 1);
+                    }
+                    *cnt += 1;
+                    let lvl_u8 = level_u8(*level);
+                    outline.push(OutlineItem {
+                        level: lvl_u8,
+                        text: text.clone(),
+                        anchor: anchor.clone(),
+                    });
+                    // 渲染 heading 内部内容（不含外层 hN）
+                    let mut inner = String::new();
+                    pulldown_cmark::html::push_html(&mut inner, heading_events.drain(..));
+                    // pulldown 的 push_html 不带 hN 包裹（因为我们没把 Start 放进去），所以手动包
+                    html.push_str(&format!(
+                        "<h{l} id=\"{a}\">{i}</h{l}>",
+                        l = lvl_u8,
+                        a = escape_attr(&anchor),
+                        i = inner
+                    ));
+                }
+                Event::Text(t) => {
+                    if let Some((_, s)) = heading.as_mut() {
+                        s.push_str(t);
+                    }
+                    heading_events.push(ev);
+                }
+                Event::Code(c) => {
+                    if let Some((_, s)) = heading.as_mut() {
+                        s.push_str(c);
+                    }
+                    heading_events.push(ev);
+                }
+                _ => heading_events.push(ev),
+            }
+            continue;
+        }
+        if in_code {
+            match &ev {
+                Event::Text(t) => code_buf.push_str(t),
+                Event::End(TagEnd::CodeBlock) => {
+                    in_code = false;
+                    let lang = code_lang.to_lowercase();
+                    if lang == "mermaid" {
+                        html.push_str(&format!(
+                            "<div class=\"mermaid-block\" data-mermaid=\"{}\">{}</div>",
+                            urlencode(&code_buf),
+                            escape_html(&code_buf)
+                        ));
+                    } else {
+                        html.push_str(&highlight_code(&code_buf, &lang));
+                    }
+                    code_buf.clear();
+                    code_lang.clear();
+                }
+                _ => {}
+            }
+            continue;
+        }
+        match &ev {
+            Event::Start(Tag::Heading { level, .. }) => {
+                flush(&mut buffer, &mut html);
+                heading = Some((level_u8(*level), String::new()));
+                heading_events.clear();
+            }
+            Event::Start(Tag::CodeBlock(kind)) => {
+                flush(&mut buffer, &mut html);
+                in_code = true;
+                code_buf.clear();
+                code_lang.clear();
+                if let CodeBlockKind::Fenced(info) = kind {
+                    code_lang =
+                        info.split_whitespace().next().unwrap_or("").to_string();
+                }
+            }
+            _ => buffer.push(ev),
+        }
+    }
+    flush(&mut buffer, &mut html);
+
+    let words = count_words(source);
+    let reading_minutes = ((words as f32 / 220.0).ceil() as u32).max(1);
+
+    RenderResult {
+        html,
+        outline,
+        words,
+        reading_minutes,
+    }
+}
+
+pub fn outline_only(source: &str) -> Vec<OutlineItem> {
+    let parser = Parser::new_ext(source, parser_options());
+    let mut out: Vec<OutlineItem> = Vec::new();
+    let mut cur: Option<HeadingLevel> = None;
+    let mut buf = String::new();
+    let mut id_counter: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    for ev in parser {
+        match ev {
+            Event::Start(Tag::Heading { level, .. }) => {
+                cur = Some(level);
+                buf.clear();
+            }
+            Event::Text(t) if cur.is_some() => buf.push_str(&t),
+            Event::Code(c) if cur.is_some() => buf.push_str(&c),
+            Event::End(TagEnd::Heading(level)) => {
+                let lvl = level_u8(level);
+                let mut anchor = slugify(&buf);
+                let cnt = id_counter.entry(anchor.clone()).or_insert(0);
+                if *cnt > 0 {
+                    anchor = format!("{}-{}", anchor, *cnt + 1);
+                }
+                *cnt += 1;
+                out.push(OutlineItem {
+                    level: lvl,
+                    text: buf.clone(),
+                    anchor,
+                });
+                cur = None;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn count_words(src: &str) -> usize {
+    let mut count = 0usize;
+    let mut last_alpha = false;
+    for ch in src.chars() {
+        let is_cjk = matches!(ch as u32,
+            0x4E00..=0x9FFF | 0x3400..=0x4DBF |
+            0x3040..=0x30FF | 0xAC00..=0xD7AF);
+        if is_cjk {
+            count += 1;
+            last_alpha = false;
+        } else if ch.is_alphanumeric() {
+            if !last_alpha {
+                count += 1;
+            }
+            last_alpha = true;
+        } else {
+            last_alpha = false;
+        }
+    }
+    count
+}

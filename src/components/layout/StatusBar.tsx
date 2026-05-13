@@ -1,0 +1,70 @@
+import { useSettings } from "@/stores/settings";
+import { useTabs } from "@/stores/tabs";
+import { useWorkspace } from "@/stores/workspace";
+import { formatBytes } from "@/lib/utils";
+
+export function StatusBar({
+  words,
+  readingMinutes,
+}: {
+  words?: number;
+  readingMinutes?: number;
+}) {
+  const tab = useTabs((s) => s.activeTab());
+  const ws = useWorkspace((s) => s.activeWorkspace());
+  const theme = useSettings((s) => s.theme);
+  const autosave = useSettings((s) => s.autosave);
+
+  const charCount = tab?.content.length ?? 0;
+  const lineCount = tab?.content.split("\n").length ?? 0;
+  const saveLabel = tab
+    ? tab.dirty
+      ? autosave
+        ? "正在保存…"
+        : "未保存"
+      : "已保存"
+    : null;
+  const saveColor = tab
+    ? tab.dirty
+      ? autosave
+        ? "#ff9500"
+        : "#ff453a"
+      : "var(--text-3)"
+    : "var(--text-3)";
+
+  return (
+    <div className="statusbar">
+      <span className="item">
+        <span className="pulse" />
+        <span>{ws ? ws.name : "未连接仓库"}</span>
+      </span>
+      {tab && (
+        <>
+          <span className="item" style={{ color: saveColor }}>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: saveColor,
+                display: "inline-block",
+              }}
+            />
+            {saveLabel}
+          </span>
+          <span className="item">{lineCount} 行 · {charCount} 字符</span>
+          <span className="item">{formatBytes(new TextEncoder().encode(tab.content).length)}</span>
+          {words !== undefined && (
+            <span className="item">{words} 字</span>
+          )}
+          {readingMinutes !== undefined && (
+            <span className="item">阅读约 {readingMinutes} 分钟</span>
+          )}
+        </>
+      )}
+      <span className="item right">UTF-8</span>
+      <span className="item">Markdown</span>
+      <span className="item">主题 · {theme}</span>
+    </div>
+  );
+}

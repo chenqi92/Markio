@@ -1,0 +1,355 @@
+/* App shell — adapted from the mdview design.
+ *
+ * 设计稿是个固定 1320×880 的 mockup；在真实窗口里我们让 .win 直接填满
+ * 视口，毛玻璃 / 圆角 / 阴影都保留，但不再做 scale-to-fit。
+ */
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg-deep);
+  background-image: var(--bg-image);
+  background-attachment: fixed;
+  overflow: hidden;
+  transition: background var(--tr), color var(--tr);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+input, textarea, select { font: inherit; color: inherit; }
+input:focus, textarea:focus, button:focus, select:focus { outline: none; }
+
+/* root + grain overlay */
+.markio-root {
+  position: relative;
+  width: 100vw; height: 100vh;
+  overflow: hidden;
+}
+
+/* 桌面 app 默认不可选 / 不可拖；阅读 + 编辑区单独打开 */
+.markio-root,
+.markio-root * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  cursor: default;
+}
+.markio-root img,
+.markio-root svg { -webkit-user-drag: none; }
+
+.markio-root .preview,
+.markio-root .preview *,
+.markio-root .cm-host,
+.markio-root .cm-host *,
+.markio-root input,
+.markio-root textarea,
+.markio-root .statusbar .item,
+.markio-root .crumb .seg.current,
+.markio-root .findbar input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.markio-root .preview,
+.markio-root .preview p,
+.markio-root .preview li,
+.markio-root .preview td,
+.markio-root .preview th,
+.markio-root .preview blockquote,
+.markio-root .preview code,
+.markio-root .preview pre,
+.markio-root .cm-host,
+.markio-root input,
+.markio-root textarea { cursor: text; }
+.markio-root .preview a { cursor: pointer; }
+.markio-root .preview img { cursor: zoom-in; }
+
+.markio-root a,
+.markio-root button,
+.markio-root [role="button"],
+.markio-root [role="tab"],
+.markio-root [role="treeitem"],
+.markio-root .tab,
+.markio-root .tree-row,
+.markio-root .icon-btn,
+.markio-root .tb-btn,
+.markio-root .tb-pill,
+.markio-root .cmdk-item,
+.markio-root .ctx-item,
+.markio-root .repo-card,
+.markio-root .repo-dropdown .item,
+.markio-root .settings-nav-item,
+.markio-root .theme-tile,
+.markio-root .outline-item,
+.markio-root .outline-tab,
+.markio-root .outline-close,
+.markio-root .settings-btn,
+.markio-root .sw,
+.markio-root .select-btn { cursor: pointer; }
+.markio-root::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .25 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+.win {
+  width: 100%; height: 100%;
+  background: var(--bg-window);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  display: grid;
+  grid-template-rows: 38px 1fr 26px;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+
+/* title bar — macOS overlay style puts traffic lights inside our 38px bar */
+.titlebar {
+  display: flex; align-items: center;
+  padding: 0 14px 0 84px; /* leave 84px on the left for native traffic lights on macOS */
+  border-bottom: 0.5px solid var(--border);
+  -webkit-app-region: drag;
+  app-region: drag;
+  gap: 12px;
+  min-width: 0;
+}
+.titlebar [data-no-drag],
+.titlebar button,
+.titlebar input,
+.titlebar textarea,
+.titlebar a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.titlebar.no-traffic { padding-left: 16px; }
+
+.title-brand {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 600; color: var(--text-2);
+  letter-spacing: -0.01em;
+}
+.title-brand img { width: 16px; height: 16px; }
+
+.title-center {
+  flex: 1; display: flex; justify-content: flex-start; align-items: center; gap: 10px;
+  font-size: 12.5px; font-weight: 600; color: var(--text-2);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+.title-center > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.title-meta {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; color: var(--text-3);
+  padding: 3px 9px;
+  background: var(--bg-pane);
+  border-radius: 999px;
+  border: 0.5px solid var(--border);
+  white-space: nowrap;
+}
+
+.title-actions { display: flex; gap: 4px; align-items: center; }
+.icon-btn {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  border-radius: 8px;
+  transition: background var(--tr), color var(--tr);
+  position: relative;
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+.icon-btn.active { background: var(--bg-active); color: var(--accent); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* tab strip */
+.tabstrip {
+  display: flex; align-items: flex-end;
+  padding: 0 10px;
+  gap: 2px;
+  border-bottom: 0.5px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.tabstrip::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px 7px 12px;
+  min-width: 140px; max-width: 220px;
+  height: 32px;
+  border-radius: 10px 10px 0 0;
+  font-size: 12px; color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--tr), color var(--tr);
+  user-select: none;
+}
+.tab .ico {
+  width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .8;
+  flex-shrink: 0;
+}
+.tab .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .dot-unsaved {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+  display: none;
+}
+.tab.unsaved .dot-unsaved { display: block; }
+.tab .close {
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3); opacity: 0;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.tab:hover .close { opacity: 1; }
+.tab .close:hover { background: var(--bg-active); color: var(--text); }
+.tab.active {
+  background: var(--bg-pane);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.tab.active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+.tab:not(.active):hover { background: var(--bg-hover); color: var(--text); }
+.tab.pinned { min-width: 32px; padding-left: 8px; padding-right: 8px; }
+.tab.pinned .lbl { max-width: 80px; }
+.tab.drag-over {
+  box-shadow: -3px 0 0 var(--accent);
+}
+
+.tabstrip .spacer { flex: 1; min-width: 8px; }
+.tab-newbtn {
+  width: 28px; height: 28px; align-self: center;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3);
+}
+.tab-newbtn:hover { background: var(--bg-hover); color: var(--text); }
+
+/* body grid: sidebar / resizer / main */
+.body {
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 244px) 0 1fr;
+  overflow: hidden;
+  min-height: 0;
+}
+.body.no-sidebar { grid-template-columns: 1fr; }
+
+/* status bar */
+.statusbar {
+  display: flex; align-items: center;
+  padding: 0 12px;
+  gap: 14px;
+  font-size: 11px; color: var(--text-3);
+  border-top: 0.5px solid var(--border);
+  background: var(--bg-pane-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.statusbar .item { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; }
+.statusbar .item.right { margin-left: auto; }
+.statusbar .pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #28c840;
+  box-shadow: 0 0 8px rgba(40, 200, 64, 0.6);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* scrollbar — 全局 overlay 风格，模拟 macOS 行为：默认透明，悬停才显形 */
+*, *::before, *::after {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+*::-webkit-scrollbar-track { background: transparent; border: 0; }
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 160ms;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-4);
+  background-clip: padding-box;
+}
+.scroll { overflow-y: auto; }
+
+/* welcome / no workspace */
+.welcome {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 40px;
+  gap: 20px;
+  color: var(--text-2);
+}
+.welcome .logo {
+  width: 96px; height: 96px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 24px;
+  box-shadow: 0 12px 36px var(--accent-glow);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: white; font-size: 46px; font-weight: 800;
+}
+.welcome h1 { font-size: 26px; font-weight: 700; margin: 0; color: var(--text); letter-spacing: -0.02em; }
+.welcome p { color: var(--text-3); margin: 0; max-width: 480px; font-size: 13.5px; line-height: 1.6; }
+.welcome .actions { display: flex; gap: 10px; }
+.welcome .btn-primary {
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+}
+.welcome .btn-primary:hover { filter: brightness(1.08); }
+.welcome .btn-secondary {
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: var(--bg-pane);
+  color: var(--text);
+  border: 0.5px solid var(--border-strong);
+  font-weight: 500;
+  font-size: 13px;
+}
+.welcome .btn-secondary:hover { background: var(--bg-elev); }

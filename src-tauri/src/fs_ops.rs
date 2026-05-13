@@ -280,9 +280,7 @@ pub fn write_text(path: &str, content: &str) -> Result<(), String> {
 /// 原子写：写到 .markio-tmp-<pid>-<ts> → fsync → rename
 pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     use std::io::Write;
-    let parent = path
-        .parent()
-        .ok_or_else(|| "路径没有父目录".to_string())?;
+    let parent = path.parent().ok_or_else(|| "路径没有父目录".to_string())?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let ts = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
     let pid = std::process::id();
@@ -306,9 +304,7 @@ pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
 /// 创建：若目标文件已存在直接返回 ALREADY_EXISTS:<path>，不覆盖
 pub fn create_new(path: &Path, content: &str) -> Result<(), String> {
     use std::io::Write;
-    let parent = path
-        .parent()
-        .ok_or_else(|| "路径没有父目录".to_string())?;
+    let parent = path.parent().ok_or_else(|| "路径没有父目录".to_string())?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let mut f = match fs::OpenOptions::new()
         .write(true)
@@ -386,9 +382,7 @@ fn prune_snapshots(dir: &Path, key: &str, max: usize) -> Result<(), String> {
             if !name.starts_with(&prefix) || !name.ends_with(".md") {
                 continue;
             }
-            let ts_str = name
-                .trim_start_matches(&prefix)
-                .trim_end_matches(".md");
+            let ts_str = name.trim_start_matches(&prefix).trim_end_matches(".md");
             if let Ok(ts) = ts_str.parse::<i64>() {
                 entries.push((ts, e.path()));
             }
@@ -501,7 +495,9 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
                         continue;
                     }
                 }
-                let Ok(content) = fs::read_to_string(&path) else { continue };
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
                 let lower = content.to_lowercase();
                 let key = format!("[[{}", needle);
                 if !lower.contains(&key) {
@@ -529,14 +525,7 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
         }
     }
 
-    visit(
-        Path::new(workspace),
-        0,
-        &needle,
-        file,
-        &mut out,
-        max,
-    );
+    visit(Path::new(workspace), 0, &needle, file, &mut out, max);
     out
 }
 
@@ -576,9 +565,9 @@ pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
     fs::rename(&src, dir.join(&stored))
         .or_else(|_| {
             // 跨设备 rename 失败时退化为 copy + remove
-            fs::copy(&src, dir.join(&stored)).map(|_| ()).and_then(|_| {
-                fs::remove_file(&src).map(|_| ())
-            })
+            fs::copy(&src, dir.join(&stored))
+                .map(|_| ())
+                .and_then(|_| fs::remove_file(&src).map(|_| ()))
         })
         .map_err(|e| e.to_string())?;
     let meta = serde_json::json!({
@@ -601,16 +590,25 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
         if !name.ends_with(".meta.json") {
             continue;
         }
-        let Ok(s) = fs::read_to_string(e.path()) else { continue };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else { continue };
-        let original = v.get("original").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let orig_name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let Ok(s) = fs::read_to_string(e.path()) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else {
+            continue;
+        };
+        let original = v
+            .get("original")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let orig_name = v
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         let ts = v.get("timestamp").and_then(|x| x.as_i64()).unwrap_or(0);
         let stored = dir.join(format!("{}__{}.bin", ts, orig_name));
-        let size = stored
-            .metadata()
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = stored.metadata().map(|m| m.len()).unwrap_or(0);
         out.push(TrashItem {
             path: stored.to_string_lossy().to_string(),
             name: orig_name,
@@ -651,9 +649,9 @@ pub fn trash_restore(workspace: &str, stored: &str) -> Result<String, String> {
     }
     fs::rename(&stored_path, &dest)
         .or_else(|_| {
-            fs::copy(&stored_path, &dest).map(|_| ()).and_then(|_| {
-                fs::remove_file(&stored_path).map(|_| ())
-            })
+            fs::copy(&stored_path, &dest)
+                .map(|_| ())
+                .and_then(|_| fs::remove_file(&stored_path).map(|_| ()))
         })
         .map_err(|e| e.to_string())?;
     let _ = fs::remove_file(meta_path);
@@ -671,7 +669,10 @@ pub fn trash_purge(workspace: &str, stored: Option<String>) -> Result<(), String
             let _ = fs::remove_file(&p);
         }
         // meta 也一起删
-        let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let stem = p
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         let meta = dir.join(format!("{}.meta.json", stem));
         if meta.exists() {
             let _ = fs::remove_file(meta);
@@ -759,12 +760,7 @@ pub struct Attachment {
 pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
     let mut out: Vec<Attachment> = Vec::new();
 
-    fn visit(
-        dir: &Path,
-        depth: usize,
-        out: &mut Vec<Attachment>,
-        max: usize,
-    ) {
+    fn visit(dir: &Path, depth: usize, out: &mut Vec<Attachment>, max: usize) {
         if out.len() >= max || depth > MAX_DEPTH {
             return;
         }
@@ -828,7 +824,9 @@ pub fn retrieve_context(root: &str, query: &str, k: usize) -> Vec<AiContext> {
             content.chars().take(n).collect::<String>()
         } else {
             let lines: Vec<&str> = content.lines().collect();
-            let idx = (h.line as usize).saturating_sub(1).min(lines.len().saturating_sub(1));
+            let idx = (h.line as usize)
+                .saturating_sub(1)
+                .min(lines.len().saturating_sub(1));
             let from = idx.saturating_sub(3);
             let to = (idx + 4).min(lines.len());
             lines[from..to].join("\n")

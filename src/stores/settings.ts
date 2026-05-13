@@ -10,6 +10,11 @@ type PreferenceKey =
   | "syncConflictStrategy"
   | "syncFrequency"
   | "picgoEndpoint"
+  | "picgoPasteUpload"
+  | "picgoDragUpload"
+  | "picgoKeepLocalCopy"
+  | "picgoCompressBeforeUpload"
+  | "picgoQuality"
   | "wechatStyle"
   | "wechatAuthor"
   | "lobsterModelSource"
@@ -32,7 +37,12 @@ interface SettingsState {
   autosaveDelayMs: 500 | 800 | 1500 | 3000;
   syncConflictStrategy: "ask" | "newest" | "local" | "remote";
   syncFrequency: "manual" | "30s" | "1m" | "5m";
-  picgoEndpoint: "http://127.0.0.1:36677" | "http://localhost:36677" | "http://127.0.0.1:36678";
+  picgoEndpoint: string;
+  picgoPasteUpload: boolean;
+  picgoDragUpload: boolean;
+  picgoKeepLocalCopy: boolean;
+  picgoCompressBeforeUpload: boolean;
+  picgoQuality: number;
   wechatStyle: "warmMagazine" | "cleanTech" | "inkClassic" | "minimal";
   wechatAuthor: "unset" | "appName" | "systemUser";
   lobsterModelSource: "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama";
@@ -91,6 +101,11 @@ export const useSettings = create<SettingsState>()(
       syncConflictStrategy: "ask",
       syncFrequency: "30s",
       picgoEndpoint: "http://127.0.0.1:36677",
+      picgoPasteUpload: true,
+      picgoDragUpload: true,
+      picgoKeepLocalCopy: true,
+      picgoCompressBeforeUpload: true,
+      picgoQuality: 85,
       wechatStyle: "warmMagazine",
       wechatAuthor: "unset",
       lobsterModelSource: "aiDefault",

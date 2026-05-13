@@ -91,8 +91,7 @@ async fn call_google(req: ChatRequest) -> Result<ChatResponse, String> {
         payload["generationConfig"]["temperature"] = serde_json::json!(t);
     }
     if let Some(sys) = req.system.as_ref() {
-        payload["systemInstruction"] =
-            serde_json::json!({ "parts": [{ "text": sys }] });
+        payload["systemInstruction"] = serde_json::json!({ "parts": [{ "text": sys }] });
     }
 
     let client = reqwest::Client::builder()
@@ -213,7 +212,11 @@ async fn call_anthropic(req: ChatRequest) -> Result<ChatResponse, String> {
         .await
         .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
-        return Err(format!("Anthropic API {}: {}", status, truncate(&body, 400)));
+        return Err(format!(
+            "Anthropic API {}: {}",
+            status,
+            truncate(&body, 400)
+        ));
     }
     let v: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
@@ -240,7 +243,10 @@ async fn call_anthropic(req: ChatRequest) -> Result<ChatResponse, String> {
         .map(|n| n as u32);
     Ok(ChatResponse {
         text,
-        model: v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string()),
+        model: v
+            .get("model")
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string()),
         input_tokens,
         output_tokens,
     })
@@ -326,7 +332,10 @@ async fn call_openai_compat(req: ChatRequest) -> Result<ChatResponse, String> {
         .map(|n| n as u32);
     Ok(ChatResponse {
         text,
-        model: v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string()),
+        model: v
+            .get("model")
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string()),
         input_tokens,
         output_tokens,
     })

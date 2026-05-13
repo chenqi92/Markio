@@ -7,8 +7,10 @@ import { useUI } from "@/stores/ui";
 
 interface Props {
   source: string;
+  basePath?: string;
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
   onScroll?: (info: { top: number; height: number; clientHeight: number }) => void;
+  scrollTarget?: { ratio: number; nonce: number } | null;
 }
 
 /**
@@ -16,9 +18,10 @@ interface Props {
  * then inject the resulting HTML. The frontend only paints; parsing/highlighting
  * stays in Rust.
  */
-export function Preview({ source, onMeta, onScroll }: Props) {
+export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const suppressScrollRef = useRef(false);
   const [html, setHtml] = useState("");
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
@@ -114,7 +117,7 @@ export function Preview({ source, onMeta, onScroll }: Props) {
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
-        const r = await api.renderMarkdown(source);
+        const r = await api.renderMarkdown(source, basePath);
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
         setHtml(r.html);
         onMetaRef.current?.({
@@ -135,7 +138,7 @@ export function Preview({ source, onMeta, onScroll }: Props) {
         timerRef.current = null;
       }
     };
-  }, [source]);
+  }, [source, basePath]);
 
   // 不再依赖 onMeta 引用变化触发 effect
   void useMemo(() => onMeta, []);
@@ -143,15 +146,30 @@ export function Preview({ source, onMeta, onScroll }: Props) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !onScroll) return;
-    const handler = () =>
+    const handler = () => {
+      if (suppressScrollRef.current) return;
       onScroll({
         top: el.scrollTop,
         height: el.scrollHeight,
         clientHeight: el.clientHeight,
       });
+    };
     el.addEventListener("scroll", handler, { passive: true });
     return () => el.removeEventListener("scroll", handler);
   }, [onScroll]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !scrollTarget) return;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    if (Math.abs(el.scrollTop - nextTop) < 1) return;
+    suppressScrollRef.current = true;
+    el.scrollTop = nextTop;
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
+  }, [scrollTarget?.nonce, scrollTarget?.ratio, html]);
 
   useEffect(() => {
     const el = contentRef.current;

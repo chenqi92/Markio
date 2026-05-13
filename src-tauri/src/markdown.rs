@@ -1,7 +1,6 @@
-use pulldown_cmark::{
-    CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
-};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
@@ -84,8 +83,7 @@ fn highlight_code(code: &str, lang: &str) -> String {
             .or_else(|| ss.find_syntax_by_name(lang))
             .unwrap_or_else(|| ss.find_syntax_plain_text())
     };
-    let mut generator =
-        ClassedHTMLGenerator::new_with_class_style(syntax, ss, ClassStyle::Spaced);
+    let mut generator = ClassedHTMLGenerator::new_with_class_style(syntax, ss, ClassStyle::Spaced);
     for line in LinesWithEndings::from(code) {
         let _ = generator.parse_html_for_line_which_includes_newline(line);
     }
@@ -108,6 +106,109 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+fn is_external_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("data:")
+        || lower.starts_with("blob:")
+        || lower.starts_with("asset:")
+        || lower.starts_with("mailto:")
+        || lower.starts_with('#')
+        || lower.contains("://")
+}
+
+fn percent_decode_path(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(v) = u8::from_str_radix(hex, 16) {
+                    out.push(v);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
+}
+
+fn tauri_asset_url(path: &Path) -> String {
+    let encoded = urlencode(&path.to_string_lossy());
+    #[cfg(target_os = "windows")]
+    {
+        format!("http://asset.localhost/{encoded}")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        format!("asset://localhost/{encoded}")
+    }
+}
+
+fn resolve_local_image_url(
+    dest: &str,
+    base_path: Option<&Path>,
+    allowed_roots: &[PathBuf],
+) -> Option<String> {
+    if is_external_url(dest) || dest.starts_with('/') || dest.starts_with('\\') {
+        return None;
+    }
+    let base_path = base_path?;
+    let base_dir = if base_path.is_dir() {
+        base_path
+    } else {
+        base_path.parent()?
+    };
+    let path_part = dest.split(['?', '#']).next().unwrap_or(dest);
+    if path_part.trim().is_empty() {
+        return None;
+    }
+    let decoded = percent_decode_path(path_part);
+    let canon = base_dir.join(decoded).canonicalize().ok()?;
+    if allowed_roots.iter().any(|root| canon.starts_with(root)) {
+        Some(tauri_asset_url(&canon))
+    } else {
+        None
+    }
+}
+
+fn rewrite_asset_event<'a>(
+    ev: Event<'a>,
+    base_path: Option<&Path>,
+    allowed_roots: &[PathBuf],
+) -> Event<'a> {
+    match ev {
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => {
+            if let Some(url) = resolve_local_image_url(&dest_url, base_path, allowed_roots) {
+                Event::Start(Tag::Image {
+                    link_type,
+                    dest_url: CowStr::Boxed(url.into_boxed_str()),
+                    title,
+                    id,
+                })
+            } else {
+                Event::Start(Tag::Image {
+                    link_type,
+                    dest_url,
+                    title,
+                    id,
+                })
+            }
+        }
+        _ => ev,
+    }
 }
 
 fn parser_options() -> Options {
@@ -139,13 +240,20 @@ fn level_u8(l: HeadingLevel) -> u8 {
 fn sanitize(html: &str) -> String {
     use ammonia::{Builder, UrlRelative};
     let mut b = Builder::default();
+    b.add_url_schemes(&["asset"]);
     b.add_tags(&[
-        "span", "mark", "div", "input", "section", "article",
-        "details", "summary", "figure", "figcaption",
+        "span",
+        "mark",
+        "div",
+        "input",
+        "section",
+        "article",
+        "details",
+        "summary",
+        "figure",
+        "figcaption",
     ]);
-    b.add_generic_attributes(&[
-        "class", "id", "data-lang", "data-mermaid", "data-line",
-    ]);
+    b.add_generic_attributes(&["class", "id", "data-lang", "data-mermaid", "data-line"]);
     b.add_tag_attributes("input", &["type", "checked", "disabled"]);
     // 注意 ammonia 自己控制 <a rel>，写进来会 panic
     b.add_tag_attributes("a", &["href", "title", "target", "id"]);
@@ -156,7 +264,7 @@ fn sanitize(html: &str) -> String {
 }
 
 /// 主渲染入口
-pub fn render(source: &str) -> RenderResult {
+pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf]) -> RenderResult {
     let parser = Parser::new_ext(source, parser_options());
     let mut html = String::new();
     let mut outline: Vec<OutlineItem> = Vec::new();
@@ -167,8 +275,7 @@ pub fn render(source: &str) -> RenderResult {
     let mut code_buf = String::new();
     let mut code_lang = String::new();
     let mut in_code = false;
-    let mut id_counter: std::collections::HashMap<String, u32> =
-        std::collections::HashMap::new();
+    let mut id_counter: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
     let mut buffer: Vec<Event> = Vec::with_capacity(16);
 
@@ -182,6 +289,7 @@ pub fn render(source: &str) -> RenderResult {
     };
 
     for ev in parser {
+        let ev = rewrite_asset_event(ev, base_path, allowed_roots);
         if let Some((_lvl, _)) = heading.as_mut() {
             match &ev {
                 Event::End(TagEnd::Heading(level)) => {
@@ -258,8 +366,7 @@ pub fn render(source: &str) -> RenderResult {
                 code_buf.clear();
                 code_lang.clear();
                 if let CodeBlockKind::Fenced(info) = kind {
-                    code_lang =
-                        info.split_whitespace().next().unwrap_or("").to_string();
+                    code_lang = info.split_whitespace().next().unwrap_or("").to_string();
                 }
             }
             _ => buffer.push(ev),
@@ -284,8 +391,7 @@ pub fn outline_only(source: &str) -> Vec<OutlineItem> {
     let mut out: Vec<OutlineItem> = Vec::new();
     let mut cur: Option<HeadingLevel> = None;
     let mut buf = String::new();
-    let mut id_counter: std::collections::HashMap<String, u32> =
-        std::collections::HashMap::new();
+    let mut id_counter: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for ev in parser {
         match ev {
             Event::Start(Tag::Heading { level, .. }) => {

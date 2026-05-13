@@ -57,9 +57,7 @@ const PICGO_ENDPOINT_OPTIONS = [
   { value: "http://127.0.0.1:36677", label: "http://127.0.0.1:36677" },
   { value: "http://localhost:36677", label: "http://localhost:36677" },
   { value: "http://127.0.0.1:36678", label: "http://127.0.0.1:36678" },
-] as const satisfies readonly SelectOption<
-  "http://127.0.0.1:36677" | "http://localhost:36677" | "http://127.0.0.1:36678"
->[];
+] as const satisfies readonly SelectOption<string>[];
 
 const WECHAT_STYLE_OPTIONS = [
   { value: "warmMagazine", label: "暖橘 · 杂志" },
@@ -561,6 +559,11 @@ function Shortcuts() {
 
 function Picgo() {
   const endpoint = useSettings((s) => s.picgoEndpoint);
+  const pasteUpload = useSettings((s) => s.picgoPasteUpload);
+  const dragUpload = useSettings((s) => s.picgoDragUpload);
+  const keepLocalCopy = useSettings((s) => s.picgoKeepLocalCopy);
+  const compressBeforeUpload = useSettings((s) => s.picgoCompressBeforeUpload);
+  const quality = useSettings((s) => s.picgoQuality);
   const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
@@ -592,21 +595,31 @@ function Picgo() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">粘贴图片自动上传</div>
+            <div className="settings-help">关闭后会保存到当前文档旁的 Assets/ 目录</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={pasteUpload}
+            onChange={(v) => setPreference("picgoPasteUpload", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">拖入图片自动上传</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={dragUpload}
+            onChange={(v) => setPreference("picgoDragUpload", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">本地保留副本</div>
-            <div className="settings-help">仓库内 Assets/ 子目录</div>
+            <div className="settings-help">当前文档旁的 Assets/ 子目录</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={keepLocalCopy}
+            onChange={(v) => setPreference("picgoKeepLocalCopy", v)}
+          />
         </div>
       </div>
       <div className="settings-card">
@@ -615,14 +628,22 @@ function Picgo() {
           <div className="settings-row-l">
             <div className="settings-label">上传前压缩</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={compressBeforeUpload}
+            onChange={(v) => setPreference("picgoCompressBeforeUpload", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">质量</div>
-            <div className="settings-help">85%</div>
+            <div className="settings-help">{quality}%</div>
           </div>
-          <Slider value={85} />
+          <Slider
+            value={quality}
+            min={40}
+            max={100}
+            onChange={(v) => setPreference("picgoQuality", v)}
+          />
         </div>
       </div>
     </>

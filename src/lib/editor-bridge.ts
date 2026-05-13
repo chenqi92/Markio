@@ -108,6 +108,20 @@ export function replaceSelection(text: string) {
   view.focus();
 }
 
+/** 替换指定文档范围；异步插入（如图片上传完成）会用到。 */
+export function replaceRange(from: number, to: number, text: string) {
+  const view = active;
+  if (!view) return;
+  const docLen = view.state.doc.length;
+  const safeFrom = Math.max(0, Math.min(docLen, from));
+  const safeTo = Math.max(safeFrom, Math.min(docLen, to));
+  view.dispatch({
+    changes: { from: safeFrom, to: safeTo, insert: text },
+    selection: { anchor: safeFrom + text.length },
+  });
+  view.focus();
+}
+
 /** 从当前光标位置往左删除 n 个字符（用于 Slash 触发后吃掉 `/` 等） */
 export function deleteBeforeCursor(n: number) {
   const view = active;

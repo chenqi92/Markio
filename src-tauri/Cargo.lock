@@ -1909,6 +1909,7 @@ name = "markio"
 version = "0.1.0"
 dependencies = [
  "ammonia",
+ "base64 0.22.1",
  "chrono",
  "encoding_rs",
  "encoding_rs_io",

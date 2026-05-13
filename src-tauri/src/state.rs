@@ -33,9 +33,7 @@ impl AppState {
     }
 
     pub fn unregister_workspace(&self, path: &Path) -> Result<(), String> {
-        let canon = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf());
+        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         inner.workspaces.remove(&canon);
         Ok(())

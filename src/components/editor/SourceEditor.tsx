@@ -18,6 +18,14 @@ interface Props {
     height: number;
     clientHeight: number;
   }) => void;
+  scrollTarget?: {
+    ratio: number;
+    nonce: number;
+  } | null;
+  onPasteImages?: (
+    files: File[],
+    range: { from: number; to: number },
+  ) => void | Promise<void>;
   onSelectionChange?: (info: {
     hasSelection: boolean;
     coords: { x: number; y: number } | null;
@@ -41,6 +49,8 @@ export function SourceEditor({
   value,
   onChange,
   onScroll,
+  scrollTarget,
+  onPasteImages,
   onSelectionChange,
   onSlashTrigger,
   onAutocompleteUpdate,
@@ -48,6 +58,7 @@ export function SourceEditor({
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
   const ref = useRef<ReactCodeMirrorRef>(null);
+  const suppressScrollRef = useRef(false);
 
   const extensions = useMemo(
     () => [
@@ -133,6 +144,7 @@ export function SourceEditor({
     const el = view.scrollDOM;
     if (onScroll) {
       const handler = () => {
+        if (suppressScrollRef.current) return;
         onScroll({
           top: el.scrollTop,
           height: el.scrollHeight,
@@ -143,6 +155,45 @@ export function SourceEditor({
       return () => el.removeEventListener("scroll", handler);
     }
   }, [onScroll]);
+
+  useEffect(() => {
+    const view = ref.current?.view;
+    if (!view || !scrollTarget) return;
+    const el = view.scrollDOM;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    if (Math.abs(el.scrollTop - nextTop) < 1) return;
+    suppressScrollRef.current = true;
+    el.scrollTop = nextTop;
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
+  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+
+  useEffect(() => {
+    if (!onPasteImages) return;
+    const view = ref.current?.view;
+    if (!view) return;
+    const handler = (e: ClipboardEvent) => {
+      const data = e.clipboardData;
+      if (!data) return;
+      const fromItems = Array.from(data.items ?? [])
+        .filter((item) => item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => !!file);
+      const fromFiles = Array.from(data.files ?? []).filter((file) =>
+        file.type.startsWith("image/"),
+      );
+      const files = fromItems.length > 0 ? fromItems : fromFiles;
+      if (files.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const sel = view.state.selection.main;
+      void onPasteImages(files, { from: sel.from, to: sel.to });
+    };
+    view.contentDOM.addEventListener("paste", handler);
+    return () => view.contentDOM.removeEventListener("paste", handler);
+  }, [onPasteImages]);
 
   // 监听 `/` 触发斜杠菜单
   useEffect(() => {

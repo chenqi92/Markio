@@ -59,6 +59,14 @@ export interface OpenedFile {
   sig: FileSig;
 }
 
+export interface PasteImageResult {
+  markdown: string;
+  url: string;
+  localPath?: string | null;
+  uploaded: boolean;
+  warning?: string | null;
+}
+
 /** 把 Rust 返回的错误 string 拆开 */
 export function parseError(e: unknown): {
   code: "CONFLICT" | "ALREADY_EXISTS" | "DENIED" | "OTHER";
@@ -80,8 +88,11 @@ export function parseError(e: unknown): {
 }
 
 export const api = {
-  renderMarkdown: (source: string) =>
-    invoke<RenderResult>("md_render", { source }),
+  renderMarkdown: (source: string, basePath?: string) =>
+    invoke<RenderResult>(
+      "md_render",
+      basePath ? { source, basePath } : { source },
+    ),
   outline: (source: string) => invoke<OutlineItem[]>("md_outline", { source }),
 
   // workspace 注册
@@ -118,6 +129,17 @@ export const api = {
 
   listAttachments: (workspace: string, max = 200) =>
     invoke<Attachment[]>("fs_list_attachments", { workspace, max }),
+
+  pasteImage: (req: {
+    workspace: string;
+    note: string;
+    fileName?: string;
+    mime: string;
+    dataBase64: string;
+    upload: boolean;
+    keepLocal: boolean;
+    endpoint?: string;
+  }) => invoke<PasteImageResult>("image_paste", { req }),
 
   historySave: (workspace: string, file: string, content: string) =>
     invoke<void>("history_save", { workspace, file, content }),

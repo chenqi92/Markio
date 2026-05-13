@@ -5,8 +5,11 @@ mod secrets;
 mod state;
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use serde::Serialize;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use ai::{ChatRequest, ChatResponse};
 use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
@@ -36,6 +39,29 @@ pub struct OpenedFile {
     pub sig: SigDto,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePasteRequest {
+    pub workspace: String,
+    pub note: String,
+    pub file_name: Option<String>,
+    pub mime: String,
+    pub data_base64: String,
+    pub upload: bool,
+    pub keep_local: bool,
+    pub endpoint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePasteResult {
+    pub markdown: String,
+    pub url: String,
+    pub local_path: Option<String>,
+    pub uploaded: bool,
+    pub warning: Option<String>,
+}
+
 fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
     let inner = state
         .inner
@@ -44,11 +70,27 @@ fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
     ensure_in_workspaces(&inner.workspaces, Path::new(p))
 }
 
+fn workspace_roots(state: &AppState) -> Result<Vec<PathBuf>, String> {
+    let inner = state
+        .inner
+        .lock()
+        .map_err(|e| format!("internal lock: {e}"))?;
+    Ok(inner.workspaces.iter().cloned().collect())
+}
+
 // ─── markdown ───────────────────────────────────────────────────────
 
 #[tauri::command]
-fn md_render(source: String) -> RenderResult {
-    markdown::render(&source)
+fn md_render(
+    state: tauri::State<'_, AppState>,
+    source: String,
+    base_path: Option<String>,
+) -> RenderResult {
+    let roots = workspace_roots(&state).unwrap_or_default();
+    let base = base_path
+        .as_deref()
+        .and_then(|path| validate_path(&state, path).ok());
+    markdown::render(&source, base.as_deref(), &roots)
 }
 
 #[tauri::command]
@@ -59,39 +101,27 @@ fn md_outline(source: String) -> Vec<OutlineItem> {
 // ─── workspace 注册 ─────────────────────────────────────────────────
 
 #[tauri::command]
-fn workspace_register(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<String, String> {
+fn workspace_register(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
     let canon = state.register_workspace(Path::new(&path))?;
     Ok(canon.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-fn workspace_unregister(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+fn workspace_unregister(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     state.unregister_workspace(Path::new(&path))
 }
 
 // ─── 树 & 文件 ──────────────────────────────────────────────────────
 
 #[tauri::command]
-fn fs_read_tree(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<FileEntry, String> {
+fn fs_read_tree(state: tauri::State<'_, AppState>, path: String) -> Result<FileEntry, String> {
     let canon = validate_path(&state, &path)?;
     fs_ops::walk_tree(&canon.to_string_lossy())
 }
 
 /// 读取文件 + 记录指纹，前端用 sig 在保存时校验
 #[tauri::command]
-fn fs_open(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<OpenedFile, String> {
+fn fs_open(state: tauri::State<'_, AppState>, path: String) -> Result<OpenedFile, String> {
     let canon = validate_path(&state, &path)?;
     let content = fs_ops::read_text_path(&canon)?;
     let sig = signature_for(&canon).map_err(|e| e.to_string())?;
@@ -131,10 +161,7 @@ fn fs_save(
             let baseline_mtime = expected_mtime.or(known.map(|s| s.mtime_ms));
             if let Some(base) = baseline_mtime {
                 if disk.mtime_ms > base {
-                    return Err(format!(
-                        "CONFLICT:{}:{:x}",
-                        disk.mtime_ms, disk.hash
-                    ));
+                    return Err(format!("CONFLICT:{}:{:x}", disk.mtime_ms, disk.hash));
                 }
             }
         }
@@ -160,11 +187,7 @@ fn fs_create_new(
 }
 
 #[tauri::command]
-fn fs_rename(
-    state: tauri::State<'_, AppState>,
-    from: String,
-    to: String,
-) -> Result<(), String> {
+fn fs_rename(state: tauri::State<'_, AppState>, from: String, to: String) -> Result<(), String> {
     let from_p = validate_path(&state, &from)?;
     let to_p = validate_path(&state, &to)?;
     fs_ops::rename(&from_p.to_string_lossy(), &to_p.to_string_lossy())?;
@@ -173,10 +196,7 @@ fn fs_rename(
 }
 
 #[tauri::command]
-fn fs_delete(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+fn fs_delete(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     let canon = validate_path(&state, &path)?;
     fs_ops::delete(&canon.to_string_lossy())?;
     state.record_close(&canon)?;
@@ -184,10 +204,7 @@ fn fs_delete(
 }
 
 #[tauri::command]
-fn fs_mkdir(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+fn fs_mkdir(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     let canon = validate_path(&state, &path)?;
     fs_ops::make_dir(&canon.to_string_lossy())
 }
@@ -200,14 +217,15 @@ fn fs_grep(
     max: Option<usize>,
 ) -> Result<Vec<GrepHit>, String> {
     let canon = validate_path(&state, &root)?;
-    Ok(fs_ops::grep(&canon.to_string_lossy(), &query, max.unwrap_or(80)))
+    Ok(fs_ops::grep(
+        &canon.to_string_lossy(),
+        &query,
+        max.unwrap_or(80),
+    ))
 }
 
 #[tauri::command]
-fn fs_reveal(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+fn fs_reveal(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     let canon = validate_path(&state, &path)?;
     fs_ops::reveal_in_os(&canon.to_string_lossy())
 }
@@ -223,6 +241,209 @@ fn fs_list_attachments(
         &canon.to_string_lossy(),
         max.unwrap_or(200),
     ))
+}
+
+fn image_ext_from_mime(mime: &str, file_name: Option<&str>) -> &'static str {
+    match mime.to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        "image/tiff" => "tiff",
+        _ => file_name
+            .and_then(|name| Path::new(name).extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .and_then(|ext| match ext.as_str() {
+                "jpg" | "jpeg" => Some("jpg"),
+                "png" => Some("png"),
+                "gif" => Some("gif"),
+                "webp" => Some("webp"),
+                "bmp" => Some("bmp"),
+                "svg" => Some("svg"),
+                "tif" | "tiff" => Some("tiff"),
+                _ => None,
+            })
+            .unwrap_or("png"),
+    }
+}
+
+fn sanitize_file_stem(input: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in input.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if ch == '-' || ch == '_' || ch.is_whitespace() {
+            if !last_dash && !out.is_empty() {
+                out.push('-');
+                last_dash = true;
+            }
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "image".to_string()
+    } else {
+        out
+    }
+}
+
+fn markdown_alt(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
+fn normalize_picgo_endpoint(endpoint: &str) -> Result<String, String> {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("PicGo API 端点为空".to_string());
+    }
+    if trimmed.ends_with("/upload") {
+        Ok(trimmed.to_string())
+    } else {
+        Ok(format!("{trimmed}/upload"))
+    }
+}
+
+fn picgo_result_url(value: &Value) -> Option<String> {
+    value
+        .pointer("/result/0")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/data/0").and_then(Value::as_str))
+        .or_else(|| value.pointer("/data/url").and_then(Value::as_str))
+        .or_else(|| value.get("url").and_then(Value::as_str))
+        .map(ToString::to_string)
+}
+
+async fn upload_with_picgo(endpoint: &str, file_path: &Path) -> Result<String, String> {
+    let url = normalize_picgo_endpoint(endpoint)?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(25))
+        .build()
+        .map_err(|e| format!("创建 PicGo 客户端失败：{e}"))?;
+    let body = serde_json::json!({
+        "list": [file_path.to_string_lossy().to_string()]
+    });
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("无法连接 PicGo：{e}"))?;
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 PicGo 响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!("PicGo 返回 HTTP {status}：{text}"));
+    }
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("PicGo 响应不是 JSON：{e}"))?;
+    if value
+        .get("success")
+        .and_then(Value::as_bool)
+        .is_some_and(|success| !success)
+    {
+        let msg = value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("PicGo 上传失败");
+        return Err(msg.to_string());
+    }
+    picgo_result_url(&value).ok_or_else(|| "PicGo 响应中没有图片 URL".to_string())
+}
+
+// ─── 图片粘贴 / 上传 ────────────────────────────────────────────────
+
+#[tauri::command]
+async fn image_paste(
+    state: tauri::State<'_, AppState>,
+    req: ImagePasteRequest,
+) -> Result<ImagePasteResult, String> {
+    let ws = validate_path(&state, &req.workspace)?;
+    let note = validate_path(&state, &req.note)?;
+    if !note.starts_with(&ws) {
+        return Err("当前文件不在所选仓库中".to_string());
+    }
+    let raw_base64 = req
+        .data_base64
+        .rsplit_once(',')
+        .map(|(_, data)| data)
+        .unwrap_or(req.data_base64.as_str());
+    let bytes = STANDARD
+        .decode(raw_base64.trim())
+        .map_err(|e| format!("剪贴板图片编码无效：{e}"))?;
+    if bytes.is_empty() {
+        return Err("剪贴板图片为空".to_string());
+    }
+
+    let note_dir = note
+        .parent()
+        .ok_or_else(|| "当前文件没有父目录".to_string())?;
+    let assets_dir = note_dir.join("Assets");
+    std::fs::create_dir_all(&assets_dir).map_err(|e| format!("创建 Assets 目录失败：{e}"))?;
+
+    let note_stem = note
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(sanitize_file_stem)
+        .unwrap_or_else(|| "note".to_string());
+    let ext = image_ext_from_mime(&req.mime, req.file_name.as_deref());
+    let ts = chrono::Utc::now().timestamp_millis();
+    let base_name = format!("{note_stem}-pasted-{ts}");
+    let mut file_name = format!("{base_name}.{ext}");
+    let mut target = assets_dir.join(&file_name);
+    let mut idx = 2;
+    while target.exists() {
+        file_name = format!("{base_name}-{idx}.{ext}");
+        target = assets_dir.join(&file_name);
+        idx += 1;
+    }
+    std::fs::write(&target, &bytes).map_err(|e| format!("保存图片失败：{e}"))?;
+
+    let local_url = format!("Assets/{file_name}");
+    let local_markdown = format!("![{}]({local_url})", markdown_alt(&base_name));
+    if !req.upload {
+        return Ok(ImagePasteResult {
+            markdown: local_markdown,
+            url: local_url,
+            local_path: Some(target.to_string_lossy().to_string()),
+            uploaded: false,
+            warning: None,
+        });
+    }
+
+    let endpoint = req.endpoint.as_deref().unwrap_or("http://127.0.0.1:36677");
+    match upload_with_picgo(endpoint, &target).await {
+        Ok(remote_url) => {
+            if !req.keep_local {
+                let _ = std::fs::remove_file(&target);
+            }
+            Ok(ImagePasteResult {
+                markdown: format!("![{}]({remote_url})", markdown_alt(&base_name)),
+                url: remote_url,
+                local_path: req.keep_local.then(|| target.to_string_lossy().to_string()),
+                uploaded: true,
+                warning: None,
+            })
+        }
+        Err(e) => Ok(ImagePasteResult {
+            markdown: local_markdown,
+            url: local_url,
+            local_path: Some(target.to_string_lossy().to_string()),
+            uploaded: false,
+            warning: Some(format!("PicGo 上传失败，已保存到本地：{e}")),
+        }),
+    }
 }
 
 // ─── 历史快照 ───────────────────────────────────────────────────────
@@ -251,10 +472,7 @@ fn history_list(
 }
 
 #[tauri::command]
-fn history_read(
-    state: tauri::State<'_, AppState>,
-    path: String,
-) -> Result<String, String> {
+fn history_read(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
     let canon = validate_path(&state, &path)?;
     fs_ops::read_snapshot(&canon.to_string_lossy())
 }
@@ -406,6 +624,7 @@ pub fn run() {
             fs_grep,
             fs_reveal,
             fs_list_attachments,
+            image_paste,
             history_save,
             history_list,
             history_read,

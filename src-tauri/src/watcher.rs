@@ -43,7 +43,18 @@ fn should_ignore(rela: &Path) -> bool {
             // 命中 .markio / .git / .DS_Store / dotfiles 都直接跳过
             return true;
         }
-        if matches!(s, "node_modules" | "target" | "dist" | "build") {
+        if matches!(
+            s,
+            "node_modules"
+                | "target"
+                | "dist"
+                | "build"
+                | "coverage"
+                | "__pycache__"
+                | ".turbo"
+                | ".next"
+                | ".nuxt"
+        ) {
             return true;
         }
     }
@@ -90,9 +101,8 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
                 if should_ignore(rela) {
                     continue;
                 }
-                if !is_text_like(&path) {
-                    // 非文本文件改动同样上报（让前端刷 file tree），但只在目录上报；
-                    // RAG 仅消费 text/markdown 路径
+                if !path.is_dir() && !is_text_like(&path) {
+                    continue;
                 }
                 let kind = if path.exists() { "modified" } else { "removed" };
                 let _ = app_for_cb.emit(

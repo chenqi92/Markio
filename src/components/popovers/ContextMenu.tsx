@@ -23,14 +23,16 @@ export function ContextMenu({
 }) {
   useEffect(() => {
     const dismiss = () => onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("click", dismiss);
     window.addEventListener("contextmenu", dismiss);
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") onClose();
-    });
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("click", dismiss);
       window.removeEventListener("contextmenu", dismiss);
+      window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
 

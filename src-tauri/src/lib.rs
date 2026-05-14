@@ -11,9 +11,12 @@ mod state;
 mod watcher;
 mod webdav_ops;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -26,6 +29,12 @@ use ai::{ChatRequest, ChatResponse};
 use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
+
+static MD_STREAM_CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+
+fn md_stream_cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    MD_STREAM_CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -270,8 +279,18 @@ async fn md_render_stream(
         .and_then(|path| validate_path(&state, path).ok());
     let app2 = app.clone();
     let id = stream_id.clone();
+    let cancel = Arc::new(AtomicBool::new(false));
+    md_stream_cancels()
+        .lock()
+        .map_err(|e| format!("stream cancel lock: {e}"))?
+        .insert(stream_id, cancel.clone());
     tauri::async_runtime::spawn_blocking(move || {
         let channel = format!("md-stream-{id}");
+        let remove_cancel = || {
+            if let Ok(mut guard) = md_stream_cancels().lock() {
+                guard.remove(&id);
+            }
+        };
         // 按 H1 切片：以行首 `# ` 起一段；首段（导言）可能无标题
         let mut sections: Vec<String> = Vec::new();
         let mut current = String::new();
@@ -288,7 +307,15 @@ async fn md_render_stream(
             sections.push(String::new());
         }
         for (idx, sec) in sections.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                remove_cancel();
+                return;
+            }
             let r = markdown::render(sec, base.as_deref(), &roots);
+            if cancel.load(Ordering::Relaxed) {
+                remove_cancel();
+                return;
+            }
             let _ = app2.emit(
                 &channel,
                 serde_json::json!({
@@ -298,18 +325,35 @@ async fn md_render_stream(
                 }),
             );
         }
-        // 整体 outline 再来一遍（保证 anchor 全局一致）
-        let full = markdown::render(&source, base.as_deref(), &roots);
+        if cancel.load(Ordering::Relaxed) {
+            remove_cancel();
+            return;
+        }
+        // 统计信息只解析标题和字数，避免流式渲染后又完整高亮 / 清洗一遍全文。
+        let (outline, words, reading_minutes) = markdown::metadata_only(&source);
         let _ = app2.emit(
             &channel,
             serde_json::json!({
                 "event": "done",
-                "outline": full.outline,
-                "words": full.words,
-                "readingMinutes": full.reading_minutes,
+                "outline": outline,
+                "words": words,
+                "readingMinutes": reading_minutes,
             }),
         );
+        remove_cancel();
     });
+    Ok(())
+}
+
+#[tauri::command]
+fn md_cancel_stream(stream_id: String) -> Result<(), String> {
+    if let Some(cancel) = md_stream_cancels()
+        .lock()
+        .map_err(|e| format!("stream cancel lock: {e}"))?
+        .remove(&stream_id)
+    {
+        cancel.store(true, Ordering::Relaxed);
+    }
     Ok(())
 }
 
@@ -2272,6 +2316,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             md_render,
             md_render_stream,
+            md_cancel_stream,
             md_outline,
             workspace_register,
             workspace_unregister,

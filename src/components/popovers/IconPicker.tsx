@@ -48,11 +48,15 @@ export function IconPicker({
     const onClick = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
-    window.addEventListener("mousedown", onClick);
-    window.addEventListener("keydown", (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
-    });
-    return () => window.removeEventListener("mousedown", onClick);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [onClose]);
 
   const left = Math.min(x, window.innerWidth - 320);

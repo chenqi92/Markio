@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { Icon, type IconName } from "../ui/Icon";
+import { ToolbarMenuPortal } from "./ToolbarMenuPortal";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
@@ -64,18 +65,15 @@ const TEMPLATES: Template[] = [
   },
 ];
 
-export function NewMenu({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
+export function NewMenu({
+  anchorRef,
+  onClose,
+}: {
+  anchorRef: RefObject<HTMLElement | null>;
+  onClose: () => void;
+}) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const setToast = useUI((s) => s.setToast);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [onClose]);
 
   const create = async (t: Template) => {
     if (!ws) {
@@ -126,7 +124,7 @@ export function NewMenu({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="new-menu" ref={ref}>
+    <ToolbarMenuPortal anchorRef={anchorRef} onClose={onClose}>
       <div className="new-menu-h">新建</div>
       {TEMPLATES.map((t) => (
         <button
@@ -163,6 +161,6 @@ export function NewMenu({ onClose }: { onClose: () => void }) {
           <div className="sub">⌘⇧O</div>
         </div>
       </button>
-    </div>
+    </ToolbarMenuPortal>
   );
 }

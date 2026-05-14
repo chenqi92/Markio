@@ -138,7 +138,14 @@ export function Preview({
     }
     const seq = ++seqRef.current;
     let cleanupStream: (() => void) | null = null;
+    let flushTimer: number | null = null;
     let cancelled = false;
+    const clearFlushTimer = () => {
+      if (flushTimer != null) {
+        window.clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+    };
     // 自定义视图模板（kanban 等）走前端渲染，跳过 Rust HTML 流水线
     if (viewKind === "kanban") {
       // 仍需把字数 / 标题大纲算出来给 Outline 用
@@ -163,19 +170,32 @@ export function Preview({
       });
       return;
     }
+    const renderDelay =
+      source.length > 100_000 ? 350 : source.length > 30_000 ? 180 : 60;
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
         if (source.length > 30_000) {
           const chunks: string[] = [];
+          const flushChunks = () => {
+            flushTimer = null;
+            if (cancelled || seq !== seqRef.current) return;
+            setHtml(chunks.join(""));
+          };
+          const scheduleFlush = () => {
+            if (flushTimer != null) return;
+            flushTimer = window.setTimeout(flushChunks, 120);
+          };
           const cleanup = await api.renderMarkdownStream(source, basePath, {
             onChunk: (index, chunkHtml) => {
               if (cancelled || seq !== seqRef.current) return;
               chunks[index] = chunkHtml;
-              setHtml(chunks.filter(Boolean).join(""));
+              scheduleFlush();
             },
             onDone: (info) => {
               if (cancelled || seq !== seqRef.current) return;
+              clearFlushTimer();
+              setHtml(chunks.join(""));
               onMetaRef.current?.({
                 outline: info.outline,
                 words: info.words,
@@ -184,6 +204,7 @@ export function Preview({
             },
             onError: (message) => {
               if (cancelled || seq !== seqRef.current) return;
+              clearFlushTimer();
               setHtml(
                 `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${escapeHtml(message)}</pre>`,
               );
@@ -210,13 +231,14 @@ export function Preview({
           `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${escapeHtml((e as Error).message)}</pre>`,
         );
       }
-    }, 60);
+    }, renderDelay);
     return () => {
       cancelled = true;
       if (timerRef.current != null) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      clearFlushTimer();
       cleanupStream?.();
     };
   }, [source, basePath, viewKind, fm.body]);

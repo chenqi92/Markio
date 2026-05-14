@@ -260,12 +260,10 @@ function CustomThemesCard() {
 
   return (
     <div className="settings-card">
-      <div className="settings-card-h">自定义 CSS 主题</div>
-      <div className="settings-help" style={{ marginBottom: 8 }}>
-        导入 .css 文件后会作为附加样式注入到根节点（覆盖内置主题 CSS 变量）。
-        单文件 ≤ 256 KB。
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+      <CardTitle tip="导入 .css 后会作为附加样式注入根节点，可覆盖内置主题变量；单文件不超过 256 KB。">
+        自定义 CSS 主题
+      </CardTitle>
+      <div className="settings-action-row">
         <button
           className="settings-btn primary"
           disabled={busy !== null}
@@ -353,8 +351,9 @@ function LanguageCard() {
     <div className="settings-card">
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">界面语言 · UI language</div>
-          <div className="settings-help">切换后立即生效；部分历史 UI 文案仍为中文，后续版本逐步迁移</div>
+          <LabelWithTip tip="切换后立即生效；少量历史文案会逐步补齐。">
+            界面语言 · UI language
+          </LabelWithTip>
         </div>
         <SelectBtn
           value={loc}
@@ -584,7 +583,6 @@ function HelpTip({ text }: { text: string }) {
       data-tip={text}
       tabIndex={0}
       aria-label={text}
-      role="img"
     >
       ?
     </span>
@@ -1167,13 +1165,12 @@ function Picgo() {
       <p className="settings-sub">把粘贴的图片自动上传到图床，并在笔记中插入外链。</p>
 
       <div className="settings-card">
-        <div className="settings-card-h">上传管线</div>
+        <CardTitle tip="S3 为直传，PicGo 为本地代理，关闭时只保存在文档旁 Assets 目录。">
+          上传管线
+        </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">优先 provider</div>
-            <div className="settings-help">
-              s3 直传 / picgo 本地代理 / 关闭（仅保存到 Assets/）
-            </div>
           </div>
           <SelectBtn
             value={uploadProvider}
@@ -1214,8 +1211,9 @@ function Picgo() {
         <div className="settings-card-h">通用</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">粘贴图片自动上传</div>
-            <div className="settings-help">关闭后会保存到当前文档旁的 Assets/ 目录</div>
+            <LabelWithTip tip="关闭后会保存到当前文档旁的 Assets/ 目录。">
+              粘贴图片自动上传
+            </LabelWithTip>
           </div>
           <Toggle
             on={pasteUpload}
@@ -1233,8 +1231,9 @@ function Picgo() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">本地保留副本</div>
-            <div className="settings-help">当前文档旁的 Assets/ 子目录</div>
+            <LabelWithTip tip="副本保存在当前文档旁的 Assets/ 子目录。">
+              本地保留副本
+            </LabelWithTip>
           </div>
           <Toggle
             on={keepLocalCopy}
@@ -1282,8 +1281,9 @@ function WeChat() {
         <div className="settings-card-h">绑定的公众号</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">尚未绑定任何公众号</div>
-            <div className="settings-help">扫码绑定后可以一键导出为公众号草稿</div>
+            <LabelWithTip tip="绑定后可以一键导出为公众号草稿。">
+              尚未绑定任何公众号
+            </LabelWithTip>
           </div>
           <button className="settings-btn primary">扫码绑定</button>
         </div>
@@ -1312,8 +1312,9 @@ function WeChat() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">AI 自动生成摘要</div>
-            <div className="settings-help">由 AI 助手提取前 120 字</div>
+            <LabelWithTip tip="由 AI 助手提取前 120 字。">
+              AI 自动生成摘要
+            </LabelWithTip>
           </div>
           <Toggle on={true} />
         </div>
@@ -1417,13 +1418,14 @@ function AI() {
       <p className="settings-sub">配置模型、API 与提示词。</p>
 
       <div className="settings-card">
-        <div className="settings-card-h">回答时的上下文</div>
+        <CardTitle tip="这些开关会决定发送给 AI 的上下文范围。">
+          回答时的上下文
+        </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">把当前笔记发给 AI</div>
-            <div className="settings-help">
-              系统 prompt 里包含当前打开 .md 的前 6000 字
-            </div>
+            <LabelWithTip tip="系统 prompt 会包含当前打开 Markdown 的前 6000 字。">
+              把当前笔记发给 AI
+            </LabelWithTip>
           </div>
           <Toggle
             on={useCurrentFile}
@@ -1432,11 +1434,9 @@ function AI() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">用仓库做关键词检索</div>
-            <div className="settings-help">
-              问 AI 时先在整个仓库 grep 用户问题里的关键词，把命中片段（±3 行）一起发给模型。
-              开启后会把片段明文上传给 AI 提供方；真·语义检索（本地嵌入 + 向量库）见 docs/ARCHITECTURE.md
-            </div>
+            <LabelWithTip tip="提问时先在仓库中查找关键词，并把命中片段发给当前 AI 提供方。">
+              用仓库做关键词检索
+            </LabelWithTip>
           </div>
           <Toggle
             on={useWorkspace}
@@ -1507,28 +1507,33 @@ function AI() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">
-              API Key
-              {keyConfigured && (
-                <span
-                  style={{
-                    marginLeft: 8,
-                    padding: "1px 6px",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    background: "var(--accent-glow)",
-                    color: "var(--accent)",
-                    borderRadius: 4,
-                  }}
-                >
-                  已配置
-                </span>
-              )}
+            <div className="settings-label settings-label-with-tip">
+              <span>
+                API Key
+                {keyConfigured && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      padding: "1px 6px",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      background: "var(--accent-glow)",
+                      color: "var(--accent)",
+                      borderRadius: 4,
+                    }}
+                  >
+                    已配置
+                  </span>
+                )}
+              </span>
+              <HelpTip text="非 Ollama 提供方的 Key 存入系统钥匙串；前端不会持久化明文。" />
             </div>
             <div className="settings-help">
               {provider === "ollama"
-                ? "本地 Ollama 不需要 Key"
-                : "存在系统钥匙串（macOS Keychain / Win Credential / Linux Secret Service），不进 localStorage"}
+                ? "本地 Ollama 可留空"
+                : keyConfigured
+                ? "已存储"
+                : "未配置"}
             </div>
           </div>
           <input
@@ -1561,8 +1566,9 @@ function AI() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">Endpoint</div>
-            <div className="settings-help">留空使用提供方默认</div>
+            <LabelWithTip tip="留空会使用当前提供方的默认地址。">
+              Endpoint
+            </LabelWithTip>
           </div>
           <input
             type="text"
@@ -1947,9 +1953,7 @@ function WebDavCard() {
           style={{ flex: 1, minWidth: 220 }}
         />
       </div>
-      <div
-        style={{ display: "flex", gap: 8, padding: "8px 16px", flexWrap: "wrap" }}
-      >
+      <div className="settings-action-row">
         <button
           className="settings-btn"
           disabled={!baseUrl || busy !== null}
@@ -1996,9 +2000,8 @@ function WebDavCard() {
       </div>
       {msg && (
         <div
+          className="settings-message"
           style={{
-            padding: "0 16px 12px",
-            fontSize: 12,
             color: msg.kind === "err" ? "#dc2626" : "var(--accent)",
           }}
         >
@@ -2040,10 +2043,9 @@ function RepoGraphCard() {
 
   return (
     <div className="settings-card">
-      <div className="settings-card-h">链接图谱</div>
-      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
-        基于 `[[wiki]]` / markdown link 索引：哪些笔记是中心，哪些是孤岛。
-      </div>
+      <CardTitle tip="基于 [[wiki]] 和 Markdown 链接统计中心笔记与孤立笔记。">
+        链接图谱
+      </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">
@@ -2121,19 +2123,15 @@ function RerankCard() {
   const setPreference = useSettings((s) => s.setPreference);
   return (
     <div className="settings-card">
-      <div className="settings-card-h">Reranker（cohere 兼容协议）</div>
-      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
-        在混合检索 RRF 融合之后再走一层 reranker。支持 Cohere 官方 API 及任何
-        兼容 <code>/v1/rerank</code> 路径的本地服务（infinity-emb、TEI 等）。
-      </div>
+      <CardTitle tip="在 RRF 融合之后再精排；支持 Cohere API 和兼容 /v1/rerank 的本地服务。">
+        Reranker（cohere 兼容协议）
+      </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">启用 Reranker</div>
-          <div className="settings-help">
-            {enabled
-              ? "检索后端会在 top-3K 候选里精排"
-              : "未启用；调用直接走 RRF 结果"}
-          </div>
+          <LabelWithTip tip="启用后会在检索候选里再次精排。">
+            启用 Reranker
+          </LabelWithTip>
+          <div className="settings-help">{enabled ? "已启用" : "未启用"}</div>
         </div>
         <Toggle
           on={enabled}
@@ -2142,10 +2140,9 @@ function RerankCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">模型</div>
-          <div className="settings-help">
-            Cohere 默认 <code>rerank-multilingual-v3.0</code>
-          </div>
+          <LabelWithTip tip="Cohere 默认 rerank-multilingual-v3.0。">
+            模型
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -2156,10 +2153,9 @@ function RerankCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">服务地址</div>
-          <div className="settings-help">
-            留空走 https://api.cohere.com；自部署填到 http://host:port
-          </div>
+          <LabelWithTip tip="留空使用 https://api.cohere.com；自部署填写 http://host:port。">
+            服务地址
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -2171,8 +2167,9 @@ function RerankCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">API Key</div>
-          <div className="settings-help">本地服务可留空</div>
+          <LabelWithTip tip="本地服务通常可留空。">
+            API Key
+          </LabelWithTip>
         </div>
         <input
           type="password"
@@ -2291,27 +2288,26 @@ function RagSettings() {
     <>
       <h2 className="settings-h">本地知识库</h2>
       <p className="settings-sub">
-        在当前仓库下 .markio/rag.db 建立向量索引（sqlite-vec），AI
-        问答与「@仓库」检索都会用到。索引/查询完全本地完成。
+        为当前仓库建立本地向量索引。
       </p>
 
       <div className="settings-card">
-        <div className="settings-card-h">总开关</div>
+        <CardTitle tip="索引存放在当前仓库的 .markio/rag.db；查询在本地完成。">
+          总开关
+        </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">启用本地知识库</div>
-            <div className="settings-help">
-              关闭后 AI 检索退化为纯关键词 grep
-            </div>
+            <LabelWithTip tip="关闭后 AI 检索会退回关键词 grep。">
+              启用本地知识库
+            </LabelWithTip>
           </div>
           <Toggle on={enabled} onChange={(v) => setPreference("ragEnabled", v)} />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">保存后增量更新</div>
-            <div className="settings-help">
-              保存当前笔记时自动重新嵌入它的 chunk，不影响其他文件
-            </div>
+            <LabelWithTip tip="保存当前笔记时只重新嵌入它的 chunk，不影响其他文件。">
+              保存后增量更新
+            </LabelWithTip>
           </div>
           <Toggle
             on={autoOnSave}
@@ -2320,10 +2316,9 @@ function RagSettings() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">引用图谱扩展</div>
-            <div className="settings-help">
-              检索结果命中的笔记，沿 [[wiki]] / md 链接再带回相关 chunk
-            </div>
+            <LabelWithTip tip="命中笔记后沿 [[wiki]] 和 Markdown 链接带回相关 chunk。">
+              引用图谱扩展
+            </LabelWithTip>
           </div>
           <Toggle
             on={expandLinks}
@@ -2418,8 +2413,9 @@ function RagSettings() {
           <>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">Ollama 端点</div>
-                <div className="settings-help">需要先 `ollama serve`</div>
+                <LabelWithTip tip="需要先运行 ollama serve。">
+                  Ollama 端点
+                </LabelWithTip>
               </div>
               <TextInput
                 value={ollamaBaseUrl}
@@ -2429,11 +2425,9 @@ function RagSettings() {
             </div>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">Embedding 模型</div>
-                <div className="settings-help">
-                  推荐 `nomic-embed-text`（768 维，需先 `ollama pull
-                  nomic-embed-text`）
-                </div>
+                <LabelWithTip tip="推荐 nomic-embed-text（768 维），需先通过 Ollama 拉取。">
+                  Embedding 模型
+                </LabelWithTip>
               </div>
               <TextInput
                 value={ollamaModel}
@@ -2443,10 +2437,9 @@ function RagSettings() {
             </div>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">向量维度</div>
-                <div className="settings-help">
-                  模型实际维度。改维度会触发整库重建
-                </div>
+                <LabelWithTip tip="需要与模型实际维度一致；修改后会触发整库重建。">
+                  向量维度
+                </LabelWithTip>
               </div>
               <NumberInput
                 value={ollamaDim}
@@ -2458,8 +2451,9 @@ function RagSettings() {
           <>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">Base URL</div>
-                <div className="settings-help">兼容 OpenAI Embedding 协议</div>
+                <LabelWithTip tip="填写兼容 OpenAI Embedding 协议的服务地址。">
+                  Base URL
+                </LabelWithTip>
               </div>
               <TextInput
                 value={openaiBaseUrl}
@@ -2469,10 +2463,9 @@ function RagSettings() {
             </div>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">Embedding 模型</div>
-                <div className="settings-help">
-                  默认 text-embedding-3-small（1536 维）
-                </div>
+                <LabelWithTip tip="默认 text-embedding-3-small（1536 维）。">
+                  Embedding 模型
+                </LabelWithTip>
               </div>
               <TextInput
                 value={openaiModel}
@@ -2482,8 +2475,9 @@ function RagSettings() {
             </div>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">向量维度</div>
-                <div className="settings-help">改维度会触发整库重建</div>
+                <LabelWithTip tip="修改维度后会触发整库重建。">
+                  向量维度
+                </LabelWithTip>
               </div>
               <NumberInput
                 value={openaiDim}
@@ -2492,11 +2486,11 @@ function RagSettings() {
             </div>
             <div className="settings-row">
               <div className="settings-row-l">
-                <div className="settings-label">API Key</div>
+                <LabelWithTip tip="OpenAI Embedding 的 Key 存入系统钥匙串。">
+                  API Key
+                </LabelWithTip>
                 <div className="settings-help">
-                  {openaiKeyConfigured
-                    ? "已存入系统钥匙串"
-                    : "未配置；点击下方按钮保存"}
+                  {openaiKeyConfigured ? "已存储" : "未配置"}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
@@ -2827,11 +2821,9 @@ function ImportExport() {
         </div>
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">从其它工具导入</div>
-        <div className="settings-help" style={{ padding: "0 16px 8px" }}>
-          导入到当前仓库的 <code>imports/&lt;provider&gt;-&lt;timestamp&gt;/</code>。
-          Notion/Bear/印象选归档文件，Obsidian 选 vault 目录。Roam/Logseq 暂未支持。
-        </div>
+        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion、Bear、印象选归档文件，Obsidian 选 vault 目录。">
+          从其它工具导入
+        </CardTitle>
         <div
           style={{
             display: "grid",
@@ -2921,6 +2913,8 @@ type UpdateState =
 function About() {
   const [version, setVersion] = useState<string>("");
   const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
+  const theme = useSettings((s) => s.theme);
+  const isDarkTheme = THEMES.find((t) => t.id === theme)?.isDark ?? false;
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("?"));
@@ -3020,23 +3014,12 @@ function About() {
           padding: "20px 0",
         }}
       >
-        <div
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: 18,
-            background: "linear-gradient(135deg, var(--accent), var(--accent-2))",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 32,
-            color: "white",
-            fontWeight: 700,
-            boxShadow: "0 8px 24px var(--accent-glow)",
-          }}
-        >
-          m
-        </div>
+        <img
+          className="settings-app-icon"
+          src={isDarkTheme ? "/brand/icon-dark-256.png" : "/brand/icon-light-256.png"}
+          alt="markio"
+          draggable={false}
+        />
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>markio</div>
           <div style={{ color: "var(--text-3)", marginTop: 2 }}>

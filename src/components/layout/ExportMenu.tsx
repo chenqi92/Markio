@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, type RefObject } from "react";
 import { Icon, type IconName } from "../ui/Icon";
+import { ToolbarMenuPortal } from "./ToolbarMenuPortal";
 import {
   copyHtml,
   copyMarkdown,
@@ -74,23 +75,21 @@ const ITEMS = [
   run: (title: string, source: string) => Promise<void>;
 }>;
 
-export function ExportMenu({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
+export function ExportMenu({
+  anchorRef,
+  onClose,
+}: {
+  anchorRef: RefObject<HTMLElement | null>;
+  onClose: () => void;
+}) {
   const tab = useTabs((s) => s.activeTab());
   const setToast = useUI((s) => s.setToast);
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener("mousedown", handler);
-    return () => window.removeEventListener("mousedown", handler);
-  }, [onClose]);
+    if (!tab) onClose();
+  }, [onClose, tab]);
 
-  if (!tab) {
-    onClose();
-    return null;
-  }
+  if (!tab) return null;
 
   const run = async (id: string) => {
     const item = ITEMS.find((i) => i.id === id);
@@ -113,10 +112,11 @@ export function ExportMenu({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="new-menu"
-      ref={ref}
-      style={{ right: 0, left: "auto", width: 260 }}
+    <ToolbarMenuPortal
+      anchorRef={anchorRef}
+      align="right"
+      width={260}
+      onClose={onClose}
     >
       <div className="new-menu-h">导出</div>
       {ITEMS.map((it) => (
@@ -135,6 +135,6 @@ export function ExportMenu({ onClose }: { onClose: () => void }) {
           </div>
         </button>
       ))}
-    </div>
+    </ToolbarMenuPortal>
   );
 }

@@ -56,7 +56,6 @@ interface PendingDeco {
 
 function build(view: EditorView): DecorationSet {
   const decos: PendingDeco[] = [];
-  const sel = view.state.selection.main;
   const cursorLines = new Set<number>();
   // 把所有选区覆盖到的行号都收集起来 —— 选区可能跨多行
   for (const r of view.state.selection.ranges) {
@@ -86,8 +85,12 @@ function build(view: EditorView): DecorationSet {
     decos.push({ from, to, deco: Decoration.mark({ class: cls }) });
   };
 
+  let visibleFrom = 0;
+  let visibleTo = view.state.doc.length;
+
   /** 给一行加 class（标题 / 引用整行） */
   const lineMark = (pos: number, cls: string) => {
+    if (pos < visibleFrom || pos > visibleTo) return;
     const line = view.state.doc.lineAt(pos);
     decos.push({
       from: line.from,
@@ -96,12 +99,35 @@ function build(view: EditorView): DecorationSet {
     });
   };
 
+  const markLines = (from: number, to: number, cls: string) => {
+    const fromPos = Math.max(from, visibleFrom);
+    const toPos = Math.min(to, visibleTo);
+    if (fromPos > toPos) return;
+    const startLine = view.state.doc.lineAt(fromPos).number;
+    const endLine = view.state.doc.lineAt(toPos).number;
+    for (let ln = startLine; ln <= endLine; ln++) {
+      const line = view.state.doc.line(ln);
+      decos.push({
+        from: line.from,
+        to: line.from,
+        deco: Decoration.line({ class: cls }),
+      });
+    }
+  };
+
   // 用一个简单的 "active block" 栈，标记当前在哪种节点里，给行内 marker 分类
   const tree = syntaxTree(view.state);
-  tree.iterate({
-    from: 0,
-    to: view.state.doc.length,
-    enter: (node) => {
+  const ranges =
+    view.visibleRanges.length > 0
+      ? view.visibleRanges
+      : [{ from: 0, to: view.state.doc.length }];
+  for (const range of ranges) {
+    visibleFrom = range.from;
+    visibleTo = range.to;
+    tree.iterate({
+      from: visibleFrom,
+      to: visibleTo,
+      enter: (node) => {
       const n = node.name;
 
       // ─── 标题 ATX ───
@@ -121,17 +147,7 @@ function build(view: EditorView): DecorationSet {
 
       // ─── 引用 ───
       if (n === "Blockquote") {
-        // 给每一行都加一个 cm-md-line cm-md-quote
-        const startLine = view.state.doc.lineAt(node.from).number;
-        const endLine = view.state.doc.lineAt(node.to).number;
-        for (let ln = startLine; ln <= endLine; ln++) {
-          const line = view.state.doc.line(ln);
-          decos.push({
-            from: line.from,
-            to: line.from,
-            deco: Decoration.line({ class: "cm-md-line cm-md-quote-line" }),
-          });
-        }
+        markLines(node.from, node.to, "cm-md-line cm-md-quote-line");
         return;
       }
 
@@ -236,20 +252,12 @@ function build(view: EditorView): DecorationSet {
 
       // ─── 代码块 ───
       if (n === "FencedCode" || n === "CodeBlock") {
-        const startLine = view.state.doc.lineAt(node.from).number;
-        const endLine = view.state.doc.lineAt(node.to).number;
-        for (let ln = startLine; ln <= endLine; ln++) {
-          const line = view.state.doc.line(ln);
-          decos.push({
-            from: line.from,
-            to: line.from,
-            deco: Decoration.line({ class: "cm-md-line cm-md-codeblock" }),
-          });
-        }
+        markLines(node.from, node.to, "cm-md-line cm-md-codeblock");
         return;
       }
     },
-  });
+    });
+  }
 
   decos.sort((a, b) => a.from - b.from || a.to - b.to);
   return Decoration.set(

@@ -435,7 +435,7 @@ pub fn outline_only(source: &str) -> Vec<OutlineItem> {
     out
 }
 
-fn count_words(src: &str) -> usize {
+pub fn count_words(src: &str) -> usize {
     let mut count = 0usize;
     let mut last_alpha = false;
     for ch in src.chars() {
@@ -455,6 +455,13 @@ fn count_words(src: &str) -> usize {
         }
     }
     count
+}
+
+pub fn metadata_only(source: &str) -> (Vec<OutlineItem>, usize, u32) {
+    let outline = outline_only(source);
+    let words = count_words(source);
+    let reading_minutes = ((words as f32 / 220.0).ceil() as u32).max(1);
+    (outline, words, reading_minutes)
 }
 
 #[cfg(test)]

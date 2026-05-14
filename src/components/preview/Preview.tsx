@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { renderMermaidIn } from "@/lib/mermaid";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
 import { useUI } from "@/stores/ui";
+import { parseFrontmatter } from "@/lib/frontmatter";
+import { KanbanView } from "./KanbanView";
 
 interface Props {
   source: string;
@@ -11,6 +13,8 @@ interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
   onScroll?: (info: { top: number; height: number; clientHeight: number }) => void;
   scrollTarget?: { ratio: number; nonce: number } | null;
+  /** kanban 等可写视图回写 source */
+  onSourceChange?: (next: string) => void;
 }
 
 function escapeHtml(input: string): string {
@@ -27,7 +31,14 @@ function escapeHtml(input: string): string {
  * then inject the resulting HTML. The frontend only paints; parsing/highlighting
  * stays in Rust.
  */
-export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Props) {
+export function Preview({
+  source,
+  basePath,
+  onMeta,
+  onScroll,
+  scrollTarget,
+  onSourceChange,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const suppressScrollRef = useRef(false);
@@ -36,6 +47,9 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
   const theme = useSettings((s) => s.theme);
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
+
+  const fm = useMemo(() => parseFrontmatter(source), [source]);
+  const viewKind = fm.data.view?.toLowerCase();
 
   useEffect(() => {
     if (!contentRef.current) return;
@@ -125,6 +139,30 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
     const seq = ++seqRef.current;
     let cleanupStream: (() => void) | null = null;
     let cancelled = false;
+    // 自定义视图模板（kanban 等）走前端渲染，跳过 Rust HTML 流水线
+    if (viewKind === "kanban") {
+      // 仍需把字数 / 标题大纲算出来给 Outline 用
+      const words = fm.body
+        .replace(/[`*_#>\-\[\]()]/g, "")
+        .trim().length;
+      const outline: OutlineItem[] = [];
+      const lines = fm.body.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+        if (m)
+          outline.push({
+            level: m[1].length,
+            text: m[2].trim(),
+            anchor: `h-${i}`,
+          });
+      }
+      onMetaRef.current?.({
+        outline,
+        words,
+        readingMinutes: Math.max(1, Math.round(words / 500)),
+      });
+      return;
+    }
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
@@ -181,7 +219,7 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
       }
       cleanupStream?.();
     };
-  }, [source, basePath]);
+  }, [source, basePath, viewKind, fm.body]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -237,6 +275,18 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
     el.addEventListener("click", handler);
     return () => el.removeEventListener("click", handler);
   }, []);
+
+  if (viewKind === "kanban") {
+    return (
+      <div ref={containerRef} className="preview-pane">
+        <KanbanView
+          body={fm.body}
+          source={source}
+          onSourceChange={onSourceChange}
+        />
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="preview-pane">

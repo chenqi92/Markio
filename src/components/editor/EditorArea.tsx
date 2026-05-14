@@ -357,6 +357,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               ? { ratio: scrollSync.ratio, nonce: scrollSync.nonce }
               : null
           }
+          onSourceChange={(next) => updateContent(tab.id, next)}
         />
       )}
       <Outline

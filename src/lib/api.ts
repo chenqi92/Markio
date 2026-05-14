@@ -155,9 +155,13 @@ export const api = {
     let unlisten: UnlistenFn | null = null;
     let finished = false;
     const cleanup = () => {
+      const shouldCancel = !finished;
       if (unlisten) {
         unlisten();
         unlisten = null;
+      }
+      if (shouldCancel) {
+        void invoke<void>("md_cancel_stream", { streamId }).catch(() => undefined);
       }
     };
     unlisten = await listen<

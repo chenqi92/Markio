@@ -28,6 +28,40 @@ interface TabsState {
   activeTab: () => TabInfo | undefined;
 }
 
+const POST_SAVE_RAG_DELAY_MS = 4_000;
+const POST_SAVE_TOKEN_DELAY_MS = 2_500;
+const ragReindexTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const tokenRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleRagReindex(workspacePath: string, filePath: string) {
+  const key = `${workspacePath}\0${filePath}`;
+  const current = ragReindexTimers.get(key);
+  if (current) clearTimeout(current);
+  const timer = setTimeout(() => {
+    ragReindexTimers.delete(key);
+    void (async () => {
+      try {
+        const s = useSettings.getState();
+        if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
+        await useRag.getState().reindexFile(workspacePath, filePath);
+      } catch (err) {
+        console.warn("[rag.reindexFile] post-save failed", err);
+      }
+    })();
+  }, POST_SAVE_RAG_DELAY_MS);
+  ragReindexTimers.set(key, timer);
+}
+
+function scheduleVaultTokenRefresh(workspacePath: string) {
+  const current = tokenRefreshTimers.get(workspacePath);
+  if (current) clearTimeout(current);
+  const timer = setTimeout(() => {
+    tokenRefreshTimers.delete(workspacePath);
+    void useVaultTokens.getState().ensure(workspacePath);
+  }, POST_SAVE_TOKEN_DELAY_MS);
+  tokenRefreshTimers.set(workspacePath, timer);
+}
+
 export const useTabs = create<TabsState>((set, get) => ({
   tabs: [],
   activeId: null,
@@ -142,18 +176,9 @@ export const useTabs = create<TabsState>((set, get) => ({
         .getState()
         .workspaces.find((w) => w.id === tab.workspaceId);
       if (ws) {
-        // 增量更新 RAG 索引（受设置开关控制；遵循 fire-and-forget）
-        void (async () => {
-          try {
-            const s = useSettings.getState();
-            if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
-            await useRag.getState().reindexFile(ws.path, tab.path);
-          } catch (err) {
-            console.warn("[rag.reindexFile] post-save failed", err);
-          }
-        })();
-        // 强制刷新 vault token 缓存，新加的 #tag / @mention / 文件名 立刻可补全
-        void useVaultTokens.getState().ensure(ws.path, true);
+        // 自动保存可能很频繁，后台索引和 token 扫描必须合并触发。
+        scheduleRagReindex(ws.path, tab.path);
+        scheduleVaultTokenRefresh(ws.path);
       }
       set((s) => ({
         tabs: s.tabs.map((t) =>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { NewMenu } from "./NewMenu";
 import { ExportMenu } from "./ExportMenu";
@@ -30,6 +30,8 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
   const saveActive = useTabs((s) => s.saveActive);
   const setToast = useUI((s) => s.setToast);
   const dirty = useTabs((s) => s.activeTab()?.dirty ?? false);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -72,6 +74,7 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
 
         <div style={{ position: "relative" }}>
           <button
+            ref={newButtonRef}
             className="tb-btn primary"
             title="新建…"
             onClick={() => setNewOpen((v) => !v)}
@@ -79,7 +82,12 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
             <Icon name="plus" size={13} />
             <span>新建</span>
           </button>
-          {newOpen && <NewMenu onClose={() => setNewOpen(false)} />}
+          {newOpen && (
+            <NewMenu
+              anchorRef={newButtonRef}
+              onClose={() => setNewOpen(false)}
+            />
+          )}
         </div>
 
         <div className="tb-sep" />
@@ -127,6 +135,7 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
         </button>
         <div style={{ position: "relative" }}>
           <button
+            ref={exportButtonRef}
             className="tb-btn"
             title="导出 ⌘E"
             onClick={() => setExportOpen((v) => !v)}
@@ -134,11 +143,24 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
             <Icon name="download" size={13} />
           </button>
           {exportOpen && (
-            <ExportMenu onClose={() => setExportOpen(false)} />
+            <ExportMenu
+              anchorRef={exportButtonRef}
+              onClose={() => setExportOpen(false)}
+            />
           )}
         </div>
 
         <div className="tb-sep" />
+
+        <button
+          type="button"
+          className="tb-quick-cap"
+          title="快速捕获 ⌥Space"
+          onClick={() => useUI.getState().openQuickCapture(true)}
+        >
+          <span className="bolt" aria-hidden>⚡</span>
+          <span>捕获</span>
+        </button>
 
         <button
           className="tb-btn ai-btn-tb"

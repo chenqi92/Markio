@@ -14,6 +14,7 @@ import { FindBar } from "../popovers/FindBar";
 import { HistorySheet } from "../popovers/HistorySheet";
 import { AIPanel } from "../popovers/AIPanel";
 import { WeChatSheet } from "../popovers/WeChatSheet";
+import { QuickCapture } from "../popovers/QuickCapture";
 import { Settings } from "../settings/Settings";
 import { ToastHost } from "../popovers/Toast";
 import { useUI } from "@/stores/ui";
@@ -31,6 +32,8 @@ export function AppShell() {
   const settingsOpen = useUI((s) => s.settingsOpen);
   const aiOpen = useUI((s) => s.aiOpen);
   const wechatOpen = useUI((s) => s.wechatOpen);
+  const quickCaptureOpen = useUI((s) => s.quickCaptureOpen);
+  const openQuickCapture = useUI((s) => s.openQuickCapture);
   const openCommand = useUI((s) => s.openCommand);
   const openGlobalSearch = useUI((s) => s.openGlobalSearch);
   const openSettings = useUI((s) => s.openSettings);
@@ -98,6 +101,9 @@ export function AppShell() {
       )}
       {settingsOpen && <Settings onClose={() => openSettings(false)} />}
       {wechatOpen && <WeChatSheet onClose={() => openWechat(false)} />}
+      {quickCaptureOpen && (
+        <QuickCapture onClose={() => openQuickCapture(false)} />
+      )}
       <ToastHost />
     </div>
   );

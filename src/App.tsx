@@ -12,6 +12,12 @@ import { useCustomThemes } from "./stores/customThemes";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
+function isTreeRefreshRelevant(path: string): boolean {
+  if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) return true;
+  const name = path.split(/[\\/]/).pop() ?? "";
+  return !name.includes(".");
+}
+
 export default function App() {
   const openCommand = useUI((s) => s.openCommand);
   const openFind = useUI((s) => s.openFind);
@@ -75,7 +81,8 @@ export default function App() {
           path: string;
           kind: "modified" | "created" | "removed";
         }>("fs-changed", (e) => {
-          const { workspace } = e.payload;
+          const { workspace, path } = e.payload;
+          if (!isTreeRefreshRelevant(path)) return;
           // 同一个仓库 1s 内只刷一次
           if (pendingRefresh.has(workspace)) return;
           const handle = setTimeout(() => {
@@ -286,6 +293,9 @@ export default function App() {
       } else if (mod && e.key === "4") {
         e.preventDefault();
         setMode("preview");
+      } else if (e.altKey && (e.code === "Space" || e.key === " ")) {
+        e.preventDefault();
+        useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen);
       } else if (e.key === "Escape") {
         openCommand(false);
         openFind(false);
@@ -294,6 +304,7 @@ export default function App() {
         useUI.getState().openWechat(false);
         useUI.getState().openHistory(false);
         useUI.getState().openGlobalSearch(false);
+        useUI.getState().openQuickCapture(false);
       }
     };
     window.addEventListener("keydown", onKey);

@@ -14,10 +14,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -41,8 +43,19 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "rustls-tls",
     "gzip",
+    "stream",
 ] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+futures-util = "0.3"
+
+# S3 兼容存储上传：minimal SigV4 签名 + reqwest PUT；不引入 rust-s3 全家桶
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# 文件系统监听（外部编辑器改动 → 自动重索引 + 刷文件树）
+notify = "6"
+notify-debouncer-mini = { version = "0.4", default-features = false }
 
 # OS 钥匙串（mac Security / Windows Credential / Linux Secret Service）
 keyring = { version = "3", features = [
@@ -50,6 +63,18 @@ keyring = { version = "3", features = [
     "windows-native",
     "linux-native",
 ] }
+
+# 图片压缩（粘贴 / 拖拽上传前）
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "webp",
+    "gif",
+] }
+
+# Notion / Bear / 印象 等导入：zip 解压 + xml 解析
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.36"
 
 # 时间戳
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }

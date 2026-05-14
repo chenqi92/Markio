@@ -1,0 +1,119 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+
+permissions:
+  contents: write
+
+jobs:
+  detect-version:
+    name: detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: check
+        name: compare package.json version with previous commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(jq -r .version package.json)
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            PREVIOUS=$(git show HEAD^:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "")
+          else
+            PREVIOUS=""
+          fi
+          echo "current=$CURRENT"
+          echo "previous=$PREVIOUS"
+          if [ -n "$CURRENT" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build ${{ matrix.platform.label }}
+    needs: detect-version
+    if: needs.detect-version.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - label: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - label: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - label: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+          - label: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install linux build deps
+        if: matrix.platform.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: build & publish via tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v${{ needs.detect-version.outputs.version }}
+          releaseName: markio v${{ needs.detect-version.outputs.version }}
+          releaseBody: |
+            Automated release for markio v${{ needs.detect-version.outputs.version }}.
+
+            See assets below for installers per platform.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.platform.args }}

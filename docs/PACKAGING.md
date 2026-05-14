@@ -63,10 +63,25 @@ pnpm tauri build --bundles appimage,deb
 
 Windows Store（MSIX）：
 
-```bash
+Tauri 2.x bundler 目前仍主推 MSI/NSIS；MSIX 需要在 MSI 基础上再用官方工具
+`MSIX Packaging Tool`（Windows 10+ 自带）或 `msi-to-msix` 转换。流程：
+
+```powershell
+# 1) 先出 MSI
 pnpm tauri build --target x86_64-pc-windows-msvc --bundles msi
-# 上传到 Partner Center 走 MSI/MSIX 渠道
+
+# 2) 用 MSIX Packaging Tool（图形化）或 MakeAppx.exe 转 MSIX
+makeappx pack /d <unpacked_dir> /p markio.msix
+
+# 3) signtool 签名（需 Azure Code Signing 或 EV 证书）
+signtool sign /fd SHA256 /a /n "<Publisher CN>" markio.msix
+
+# 4) 上传到 Partner Center → Microsoft Store
 ```
+
+CI 自动化建议放到独立 workflow（与 `release.yml` 解耦），因为 Partner Center
+凭据轮换较频繁；样例参考：`.github/workflows/release.yml` 的 windows-x64 job
+继续补 `--bundles msix` 步骤（待官方 bundler 提供原生支持后切换）。
 
 ## 五、常见问题
 

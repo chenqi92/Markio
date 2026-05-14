@@ -8,25 +8,8 @@
     "core:webview:deny-internal-toggle-devtools",
     "dialog:default",
     "store:default",
-    "fs:default",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-read-dir",
-    "fs:allow-mkdir",
-    "fs:allow-remove",
-    "fs:allow-rename",
-    "fs:allow-exists",
-    "fs:allow-stat",
-    {
-      "identifier": "fs:scope",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" }
-      ]
-    }
+    "updater:default",
+    "process:default",
+    "process:allow-restart"
   ]
 }

@@ -24,3 +24,10 @@ pnpm-debug.log*
 # Local design prototype / duplicate export snapshots.
 mdview/
 mv-view-ligth.png
+.claude
+
+# Tauri updater signing keypair (private key MUST NOT be committed)
+.tauri-keys/
+
+# Vite dev timestamp scratch files
+vite.config.ts.timestamp-*.mjs

@@ -5,7 +5,7 @@
   "identifier": "com.welape.mdview",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:18642",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
@@ -27,21 +27,26 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob: https:; media-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; frame-src 'none'; object-src 'none'; base-uri 'self'",
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob: https:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost; frame-src 'none'; object-src 'none'; base-uri 'self'",
       "assetProtocol": {
-        "enable": true,
-        "scope": [
-          "$HOME/**",
-          "$DOCUMENT/**",
-          "$DESKTOP/**",
-          "$DOWNLOAD/**",
-          "/Volumes/**"
-        ]
+        "enable": false,
+        "scope": []
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCOTczMEI2NkQ4RUQzNkEKUldScTA0NXR0akNYMjlSYm9FWkNETTR0WE4waU5GM0lucTVSbXVNNnFLdVJ5STI2ejdwL2FjalAK",
+      "endpoints": [
+        "https://github.com/chenqi92/Markio/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "category": "Productivity",
     "shortDescription": "本地优先的 Markdown 阅读器",
@@ -63,7 +68,10 @@
     },
     "windows": {
       "wix": {
-        "language": ["zh-CN", "en-US"]
+        "language": [
+          "zh-CN",
+          "en-US"
+        ]
       }
     }
   }

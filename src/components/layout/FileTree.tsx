@@ -259,7 +259,7 @@ function VirtualizedTree({
       else next.add(node.path);
       return next;
     });
-    if (willOpen && node.isDir && node.children === undefined) {
+    if (willOpen && node.isDir && node.children == null) {
       void onLoadDir(node.path);
     }
   }, [expanded, onLoadDir]);

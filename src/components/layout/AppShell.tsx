@@ -44,7 +44,6 @@ export function AppShell() {
   const openWechat = useUI((s) => s.openWechat);
   const tab = useTabs((s) => s.activeTab());
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
-  const activeWorkspacePath = useWorkspace((s) => s.activeWorkspace()?.path ?? null);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const fontSize = useSettings((s) => s.fontSize);
   const [meta, setMeta] = useState<{
@@ -53,9 +52,8 @@ export function AppShell() {
   }>({ words: 0, readingMinutes: 1 });
 
   useEffect(() => {
-    if (activeWorkspacePath?.startsWith("/Volumes/")) return;
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
-  }, [activeWorkspaceId, activeWorkspacePath, refreshTree]);
+  }, [activeWorkspaceId, refreshTree]);
 
   return (
     <div className="markio-root">

@@ -52,8 +52,8 @@ function mergeLoadedChildren(next: FileEntry, previous?: FileEntry): FileEntry {
     if (
       child.isDir &&
       oldChild?.isDir &&
-      child.children === undefined &&
-      oldChild.children !== undefined
+      child.children == null &&
+      oldChild.children != null
     ) {
       changed = true;
       return {

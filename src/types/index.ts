@@ -13,7 +13,7 @@ export interface FileEntry {
   isDir: boolean;
   size: number;
   modified: number;
-  children?: FileEntry[];
+  children?: FileEntry[] | null;
   truncated?: boolean;
 }
 

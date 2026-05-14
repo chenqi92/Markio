@@ -19,6 +19,8 @@ export function FileTree() {
   const tree = useWorkspace((s) => s.activeTree());
   const loading = useWorkspace((s) => s.loading);
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
+  const refreshTree = useWorkspace((s) => s.refreshTree);
+  const loadDir = useWorkspace((s) => s.loadDir);
   const activePath = useTabs((s) =>
     s.tabs.find((t) => t.id === s.activeId)?.path,
   );
@@ -64,14 +66,31 @@ export function FileTree() {
               display: "inline-block",
             }}
           />
-          正在扫描…
+          正在加载目录…
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
 
-  if (!tree || !tree.children?.length) {
+  if (!tree) {
+    return (
+      <div className="tree scroll tree-empty">
+        尚未加载当前文件夹。
+        <br />
+        <button
+          type="button"
+          onClick={() => {
+            void refreshTree(ws.id);
+          }}
+        >
+          加载文件夹…
+        </button>
+      </div>
+    );
+  }
+
+  if (!tree.children?.length) {
     return (
       <div className="tree scroll tree-empty">
         当前文件夹里暂时没有 markdown 文件。
@@ -154,6 +173,7 @@ export function FileTree() {
         <VirtualizedTree
           roots={tree.children ?? []}
           activePath={activePath}
+          onLoadDir={(path) => loadDir(ws.id, path)}
           onContext={(e, n) => {
             e.preventDefault();
             setCtx({ x: e.clientX, y: e.clientY, node: n });
@@ -191,6 +211,11 @@ function countMd(node: FileEntry): number {
   return (node.children ?? []).reduce((acc, c) => acc + countMd(c), 0);
 }
 
+function parentPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.replace(/\/[^/]+$/, "") || normalized;
+}
+
 interface FlatRow {
   node: FileEntry;
   depth: number;
@@ -215,23 +240,29 @@ const ROW_HEIGHT = 26;
 function VirtualizedTree({
   roots,
   activePath,
+  onLoadDir,
   onContext,
 }: {
   roots: FileEntry[];
   activePath?: string;
+  onLoadDir: (path: string) => Promise<void>;
   onContext: (e: React.MouseEvent, n: FileEntry) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const flat = useMemo(() => flattenTree(roots, expanded), [roots, expanded]);
 
-  const toggle = useCallback((path: string) => {
+  const toggle = useCallback((node: FileEntry) => {
+    const willOpen = !expanded.has(node.path);
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      if (next.has(node.path)) next.delete(node.path);
+      else next.add(node.path);
       return next;
     });
-  }, []);
+    if (willOpen && node.isDir && node.children === undefined) {
+      void onLoadDir(node.path);
+    }
+  }, [expanded, onLoadDir]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const useVirtual = flat.length > 200;
@@ -319,7 +350,7 @@ const TreeRow = memo(function TreeRow({
   depth: number;
   isOpen: boolean;
   activePath?: string;
-  onToggle: (path: string) => void;
+  onToggle: (node: FileEntry) => void;
   onContext: (e: React.MouseEvent, n: FileEntry) => void;
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
@@ -329,7 +360,7 @@ const TreeRow = memo(function TreeRow({
   const isActive = activePath === node.path;
   const onClick = async () => {
     if (node.isDir) {
-      onToggle(node.path);
+      onToggle(node);
     } else if (ws) {
       await openFile(ws.id, node.path);
     }
@@ -381,7 +412,7 @@ function TreeContextMenu({
   onChangeIcon: (path: string, x: number, y: number) => void;
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const refreshTree = useWorkspace((s) => s.refreshTree);
+  const loadDir = useWorkspace((s) => s.loadDir);
   const setToast = useUI((s) => s.setToast);
   const openFile = useTabs((s) => s.openFile);
   const closeTabsForPath = useTabsForPath();
@@ -447,7 +478,7 @@ function TreeContextMenu({
           flash("已重命名");
           if (ws) {
             void ragRemoveSilently(ws.path, node.path);
-            await refreshTree(ws.id);
+            await loadDir(ws.id, parentPath(node.path));
           }
         } catch (e) {
           setToast({
@@ -477,7 +508,7 @@ function TreeContextMenu({
           closeTabsForPath(node.path);
           void ragRemoveSilently(ws.path, node.path);
           flash("已移到回收站");
-          await refreshTree(ws.id);
+          await loadDir(ws.id, parentPath(node.path));
         } catch (e) {
           setToast({
             stage: "error",
@@ -501,7 +532,7 @@ function TreeContextMenu({
           closeTabsForPath(node.path);
           if (ws) {
             void ragRemoveSilently(ws.path, node.path);
-            await refreshTree(ws.id);
+            await loadDir(ws.id, parentPath(node.path));
           }
           flash("已永久删除");
         } catch (e) {

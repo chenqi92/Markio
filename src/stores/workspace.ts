@@ -12,13 +12,14 @@ interface WorkspaceState {
   /** 已经向 Rust 注册过的路径（去重） */
   _registered: Set<string>;
 
-  /** App 启动时把已持久化的仓库全部告诉 Rust */
+  /** App 启动时只把当前仓库告诉 Rust，避免为历史仓库启动递归 watcher */
   hydrate: () => Promise<void>;
 
   addWorkspace: (path: string) => Promise<string>;
   removeWorkspace: (id: string) => Promise<void>;
   setActive: (id: string) => Promise<void>;
   refreshTree: (id?: string) => Promise<void>;
+  loadDir: (id: string, path: string) => Promise<void>;
   activeWorkspace: () => Workspace | undefined;
   activeTree: () => FileEntry | undefined;
 }
@@ -32,13 +33,72 @@ function samePath(a: string, b: string): boolean {
   return pathKey(a) === pathKey(b);
 }
 
+function mergeLoadedChildren(next: FileEntry, previous?: FileEntry): FileEntry {
+  if (
+    !next.isDir ||
+    !previous?.isDir ||
+    !next.children ||
+    !previous.children
+  ) {
+    return next;
+  }
+
+  const previousByPath = new Map(
+    previous.children.map((child) => [pathKey(child.path), child]),
+  );
+  let changed = false;
+  const children = next.children.map((child) => {
+    const oldChild = previousByPath.get(pathKey(child.path));
+    if (
+      child.isDir &&
+      oldChild?.isDir &&
+      child.children === undefined &&
+      oldChild.children !== undefined
+    ) {
+      changed = true;
+      return {
+        ...child,
+        children: oldChild.children,
+        truncated: Boolean(child.truncated || oldChild.truncated),
+      };
+    }
+    return child;
+  });
+
+  return changed ? { ...next, children } : next;
+}
+
+function replaceTreeNode(root: FileEntry, updated: FileEntry): FileEntry {
+  if (samePath(root.path, updated.path)) {
+    return mergeLoadedChildren(updated, root);
+  }
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const next = replaceTreeNode(child, updated);
+    if (next !== child) changed = true;
+    return next;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
 function rememberRegistered(registered: Set<string>, path: string, canon: string) {
   registered.add(path);
   registered.add(canon);
 }
 
+function isRegistered(registered: Set<string>, path: string): boolean {
+  for (const p of registered) {
+    if (samePath(p, path)) return true;
+  }
+  return false;
+}
+
 const treeRefreshInFlight = new Set<string>();
 const treeRefreshQueued = new Set<string>();
+const dirLoadInFlight = new Set<string>();
 
 async function registerWorkspace(path: string, registered: Set<string>) {
   const canon = await api.workspaceRegister(path);
@@ -47,6 +107,7 @@ async function registerWorkspace(path: string, registered: Set<string>) {
 }
 
 async function safeRegister(path: string, registered: Set<string>) {
+  if (isRegistered(registered, path)) return path;
   try {
     return await registerWorkspace(path, registered);
   } catch (e) {
@@ -66,9 +127,9 @@ export const useWorkspace = create<WorkspaceState>()(
 
       hydrate: async () => {
         const registered = get()._registered;
-        for (const w of get().workspaces) {
-          await safeRegister(w.path, registered);
-        }
+        const activeId = get().activeId;
+        const active = get().workspaces.find((w) => w.id === activeId);
+        if (active) await safeRegister(active.path, registered);
       },
 
       addWorkspace: async (path) => {
@@ -136,12 +197,13 @@ export const useWorkspace = create<WorkspaceState>()(
             await safeRegister(ws.path, get()._registered);
             set({ loading: true });
             try {
-              const tree = await api.readTree(ws.path);
+              const previous = get().treeCache[targetId];
+              const tree = mergeLoadedChildren(await api.readDir(ws.path), previous);
               set((s) => ({
                 treeCache: { ...s.treeCache, [targetId]: tree },
               }));
             } catch (e) {
-              console.error("readTree failed", e);
+              console.error("readDir failed", e);
             } finally {
               set({ loading: false });
             }
@@ -149,6 +211,33 @@ export const useWorkspace = create<WorkspaceState>()(
           }
         } finally {
           treeRefreshInFlight.delete(targetId);
+        }
+      },
+
+      loadDir: async (id, path) => {
+        const ws = get().workspaces.find((w) => w.id === id);
+        if (!ws) return;
+        const key = `${id}:${pathKey(path)}`;
+        if (dirLoadInFlight.has(key)) return;
+        dirLoadInFlight.add(key);
+        try {
+          await safeRegister(ws.path, get()._registered);
+          const dir = await api.readDir(path);
+          set((s) => {
+            const current = s.treeCache[id];
+            if (!current) {
+              return samePath(dir.path, ws.path)
+                ? { treeCache: { ...s.treeCache, [id]: dir } }
+                : {};
+            }
+            const next = replaceTreeNode(current, dir);
+            if (next === current) return {};
+            return { treeCache: { ...s.treeCache, [id]: next } };
+          });
+        } catch (e) {
+          console.error("loadDir failed", path, e);
+        } finally {
+          dirLoadInFlight.delete(key);
         }
       },
 

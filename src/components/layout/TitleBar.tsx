@@ -42,7 +42,7 @@ export function TitleBar() {
         await w.toggleMaximize();
         return;
       }
-      void w.startDragging();
+      await w.startDragging();
     } catch {
       /* not in tauri or already dragging */
     }

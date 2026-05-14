@@ -394,6 +394,15 @@ async fn fs_read_tree(
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn fs_read_dir(state: tauri::State<'_, AppState>, path: String) -> Result<FileEntry, String> {
+    let canon = validate_path(&state, &path)?;
+    let root = canon.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || fs_ops::read_dir_shallow(&root))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// 读取文件 + 记录指纹，前端用 sig 在保存时校验
 #[tauri::command]
 fn fs_open(state: tauri::State<'_, AppState>, path: String) -> Result<OpenedFile, String> {
@@ -2403,6 +2412,7 @@ pub fn run() {
             workspace_register,
             workspace_unregister,
             fs_read_tree,
+            fs_read_dir,
             fs_open,
             fs_close,
             fs_save,

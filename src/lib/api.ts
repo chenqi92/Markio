@@ -210,6 +210,7 @@ export const api = {
     invoke<string>("workspace_unregister", { path }),
 
   readTree: (path: string) => invoke<FileEntry>("fs_read_tree", { path }),
+  readDir: (path: string) => invoke<FileEntry>("fs_read_dir", { path }),
 
   /** 打开文件：返回内容 + 指纹（用于保存时冲突检测） */
   open: (path: string) => invoke<OpenedFile>("fs_open", { path }),

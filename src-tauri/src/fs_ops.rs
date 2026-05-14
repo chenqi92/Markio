@@ -267,6 +267,95 @@ pub fn walk_tree(root_path: &str) -> Result<FileEntry, String> {
     Ok(root_entry)
 }
 
+pub fn read_dir_shallow(root_path: &str) -> Result<FileEntry, String> {
+    let root = PathBuf::from(root_path);
+    if !root.exists() {
+        return Err(format!("路径不存在：{root_path}"));
+    }
+    if !root.is_dir() {
+        return Err(format!("不是文件夹：{root_path}"));
+    }
+
+    let entries = fs::read_dir(&root).map_err(|e| format!("无法读取目录：{e}"))?;
+    let mut dirs: Vec<FileEntry> = Vec::new();
+    let mut files: Vec<FileEntry> = Vec::new();
+    let mut truncated = false;
+
+    for (local_count, entry) in entries.flatten().enumerate() {
+        if local_count >= MAX_DIR_CHILDREN {
+            truncated = true;
+            break;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_hidden(&name) {
+            continue;
+        }
+
+        let path = entry.path();
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if ft.is_symlink() {
+            continue;
+        }
+
+        if ft.is_dir() {
+            if is_skip_dir(&name) {
+                continue;
+            }
+            dirs.push(FileEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: true,
+                size: 0,
+                modified: modified_ms(&path),
+                children: None,
+                truncated: false,
+            });
+        } else if ft.is_file() {
+            if !is_markdown(&name) {
+                continue;
+            }
+            if files.len() >= MAX_ENTRIES {
+                truncated = true;
+                break;
+            }
+            let meta = entry.metadata().ok();
+            files.push(FileEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                modified: modified_ms(&path),
+                children: None,
+                truncated: false,
+            });
+        }
+    }
+
+    dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    let mut children = Vec::with_capacity(dirs.len() + files.len());
+    children.extend(dirs);
+    children.extend(files);
+
+    Ok(FileEntry {
+        name: root
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| root.display().to_string()),
+        path: root.to_string_lossy().to_string(),
+        is_dir: true,
+        size: 0,
+        modified: modified_ms(&root),
+        children: Some(children),
+        truncated,
+    })
+}
+
 pub fn read_text(path: &str) -> Result<String, String> {
     read_text_path(Path::new(path))
 }

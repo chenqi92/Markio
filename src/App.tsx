@@ -18,7 +18,27 @@ function isTreeRefreshRelevant(path: string): boolean {
   return !name.includes(".");
 }
 
+function parentPath(workspace: string, path: string): string {
+  const normalizedWorkspace = workspace.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const parent = normalizedPath.replace(/\/[^/]+$/, "");
+  return parent.startsWith(normalizedWorkspace) ? parent : normalizedWorkspace;
+}
+
+function treeRefreshDir(
+  workspace: string,
+  path: string,
+  kind: "modified" | "created" | "removed",
+): string {
+  if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) {
+    return parentPath(workspace, path);
+  }
+  return kind === "modified" ? path : parentPath(workspace, path);
+}
+
 const FS_RAG_DELAY_MS = 2_000;
+const FS_EVENT_STARTUP_GRACE_MS = 8_000;
+const appStartedAt = Date.now();
 const fsRagTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function isRagFile(path: string): boolean {
@@ -113,19 +133,25 @@ export default function App() {
         }>("fs-changed", (e) => {
           const { workspace, path, kind } = e.payload;
           if (!isTreeRefreshRelevant(path)) return;
+          if (Date.now() - appStartedAt < FS_EVENT_STARTUP_GRACE_MS) return;
           scheduleRagForFsEvent(workspace, path, kind);
-          // 同一个仓库 1s 内只刷一次
-          if (pendingRefresh.has(workspace)) return;
+          const targetDir = treeRefreshDir(workspace, path, kind);
+          const refreshKey = `${workspace}\0${targetDir}`;
+          // 同一个目录 1s 内只刷一次
+          if (pendingRefresh.has(refreshKey)) return;
           const handle = setTimeout(() => {
-            pendingRefresh.delete(workspace);
+            pendingRefresh.delete(refreshKey);
             const ws = useWorkspace
               .getState()
               .workspaces.find((w) => w.path === workspace);
             if (ws) {
-              useWorkspace.getState().refreshTree(ws.id).catch(() => undefined);
+              useWorkspace
+                .getState()
+                .loadDir(ws.id, targetDir)
+                .catch(() => undefined);
             }
           }, 600);
-          pendingRefresh.set(workspace, handle);
+          pendingRefresh.set(refreshKey, handle);
         });
       } catch (err) {
         console.warn("[fs-changed] subscribe failed", err);

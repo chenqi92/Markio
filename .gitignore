@@ -23,6 +23,7 @@ pnpm-debug.log*
 
 # Local design prototype / duplicate export snapshots.
 mdview/
+mdview-new/
 mv-view-ligth.png
 .claude
 

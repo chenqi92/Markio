@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -449,29 +449,16 @@ function Editor() {
           <button
             type="button"
             key={m.id}
-            className="settings-row"
-            style={{
-              width: "100%",
-              textAlign: "left",
-              cursor: "pointer",
-              background:
-                shortcutStyle === m.id ? "var(--bg-hover)" : "transparent",
-            }}
+            className={
+              "settings-row settings-choice-row" +
+              (shortcutStyle === m.id ? " active" : "")
+            }
             onClick={() => setShortcutStyle(m.id)}
           >
             <div className="settings-row-l">
               <div className="settings-label">{m.label}</div>
             </div>
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                border: "1.5px solid var(--border-strong)",
-                background:
-                  shortcutStyle === m.id ? "var(--accent)" : "transparent",
-              }}
-            />
+            <div className="settings-choice-dot" />
           </button>
         ))}
       </div>
@@ -488,27 +475,16 @@ function Editor() {
           <button
             type="button"
             key={m.id}
-            className="settings-row"
-            style={{
-              width: "100%",
-              textAlign: "left",
-              cursor: "pointer",
-              background: mode === m.id ? "var(--bg-hover)" : "transparent",
-            }}
+            className={
+              "settings-row settings-choice-row" +
+              (mode === m.id ? " active" : "")
+            }
             onClick={() => setMode(m.id)}
           >
             <div className="settings-row-l">
               <div className="settings-label">{m.label}</div>
             </div>
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                border: "1.5px solid var(--border-strong)",
-                background: mode === m.id ? "var(--accent)" : "transparent",
-              }}
-            />
+            <div className="settings-choice-dot" />
           </button>
         ))}
       </div>
@@ -601,6 +577,38 @@ function BrandMark({
   );
 }
 
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      className="settings-info"
+      data-tip={text}
+      tabIndex={0}
+      aria-label={text}
+      role="img"
+    >
+      ?
+    </span>
+  );
+}
+
+function CardTitle({ children, tip }: { children: ReactNode; tip?: string }) {
+  return (
+    <div className="settings-card-h">
+      <span className="settings-card-title">{children}</span>
+      {tip && <HelpTip text={tip} />}
+    </div>
+  );
+}
+
+function LabelWithTip({ children, tip }: { children: ReactNode; tip: string }) {
+  return (
+    <div className="settings-label settings-label-with-tip">
+      <span>{children}</span>
+      <HelpTip text={tip} />
+    </div>
+  );
+}
+
 function Sync() {
   const conflict = useSettings((s) => s.syncConflictStrategy);
   const frequency = useSettings((s) => s.syncFrequency);
@@ -609,7 +617,7 @@ function Sync() {
   return (
     <>
       <h2 className="settings-h">同步</h2>
-      <p className="settings-sub">每个驱动单独鉴权与配置，互不影响。下面是 V1 预留位。</p>
+      <p className="settings-sub">每个驱动单独鉴权与配置。</p>
 
       <GitSyncCard />
 
@@ -640,13 +648,12 @@ function Sync() {
       </div>
 
       <div className="settings-card">
-        <div className="settings-card-h">同步策略</div>
+        <CardTitle tip="自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push。">
+          同步策略
+        </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">启用自动同步</div>
-            <div className="settings-help">
-              按下方频率自动 git add -A · commit · pull · push（仅当前活动仓库）
-            </div>
           </div>
           <Toggle
             on={autoSync}
@@ -794,11 +801,9 @@ function GitSyncCard() {
 
   return (
     <div className="settings-card">
-      <div className="settings-card-h">Git 同步</div>
-      <div className="settings-help" style={{ marginBottom: 8 }}>
-        clone / init / status / fetch / commit / pull / push / 分支切换 / 冲突解决。
-        PAT 走系统钥匙串，仅在请求时临时注入 URL。
-      </div>
+      <CardTitle tip="支持 clone、init、status、fetch、commit、pull、push、分支切换和冲突处理；PAT 仅保存在系统钥匙串。">
+        Git 同步
+      </CardTitle>
 
       <div className="settings-row">
         <div className="settings-row-l">
@@ -809,10 +814,9 @@ function GitSyncCard() {
 
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">远端 URL（HTTPS）</div>
-          <div className="settings-help">
-            形如 https://github.com/&lt;owner&gt;/&lt;repo&gt;.git
-          </div>
+          <LabelWithTip tip="形如 https://github.com/owner/repo.git">
+            远端 URL（HTTPS）
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -825,9 +829,11 @@ function GitSyncCard() {
 
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">Personal Access Token</div>
+          <LabelWithTip tip="仅保存到系统钥匙串，不写入本地设置。">
+            Personal Access Token
+          </LabelWithTip>
           <div className="settings-help">
-            {storedPat ? "已存入钥匙串（留空保留原值）" : "未存储"}
+            {storedPat ? "已存储" : "未存储"}
           </div>
         </div>
         <input
@@ -846,14 +852,7 @@ function GitSyncCard() {
         </button>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          padding: "8px 0",
-        }}
-      >
+      <div className="settings-action-row">
         <button
           className="settings-btn"
           disabled={!workspacePath || busy !== null}
@@ -936,7 +935,6 @@ function GitSyncCard() {
       <div className="settings-row" style={{ marginTop: 6 }}>
         <div className="settings-row-l">
           <div className="settings-label">Commit message</div>
-          <div className="settings-help">作者：{authorName} &lt;{authorEmail}&gt;</div>
         </div>
         <input
           type="text"
@@ -949,8 +947,9 @@ function GitSyncCard() {
 
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">作者</div>
-          <div className="settings-help">写入 GIT_AUTHOR_*</div>
+          <LabelWithTip tip="提交时写入 GIT_AUTHOR_NAME 和 GIT_AUTHOR_EMAIL。">
+            作者
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -1095,10 +1094,9 @@ function GitSyncCard() {
 
       {message && (
         <div
+          className="settings-message"
           style={{
-            marginTop: 8,
             color: message.kind === "err" ? "#dc2626" : "var(--accent)",
-            fontSize: 12,
           }}
         >
           {message.text}
@@ -1726,17 +1724,14 @@ function S3Card() {
 
   return (
     <div className="settings-card">
-      <div className="settings-card-h">S3 兼容存储</div>
-      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
-        AWS S3 / 阿里 OSS / 七牛 / Cloudflare R2 / MinIO 自建都走同一份 SigV4
-        协议。Secret Access Key 经系统钥匙串存储，不写回 zustand 持久化。
-      </div>
+      <CardTitle tip="支持 AWS S3、阿里 OSS、七牛、Cloudflare R2 和 MinIO；Secret Access Key 只保存到系统钥匙串。">
+        S3 兼容存储
+      </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">Endpoint</div>
-          <div className="settings-help">
-            如 https://s3.us-east-1.amazonaws.com 或 https://oss-cn-hangzhou.aliyuncs.com
-          </div>
+          <LabelWithTip tip="例如 https://s3.us-east-1.amazonaws.com 或 https://oss-cn-hangzhou.aliyuncs.com">
+            Endpoint
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -1783,9 +1778,11 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">Secret Access Key</div>
+          <LabelWithTip tip="只保存到系统钥匙串，不写入持久化设置。">
+            Secret Access Key
+          </LabelWithTip>
           <div className="settings-help">
-            {stored ? "已存入钥匙串（留空保留原值）" : "未存储"}
+            {stored ? "已存储" : "未存储"}
           </div>
         </div>
         <input
@@ -1800,10 +1797,9 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">公开 URL 前缀（可选）</div>
-          <div className="settings-help">
-            CDN 接管时填这里；留空走 endpoint/bucket 推导
-          </div>
+          <LabelWithTip tip="使用 CDN 时填写；留空会按 endpoint 和 bucket 推导。">
+            公开 URL 前缀（可选）
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -1815,10 +1811,9 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">Path-style URL</div>
-          <div className="settings-help">
-            老版 S3 / MinIO 需要开启；新版 AWS 默认 virtual-hosted
-          </div>
+          <LabelWithTip tip="老版 S3 或 MinIO 通常需要开启；新版 AWS 通常使用 virtual-hosted。">
+            Path-style URL
+          </LabelWithTip>
         </div>
         <Toggle
           on={pathStyle}
@@ -1827,9 +1822,8 @@ function S3Card() {
       </div>
       {msg && (
         <div
+          className="settings-message"
           style={{
-            padding: "0 16px 12px",
-            fontSize: 12,
             color: msg.kind === "err" ? "#dc2626" : "var(--accent)",
           }}
         >
@@ -1887,15 +1881,14 @@ function WebDavCard() {
 
   return (
     <div className="settings-card">
-      <div className="settings-card-h">WebDAV</div>
-      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
-        坚果云、TeraCloud、NextCloud 都兼容。密码经系统钥匙串存储，前端不持久化。
-        高层「双向同步」需要你触发 push/pull；自动化策略后续随 syncFrequency 设置接入。
-      </div>
+      <CardTitle tip="支持坚果云、TeraCloud、Nextcloud 和自建 WebDAV；密码只保存到系统钥匙串。">
+        WebDAV
+      </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">服务地址</div>
-          <div className="settings-help">如 https://dav.jianguoyun.com/dav/</div>
+          <LabelWithTip tip="例如 https://dav.jianguoyun.com/dav/">
+            服务地址
+          </LabelWithTip>
         </div>
         <input
           type="text"
@@ -1918,9 +1911,11 @@ function WebDavCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">应用专用密码</div>
+          <LabelWithTip tip="只保存到系统钥匙串，不写入前端持久化设置。">
+            应用专用密码
+          </LabelWithTip>
           <div className="settings-help">
-            {stored ? "已存入钥匙串（留空保留原值）" : "未存储"}
+            {stored ? "已存储" : "未存储"}
           </div>
         </div>
         <input
@@ -1940,8 +1935,9 @@ function WebDavCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">远端根目录</div>
-          <div className="settings-help">同步到这个相对路径下（自动 mkcol）</div>
+          <LabelWithTip tip="同步到这个相对路径下；初始化目录会自动创建路径。">
+            远端根目录
+          </LabelWithTip>
         </div>
         <input
           type="text"

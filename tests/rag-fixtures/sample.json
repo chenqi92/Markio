@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "query": "如何配置图片上传",
+      "expected": ["docs/picgo.md", "README.md"]
+    },
+    {
+      "query": "AI 助手支持哪些 provider",
+      "expected": ["docs/ARCHITECTURE.md"]
+    },
+    {
+      "query": "Git 同步怎么用",
+      "expected": ["docs/ROADMAP.md"]
+    },
+    {
+      "query": "如何打包发布",
+      "expected": ["docs/PACKAGING.md"]
+    },
+    {
+      "query": "本地知识库的索引结构",
+      "expected": ["docs/ARCHITECTURE.md", "docs/ROADMAP.md"]
+    }
+  ]
+}

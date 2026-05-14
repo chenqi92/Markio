@@ -465,6 +465,7 @@ function BrandMark({
 function Sync() {
   const conflict = useSettings((s) => s.syncConflictStrategy);
   const frequency = useSettings((s) => s.syncFrequency);
+  const autoSync = useSettings((s) => s.autoSyncEnabled);
   const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
@@ -503,6 +504,18 @@ function Sync() {
         <div className="settings-card-h">同步策略</div>
         <div className="settings-row">
           <div className="settings-row-l">
+            <div className="settings-label">启用自动同步</div>
+            <div className="settings-help">
+              按下方频率自动 git add -A · commit · pull · push（仅当前活动仓库）
+            </div>
+          </div>
+          <Toggle
+            on={autoSync}
+            onChange={(v) => setPreference("autoSyncEnabled", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
             <div className="settings-label">冲突时</div>
           </div>
           <SelectBtn
@@ -521,12 +534,6 @@ function Sync() {
             options={SYNC_FREQUENCY_OPTIONS}
             onChange={(v) => setPreference("syncFrequency", v)}
           />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">仅在 Wi-Fi 下同步附件</div>
-          </div>
-          <Toggle on={true} />
         </div>
       </div>
     </>

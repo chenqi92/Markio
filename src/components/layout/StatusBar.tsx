@@ -1,9 +1,23 @@
 import { useEffect, useState } from "react";
 import { useSettings } from "@/stores/settings";
+import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { formatBytes } from "@/lib/utils";
 import { api, isDesktop } from "@/lib/api";
+import { runSyncNow } from "@/lib/syncScheduler";
+
+function relativeTime(ts: number | null): string {
+  if (!ts) return "尚未同步";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "刚刚同步";
+  const mins = Math.round(diff / 60_000);
+  if (mins < 60) return `${mins} 分钟前同步`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} 小时前同步`;
+  const days = Math.round(hours / 24);
+  return `${days} 天前同步`;
+}
 
 export function StatusBar({
   words,
@@ -16,6 +30,15 @@ export function StatusBar({
   const ws = useWorkspace((s) => s.activeWorkspace());
   const theme = useSettings((s) => s.theme);
   const autosave = useSettings((s) => s.autosave);
+  const autoSyncEnabled = useSettings((s) => s.autoSyncEnabled);
+  const syncStatus = useSync((s) => s.status);
+  const lastSyncAt = useSync((s) => s.lastSyncAt);
+  const lastSyncError = useSync((s) => s.lastError);
+  const [, force] = useState(0);
+  useEffect(() => {
+    const handle = window.setInterval(() => force((n) => n + 1), 30_000);
+    return () => window.clearInterval(handle);
+  }, []);
   const [git, setGit] = useState<{
     branch?: string;
     ahead: number;
@@ -110,6 +133,42 @@ export function StatusBar({
           {git.behind > 0 ? ` ↓${git.behind}` : ""}
           {git.files > 0 ? ` ·${git.files}` : ""}
         </span>
+      )}
+      {git && git.branch && (
+        <button
+          type="button"
+          className="item"
+          title={
+            lastSyncError
+              ? `同步失败：${lastSyncError}`
+              : autoSyncEnabled
+              ? "自动同步开启 · 点击立刻同步"
+              : "自动同步未启用 · 点击立刻同步"
+          }
+          onClick={() => void runSyncNow()}
+          disabled={syncStatus === "syncing"}
+          style={{
+            background: "transparent",
+            border: "none",
+            color:
+              syncStatus === "error"
+                ? "#ff453a"
+                : syncStatus === "syncing"
+                ? "var(--accent)"
+                : "var(--text-3)",
+            cursor: syncStatus === "syncing" ? "wait" : "pointer",
+            padding: 0,
+            font: "inherit",
+          }}
+        >
+          {syncStatus === "syncing"
+            ? "↻ 正在同步…"
+            : syncStatus === "error"
+            ? "⚠ 同步失败"
+            : autoSyncEnabled
+            ? `↺ ${relativeTime(lastSyncAt)}`
+            : "↺ 立刻同步"}
+        </button>
       )}
       <span className="item right">UTF-8</span>
       <span className="item">Markdown</span>

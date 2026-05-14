@@ -45,7 +45,8 @@ type PreferenceKey =
   | "s3AccessKeyId"
   | "s3PublicBaseUrl"
   | "s3PathStyle"
-  | "uploadProvider";
+  | "uploadProvider"
+  | "autoSyncEnabled";
 
 interface SettingsState {
   theme: string;
@@ -119,6 +120,8 @@ interface SettingsState {
   s3PathStyle: boolean;
   /** 粘贴 / 拖拽图片上传走哪条管线 */
   uploadProvider: "picgo" | "s3" | "none";
+  /** 启用按 syncFrequency 自动 commit + push */
+  autoSyncEnabled: boolean;
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
@@ -204,6 +207,7 @@ export const useSettings = create<SettingsState>()(
       s3PublicBaseUrl: "",
       s3PathStyle: false,
       uploadProvider: "picgo",
+      autoSyncEnabled: false,
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });

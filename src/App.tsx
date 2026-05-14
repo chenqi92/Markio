@@ -7,6 +7,7 @@ import { useSettings } from "./stores/settings";
 import { isDarkTheme } from "./themes";
 import { api, parseError, pickDirectory, pickFile } from "./lib/api";
 import { exportPdf } from "./lib/export";
+import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -32,6 +33,12 @@ export default function App() {
   const lightVariant = useSettings((s) => s.lightVariant);
   const hydrate = useWorkspace((s) => s.hydrate);
   const setAi = useSettings((s) => s.setAi);
+  const activeWorkspacePath = useWorkspace((s) => s.activeWorkspace()?.path ?? null);
+
+  useEffect(() => {
+    startSyncScheduler(activeWorkspacePath);
+    return () => stopSyncScheduler();
+  }, [activeWorkspacePath]);
 
   // App 启动时把 localStorage 里的仓库列表 / AI 配置状态同步到 Rust
   useEffect(() => {

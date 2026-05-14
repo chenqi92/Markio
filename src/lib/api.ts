@@ -282,6 +282,19 @@ export const api = {
       { workspace },
     ),
 
+  themeList: () =>
+    invoke<Array<{ id: string; name: string; path: string; size: number }>>(
+      "theme_list",
+    ),
+  themeImport: (sourcePath: string) =>
+    invoke<{ id: string; name: string; path: string; size: number }>(
+      "theme_import",
+      { sourcePath },
+    ),
+  themeRead: (id: string) => invoke<string>("theme_read", { id }),
+  themeDelete: (id: string) => invoke<void>("theme_delete", { id }),
+  themeDirPath: () => invoke<string>("theme_dir_path"),
+
   trashMove: (workspace: string, path: string) =>
     invoke<void>("fs_trash_move", { workspace, path }),
   trashList: (workspace: string) =>

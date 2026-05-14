@@ -7,6 +7,7 @@ import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
 import { useSettings } from "@/stores/settings";
 import { useRag } from "@/stores/rag";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
+import { useCustomThemes } from "@/stores/customThemes";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
 import { setLocale, currentLocale, type Locale } from "@/i18n";
@@ -195,7 +196,154 @@ function Appearance() {
           <Slider value={fontSize} min={13} max={22} onChange={setFontSize} />
         </div>
       </div>
+
+      <CustomThemesCard />
     </>
+  );
+}
+
+function CustomThemesCard() {
+  const list = useCustomThemes((s) => s.list);
+  const activeId = useCustomThemes((s) => s.activeId);
+  const refresh = useCustomThemes((s) => s.refresh);
+  const importFrom = useCustomThemes((s) => s.importFrom);
+  const remove = useCustomThemes((s) => s.remove);
+  const apply = useCustomThemes((s) => s.apply);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onImport = async () => {
+    setErr(null);
+    try {
+      const picked = await pickFile([
+        { name: "CSS", extensions: ["css"] },
+      ]);
+      if (!picked) return;
+      setBusy("import");
+      const meta = await importFrom(picked);
+      await apply(meta.id);
+      setPreference("customThemeId", meta.id);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onApply = async (id: string | null) => {
+    setErr(null);
+    setBusy(id ?? "off");
+    try {
+      await apply(id);
+      setPreference("customThemeId", id);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onRemove = async (id: string) => {
+    if (!window.confirm(`删除主题 ${id}.css？`)) return;
+    setErr(null);
+    setBusy(id);
+    try {
+      await remove(id);
+      if (activeId === id) setPreference("customThemeId", null);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">自定义 CSS 主题</div>
+      <div className="settings-help" style={{ marginBottom: 8 }}>
+        导入 .css 文件后会作为附加样式注入到根节点（覆盖内置主题 CSS 变量）。
+        单文件 ≤ 256 KB。
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <button
+          className="settings-btn primary"
+          disabled={busy !== null}
+          onClick={onImport}
+        >
+          导入 .css
+        </button>
+        <button
+          className="settings-btn"
+          disabled={busy !== null}
+          onClick={() => void refresh()}
+        >
+          刷新列表
+        </button>
+        {activeId && (
+          <button
+            className="settings-btn"
+            disabled={busy !== null}
+            onClick={() => void onApply(null)}
+          >
+            关闭自定义主题
+          </button>
+        )}
+      </div>
+      {err && (
+        <div
+          className="settings-help"
+          style={{ color: "#ff453a", marginBottom: 8 }}
+        >
+          {err}
+        </div>
+      )}
+      {list.length === 0 ? (
+        <div className="settings-help">还没有导入任何主题。</div>
+      ) : (
+        <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+          {list.map((t) => (
+            <li
+              key={t.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 0",
+                borderTop: "1px solid var(--border)",
+              }}
+            >
+              <span style={{ flex: 1 }}>
+                <span style={{ fontWeight: activeId === t.id ? 600 : 400 }}>
+                  {t.name}
+                </span>
+                <span
+                  className="settings-help"
+                  style={{ marginLeft: 8, fontSize: 11 }}
+                >
+                  {(t.size / 1024).toFixed(1)} KB
+                </span>
+              </span>
+              <button
+                className="settings-btn"
+                disabled={busy !== null || activeId === t.id}
+                onClick={() => void onApply(t.id)}
+              >
+                {activeId === t.id ? "已应用" : "应用"}
+              </button>
+              <button
+                className="settings-btn"
+                disabled={busy !== null}
+                onClick={() => void onRemove(t.id)}
+                style={{ color: "#ff453a" }}
+              >
+                删除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

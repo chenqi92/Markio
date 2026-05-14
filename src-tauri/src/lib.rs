@@ -1,4 +1,5 @@
 mod ai;
+mod custom_themes;
 mod fs_ops;
 mod git_ops;
 mod import;
@@ -1002,6 +1003,33 @@ fn crash_read_latest() -> Result<String, String> {
     f.read_to_end(&mut buf)
         .map_err(|e| format!("读取日志失败：{e}"))?;
     Ok(String::from_utf8_lossy(&buf).to_string())
+}
+
+// ─── 自定义 CSS 主题 ─────────────────────────────────────────────
+
+#[tauri::command]
+fn theme_list() -> Result<Vec<custom_themes::CustomTheme>, String> {
+    custom_themes::list()
+}
+
+#[tauri::command]
+fn theme_import(source_path: String) -> Result<custom_themes::CustomTheme, String> {
+    custom_themes::import(&source_path)
+}
+
+#[tauri::command]
+fn theme_read(id: String) -> Result<String, String> {
+    custom_themes::read(&id)
+}
+
+#[tauri::command]
+fn theme_delete(id: String) -> Result<(), String> {
+    custom_themes::delete(&id)
+}
+
+#[tauri::command]
+fn theme_dir_path() -> Result<String, String> {
+    custom_themes::dir_path()
 }
 
 fn install_panic_hook() {
@@ -2270,6 +2298,11 @@ pub fn run() {
             fs_backlinks,
             fs_mentions,
             fs_index_tokens,
+            theme_list,
+            theme_import,
+            theme_read,
+            theme_delete,
+            theme_dir_path,
             fs_trash_move,
             fs_trash_list,
             fs_trash_restore,

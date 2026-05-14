@@ -46,7 +46,8 @@ type PreferenceKey =
   | "s3PublicBaseUrl"
   | "s3PathStyle"
   | "uploadProvider"
-  | "autoSyncEnabled";
+  | "autoSyncEnabled"
+  | "customThemeId";
 
 interface SettingsState {
   theme: string;
@@ -122,6 +123,8 @@ interface SettingsState {
   uploadProvider: "picgo" | "s3" | "none";
   /** 启用按 syncFrequency 自动 commit + push */
   autoSyncEnabled: boolean;
+  /** 已应用的自定义 CSS 主题 id（null 表示未应用） */
+  customThemeId: string | null;
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
@@ -208,6 +211,7 @@ export const useSettings = create<SettingsState>()(
       s3PathStyle: false,
       uploadProvider: "picgo",
       autoSyncEnabled: false,
+      customThemeId: null,
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });

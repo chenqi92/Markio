@@ -8,6 +8,7 @@ import { isDarkTheme } from "./themes";
 import { api, parseError, pickDirectory, pickFile } from "./lib/api";
 import { exportPdf } from "./lib/export";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
+import { useCustomThemes } from "./stores/customThemes";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -39,6 +40,15 @@ export default function App() {
     startSyncScheduler(activeWorkspacePath);
     return () => stopSyncScheduler();
   }, [activeWorkspacePath]);
+
+  // 自定义 CSS 主题：加载列表并应用记住的那一套
+  useEffect(() => {
+    void (async () => {
+      await useCustomThemes.getState().refresh();
+      const id = useSettings.getState().customThemeId;
+      if (id) await useCustomThemes.getState().apply(id);
+    })();
+  }, []);
 
   // App 启动时把 localStorage 里的仓库列表 / AI 配置状态同步到 Rust
   useEffect(() => {

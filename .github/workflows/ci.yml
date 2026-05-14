@@ -3,28 +3,61 @@ name: ci
 on:
   push:
     branches: [main]
+    paths: [package.json]
   pull_request:
     branches: [main]
+    paths: [package.json]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  detect-version:
+    name: detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: check
+        name: compare package.json version with previous commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(jq -r .version package.json)
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            PREVIOUS=$(git show HEAD^:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "")
+          else
+            PREVIOUS=""
+          fi
+          echo "current=$CURRENT"
+          echo "previous=$PREVIOUS"
+          if [ -n "$CURRENT" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   frontend:
     name: frontend (tsc + vite build)
+    needs: detect-version
+    if: needs.detect-version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 11
+          version: 10.14.0
           run_install: false
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: install deps
@@ -38,6 +71,8 @@ jobs:
 
   rust:
     name: rust (fmt + check)
+    needs: detect-version
+    if: needs.detect-version.outputs.changed == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

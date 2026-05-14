@@ -373,8 +373,6 @@ function LanguageCard() {
 }
 
 function General() {
-  const showLive = useSettings((s) => s.showLiveCursors);
-  const setShowLive = useSettings((s) => s.setShowLiveCursors);
   const startupBehavior = useSettings((s) => s.startupBehavior);
   const closeLastTabBehavior = useSettings((s) => s.closeLastTabBehavior);
   const setPreference = useSettings((s) => s.setPreference);
@@ -384,13 +382,6 @@ function General() {
       <p className="settings-sub">基础行为与启动选项。</p>
       <LanguageCard />
       <div className="settings-card">
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">显示多端实时光标（演示）</div>
-            <div className="settings-help">协作时显示对方光标的彩色徽章，目前为演示效果</div>
-          </div>
-          <Toggle on={showLive} onChange={setShowLive} />
-        </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">启动时打开</div>

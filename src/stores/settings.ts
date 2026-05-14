@@ -53,7 +53,6 @@ interface SettingsState {
   theme: string;
   fontSize: number;
   defaultMode: ViewMode;
-  showLiveCursors: boolean;
   startupBehavior: "restoreTabs" | "welcome" | "lastWorkspace";
   closeLastTabBehavior: "keepWindow" | "showWelcome" | "quitApp";
   shortcutStyle: "all" | "bubble" | "slash" | "toolbar";
@@ -129,7 +128,6 @@ interface SettingsState {
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
   setShortcutStyle: (s: SettingsState["shortcutStyle"]) => void;
-  setShowLiveCursors: (v: boolean) => void;
   setFollowSystemTheme: (v: boolean) => void;
   setVariant: (kind: "dark" | "light", id: string) => void;
   setAutosave: (v: boolean) => void;
@@ -154,7 +152,6 @@ export const useSettings = create<SettingsState>()(
       theme: "light",
       fontSize: 16,
       defaultMode: "split",
-      showLiveCursors: false,
       startupBehavior: "restoreTabs",
       closeLastTabBehavior: "keepWindow",
       shortcutStyle: "all",
@@ -219,7 +216,6 @@ export const useSettings = create<SettingsState>()(
       setFontSize: (fontSize) => set({ fontSize }),
       setDefaultMode: (defaultMode) => set({ defaultMode }),
       setShortcutStyle: (shortcutStyle) => set({ shortcutStyle }),
-      setShowLiveCursors: (showLiveCursors) => set({ showLiveCursors }),
       setFollowSystemTheme: (followSystemTheme) => set({ followSystemTheme }),
       setVariant: (kind, id) =>
         set(kind === "dark" ? { darkVariant: id } : { lightVariant: id }),

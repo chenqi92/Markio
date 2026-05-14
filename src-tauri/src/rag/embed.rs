@@ -114,8 +114,7 @@ async fn call_ollama(cfg: &EmbedConfig, inputs: &[String]) -> Result<EmbedResult
     if !status.is_success() {
         return Err(format!("Ollama API {}: {}", status, truncate(&body, 400)));
     }
-    let v: Value =
-        serde_json::from_str(&body).map_err(|e| format!("解析 Ollama 响应失败：{e}"))?;
+    let v: Value = serde_json::from_str(&body).map_err(|e| format!("解析 Ollama 响应失败：{e}"))?;
     let arr = v
         .get("embeddings")
         .and_then(|x| x.as_array())

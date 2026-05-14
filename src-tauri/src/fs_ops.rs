@@ -12,11 +12,13 @@ pub struct FileEntry {
     pub size: u64,
     pub modified: i64,
     pub children: Option<Vec<FileEntry>>,
+    pub truncated: bool,
 }
 
 const MAX_DEPTH: usize = 8;
 const MAX_ENTRIES: usize = 8_000;
 const MAX_DIR_CHILDREN: usize = 2_000;
+const MAX_VISITED_ENTRIES: usize = 50_000;
 
 /// 这些目录一旦遇到就完整跳过，不再下钻。
 /// 目的：避免 walker 卡在 node_modules / cargo target / build cache 等海量目录里。
@@ -100,6 +102,7 @@ fn modified_ms(p: &Path) -> i64 {
 }
 
 struct Walker {
+    visited: usize,
     counted: usize,
     cap_hit: bool,
 }
@@ -120,6 +123,7 @@ impl Walker {
                 size: 0,
                 modified: modified_ms(dir),
                 children: Some(Vec::new()),
+                truncated: true,
             });
         }
 
@@ -136,6 +140,7 @@ impl Walker {
                     size: 0,
                     modified: modified_ms(dir),
                     children: Some(Vec::new()),
+                    truncated: false,
                 });
             }
         };
@@ -143,12 +148,15 @@ impl Walker {
         let mut dirs: Vec<(PathBuf, String)> = Vec::new();
         let mut files: Vec<FileEntry> = Vec::new();
 
-        let mut local_count = 0usize;
-        for entry in entries.flatten() {
+        for (local_count, entry) in entries.flatten().enumerate() {
+            if self.visited >= MAX_VISITED_ENTRIES {
+                self.cap_hit = true;
+                break;
+            }
             if local_count >= MAX_DIR_CHILDREN {
                 break;
             }
-            local_count += 1;
+            self.visited += 1;
             let name = entry.file_name().to_string_lossy().to_string();
             if is_hidden(&name) {
                 continue;
@@ -184,6 +192,7 @@ impl Walker {
                     size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
                     modified: modified_ms(&path),
                     children: None,
+                    truncated: false,
                 });
             }
         }
@@ -219,6 +228,7 @@ impl Walker {
             size: 0,
             modified: modified_ms(dir),
             children: Some(children),
+            truncated: self.cap_hit,
         })
     }
 }
@@ -237,12 +247,13 @@ fn has_any_md(entry: &FileEntry) -> bool {
 pub fn walk_tree(root_path: &str) -> Result<FileEntry, String> {
     let root = PathBuf::from(root_path);
     if !root.exists() {
-        return Err(format!("路径不存在：{}", root_path));
+        return Err(format!("路径不存在：{root_path}"));
     }
     if !root.is_dir() {
-        return Err(format!("不是文件夹：{}", root_path));
+        return Err(format!("不是文件夹：{root_path}"));
     }
     let mut w = Walker {
+        visited: 0,
         counted: 0,
         cap_hit: false,
     };
@@ -352,20 +363,26 @@ fn snapshot_dir(workspace: &str) -> PathBuf {
     PathBuf::from(workspace).join(".markio").join("history")
 }
 
-fn snapshot_key(file: &Path, workspace: &Path) -> String {
-    // 用相对路径做 key，把 / 替换为 ¦，避免目录嵌套
-    let rel = file.strip_prefix(workspace).unwrap_or(file);
-    rel.to_string_lossy().replace(['/', '\\'], "¦")
+/// 用相对路径做 key，把 / 替换为 ¦，避免目录嵌套。
+/// 不属于 workspace 的 file 直接拒绝，杜绝历史快照串库 / 串文件。
+fn snapshot_key(file: &Path, workspace: &Path) -> Result<String, String> {
+    let rel = file
+        .strip_prefix(workspace)
+        .map_err(|_| "拒绝历史快照：文件不在所选仓库下".to_string())?;
+    if rel.as_os_str().is_empty() {
+        return Err("拒绝历史快照：路径解析为仓库根目录".to_string());
+    }
+    Ok(rel.to_string_lossy().replace(['/', '\\'], "¦"))
 }
 
 pub fn save_snapshot(workspace: &str, file: &str, content: &str) -> Result<(), String> {
     let ws_path = PathBuf::from(workspace);
     let file_path = PathBuf::from(file);
+    let key = snapshot_key(&file_path, &ws_path)?;
     let dir = snapshot_dir(workspace);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let key = snapshot_key(&file_path, &ws_path);
     let ts = chrono::Utc::now().timestamp_millis();
-    let snap_name = format!("{}__{}.md", key, ts);
+    let snap_name = format!("{key}__{ts}.md");
     let snap_path = dir.join(snap_name);
     fs::write(&snap_path, content).map_err(|e| e.to_string())?;
     // 同一文件最多保留 30 份
@@ -374,7 +391,7 @@ pub fn save_snapshot(workspace: &str, file: &str, content: &str) -> Result<(), S
 }
 
 fn prune_snapshots(dir: &Path, key: &str, max: usize) -> Result<(), String> {
-    let prefix = format!("{}__", key);
+    let prefix = format!("{key}__");
     let mut entries: Vec<(i64, PathBuf)> = Vec::new();
     if let Ok(read) = fs::read_dir(dir) {
         for e in read.flatten() {
@@ -402,8 +419,8 @@ pub fn list_snapshots(workspace: &str, file: &str) -> Result<Vec<Snapshot>, Stri
     if !dir.exists() {
         return Ok(Vec::new());
     }
-    let key = snapshot_key(&file_path, &ws_path);
-    let prefix = format!("{}__", key);
+    let key = snapshot_key(&file_path, &ws_path)?;
+    let prefix = format!("{key}__");
     let mut out: Vec<Snapshot> = Vec::new();
     for e in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
@@ -499,7 +516,7 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
                     continue;
                 };
                 let lower = content.to_lowercase();
-                let key = format!("[[{}", needle);
+                let key = format!("[[{needle}");
                 if !lower.contains(&key) {
                     continue;
                 }
@@ -551,7 +568,7 @@ fn ts_now() -> i64 {
 pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
     let src = PathBuf::from(file);
     if !src.exists() {
-        return Err(format!("文件不存在：{}", file));
+        return Err(format!("文件不存在：{file}"));
     }
     let dir = trash_dir(workspace);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -560,8 +577,8 @@ pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
         .map(|s| s.to_string_lossy().to_string())
         .ok_or_else(|| "无效文件名".to_string())?;
     let ts = ts_now();
-    let stored = format!("{}__{}.bin", ts, name);
-    let meta_path = dir.join(format!("{}__{}.meta.json", ts, name));
+    let stored = format!("{ts}__{name}.bin");
+    let meta_path = dir.join(format!("{ts}__{name}.meta.json"));
     fs::rename(&src, dir.join(&stored))
         .or_else(|_| {
             // 跨设备 rename 失败时退化为 copy + remove
@@ -607,7 +624,7 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
             .unwrap_or("")
             .to_string();
         let ts = v.get("timestamp").and_then(|x| x.as_i64()).unwrap_or(0);
-        let stored = dir.join(format!("{}__{}.bin", ts, orig_name));
+        let stored = dir.join(format!("{ts}__{orig_name}.bin"));
         let size = stored.metadata().map(|m| m.len()).unwrap_or(0);
         out.push(TrashItem {
             path: stored.to_string_lossy().to_string(),
@@ -622,17 +639,27 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
 }
 
 pub fn trash_restore(workspace: &str, stored: &str) -> Result<String, String> {
-    let stored_path = PathBuf::from(stored);
-    if !stored_path.exists() {
+    let ws = PathBuf::from(workspace)
+        .canonicalize()
+        .map_err(|e| format!("仓库路径无效：{e}"))?;
+    let dir = trash_dir(workspace)
+        .canonicalize()
+        .map_err(|e| format!("回收站目录无效：{e}"))?;
+    let stored_path = PathBuf::from(stored)
+        .canonicalize()
+        .map_err(|_| "回收站项目不存在".to_string())?;
+    if !stored_path.starts_with(&dir) {
+        return Err("拒绝恢复：回收站项目路径无效".to_string());
+    }
+    if !stored_path.exists() || !stored_path.is_file() {
         return Err("回收站项目不存在".to_string());
     }
     // 找 meta
-    let dir = trash_dir(workspace);
     let stem = stored_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let meta_path = dir.join(format!("{}.meta.json", stem));
+    let meta_path = dir.join(format!("{stem}.meta.json"));
     let s = fs::read_to_string(&meta_path).map_err(|e| e.to_string())?;
     let v: serde_json::Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
     let original = v
@@ -641,8 +668,18 @@ pub fn trash_restore(workspace: &str, stored: &str) -> Result<String, String> {
         .ok_or_else(|| "丢失原始路径".to_string())?
         .to_string();
     let dest = PathBuf::from(&original);
-    if let Some(parent) = dest.parent() {
-        let _ = fs::create_dir_all(parent);
+    let parent = dest
+        .parent()
+        .ok_or_else(|| "原始路径没有父目录".to_string())?;
+    let parent_canon = parent
+        .canonicalize()
+        .map_err(|_| "原始目录不存在，请先恢复目录结构".to_string())?;
+    let fname = dest
+        .file_name()
+        .ok_or_else(|| "原始路径文件名无效".to_string())?;
+    let dest = parent_canon.join(fname);
+    if !dest.starts_with(&ws) || dest.starts_with(ws.join(".markio")) {
+        return Err("拒绝恢复：目标路径不在用户文件区".to_string());
     }
     if dest.exists() {
         return Err("原位置已存在同名文件".to_string());
@@ -663,17 +700,23 @@ pub fn trash_purge(workspace: &str, stored: Option<String>) -> Result<(), String
     if !dir.exists() {
         return Ok(());
     }
+    let dir_canon = dir
+        .canonicalize()
+        .map_err(|e| format!("回收站目录无效：{e}"))?;
     if let Some(path) = stored {
-        let p = PathBuf::from(&path);
-        if p.exists() {
-            let _ = fs::remove_file(&p);
+        let p = PathBuf::from(&path)
+            .canonicalize()
+            .map_err(|_| "回收站项目不存在".to_string())?;
+        if !p.starts_with(&dir_canon) || !p.is_file() {
+            return Err("拒绝删除：回收站项目路径无效".to_string());
         }
+        let _ = fs::remove_file(&p);
         // meta 也一起删
         let stem = p
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
-        let meta = dir.join(format!("{}.meta.json", stem));
+        let meta = dir.join(format!("{stem}.meta.json"));
         if meta.exists() {
             let _ = fs::remove_file(meta);
         }
@@ -686,7 +729,7 @@ pub fn trash_purge(workspace: &str, stored: Option<String>) -> Result<(), String
 pub fn reveal_in_os(path: &str) -> Result<(), String> {
     let p = PathBuf::from(path);
     if !p.exists() {
-        return Err(format!("路径不存在：{}", path));
+        return Err(format!("路径不存在：{path}"));
     }
     #[cfg(target_os = "macos")]
     {
@@ -704,7 +747,7 @@ pub fn reveal_in_os(path: &str) -> Result<(), String> {
             .args(["/select,", path])
             .status()
             .map_err(|e| e.to_string())?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

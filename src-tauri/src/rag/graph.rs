@@ -82,9 +82,7 @@ pub fn extract_links(
                                         kind: LinkKind::Md,
                                         target_label: raw_line[idx + 1..idx + 1 + close]
                                             .to_string(),
-                                        target_path: Some(
-                                            p.to_string_lossy().to_string(),
-                                        ),
+                                        target_path: Some(p.to_string_lossy().to_string()),
                                     });
                                 }
                             }
@@ -156,19 +154,12 @@ pub fn replace_links(db: &Db, doc_id: i64, links: &[Link]) -> Result<(), String>
         .map_err(|e| format!("清空旧 links 失败：{e}"))?;
     let mut stmt = db
         .conn
-        .prepare(
-            "INSERT INTO links(from_doc, to_path, target_label, kind) VALUES(?1, ?2, ?3, ?4)",
-        )
+        .prepare("INSERT INTO links(from_doc, to_path, target_label, kind) VALUES(?1, ?2, ?3, ?4)")
         .map_err(|e| format!("准备 links 写入失败：{e}"))?;
     for l in links {
         let to_path = l.target_path.clone().unwrap_or_default();
-        stmt.execute(params![
-            doc_id,
-            to_path,
-            l.target_label,
-            l.kind.as_str()
-        ])
-        .map_err(|e| format!("写 links 失败：{e}"))?;
+        stmt.execute(params![doc_id, to_path, l.target_label, l.kind.as_str()])
+            .map_err(|e| format!("写 links 失败：{e}"))?;
     }
     Ok(())
 }
@@ -189,12 +180,86 @@ pub fn forward_targets(db: &Db, doc_id: i64) -> Vec<i64> {
     out
 }
 
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNode {
+    pub id: i64,
+    pub path: String,
+    /// 入度（被多少 doc 指向）
+    pub in_degree: u32,
+    /// 出度
+    pub out_degree: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphEdge {
+    pub from: i64,
+    pub to: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoGraph {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
+}
+
+/// 整个仓库的链接图。节点 = docs；边 = links（双向链接合并成两条单向边）。
+pub fn repo_graph(db: &Db) -> Result<RepoGraph, String> {
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    let mut id_to_idx: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+    let mut stmt = db
+        .conn
+        .prepare("SELECT id, path FROM docs")
+        .map_err(|e| format!("准备查询失败：{e}"))?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| format!("查询失败：{e}"))?;
+    for row in rows.flatten() {
+        let (id, path) = row;
+        id_to_idx.insert(id, nodes.len());
+        nodes.push(GraphNode {
+            id,
+            path,
+            in_degree: 0,
+            out_degree: 0,
+        });
+    }
+
+    let mut edges: Vec<GraphEdge> = Vec::new();
+    let mut estmt = db
+        .conn
+        .prepare(
+            "SELECT l.from_doc, d.id FROM links l \
+             JOIN docs d ON d.path = l.to_path",
+        )
+        .map_err(|e| format!("准备查询失败：{e}"))?;
+    let rows = estmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+        .map_err(|e| format!("查询失败：{e}"))?;
+    for row in rows.flatten() {
+        let (from, to) = row;
+        if let Some(i) = id_to_idx.get(&from) {
+            nodes[*i].out_degree += 1;
+        }
+        if let Some(i) = id_to_idx.get(&to) {
+            nodes[*i].in_degree += 1;
+        }
+        edges.push(GraphEdge { from, to });
+    }
+
+    Ok(RepoGraph { nodes, edges })
+}
+
 /// backlinks：哪些 doc 指向了 path
 pub fn backlinks(db: &Db, path: &str) -> Vec<i64> {
     let mut out = Vec::new();
-    let Ok(mut stmt) =
-        db.conn
-            .prepare("SELECT DISTINCT from_doc FROM links WHERE to_path = ?1")
+    let Ok(mut stmt) = db
+        .conn
+        .prepare("SELECT DISTINCT from_doc FROM links WHERE to_path = ?1")
     else {
         return out;
     };

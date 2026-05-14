@@ -6,6 +6,8 @@ use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
+const MAX_INLINE_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OutlineItem {
     pub level: u8,
@@ -36,11 +38,9 @@ fn slugify(s: &str) -> String {
                 out.push(c);
             }
             last_dash = false;
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            if !last_dash && !out.is_empty() {
-                out.push('-');
-                last_dash = true;
-            }
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
         }
     }
     while out.ends_with('-') {
@@ -102,7 +102,7 @@ fn urlencode(s: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(b as char);
             }
-            _ => out.push_str(&format!("%{:02X}", b)),
+            _ => out.push_str(&format!("%{b:02X}")),
         }
     }
     out
@@ -114,7 +114,6 @@ fn is_external_url(url: &str) -> bool {
         || lower.starts_with("https://")
         || lower.starts_with("data:")
         || lower.starts_with("blob:")
-        || lower.starts_with("asset:")
         || lower.starts_with("mailto:")
         || lower.starts_with('#')
         || lower.contains("://")
@@ -140,16 +139,29 @@ fn percent_decode_path(input: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| input.to_string())
 }
 
-fn tauri_asset_url(path: &Path) -> String {
-    let encoded = urlencode(&path.to_string_lossy());
-    #[cfg(target_os = "windows")]
-    {
-        format!("http://asset.localhost/{encoded}")
+fn image_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "svg" => Some("image/svg+xml"),
+        "avif" => Some("image/avif"),
+        _ => None,
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        format!("asset://localhost/{encoded}")
+}
+
+fn local_image_data_url(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_INLINE_IMAGE_SIZE {
+        return None;
     }
+    let mime = image_mime(path)?;
+    let bytes = std::fs::read(path).ok()?;
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+    Some(format!("data:{mime};base64,{encoded}"))
 }
 
 fn resolve_local_image_url(
@@ -173,7 +185,7 @@ fn resolve_local_image_url(
     let decoded = percent_decode_path(path_part);
     let canon = base_dir.join(decoded).canonicalize().ok()?;
     if allowed_roots.iter().any(|root| canon.starts_with(root)) {
-        Some(tauri_asset_url(&canon))
+        local_image_data_url(&canon)
     } else {
         None
     }
@@ -240,7 +252,7 @@ fn level_u8(l: HeadingLevel) -> u8 {
 fn sanitize(html: &str) -> String {
     use ammonia::{Builder, UrlRelative};
     let mut b = Builder::default();
-    b.add_url_schemes(&["asset"]);
+    b.add_url_schemes(&["data"]);
     b.add_tags(&[
         "span",
         "mark",
@@ -293,7 +305,9 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
         if let Some((_lvl, _)) = heading.as_mut() {
             match &ev {
                 Event::End(TagEnd::Heading(level)) => {
-                    let (lvl, text) = heading.take().unwrap();
+                    let Some((lvl, text)) = heading.take() else {
+                        continue;
+                    };
                     let _ = lvl;
                     let mut anchor = slugify(&text);
                     let cnt = id_counter.entry(anchor.clone()).or_insert(0);
@@ -441,4 +455,50 @@ fn count_words(src: &str) -> usize {
         }
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outline_extracts_headings_with_anchors() {
+        let src = "# Title\n\n## Section A\n\ntext\n\n## Section B\n";
+        let items = outline_only(src);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].level, 1);
+        assert_eq!(items[0].text, "Title");
+        assert_eq!(items[1].text, "Section A");
+        assert_eq!(items[2].text, "Section B");
+        // anchor 唯一
+        let a = &items[1].anchor;
+        let b = &items[2].anchor;
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn outline_skips_headings_in_code_fence() {
+        let src = "# Real\n\n```\n# Not a heading\n```\n";
+        let items = outline_only(src);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].text, "Real");
+    }
+
+    #[test]
+    fn slugify_basic_cases() {
+        assert_eq!(slugify("Hello World"), "hello-world");
+        assert_eq!(slugify("Test 123"), "test-123");
+        assert_eq!(slugify("中文标题"), "中文标题");
+        // 连续空格折叠
+        assert_eq!(slugify("a   b"), "a-b");
+    }
+
+    #[test]
+    fn render_returns_html_and_outline() {
+        let res = render("# Hello\n\nworld", None, &[]);
+        assert!(res.html.contains("<h1"));
+        assert!(res.html.contains("Hello"));
+        assert_eq!(res.outline.len(), 1);
+        assert!(res.words > 0);
+    }
 }

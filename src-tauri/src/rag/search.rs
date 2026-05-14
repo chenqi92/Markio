@@ -8,6 +8,7 @@ use rusqlite::params;
 
 use super::embed::{self, EmbedConfig};
 use super::graph;
+use super::rerank::{self, RerankConfig};
 use super::{RagHandle, SearchHit};
 
 const RRF_K: f64 = 60.0;
@@ -26,15 +27,33 @@ pub fn search(
     limit: usize,
     expand_links: bool,
 ) -> Result<Vec<SearchHit>, String> {
+    search_with_rerank(handle, cfg, None, query, limit, expand_links)
+}
+
+pub fn search_with_rerank(
+    handle: Arc<RagHandle>,
+    cfg: EmbedConfig,
+    rerank_cfg: Option<RerankConfig>,
+    query: &str,
+    limit: usize,
+    expand_links: bool,
+) -> Result<Vec<SearchHit>, String> {
     if query.trim().is_empty() {
         return Ok(vec![]);
     }
-    let k = limit.max(8).min(50);
+    let k = limit.clamp(8, 50);
 
     // 1. 向量检索
     let vec_hits: Vec<(i64, f32)> = match embed::embed_blocking(&cfg, &[query.to_string()]) {
         Ok(r) => {
             if let Some(v) = r.vectors.first() {
+                if r.dim != 0 && r.dim != v.len() {
+                    return Err(format!(
+                        "Embedding 维度异常：声明 {} 维，实际向量 {} 维",
+                        r.dim,
+                        v.len()
+                    ));
+                }
                 vector_topk(&handle, v, k * 2)?
             } else {
                 vec![]
@@ -81,7 +100,11 @@ pub fn search(
         for src_doc_id in top_doc_ids {
             let targets = {
                 let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-                graph::forward_targets(&db, src_doc_id)
+                let mut ids = graph::forward_targets(&db, src_doc_id);
+                if let Some(path) = doc_path_for(&db, src_doc_id) {
+                    ids.extend(graph::backlinks(&db, &path));
+                }
+                ids
             };
             for tgt in targets.into_iter().take(2) {
                 if let Some(chunk_id) = first_chunk_of_doc(&handle, tgt)? {
@@ -97,7 +120,33 @@ pub fn search(
         }
     }
 
-    // 5. 取前 limit 个，按 chunk_id 拉出展示字段
+    // 5. 重排（可选）：取 top-(limit*3) 给 reranker，得到精排结果
+    if let Some(rcfg) = rerank_cfg.as_ref() {
+        let pool_size = (limit * 3).clamp(limit, ranked.len());
+        let pool: Vec<&Candidate> = ranked.iter().take(pool_size).collect();
+        let docs = materialize(&handle, &pool)?;
+        let texts: Vec<String> = docs.iter().map(|h| h.body.clone()).collect();
+        match rerank::rerank_blocking(rcfg, query, &texts, limit) {
+            Ok(order) => {
+                let mut reordered: Vec<SearchHit> = Vec::with_capacity(order.len());
+                for (idx, score) in order.into_iter().take(limit) {
+                    if let Some(mut h) = docs.get(idx).cloned() {
+                        h.score = score as f64;
+                        h.source = "rerank".to_string();
+                        reordered.push(h);
+                    }
+                }
+                if !reordered.is_empty() {
+                    return Ok(reordered);
+                }
+            }
+            Err(e) => {
+                eprintln!("[rag.rerank] 失败，回退原始排序：{e}");
+            }
+        }
+    }
+
+    // 6. 取前 limit 个，按 chunk_id 拉出展示字段
     let top: Vec<&Candidate> = ranked.iter().take(limit).collect();
     materialize(&handle, &top)
 }
@@ -108,10 +157,7 @@ fn vector_topk(
     k: usize,
 ) -> Result<Vec<(i64, f32)>, String> {
     let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-    let blob: Vec<u8> = query_vec
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let blob: Vec<u8> = query_vec.iter().flat_map(|f| f.to_le_bytes()).collect();
     let mut stmt = db
         .conn
         .prepare(
@@ -160,7 +206,9 @@ fn fts_topk(handle: &Arc<RagHandle>, q: &str, k: usize) -> Result<Vec<(i64, f32)
 /// 其它每个词用 `"word"*` 前缀匹配，词间 OR。
 fn sanitize_fts(q: &str) -> String {
     let mut terms: Vec<String> = Vec::new();
-    for raw in q.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '(' | ')' | ',' | ';')) {
+    for raw in
+        q.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '(' | ')' | ',' | ';'))
+    {
         let t: String = raw
             .chars()
             .filter(|c| !c.is_control() && *c != '*')
@@ -168,23 +216,18 @@ fn sanitize_fts(q: &str) -> String {
         if t.chars().count() < 1 {
             continue;
         }
-        terms.push(format!("\"{}\"*", t));
+        terms.push(format!("\"{t}\"*"));
     }
     terms.join(" OR ")
 }
 
-fn top_doc_ids_for(
-    handle: &Arc<RagHandle>,
-    cands: &[Candidate],
-) -> Result<Vec<i64>, String> {
+fn top_doc_ids_for(handle: &Arc<RagHandle>, cands: &[Candidate]) -> Result<Vec<i64>, String> {
     if cands.is_empty() {
         return Ok(vec![]);
     }
     let ids: Vec<String> = cands.iter().map(|c| c.chunk_id.to_string()).collect();
     let in_list = ids.join(",");
-    let sql = format!(
-        "SELECT DISTINCT doc_id FROM chunks WHERE id IN ({in_list})"
-    );
+    let sql = format!("SELECT DISTINCT doc_id FROM chunks WHERE id IN ({in_list})");
     let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
     let mut stmt = db
         .conn
@@ -213,15 +256,19 @@ fn first_chunk_of_doc(handle: &Arc<RagHandle>, doc_id: i64) -> Result<Option<i64
     Ok(id)
 }
 
-fn materialize(
-    handle: &Arc<RagHandle>,
-    cands: &[&Candidate],
-) -> Result<Vec<SearchHit>, String> {
+fn doc_path_for(db: &super::db::Db, doc_id: i64) -> Option<String> {
+    db.conn
+        .query_row("SELECT path FROM docs WHERE id=?1", params![doc_id], |r| {
+            r.get::<_, String>(0)
+        })
+        .ok()
+}
+
+fn materialize(handle: &Arc<RagHandle>, cands: &[&Candidate]) -> Result<Vec<SearchHit>, String> {
     if cands.is_empty() {
         return Ok(vec![]);
     }
-    let id_index: HashMap<i64, &&Candidate> =
-        cands.iter().map(|c| (c.chunk_id, c)).collect();
+    let id_index: HashMap<i64, &&Candidate> = cands.iter().map(|c| (c.chunk_id, c)).collect();
     let in_list: String = cands
         .iter()
         .map(|c| c.chunk_id.to_string())
@@ -233,7 +280,10 @@ fn materialize(
          WHERE c.id IN ({in_list})"
     );
     let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-    let mut stmt = db.conn.prepare(&sql).map_err(|e| format!("准备结果查询失败：{e}"))?;
+    let mut stmt = db
+        .conn
+        .prepare(&sql)
+        .map_err(|e| format!("准备结果查询失败：{e}"))?;
     let rows = stmt
         .query_map([], |r| {
             Ok((
@@ -250,12 +300,7 @@ fn materialize(
     for r in rows.flatten() {
         let cand = id_index.get(&r.0);
         let (score, source) = cand
-            .map(|c| {
-                (
-                    c.score,
-                    c.sources.join("+"),
-                )
-            })
+            .map(|c| (c.score, c.sources.join("+")))
             .unwrap_or((0.0, "".to_string()));
         hits.push(SearchHit {
             path: r.5,
@@ -267,6 +312,10 @@ fn materialize(
             char_end: r.4.max(0) as u32,
         });
     }
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(hits)
 }

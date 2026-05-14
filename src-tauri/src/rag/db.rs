@@ -3,6 +3,7 @@
 //! - 首次打开时通过 [`load_vec_extension`] 注册 vec0 模块
 //! - 通过 schema_meta 表跟踪 schema_version 与 embedding_dim；维度变更需要 [`rebuild_vector_table`]
 
+use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
@@ -23,9 +24,15 @@ static VEC_INIT: Once = Once::new();
 /// 进程级注册 sqlite-vec 扩展，让后续每个 Connection 自动加载 vec0。
 fn load_vec_extension() {
     VEC_INIT.call_once(|| unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+        type SqliteExtensionInit = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> c_int;
+        let init = std::mem::transmute::<*const (), SqliteExtensionInit>(
             sqlite_vec::sqlite3_vec_init as *const (),
-        )));
+        );
+        rusqlite::ffi::sqlite3_auto_extension(Some(init));
     });
 }
 
@@ -39,8 +46,7 @@ impl Db {
         let dir = workspace.join(".markio");
         std::fs::create_dir_all(&dir).map_err(|e| format!("创建 .markio 目录失败：{e}"))?;
         let path = dir.join("rag.db");
-        let conn =
-            Connection::open(&path).map_err(|e| format!("打开向量数据库失败：{e}"))?;
+        let conn = Connection::open(&path).map_err(|e| format!("打开向量数据库失败：{e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("启用 WAL 失败：{e}"))?;
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
@@ -190,11 +196,9 @@ impl Db {
 
     pub fn get_meta(&self, k: &str) -> Option<String> {
         self.conn
-            .query_row(
-                "SELECT v FROM schema_meta WHERE k=?1",
-                params![k],
-                |r| r.get(0),
-            )
+            .query_row("SELECT v FROM schema_meta WHERE k=?1", params![k], |r| {
+                r.get(0)
+            })
             .ok()
     }
 

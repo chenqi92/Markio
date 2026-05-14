@@ -214,3 +214,36 @@ fn split_section_body(body: &str) -> Vec<String> {
     }
     chunks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn estimate_tokens_is_rough_quarter_of_chars() {
+        let s = "the quick brown fox jumps";
+        let t = estimate_tokens(s);
+        assert!(t > 0);
+        assert!(t <= s.len());
+    }
+
+    #[test]
+    fn split_returns_at_least_one_chunk_on_nonempty_input() {
+        let chunks = split("# Title\n\nSome content here.\n");
+        assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn split_keeps_heading_with_body() {
+        let chunks = split("# Header\n\nBody text.\n");
+        assert!(chunks[0].body.contains("Header") || chunks[0].heading.contains("Header"));
+    }
+
+    #[test]
+    fn parse_heading_extracts_level_and_text() {
+        let (level, text) = parse_heading("## Hello").expect("expected heading");
+        assert_eq!(level, 2);
+        assert_eq!(text, "Hello");
+        assert!(parse_heading("not a heading").is_none());
+    }
+}

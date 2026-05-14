@@ -16,13 +16,14 @@ pub mod db;
 pub mod embed;
 pub mod graph;
 pub mod index;
+pub mod rerank;
 pub mod search;
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use db::Db;
 
@@ -99,13 +100,4 @@ pub struct SearchHit {
     pub source: String,
     pub char_start: u32,
     pub char_end: u32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchRequest {
-    pub workspace: String,
-    pub query: String,
-    pub limit: Option<usize>,
-    pub expand_links: Option<bool>,
 }

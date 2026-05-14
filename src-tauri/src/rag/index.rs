@@ -31,6 +31,8 @@ const SKIP_DIRS: &[&str] = &[
     ".idea",
     "__pycache__",
 ];
+const MAX_INDEX_FILE_SIZE: u64 = 4_000_000;
+const MAX_INDEX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
 
 /// FNV-1a 64-bit；和保存路径上用的 hash 同一族。
 fn content_hash(data: &[u8]) -> String {
@@ -41,7 +43,7 @@ fn content_hash(data: &[u8]) -> String {
         h ^= *b as u64;
         h = h.wrapping_mul(PRIME);
     }
-    format!("{:016x}", h)
+    format!("{h:016x}")
 }
 
 #[derive(Debug, Clone)]
@@ -53,13 +55,28 @@ struct Doc {
     content: String,
 }
 
-fn collect_md(workspace: &Path, max_files: usize) -> Vec<Doc> {
+fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Vec<Doc> {
     let mut out = Vec::new();
-    walk(workspace, 0, &mut out, max_files);
+    let mut total_bytes = 0u64;
+    walk(
+        workspace,
+        0,
+        &mut out,
+        max_files,
+        max_total_bytes,
+        &mut total_bytes,
+    );
     out
 }
 
-fn walk(dir: &Path, depth: usize, out: &mut Vec<Doc>, max_files: usize) {
+fn walk(
+    dir: &Path,
+    depth: usize,
+    out: &mut Vec<Doc>,
+    max_files: usize,
+    max_total_bytes: u64,
+    total_bytes: &mut u64,
+) {
     if depth > 12 || out.len() >= max_files {
         return;
     }
@@ -78,23 +95,34 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<Doc>, max_files: usize) {
             Ok(t) => t,
             Err(_) => continue,
         };
+        if ft.is_symlink() {
+            continue;
+        }
         if ft.is_dir() {
             if SKIP_DIRS.iter().any(|s| name_lower == *s) {
                 continue;
             }
-            walk(&path, depth + 1, out, max_files);
+            walk(
+                &path,
+                depth + 1,
+                out,
+                max_files,
+                max_total_bytes,
+                total_bytes,
+            );
         } else if ft.is_file() {
             if !is_md(&name_lower) {
                 continue;
             }
             let Ok(md) = path.metadata() else { continue };
             let size = md.len();
-            if size > 4_000_000 {
+            if size > MAX_INDEX_FILE_SIZE || total_bytes.saturating_add(size) > max_total_bytes {
                 continue;
             }
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
+            *total_bytes = total_bytes.saturating_add(size);
             let mtime = md
                 .modified()
                 .ok()
@@ -138,7 +166,7 @@ fn build_stem_index(docs: &[Doc]) -> HashMap<String, Vec<PathBuf>> {
 /// 全量重建索引。
 pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(), String> {
     let workspace = PathBuf::from(&handle.workspace);
-    let docs = collect_md(&workspace, 20_000);
+    let docs = collect_md(&workspace, 20_000, MAX_INDEX_TOTAL_BYTES);
     let total = docs.len() as u32;
 
     {
@@ -170,10 +198,7 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
             }
         }
         if let Err(e) = upsert_doc(&handle, &cfg, doc, &workspace, &stem_index) {
-            last_err = Some(format!(
-                "{}: {e}",
-                doc.path.to_string_lossy()
-            ));
+            last_err = Some(format!("{}: {e}", doc.path.to_string_lossy()));
             // 单文件失败不阻止整体推进
             let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
             if let Some(p) = db.progress.as_mut() {
@@ -186,10 +211,7 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
     {
         let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
         prune_missing(&mut db, &live_paths)?;
-        db.set_meta(
-            "embedding_provider",
-            cfg.provider.as_str(),
-        )?;
+        db.set_meta("embedding_provider", cfg.provider.as_str())?;
         db.set_meta("embedding_model", &cfg.model)?;
         db.set_meta(
             "last_full_scan",
@@ -210,11 +232,15 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
 }
 
 /// 把单个文件刷新进索引；返回是否触达 embedding（用于上游决定提示）。
-pub fn reindex_file(
-    handle: Arc<RagHandle>,
-    cfg: EmbedConfig,
-    path: &Path,
-) -> Result<bool, String> {
+pub fn reindex_file(handle: Arc<RagHandle>, cfg: EmbedConfig, path: &Path) -> Result<bool, String> {
+    let name_lower = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !is_md(&name_lower) {
+        return Ok(false);
+    }
     let md = path
         .metadata()
         .map_err(|e| format!("读取文件元数据失败：{e}"))?;
@@ -222,6 +248,9 @@ pub fn reindex_file(
         return Ok(false);
     }
     let size = md.len();
+    if size > MAX_INDEX_FILE_SIZE {
+        return Err("文件过大，已跳过 RAG 索引".to_string());
+    }
     let content = fs::read_to_string(path).map_err(|e| format!("读取文件失败：{e}"))?;
     let mtime = md
         .modified()
@@ -317,6 +346,16 @@ fn upsert_doc(
             embed_res.vectors.len()
         ));
     }
+    let expected_dim = {
+        let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
+        db.embed_dim
+    };
+    if embed_res.dim != 0 && embed_res.dim != expected_dim {
+        return Err(format!(
+            "Embedding 维度异常：配置 {} 维，模型实际返回 {} 维。请在设置里修正维度后重建索引。",
+            expected_dim, embed_res.dim
+        ));
+    }
 
     // 4. 写库：删除旧 chunks（FK 会带掉 vec 行不？vec0 不在级联范围；显式删）
     let doc_id = {
@@ -361,11 +400,7 @@ fn upsert_doc(
             tx.last_insert_rowid()
         };
 
-        for (ord, (c, vec)) in chunks
-            .iter()
-            .zip(embed_res.vectors.iter())
-            .enumerate()
-        {
+        for (ord, (c, vec)) in chunks.iter().zip(embed_res.vectors.iter()).enumerate() {
             tx.execute(
                 "INSERT INTO chunks(doc_id, ord, heading, char_start, char_end, body, token_count)
                  VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",

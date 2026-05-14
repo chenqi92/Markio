@@ -32,11 +32,11 @@ impl AppState {
         Ok(canon)
     }
 
-    pub fn unregister_workspace(&self, path: &Path) -> Result<(), String> {
+    pub fn unregister_workspace(&self, path: &Path) -> Result<PathBuf, String> {
         let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         inner.workspaces.remove(&canon);
-        Ok(())
+        Ok(canon)
     }
 
     pub fn record_open(&self, path: &Path, sig: FileSig) -> Result<(), String> {

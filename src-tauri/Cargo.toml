@@ -5,6 +5,7 @@ description = "A modern markdown reader"
 authors = ["welape"]
 edition = "2021"
 rust-version = "1.77"
+default-run = "markio"
 
 [lib]
 name = "markio_lib"

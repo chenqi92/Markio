@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { NewMenu } from "./NewMenu";
-import { ExportMenu } from "./ExportMenu";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { classNames } from "@/lib/utils";
@@ -31,9 +30,7 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
   const setToast = useUI((s) => s.setToast);
   const dirty = useTabs((s) => s.activeTab()?.dirty ?? false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
-  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
 
   const onSave = async () => {
     if (!dirty) return;
@@ -133,22 +130,13 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
         >
           <Icon name="history" size={13} />
         </button>
-        <div style={{ position: "relative" }}>
-          <button
-            ref={exportButtonRef}
-            className="tb-btn"
-            title="导出 ⌘E"
-            onClick={() => setExportOpen((v) => !v)}
-          >
-            <Icon name="download" size={13} />
-          </button>
-          {exportOpen && (
-            <ExportMenu
-              anchorRef={exportButtonRef}
-              onClose={() => setExportOpen(false)}
-            />
-          )}
-        </div>
+        <button
+          className="tb-btn"
+          title="导出 ⌘E"
+          onClick={() => useUI.getState().openExportSheet(true)}
+        >
+          <Icon name="download" size={13} />
+        </button>
 
         <div className="tb-sep" />
 
@@ -163,13 +151,16 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
         </button>
 
         <button
-          className="tb-btn ai-btn-tb"
+          type="button"
+          className="tb-ai-top"
           title="AI 助手 ⌘J"
           onClick={onAi}
         >
-          <Icon name="sparkle" size={12} />
+          <span className="orb" aria-hidden>✦</span>
           <span>AI</span>
         </button>
+
+        <div className="tb-divider" aria-hidden />
 
         <div className="tb-pill" onClick={() => openCommand(true)}>
           <Icon name="cmd" size={11} />

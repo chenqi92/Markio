@@ -4,9 +4,9 @@ import { useUI } from "./stores/ui";
 import { useTabs } from "./stores/tabs";
 import { useWorkspace } from "./stores/workspace";
 import { useSettings } from "./stores/settings";
+import { useRag } from "./stores/rag";
 import { isDarkTheme } from "./themes";
 import { api, parseError, pickDirectory, pickFile } from "./lib/api";
-import { exportPdf } from "./lib/export";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -16,6 +16,36 @@ function isTreeRefreshRelevant(path: string): boolean {
   if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) return true;
   const name = path.split(/[\\/]/).pop() ?? "";
   return !name.includes(".");
+}
+
+const FS_RAG_DELAY_MS = 2_000;
+const fsRagTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function isRagFile(path: string): boolean {
+  return /\.(md|markdown|mdown|mkd)$/i.test(path);
+}
+
+function scheduleRagForFsEvent(
+  workspace: string,
+  path: string,
+  kind: "modified" | "created" | "removed",
+) {
+  if (!isRagFile(path)) return;
+  const key = `${workspace}\0${path}`;
+  const current = fsRagTimers.get(key);
+  if (current) clearTimeout(current);
+  const timer = setTimeout(() => {
+    fsRagTimers.delete(key);
+    const settings = useSettings.getState();
+    if (!settings.ragEnabled || !settings.ragAutoReindexOnSave) return;
+    const rag = useRag.getState();
+    if (kind === "removed") {
+      void rag.removeFile(workspace, path);
+    } else {
+      void rag.reindexFile(workspace, path);
+    }
+  }, FS_RAG_DELAY_MS);
+  fsRagTimers.set(key, timer);
 }
 
 export default function App() {
@@ -81,8 +111,9 @@ export default function App() {
           path: string;
           kind: "modified" | "created" | "removed";
         }>("fs-changed", (e) => {
-          const { workspace, path } = e.payload;
+          const { workspace, path, kind } = e.payload;
           if (!isTreeRefreshRelevant(path)) return;
+          scheduleRagForFsEvent(workspace, path, kind);
           // 同一个仓库 1s 内只刷一次
           if (pendingRefresh.has(workspace)) return;
           const handle = setTimeout(() => {
@@ -103,6 +134,8 @@ export default function App() {
     return () => {
       pendingRefresh.forEach(clearTimeout);
       pendingRefresh.clear();
+      fsRagTimers.forEach(clearTimeout);
+      fsRagTimers.clear();
       if (unlisten) unlisten();
     };
   }, []);
@@ -241,19 +274,8 @@ export default function App() {
         useUI.getState().openAi(!useUI.getState().aiOpen);
       } else if (mod && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
-        (async () => {
-          const tab = useTabs.getState().activeTab();
-          if (!tab) return;
-          try {
-            await exportPdf(tab.title, tab.content);
-          } catch (err) {
-            setToast({
-              stage: "error",
-              message: `导出失败：${(err as Error).message}`,
-            });
-            setTimeout(() => setToast(null), 2500);
-          }
-        })();
+        const tab = useTabs.getState().activeTab();
+        if (tab) useUI.getState().openExportSheet(true);
       } else if (mod && (e.key === "," || e.key === "<")) {
         e.preventDefault();
         openSettings(true);
@@ -305,6 +327,7 @@ export default function App() {
         useUI.getState().openHistory(false);
         useUI.getState().openGlobalSearch(false);
         useUI.getState().openQuickCapture(false);
+        useUI.getState().openExportSheet(false);
       }
     };
     window.addEventListener("keydown", onKey);

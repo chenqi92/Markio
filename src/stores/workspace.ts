@@ -37,6 +37,9 @@ function rememberRegistered(registered: Set<string>, path: string, canon: string
   registered.add(canon);
 }
 
+const treeRefreshInFlight = new Set<string>();
+const treeRefreshQueued = new Set<string>();
+
 async function registerWorkspace(path: string, registered: Set<string>) {
   const canon = await api.workspaceRegister(path);
   rememberRegistered(registered, path, canon);
@@ -120,19 +123,32 @@ export const useWorkspace = create<WorkspaceState>()(
       refreshTree: async (id) => {
         const targetId = id ?? get().activeId;
         if (!targetId) return;
-        const ws = get().workspaces.find((w) => w.id === targetId);
-        if (!ws) return;
-        await safeRegister(ws.path, get()._registered);
-        set({ loading: true });
+        if (treeRefreshInFlight.has(targetId)) {
+          treeRefreshQueued.add(targetId);
+          return;
+        }
+        treeRefreshInFlight.add(targetId);
         try {
-          const tree = await api.readTree(ws.path);
-          set((s) => ({
-            treeCache: { ...s.treeCache, [targetId]: tree },
-          }));
-        } catch (e) {
-          console.error("readTree failed", e);
+          while (true) {
+            treeRefreshQueued.delete(targetId);
+            const ws = get().workspaces.find((w) => w.id === targetId);
+            if (!ws) return;
+            await safeRegister(ws.path, get()._registered);
+            set({ loading: true });
+            try {
+              const tree = await api.readTree(ws.path);
+              set((s) => ({
+                treeCache: { ...s.treeCache, [targetId]: tree },
+              }));
+            } catch (e) {
+              console.error("readTree failed", e);
+            } finally {
+              set({ loading: false });
+            }
+            if (!treeRefreshQueued.has(targetId)) break;
+          }
         } finally {
-          set({ loading: false });
+          treeRefreshInFlight.delete(targetId);
         }
       },
 

@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon, type IconName } from "../ui/Icon";
@@ -2305,8 +2313,8 @@ function RagSettings() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip="保存当前笔记时只重新嵌入它的 chunk，不影响其他文件。">
-              保存后增量更新
+            <LabelWithTip tip="首次需要手动构建索引；之后保存当前笔记时只更新这个文件的 chunk。">
+              索引后自动增量
             </LabelWithTip>
           </div>
           <Toggle
@@ -2599,7 +2607,7 @@ function RagSettings() {
                 onClick={triggerReindex}
                 disabled={progress?.running}
               >
-                {status?.totalDocs ? "重新索引整个仓库" : "构建索引"}
+                {status?.totalDocs ? "重新索引整个仓库" : "首次构建索引"}
               </button>
               <button type="button" className="btn-ghost" onClick={triggerClear}>
                 清空索引
@@ -2676,36 +2684,58 @@ const inputStyle: CSSProperties = {
   minWidth: 180,
 };
 
+function sameWorkspacePath(a: string, b: string): boolean {
+  const norm = (v: string) => v.replace(/\\/g, "/").replace(/\/+$/, "");
+  const aa = norm(a);
+  const bb = norm(b);
+  return /^[a-zA-Z]:\//.test(aa) ? aa.toLowerCase() === bb.toLowerCase() : aa === bb;
+}
+
 function useWorkspaceForRag() {
-  const [tick, setTick] = useState(0);
-  const refresh = () => setTick((t) => t + 1);
-  const [ws, setWs] = useState<{ id: string; path: string } | null>(null);
+  const activeId = useWorkspaceStore((s) => s.activeId);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const ws = useMemo(() => {
+    const active = workspaces.find((w) => w.id === activeId);
+    return active ? { id: active.id, path: active.path } : null;
+  }, [activeId, workspaces]);
   const [status, setStatus] = useState<RagStatus | null>(null);
+  const refresh = useCallback(async () => {
+    if (!ws) {
+      setStatus(null);
+      return;
+    }
+    try {
+      const r = await api.ragStatus(ws.path);
+      setStatus(r);
+    } catch (e) {
+      console.warn("[rag.status] failed", e);
+    }
+  }, [ws]);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const active = useWorkspaceStore.getState().activeWorkspace();
-      if (!active) {
-        if (!cancelled) {
-          setWs(null);
-          setStatus(null);
-        }
-        return;
-      }
-      if (!cancelled) setWs({ id: active.id, path: active.path });
+    let unlisten: (() => void) | null = null;
+    if (!ws) {
+      setStatus(null);
+      return;
+    }
+    void refresh();
+    void (async () => {
       try {
-        const r = await api.ragStatus(active.path);
-        if (!cancelled) setStatus(r);
+        unlisten = await listen<RagStatus>("rag-status", (e) => {
+          if (cancelled || !sameWorkspacePath(e.payload.workspace, ws.path)) return;
+          setStatus(e.payload);
+        });
       } catch (e) {
-        console.warn("[rag.status] failed", e);
+        console.warn("[rag.status.listen] failed", e);
       }
     })();
-    const timer = window.setInterval(refresh, 1500);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (unlisten) unlisten();
     };
-  }, [tick]);
+  }, [refresh, ws]);
+
   return { ws, status, refresh };
 }
 

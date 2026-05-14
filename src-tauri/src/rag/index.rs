@@ -10,6 +10,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use rusqlite::params;
 
@@ -164,7 +165,14 @@ fn build_stem_index(docs: &[Doc]) -> HashMap<String, Vec<PathBuf>> {
 }
 
 /// 全量重建索引。
-pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(), String> {
+pub fn reindex_workspace<F>(
+    handle: Arc<RagHandle>,
+    cfg: EmbedConfig,
+    mut on_progress: F,
+) -> Result<(), String>
+where
+    F: FnMut(),
+{
     let workspace = PathBuf::from(&handle.workspace);
     let docs = collect_md(&workspace, 20_000, MAX_INDEX_TOTAL_BYTES);
     let total = docs.len() as u32;
@@ -179,6 +187,7 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
             last_error: None,
         });
     }
+    on_progress();
 
     let stem_index = build_stem_index(&docs);
 
@@ -189,6 +198,9 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
         .collect();
 
     let mut last_err: Option<String> = None;
+    let mut last_progress_emit = Instant::now()
+        .checked_sub(Duration::from_millis(600))
+        .unwrap_or_else(Instant::now);
     for (i, doc) in docs.iter().enumerate() {
         {
             let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
@@ -197,6 +209,10 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
                 p.current_file = Some(doc.path.to_string_lossy().to_string());
             }
         }
+        if i == 0 || last_progress_emit.elapsed() >= Duration::from_millis(500) {
+            on_progress();
+            last_progress_emit = Instant::now();
+        }
         if let Err(e) = upsert_doc(&handle, &cfg, doc, &workspace, &stem_index) {
             last_err = Some(format!("{}: {e}", doc.path.to_string_lossy()));
             // 单文件失败不阻止整体推进
@@ -204,6 +220,8 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
             if let Some(p) = db.progress.as_mut() {
                 p.last_error = last_err.clone();
             }
+            drop(db);
+            on_progress();
         }
     }
 
@@ -223,6 +241,7 @@ pub fn reindex_workspace(handle: Arc<RagHandle>, cfg: EmbedConfig) -> Result<(),
             p.current_file = None;
         }
     }
+    on_progress();
     if let Some(e) = last_err {
         if total == 1 {
             return Err(e);

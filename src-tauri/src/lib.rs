@@ -2120,35 +2120,87 @@ fn begin_rag_job(workspace: &str) -> Result<RagJobGuard, String> {
     })
 }
 
+fn empty_rag_status(workspace: &str) -> rag::IndexStatus {
+    rag::IndexStatus {
+        workspace: workspace.to_string(),
+        total_docs: 0,
+        total_chunks: 0,
+        indexed_at: None,
+        embedding_model: None,
+        embedding_provider: None,
+        embedding_dim: None,
+        db_size: 0,
+        progress: None,
+    }
+}
+
+fn rag_status_from_handle(handle: &Arc<rag::RagHandle>) -> Result<rag::IndexStatus, String> {
+    let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
+    let total_docs = db.doc_count();
+    let total_chunks = db.chunk_count();
+    let indexed_at = db.last_indexed_at();
+    let model = db.get_meta("embedding_model");
+    let provider = db.get_meta("embedding_provider");
+    let dim = db.get_meta("embedding_dim").and_then(|v| v.parse().ok());
+    let progress = db.progress.clone();
+    Ok(rag::IndexStatus {
+        workspace: handle.workspace.clone(),
+        total_docs,
+        total_chunks,
+        indexed_at,
+        embedding_model: model,
+        embedding_provider: provider,
+        embedding_dim: dim,
+        db_size: rag::db::db_size(Path::new(&handle.workspace)),
+        progress,
+    })
+}
+
+fn emit_rag_status(app: &tauri::AppHandle, status: rag::IndexStatus) {
+    let _ = app.emit("rag-status", status);
+}
+
+fn emit_rag_status_for_handle(app: &tauri::AppHandle, handle: &Arc<rag::RagHandle>) {
+    if let Ok(status) = rag_status_from_handle(handle) {
+        emit_rag_status(app, status);
+    }
+}
+
+fn has_rag_full_scan(workspace: &Path) -> bool {
+    let path = rag::db::db_path(workspace);
+    if !path.exists() {
+        return false;
+    }
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) else {
+        return false;
+    };
+    conn.query_row(
+        "SELECT v FROM schema_meta WHERE k='last_full_scan'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|v| v.parse::<i64>().ok())
+    .is_some()
+}
+
 #[tauri::command]
 async fn rag_status(
     state: tauri::State<'_, AppState>,
     workspace: String,
 ) -> Result<rag::IndexStatus, String> {
     let ws = validate_path(&state, &workspace)?;
+    if !rag::db::db_path(&ws).exists() {
+        return Ok(empty_rag_status(ws.to_string_lossy().as_ref()));
+    }
     let ws_str = ws.to_string_lossy().to_string();
     let result = tokio::task::spawn_blocking(move || -> Result<rag::IndexStatus, String> {
         let stored_dim = peek_embed_dim(Path::new(&ws_str)).unwrap_or(768);
         let handle = rag::rag_handle(&ws_str, stored_dim)?;
-        let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-        let total_docs = db.doc_count();
-        let total_chunks = db.chunk_count();
-        let indexed_at = db.last_indexed_at();
-        let model = db.get_meta("embedding_model");
-        let provider = db.get_meta("embedding_provider");
-        let dim = db.get_meta("embedding_dim").and_then(|v| v.parse().ok());
-        let progress = db.progress.clone();
-        Ok(rag::IndexStatus {
-            workspace: ws_str.clone(),
-            total_docs,
-            total_chunks,
-            indexed_at,
-            embedding_model: model,
-            embedding_provider: provider,
-            embedding_dim: dim,
-            db_size: rag::db::db_size(Path::new(&ws_str)),
-            progress,
-        })
+        rag_status_from_handle(&handle)
     })
     .await
     .map_err(|e| format!("rag_status join 失败：{e}"))?;
@@ -2175,6 +2227,7 @@ fn peek_embed_dim(workspace: &Path) -> Option<usize> {
 
 #[tauri::command]
 async fn rag_reindex(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     req: RagReindexRequest,
 ) -> Result<(), String> {
@@ -2182,7 +2235,7 @@ async fn rag_reindex(
     let ws_str = ws.to_string_lossy().to_string();
     let (cfg, dim) = build_embed_config(req.config)?;
     let guard = begin_rag_job(&ws_str)?;
-    // 异步触发，不阻塞 IPC 调用方；前端再 poll rag_status
+    // 异步触发，不阻塞 IPC 调用方；进度通过 rag-status 事件推送。
     std::thread::spawn(move || {
         let _guard = guard;
         let handle = match rag::rag_handle(&ws_str, dim) {
@@ -2192,8 +2245,13 @@ async fn rag_reindex(
                 return;
             }
         };
-        if let Err(e) = rag::index::reindex_workspace(handle, cfg) {
+        let app_for_progress = app.clone();
+        let handle_for_progress = handle.clone();
+        if let Err(e) = rag::index::reindex_workspace(handle.clone(), cfg, move || {
+            emit_rag_status_for_handle(&app_for_progress, &handle_for_progress);
+        }) {
             eprintln!("[rag.reindex] {e}");
+            emit_rag_status_for_handle(&app, &handle);
         }
     });
     Ok(())
@@ -2201,6 +2259,7 @@ async fn rag_reindex(
 
 #[tauri::command]
 async fn rag_reindex_file(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     req: RagReindexFileRequest,
 ) -> Result<(), String> {
@@ -2209,13 +2268,17 @@ async fn rag_reindex_file(
     if !path.starts_with(&ws) {
         return Err("文件不在所选仓库中".to_string());
     }
+    if !has_rag_full_scan(&ws) {
+        return Ok(());
+    }
     let ws_str = ws.to_string_lossy().to_string();
     let (cfg, dim) = build_embed_config(req.config)?;
     let guard = begin_rag_job(&ws_str)?;
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
         let handle = rag::rag_handle(&ws_str, dim)?;
-        rag::index::reindex_file(handle, cfg, &path)?;
+        rag::index::reindex_file(handle.clone(), cfg, &path)?;
+        emit_rag_status_for_handle(&app, &handle);
         Ok::<(), String>(())
     })
     .await
@@ -2225,17 +2288,22 @@ async fn rag_reindex_file(
 
 #[tauri::command]
 async fn rag_remove_file(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     workspace: String,
     path: String,
 ) -> Result<(), String> {
     let ws = validate_path(&state, &workspace)?;
     let p = validate_path(&state, &path)?;
+    if !has_rag_full_scan(&ws) {
+        return Ok(());
+    }
     let ws_str = ws.to_string_lossy().to_string();
     let dim = peek_embed_dim(&ws).unwrap_or(768);
     tokio::task::spawn_blocking(move || {
         let handle = rag::rag_handle(&ws_str, dim)?;
-        rag::index::remove_file(handle, &p)?;
+        rag::index::remove_file(handle.clone(), &p)?;
+        emit_rag_status_for_handle(&app, &handle);
         Ok::<(), String>(())
     })
     .await
@@ -2249,6 +2317,9 @@ async fn rag_search(
     req: RagSearchRequest,
 ) -> Result<Vec<rag::SearchHit>, String> {
     let ws = validate_path(&state, &req.workspace)?;
+    if !has_rag_full_scan(&ws) {
+        return Ok(Vec::new());
+    }
     let ws_str = ws.to_string_lossy().to_string();
     let (cfg, dim) = build_embed_config(req.config)?;
     let query = req.query;
@@ -2270,6 +2341,12 @@ async fn rag_repo_graph(
     workspace: String,
 ) -> Result<rag::graph::RepoGraph, String> {
     let ws = validate_path(&state, &workspace)?;
+    if !has_rag_full_scan(&ws) {
+        return Ok(rag::graph::RepoGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        });
+    }
     let ws_str = ws.to_string_lossy().to_string();
     let dim = peek_embed_dim(&ws).unwrap_or(768);
     tokio::task::spawn_blocking(move || -> Result<rag::graph::RepoGraph, String> {
@@ -2282,7 +2359,11 @@ async fn rag_repo_graph(
 }
 
 #[tauri::command]
-async fn rag_clear(state: tauri::State<'_, AppState>, workspace: String) -> Result<(), String> {
+async fn rag_clear(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
     let ws = validate_path(&state, &workspace)?;
     let ws_str = ws.to_string_lossy().to_string();
     let guard = begin_rag_job(&ws_str)?;
@@ -2294,6 +2375,7 @@ async fn rag_clear(state: tauri::State<'_, AppState>, workspace: String) -> Resu
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
         let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        emit_rag_status(&app, empty_rag_status(&ws_str));
         Ok(())
     })
     .await

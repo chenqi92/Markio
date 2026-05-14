@@ -5,10 +5,7 @@ import { useSettings } from "./settings";
 interface RagState {
   /** workspace.id → status 缓存 */
   status: Record<string, RagStatus>;
-  pollingTimer: number | null;
   refresh: (workspaceId: string, workspacePath: string) => Promise<void>;
-  startPolling: (workspaceId: string, workspacePath: string) => void;
-  stopPolling: () => void;
   reindex: (workspacePath: string) => Promise<void>;
   reindexFile: (workspacePath: string, file: string) => Promise<void>;
   removeFile: (workspacePath: string, file: string) => Promise<void>;
@@ -37,7 +34,6 @@ export function resolveEmbedConfig(): RagEmbedConfig {
 
 export const useRag = create<RagState>((set, get) => ({
   status: {},
-  pollingTimer: null,
 
   refresh: async (workspaceId, workspacePath) => {
     try {
@@ -45,24 +41,6 @@ export const useRag = create<RagState>((set, get) => ({
       set((st) => ({ status: { ...st.status, [workspaceId]: r } }));
     } catch (e) {
       console.warn("[rag.status] failed", e);
-    }
-  },
-
-  startPolling: (workspaceId, workspacePath) => {
-    const cur = get().pollingTimer;
-    if (cur) window.clearInterval(cur);
-    void get().refresh(workspaceId, workspacePath);
-    const timer = window.setInterval(() => {
-      void get().refresh(workspaceId, workspacePath);
-    }, 1500);
-    set({ pollingTimer: timer });
-  },
-
-  stopPolling: () => {
-    const cur = get().pollingTimer;
-    if (cur) {
-      window.clearInterval(cur);
-      set({ pollingTimer: null });
     }
   },
 

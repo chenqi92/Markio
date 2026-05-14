@@ -19,6 +19,7 @@ interface UIState {
   findIndex: number;
   globalSearchOpen: boolean;
   quickCaptureOpen: boolean;
+  exportSheetOpen: boolean;
 
   setMode: (m: ViewMode) => void;
   toggleSidebar: () => void;
@@ -35,6 +36,7 @@ interface UIState {
   setFindIndex: (n: number) => void;
   openGlobalSearch: (v: boolean) => void;
   openQuickCapture: (v: boolean) => void;
+  openExportSheet: (v: boolean) => void;
   setToast: (t: UIState["toast"]) => void;
 }
 
@@ -56,6 +58,7 @@ export const useUI = create<UIState>()(
       findIndex: 0,
       globalSearchOpen: false,
       quickCaptureOpen: false,
+      exportSheetOpen: false,
       toast: null,
       setMode: (mode) => set({ mode }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -73,6 +76,7 @@ export const useUI = create<UIState>()(
       setFindIndex: (findIndex) => set({ findIndex }),
       openGlobalSearch: (globalSearchOpen) => set({ globalSearchOpen }),
       openQuickCapture: (quickCaptureOpen) => set({ quickCaptureOpen }),
+      openExportSheet: (exportSheetOpen) => set({ exportSheetOpen }),
       setToast: (toast) => set({ toast }),
     }),
     {

@@ -54,6 +54,16 @@ const MODE_SYSTEM: Record<AIMode, string> = {
   proof: "你是一个校对助手。先列出问题（错别字 / 病句 / 标点 / 中英文空格），再给出建议改稿，最后总结改动数量。",
 };
 
+/** 输入框上方的快速操作 —— 点击只填充 draft，让用户在发送前确认 / 改写 */
+const AI_QUICK: Array<{ id: string; ico: string; label: string }> = [
+  { id: "summarize", ico: "≣", label: "总结当前文档" },
+  { id: "translate", ico: "文", label: "翻译选中段" },
+  { id: "continue", ico: "✎", label: "续写下一段" },
+  { id: "code", ico: "</>", label: "写一段代码" },
+  { id: "brainstorm", ico: "✺", label: "围绕主题发散" },
+  { id: "weekly", ico: "📅", label: "本周笔记生成周报" },
+];
+
 const SUGGESTIONS_FOR: Record<AIMode, string[]> = {
   ask: [
     "我这周写过哪些和这个项目相关的笔记？",
@@ -363,24 +373,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             <div className="ai-sub">{subtitle}</div>
           </div>
         </div>
-        <div className="ai-mode-tabs" role="tablist">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              role="tab"
-              aria-selected={m.id === aiMode}
-              className={"ai-mode-tab" + (m.id === aiMode ? " active" : "")}
-              onClick={() => setAIMode(m.id)}
-              title={m.sub}
-            >
-              <span className="ico">
-                <Icon name={m.icon} size={11} />
-              </span>
-              <span>{m.label}</span>
-            </button>
-          ))}
-        </div>
         <div className="ai-top-r">
           <button
             type="button"
@@ -545,6 +537,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
           <AIInputBar
             aiMode={aiMode}
+            setAIMode={setAIMode}
             currentTab={
               tab
                 ? { title: tab.title, path: tab.path, content: tab.content }
@@ -603,6 +596,10 @@ function estimateTokens(text: string): number {
   return Math.round(cjk * 1.5 + words * 1.3);
 }
 
+interface InputBarPropsExt extends InputBarProps {
+  setAIMode?: (mode: AIMode) => void;
+}
+
 function AIInputBar({
   aiMode,
   currentTab,
@@ -614,12 +611,28 @@ function AIInputBar({
   wsName,
   indexedCount,
   configured,
-}: InputBarProps) {
+  setAIMode,
+}: InputBarPropsExt) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
   const setAi = useSettings((s) => s.setAi);
   const setToast = useUI((s) => s.setToast);
   const model = useSettings((s) => s.aiModel);
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const styleRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!styleMenuOpen) return;
+    const h = (e: MouseEvent) => {
+      if (styleRef.current && !styleRef.current.contains(e.target as Node)) {
+        setStyleMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", h);
+    return () => window.removeEventListener("mousedown", h);
+  }, [styleMenuOpen]);
+
+  const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0];
 
   // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab
   const ctxChips = useMemo(() => {
@@ -663,6 +676,22 @@ function AIInputBar({
   return (
     <>
       <div className="ai-input-wrap">
+        <div className="ai-quick-row">
+          {AI_QUICK.map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              className="ai-quick"
+              onClick={() => setDraft(q.label)}
+              disabled={busy}
+            >
+              <span className="ico" aria-hidden>
+                {q.ico}
+              </span>
+              <span>{q.label}</span>
+            </button>
+          ))}
+        </div>
         <div className="ai-input-shell">
           <div className="ai-ctx-row">
             <span className="ai-ctx-l">上下文</span>
@@ -761,18 +790,51 @@ function AIInputBar({
                 }
               >
                 <Icon name="database" size={11} />
-                <span>
-                  {useWsCtx ? "仓库检索 ✓" : "仓库检索 ⨯"}
-                </span>
+                <span>{useWsCtx ? "仓库检索 ✓" : "仓库检索 ⨯"}</span>
               </button>
               <button
+                ref={styleRef}
                 type="button"
-                className="ai-tool chip"
-                title="当前模型，点 pill 切换"
+                className="ai-tool chip ai-style-btn"
+                title="回答风格 / 任务模式"
+                onClick={() => setStyleMenuOpen((v) => !v)}
+                style={{ position: "relative" }}
               >
                 <Icon name="sparkle" size={11} />
-                <span>{model || "未选模型"}</span>
+                <span>✦ {currentMode.label}</span>
+                <span style={{ opacity: 0.5, marginLeft: 2 }}>▾</span>
+                {styleMenuOpen && (
+                  <div
+                    className="ai-style-menu"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="ai-style-h">回答风格</div>
+                    {MODES.map((m) => (
+                      <button
+                        type="button"
+                        key={m.id}
+                        className={
+                          "ai-style-item" + (m.id === aiMode ? " active" : "")
+                        }
+                        onClick={() => {
+                          setAIMode?.(m.id);
+                          setStyleMenuOpen(false);
+                        }}
+                      >
+                        <div className="t">{m.label}</div>
+                        <div className="s">{m.sub}</div>
+                      </button>
+                    ))}
+                    <div className="ai-style-foot">
+                      在 设置 → AI 助手 中编辑
+                    </div>
+                  </div>
+                )}
               </button>
+              <span className="ai-tool chip ai-tool-static" title="当前模型">
+                <Icon name="sparkle" size={11} />
+                <span>{model || "未选模型"}</span>
+              </span>
             </div>
             <div className="ai-input-actions">
               <span

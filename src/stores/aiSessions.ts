@@ -45,6 +45,12 @@ interface AISessionsState {
   ) => string;
   setActive: (id: string | null) => void;
   appendMessage: (sessionId: string, msg: AIMsgRecord) => void;
+  appendChunk: (sessionId: string, messageId: string, delta: string) => void;
+  patchMessage: (
+    sessionId: string,
+    messageId: string,
+    patch: Partial<AIMsgRecord>,
+  ) => void;
   setTitle: (id: string, title: string) => void;
   deleteSession: (id: string) => void;
   clearAll: () => void;
@@ -104,6 +110,34 @@ export const useAISessions = create<AISessionsState>()(
               messages: [...s.messages, msg],
               title: isFirstUser ? deriveTitle(msg) : s.title,
               updatedAt: msg.time,
+            };
+          }),
+        })),
+
+      appendChunk: (sessionId, messageId, delta) =>
+        set((st) => ({
+          sessions: st.sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            return {
+              ...s,
+              messages: s.messages.map((m) =>
+                m.id === messageId ? { ...m, text: m.text + delta } : m,
+              ),
+              updatedAt: Date.now(),
+            };
+          }),
+        })),
+
+      patchMessage: (sessionId, messageId, patch) =>
+        set((st) => ({
+          sessions: st.sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            return {
+              ...s,
+              messages: s.messages.map((m) =>
+                m.id === messageId ? { ...m, ...patch } : m,
+              ),
+              updatedAt: Date.now(),
             };
           }),
         })),

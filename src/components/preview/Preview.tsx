@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { renderMermaidIn } from "@/lib/mermaid";
 import type { OutlineItem } from "@/types";
@@ -11,6 +11,15 @@ interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
   onScroll?: (info: { top: number; height: number; clientHeight: number }) => void;
   scrollTarget?: { ratio: number; nonce: number } | null;
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /**
@@ -114,9 +123,41 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
       timerRef.current = null;
     }
     const seq = ++seqRef.current;
+    let cleanupStream: (() => void) | null = null;
+    let cancelled = false;
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
+        if (source.length > 30_000) {
+          const chunks: string[] = [];
+          const cleanup = await api.renderMarkdownStream(source, basePath, {
+            onChunk: (index, chunkHtml) => {
+              if (cancelled || seq !== seqRef.current) return;
+              chunks[index] = chunkHtml;
+              setHtml(chunks.filter(Boolean).join(""));
+            },
+            onDone: (info) => {
+              if (cancelled || seq !== seqRef.current) return;
+              onMetaRef.current?.({
+                outline: info.outline,
+                words: info.words,
+                readingMinutes: info.readingMinutes,
+              });
+            },
+            onError: (message) => {
+              if (cancelled || seq !== seqRef.current) return;
+              setHtml(
+                `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${escapeHtml(message)}</pre>`,
+              );
+            },
+          });
+          if (cancelled || seq !== seqRef.current) {
+            cleanup();
+          } else {
+            cleanupStream = cleanup;
+          }
+          return;
+        }
         const r = await api.renderMarkdown(source, basePath);
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
         setHtml(r.html);
@@ -128,20 +169,19 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
       } catch (e) {
         if (seq !== seqRef.current) return;
         setHtml(
-          `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${(e as Error).message}</pre>`,
+          `<pre style="color: var(--text-3); padding: 16px;">渲染失败：${escapeHtml((e as Error).message)}</pre>`,
         );
       }
     }, 60);
     return () => {
+      cancelled = true;
       if (timerRef.current != null) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      cleanupStream?.();
     };
   }, [source, basePath]);
-
-  // 不再依赖 onMeta 引用变化触发 effect
-  void useMemo(() => onMeta, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -191,7 +231,7 @@ export function Preview({ source, basePath, onMeta, onScroll, scrollTarget }: Pr
       // 外链
       if (/^https?:\/\//.test(href)) {
         e.preventDefault();
-        window.open(href, "_blank");
+        window.open(href, "_blank", "noopener,noreferrer");
       }
     };
     el.addEventListener("click", handler);

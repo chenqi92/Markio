@@ -5,6 +5,9 @@ import { basename, dirname, uid } from "@/lib/utils";
 import { useWorkspace } from "./workspace";
 import { useStreak } from "./streak";
 import { useRecents } from "./recents";
+import { useUI } from "./ui";
+import { useSettings } from "./settings";
+import { useRag } from "./rag";
 
 interface TabsState {
   tabs: TabInfo[];
@@ -20,7 +23,7 @@ interface TabsState {
   saveTab: (id: string, force?: boolean) => Promise<"ok" | "conflict" | "error">;
   saveActive: () => Promise<"ok" | "conflict" | "error">;
   togglePin: (id: string) => void;
-  reorderTabs: (fromIdx: number, toIdx: number) => void;
+  reorderTabs: (fromId: string, toId: string) => void;
   activeTab: () => TabInfo | undefined;
 }
 
@@ -38,13 +41,18 @@ export const useTabs = create<TabsState>((set, get) => ({
       return;
     }
     let content = "";
-    let sig: FileSig | undefined;
+    let sig: FileSig;
     try {
       const opened = await api.open(path);
       content = opened.content;
       sig = opened.sig;
     } catch (e) {
-      content = `> 无法读取文件：${(e as Error).message}`;
+      useUI.getState().setToast({
+        stage: "error",
+        message: `无法读取文件：${(e as Error).message}`,
+      });
+      setTimeout(() => useUI.getState().setToast(null), 2500);
+      return;
     }
     const tab: TabInfo = {
       id: uid(),
@@ -60,7 +68,7 @@ export const useTabs = create<TabsState>((set, get) => ({
     set((s) => ({
       tabs: [...s.tabs, tab],
       activeId: tab.id,
-      sigs: sig ? { ...s.sigs, [tab.id]: sig } : s.sigs,
+      sigs: { ...s.sigs, [tab.id]: sig },
     }));
     useRecents.getState().push(workspaceId, path, basename(path));
   },
@@ -133,16 +141,11 @@ export const useTabs = create<TabsState>((set, get) => ({
         .getState()
         .workspaces.find((w) => w.id === tab.workspaceId);
       if (ws) {
-        api
-          .historySave(ws.path, tab.path, tab.content)
-          .catch(() => undefined);
         // 增量更新 RAG 索引（受设置开关控制；遵循 fire-and-forget）
         void (async () => {
           try {
-            const { useSettings } = await import("./settings");
             const s = useSettings.getState();
             if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
-            const { useRag } = await import("./rag");
             await useRag.getState().reindexFile(ws.path, tab.path);
           } catch (err) {
             console.warn("[rag.reindexFile] post-save failed", err);
@@ -175,15 +178,15 @@ export const useTabs = create<TabsState>((set, get) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)),
     })),
 
-  reorderTabs: (fromIdx, toIdx) =>
+  reorderTabs: (fromId, toId) =>
     set((s) => {
-      const tabs = [...s.tabs];
-      if (
-        fromIdx < 0 ||
-        fromIdx >= tabs.length ||
-        toIdx < 0 ||
-        toIdx >= tabs.length
-      ) {
+      const tabs = [...s.tabs].sort((a, b) => {
+        if (a.pinned === b.pinned) return 0;
+        return a.pinned ? -1 : 1;
+      });
+      const fromIdx = tabs.findIndex((t) => t.id === fromId);
+      const toIdx = tabs.findIndex((t) => t.id === toId);
+      if (fromIdx < 0 || toIdx < 0) {
         return s;
       }
       const [it] = tabs.splice(fromIdx, 1);

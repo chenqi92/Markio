@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
+import { useTabs } from "@/stores/tabs";
 import { replaceSelection, deleteBeforeCursor } from "@/lib/editor-bridge";
 import type { FileEntry } from "@/types";
 
@@ -13,21 +14,6 @@ interface Item {
   l2?: string;
   insert: string;
 }
-
-const MENTIONS: Item[] = [
-  { icon: "user", l1: "@han", l2: "你 · 韩", insert: "@han " },
-  { icon: "user", l1: "@white-river", l2: "白川 · 协作者", insert: "@white-river " },
-  { icon: "users", l1: "@design-team", l2: "团队", insert: "@design-team " },
-];
-
-const TAGS: Item[] = [
-  { icon: "hash", l1: "#design", insert: "#design " },
-  { icon: "hash", l1: "#project", insert: "#project " },
-  { icon: "hash", l1: "#in-progress", insert: "#in-progress " },
-  { icon: "hash", l1: "#book", insert: "#book " },
-  { icon: "hash", l1: "#daily", insert: "#daily " },
-  { icon: "hash", l1: "#todo", insert: "#todo " },
-];
 
 const EMOJIS: Item[] = [
   { ico: "😀", l1: ":smile:", l2: "笑", insert: "😀 " },
@@ -63,6 +49,28 @@ function walkMd(node: FileEntry, out: Item[]) {
   for (const c of node.children ?? []) walkMd(c, out);
 }
 
+function uniqueTokens(source: string, prefix: "@" | "#"): Item[] {
+  const seen = new Set<string>();
+  const out: Item[] = [];
+  const re =
+    prefix === "#"
+      ? /(^|[\s([{"'])#([\p{L}\p{N}_-]{1,64})/gu
+      : /(^|[\s([{"'])@([\p{L}\p{N}_-]{1,64})/gu;
+  for (const match of source.matchAll(re)) {
+    const token = match[2];
+    if (!token || seen.has(token.toLowerCase())) continue;
+    seen.add(token.toLowerCase());
+    const label = `${prefix}${token}`;
+    out.push({
+      icon: prefix === "#" ? "hash" : "user",
+      l1: label,
+      insert: `${label} `,
+    });
+    if (out.length >= 100) break;
+  }
+  return out.sort((a, b) => a.l1.localeCompare(b.l1));
+}
+
 export function Autocomplete({
   kind,
   x,
@@ -79,18 +87,19 @@ export function Autocomplete({
   onClose: () => void;
 }) {
   const tree = useWorkspace((s) => s.activeTree());
+  const indexedText = useTabs((s) => s.tabs.map((t) => t.content).join("\n"));
   const [sel, setSel] = useState(0);
 
   const base: Item[] = useMemo(() => {
-    if (kind === "mention") return MENTIONS;
-    if (kind === "tag") return TAGS;
+    if (kind === "mention") return uniqueTokens(indexedText, "@");
+    if (kind === "tag") return uniqueTokens(indexedText, "#");
     if (kind === "emoji") return EMOJIS;
     // wiki: 用 workspace 的所有 md 名当候选
     if (!tree) return [];
     const out: Item[] = [];
     walkMd(tree, out);
     return out.slice(0, 200);
-  }, [kind, tree]);
+  }, [kind, tree, indexedText]);
 
   const items = useMemo(() => {
     if (!query) return base.slice(0, 20);

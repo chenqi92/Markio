@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
-import { api } from "@/lib/api";
+import { api, parseError } from "@/lib/api";
 import { renderMermaidIn } from "@/lib/mermaid";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
@@ -139,7 +139,6 @@ export function AIAssistantMessage({
       await useWorkspace.getState().refreshTree(ws.id);
       await useTabs.getState().openFile(ws.id, path);
     } catch (e) {
-      const { parseError } = await import("@/lib/api");
       const err = parseError(e);
       if (err.code === "ALREADY_EXISTS") {
         setToast({

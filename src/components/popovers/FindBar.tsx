@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
+import { api, isDesktop } from "@/lib/api";
 
 export function FindBar() {
   const open = useUI((s) => s.findOpen);
@@ -15,7 +16,8 @@ export function FindBar() {
   };
   const content = useTabs((s) => s.activeTab()?.content ?? "");
 
-  const total = useMemo(() => {
+  // 总数：小文档走 JS indexOf；> 30KB 在桌面端走 Rust，避免主线程被卡
+  const jsTotal = useMemo(() => {
     if (!q) return 0;
     const lower = content.toLowerCase();
     const needle = q.toLowerCase();
@@ -27,6 +29,28 @@ export function FindBar() {
     }
     return count;
   }, [q, content]);
+
+  const [rustTotal, setRustTotal] = useState<number | null>(null);
+  useEffect(() => {
+    if (!q || content.length < 30_000 || !isDesktop()) {
+      setRustTotal(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .textFindRanges(content, q, { caseInsensitive: true })
+      .then((ranges) => {
+        if (!cancelled) setRustTotal(ranges.length);
+      })
+      .catch(() => {
+        if (!cancelled) setRustTotal(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [q, content]);
+
+  const total = rustTotal ?? jsTotal;
 
   // 每次 q / idx 变更后滚动到当前命中元素
   useEffect(() => {

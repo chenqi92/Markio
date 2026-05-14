@@ -9,7 +9,9 @@ import { useUI } from "@/stores/ui";
 import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
-import { replaceRange } from "@/lib/editor-bridge";
+import { getEditor, replaceRange } from "@/lib/editor-bridge";
+import { detectTable } from "./table-edit";
+import { TableToolbar } from "../popovers/TableToolbar";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
@@ -26,12 +28,32 @@ const MODE_CLASS: Record<ViewMode, string> = {
   preview: "preview-only",
 };
 
+const MAX_PASTE_IMAGES = 8;
+const MAX_PASTE_IMAGE_BYTES = 25 * 1024 * 1024;
+
 function scrollRatio(info: { top: number; height: number; clientHeight: number }) {
   const max = Math.max(0, info.height - info.clientHeight);
   return max <= 0 ? 0 : Math.max(0, Math.min(1, info.top / max));
 }
 
+function buildS3Key(notePath: string, fileName?: string): string {
+  const stem = (fileName || "image").replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const noteStem =
+    notePath
+      .split(/[/\\]/)
+      .pop()
+      ?.replace(/\.[^./]+$/, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-") || "note";
+  const ts = Date.now();
+  return `markio/${noteStem}/${ts}-${stem}`;
+}
+
 function fileToBase64(file: File): Promise<string> {
+  if (file.size > MAX_PASTE_IMAGE_BYTES) {
+    return Promise.reject(
+      new Error(`图片过大：单张最大 ${Math.floor(MAX_PASTE_IMAGE_BYTES / 1024 / 1024)} MB`),
+    );
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error("无法读取剪贴板图片"));
@@ -70,6 +92,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   }>({ outline: [], words: 0, readingMinutes: 1 });
   const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
   const [slash, setSlash] = useState<{ x: number; y: number } | null>(null);
+  const [tableTb, setTableTb] = useState<{
+    x: number;
+    y: number;
+    align: "left" | "center" | "right" | null;
+  } | null>(null);
   const [ac, setAc] = useState<{
     kind: AcKind;
     query: string;
@@ -124,23 +151,59 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         return;
       }
       const settings = useSettings.getState();
+      const acceptedFiles = files.slice(0, MAX_PASTE_IMAGES);
+      const skipped = files.length - acceptedFiles.length;
       setToast({ stage: "uploading", message: "正在处理剪贴板图片..." });
       try {
         const markdown: string[] = [];
-        const warnings: string[] = [];
-        for (const file of files) {
+        const warnings: string[] =
+          skipped > 0 ? [`一次最多插入 ${MAX_PASTE_IMAGES} 张图片，已跳过 ${skipped} 张`] : [];
+        for (const file of acceptedFiles) {
           const dataBase64 = await fileToBase64(file);
+          // 第一步：始终走 Rust image_paste 写到本地 Assets/（带可选压缩）；
+          // upload=false 时不调 PicGo，由前端决定是否再走 S3 直传
+          const usePicgo = settings.uploadProvider === "picgo" && settings.picgoPasteUpload;
+          const useS3 =
+            settings.uploadProvider === "s3" &&
+            !!settings.s3Endpoint &&
+            !!settings.s3Bucket;
           const r = await api.pasteImage({
             workspace: workspace.path,
             note: tab.path,
             fileName: file.name || undefined,
             mime: file.type || "image/png",
             dataBase64,
-            upload: settings.picgoPasteUpload,
+            upload: usePicgo,
             keepLocal: settings.picgoKeepLocalCopy,
             endpoint: settings.picgoEndpoint,
+            compress: settings.picgoCompressBeforeUpload,
+            quality: settings.picgoQuality,
           });
-          markdown.push(r.markdown);
+          let finalMarkdown = r.markdown;
+          if (useS3 && r.localPath) {
+            try {
+              const key = buildS3Key(tab.path, file.name);
+              const url = await api.s3PutObject(
+                {
+                  endpoint: settings.s3Endpoint,
+                  region: settings.s3Region,
+                  bucket: settings.s3Bucket,
+                  accessKeyId: settings.s3AccessKeyId,
+                  secretAccessKey: "", // 走 keychain
+                  publicBaseUrl: settings.s3PublicBaseUrl || undefined,
+                  pathStyle: settings.s3PathStyle,
+                },
+                key,
+                dataBase64,
+                file.type || "image/png",
+              );
+              const alt = (file.name || "image").replace(/\.[^./]+$/, "");
+              finalMarkdown = `![${alt}](${url})`;
+            } catch (e) {
+              warnings.push(`S3 上传失败：${String(e)}（已保留本地副本）`);
+            }
+          }
+          markdown.push(finalMarkdown);
           if (r.warning) warnings.push(r.warning);
         }
         if (useTabs.getState().activeId !== tab.id) return;
@@ -160,6 +223,26 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       }
     },
     [setToast, tab, workspace],
+  );
+
+  const handleEditorDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      const dt = e.dataTransfer;
+      if (!dt || dt.files.length === 0) return;
+      const images = Array.from(dt.files).filter((f) =>
+        f.type.startsWith("image/"),
+      );
+      if (images.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const view = getEditor();
+      const pos =
+        view?.posAtCoords({ x: e.clientX, y: e.clientY }) ??
+        view?.state.doc.length ??
+        0;
+      await handlePasteImages(images, { from: pos, to: pos });
+    },
+    [handlePasteImages],
   );
 
   // 自动保存：按设置里的延迟写盘
@@ -195,7 +278,16 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   return (
     <div className={classNames("editor-split", MODE_CLASS[mode])}>
       {showSource && (
-        <div className="editor-pane">
+        <div
+          className="editor-pane"
+          onDragOver={(e) => {
+            if (Array.from(e.dataTransfer.types).includes("Files")) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={handleEditorDrop}
+        >
           <SourceEditor
             value={tab.content}
             wysiwyg={renderMode === "wysiwyg"}
@@ -210,13 +302,30 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             onSelectionChange={(info) => {
               if (!allowBubble) {
                 setBubble(null);
-                return;
-              }
-              if (!info.hasSelection || !info.coords) {
+              } else if (!info.hasSelection || !info.coords) {
                 setBubble(null);
-                return;
+              } else {
+                setBubble(info.coords);
               }
-              setBubble(info.coords);
+              // 表格 toolbar：cursor 落在表格行就显示
+              const view = getEditor();
+              if (view) {
+                const tab = detectTable(view);
+                if (tab) {
+                  const r = view.coordsAtPos(
+                    view.state.selection.main.head,
+                  );
+                  if (r) {
+                    setTableTb({
+                      x: r.left,
+                      y: Math.max(8, r.top - 36),
+                      align: tab.aligns[tab.cursorCol] ?? null,
+                    });
+                    return;
+                  }
+                }
+              }
+              setTableTb(null);
             }}
             onSlashTrigger={
               allowSlash ? (coords) => setSlash(coords) : undefined
@@ -265,6 +374,9 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           }}
           onClose={() => setBubble(null)}
         />
+      )}
+      {tableTb && (
+        <TableToolbar x={tableTb.x} y={tableTb.y} align={tableTb.align} />
       )}
       {slash && (
         <SlashMenu

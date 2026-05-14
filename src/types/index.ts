@@ -14,6 +14,7 @@ export interface FileEntry {
   size: number;
   modified: number;
   children?: FileEntry[];
+  truncated?: boolean;
 }
 
 export type ViewMode = "source" | "split" | "wysiwyg" | "preview";

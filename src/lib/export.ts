@@ -167,6 +167,31 @@ export async function copyMarkdown(source: string): Promise<void> {
   await navigator.clipboard.writeText(source);
 }
 
+async function pickSaveTarget(
+  defaultName: string,
+  ext: string,
+  label: string,
+): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const target = await save({
+    defaultPath: sanitizeFileName(defaultName) + `.${ext}`,
+    filters: [{ name: label, extensions: [ext] }],
+  });
+  return typeof target === "string" ? target : null;
+}
+
+export async function exportEpub(title: string, source: string): Promise<void> {
+  const dest = await pickSaveTarget(title, "epub", "EPUB");
+  if (!dest) return;
+  await api.exportPandoc(source, "epub", dest);
+}
+
+export async function exportDocx(title: string, source: string): Promise<void> {
+  const dest = await pickSaveTarget(title, "docx", "Word Document");
+  if (!dest) return;
+  await api.exportPandoc(source, "docx", dest);
+}
+
 export async function copyHtml(title: string, source: string): Promise<void> {
   const html = await buildStandaloneHtml(title, source);
   await navigator.clipboard.writeText(html);

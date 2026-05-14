@@ -5,7 +5,10 @@ import { useTabs } from "./stores/tabs";
 import { useWorkspace } from "./stores/workspace";
 import { useSettings } from "./stores/settings";
 import { isDarkTheme } from "./themes";
-import { api, pickDirectory, pickFile } from "./lib/api";
+import { api, parseError, pickDirectory, pickFile } from "./lib/api";
+import { exportPdf } from "./lib/export";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 export default function App() {
   const openCommand = useUI((s) => s.openCommand);
@@ -35,7 +38,6 @@ export default function App() {
     hydrate();
     (async () => {
       try {
-        const { api } = await import("./lib/api");
         const provider = useSettings.getState().aiProvider;
         const has = await api.secretHas(`ai:${provider}`);
         setAi({ aiKeyConfigured: has });
@@ -44,6 +46,42 @@ export default function App() {
       }
     })();
   }, [hydrate, setAi]);
+
+  // Rust watcher 触发的文件系统变动 → 节流刷新文件树
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    const pendingRefresh: Map<string, ReturnType<typeof setTimeout>> = new Map();
+    (async () => {
+      try {
+        unlisten = await listen<{
+          workspace: string;
+          path: string;
+          kind: "modified" | "created" | "removed";
+        }>("fs-changed", (e) => {
+          const { workspace } = e.payload;
+          // 同一个仓库 1s 内只刷一次
+          if (pendingRefresh.has(workspace)) return;
+          const handle = setTimeout(() => {
+            pendingRefresh.delete(workspace);
+            const ws = useWorkspace
+              .getState()
+              .workspaces.find((w) => w.path === workspace);
+            if (ws) {
+              useWorkspace.getState().refreshTree(ws.id).catch(() => undefined);
+            }
+          }, 600);
+          pendingRefresh.set(workspace, handle);
+        });
+      } catch (err) {
+        console.warn("[fs-changed] subscribe failed", err);
+      }
+    })();
+    return () => {
+      pendingRefresh.forEach(clearTimeout);
+      pendingRefresh.clear();
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // 跟随系统亮 / 暗
   useEffect(() => {
@@ -69,7 +107,6 @@ export default function App() {
     let dispose: (() => void) | undefined;
     (async () => {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const unlisten = await getCurrentWindow().onDragDropEvent(async (e) => {
           if (e.payload.type !== "drop") return;
           const paths = e.payload.paths;
@@ -146,7 +183,6 @@ export default function App() {
             await useWorkspace.getState().refreshTree(ws.id);
             await useTabs.getState().openFile(ws.id, path);
           } catch (err) {
-            const { parseError } = await import("./lib/api");
             const e2 = parseError(err);
             if (e2.code === "ALREADY_EXISTS") {
               const reuse = window.confirm(
@@ -185,7 +221,6 @@ export default function App() {
           const tab = useTabs.getState().activeTab();
           if (!tab) return;
           try {
-            const { exportPdf } = await import("./lib/export");
             await exportPdf(tab.title, tab.content);
           } catch (err) {
             setToast({

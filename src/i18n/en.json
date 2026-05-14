@@ -1,0 +1,47 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "ok": "OK",
+    "delete": "Delete",
+    "rename": "Rename",
+    "open": "Open",
+    "close": "Close",
+    "create": "New",
+    "search": "Search",
+    "loading": "Loading"
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "appear": "Appearance",
+      "general": "General",
+      "editor": "Editor",
+      "sync": "Sync",
+      "shortcuts": "Shortcuts",
+      "picgo": "Image upload",
+      "wechat": "WeChat",
+      "ai": "AI Assistant",
+      "rag": "Knowledge base",
+      "export": "Import / Export",
+      "about": "About"
+    },
+    "general": {
+      "language": "UI language",
+      "languageHelp": "Takes effect immediately"
+    }
+  },
+  "toolbar": {
+    "newFile": "New",
+    "openFile": "Open…",
+    "search": "Search",
+    "ai": "AI Assistant"
+  },
+  "outline": {
+    "title": "Outline",
+    "info": "Info",
+    "links": "Backlinks",
+    "empty": "No headings in this document",
+    "reorderHint": "Sections · drag to reorder"
+  }
+}

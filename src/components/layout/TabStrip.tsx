@@ -153,10 +153,7 @@ export function TabStrip() {
               dragFrom.current = null;
               setDragOver(null);
               if (!fromId || fromId === t.id) return;
-              const idxFrom = tabs.findIndex((x) => x.id === fromId);
-              const idxTo = tabs.findIndex((x) => x.id === t.id);
-              if (idxFrom === -1 || idxTo === -1) return;
-              reorderTabs(idxFrom, idxTo);
+              reorderTabs(fromId, t.id);
             }}
             onDragEnd={() => {
               dragFrom.current = null;

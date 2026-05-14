@@ -65,6 +65,7 @@ export function SourceEditor({
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       EditorView.lineWrapping,
       ...(wysiwyg ? [wysiwygMarkdown] : []),
+      mathInputHandler,
       EditorView.updateListener.of((u) => {
         if (u.selectionSet && onSelectionChange) {
           const sel = u.state.selection.main;
@@ -246,3 +247,33 @@ export function SourceEditor({
     </div>
   );
 }
+
+/**
+ * 输入 `$` 时自动补一个 `$`，光标停在中间；适配公式输入。
+ * 已经在 `$...$` 内部、或行起始 `$$` → 不接管，让默认行为生效。
+ */
+const mathInputHandler = EditorView.inputHandler.of(
+  (view, from, to, text) => {
+    if (text !== "$") return false;
+    const doc = view.state.doc;
+    const prevCh = from > 0 ? doc.sliceString(from - 1, from) : "";
+    const nextCh = to < doc.length ? doc.sliceString(to, to + 1) : "";
+    // 紧跟在 `$` 之后 → 让用户继续打第二个 `$` 完成 display math
+    if (prevCh === "$") return false;
+    // 下一个字符已经是 `$` → 视为跳过闭合分隔符
+    if (nextCh === "$") {
+      view.dispatch({
+        selection: { anchor: to + 1 },
+        userEvent: "input.type",
+      });
+      return true;
+    }
+    // 默认：插入 `$$` 并把光标放中间
+    view.dispatch({
+      changes: { from, to, insert: "$$" },
+      selection: { anchor: from + 1 },
+      userEvent: "input.type",
+    });
+    return true;
+  },
+);

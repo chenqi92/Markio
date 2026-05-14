@@ -23,14 +23,32 @@ interface WorkspaceState {
   activeTree: () => FileEntry | undefined;
 }
 
+function pathKey(path: string): string {
+  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[a-zA-Z]:\//.test(norm) ? norm.toLowerCase() : norm;
+}
+
+function samePath(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
+}
+
+function rememberRegistered(registered: Set<string>, path: string, canon: string) {
+  registered.add(path);
+  registered.add(canon);
+}
+
+async function registerWorkspace(path: string, registered: Set<string>) {
+  const canon = await api.workspaceRegister(path);
+  rememberRegistered(registered, path, canon);
+  return canon;
+}
+
 async function safeRegister(path: string, registered: Set<string>) {
-  if (registered.has(path)) return;
   try {
-    const canon = await api.workspaceRegister(path);
-    registered.add(canon);
-    registered.add(path);
+    return await registerWorkspace(path, registered);
   } catch (e) {
     console.error("workspaceRegister failed", path, e);
+    return null;
   }
 }
 
@@ -51,23 +69,24 @@ export const useWorkspace = create<WorkspaceState>()(
       },
 
       addWorkspace: async (path) => {
-        const existing = get().workspaces.find((w) => w.path === path);
+        const canon = await registerWorkspace(path, get()._registered);
+        const existing = get().workspaces.find(
+          (w) => samePath(w.path, path) || samePath(w.path, canon),
+        );
         if (existing) {
-          await safeRegister(existing.path, get()._registered);
           await get().setActive(existing.id);
           return existing.id;
         }
-        const name = basename(path) || path;
+        const name = basename(canon) || canon;
         const ws: Workspace = {
           id: uid(),
           name,
-          path,
+          path: canon,
           color: colorForName(name),
           initial: initialFor(name),
           lastOpenedAt: Date.now(),
         };
         set((s) => ({ workspaces: [...s.workspaces, ws] }));
-        await safeRegister(ws.path, get()._registered);
         await get().setActive(ws.id);
         return ws.id;
       },
@@ -84,7 +103,8 @@ export const useWorkspace = create<WorkspaceState>()(
         });
         if (ws) {
           try {
-            await api.workspaceUnregister(ws.path);
+            const canon = await api.workspaceUnregister(ws.path);
+            get()._registered.delete(canon);
           } catch {
             /* ignore */
           }

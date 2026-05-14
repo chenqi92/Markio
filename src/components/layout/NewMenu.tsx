@@ -3,7 +3,7 @@ import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
-import { api, pickDirectory, pickFile } from "@/lib/api";
+import { api, parseError, pickDirectory, pickFile } from "@/lib/api";
 
 interface Template {
   id: string;
@@ -99,7 +99,6 @@ export function NewMenu({ onClose }: { onClose: () => void }) {
       setToast({ stage: "done", message: "已创建" });
       setTimeout(() => setToast(null), 1500);
     } catch (e) {
-      const { parseError } = await import("@/lib/api");
       const err = parseError(e);
       if (err.code === "ALREADY_EXISTS") {
         const reuse = window.confirm(`${fname} 已存在。打开它？`);

@@ -1,8 +1,15 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon, type IconName } from "../ui/Icon";
 import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
 import { useSettings } from "@/stores/settings";
+import { useRag } from "@/stores/rag";
+import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { THEMES } from "@/themes";
+import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import { setLocale, currentLocale, type Locale } from "@/i18n";
 
 const SECTIONS = [
   { id: "appear", label: "外观", icon: "palette" },
@@ -12,7 +19,6 @@ const SECTIONS = [
   { id: "shortcuts", label: "快捷键", icon: "cmd" },
   { id: "picgo", label: "图片上传", icon: "image" },
   { id: "wechat", label: "微信公众号", icon: "message" },
-  { id: "lobster", label: "腾讯龙虾", icon: "bot" },
   { id: "ai", label: "AI 助手", icon: "sparkle" },
   { id: "rag", label: "本地知识库", icon: "search" },
   { id: "export", label: "导入 / 导出", icon: "upload" },
@@ -73,21 +79,6 @@ const WECHAT_AUTHOR_OPTIONS = [
   { value: "systemUser", label: "系统用户名" },
 ] as const satisfies readonly SelectOption<"unset" | "appName" | "systemUser">[];
 
-const LOBSTER_MODEL_OPTIONS = [
-  { value: "aiDefault", label: "跟随 AI 助手默认" },
-  { value: "currentClaude", label: "当前 Claude 配置" },
-  { value: "currentOpenAI", label: "当前 OpenAI 配置" },
-  { value: "localOllama", label: "本地 Ollama" },
-] as const satisfies readonly SelectOption<"aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama">[];
-
-const LOBSTER_LIMIT_OPTIONS = [
-  { value: 50, label: "50 条 / 天" },
-  { value: 100, label: "100 条 / 天" },
-  { value: 200, label: "200 条 / 天" },
-  { value: 500, label: "500 条 / 天" },
-  { value: 1000, label: "1000 条 / 天" },
-] as const satisfies readonly SelectOption<50 | 100 | 200 | 500 | 1000>[];
-
 const EXPORT_PDF_THEME_OPTIONS = [
   { value: "current", label: "跟随当前主题" },
   { value: "light", label: "浅色打印" },
@@ -138,7 +129,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
             {section === "shortcuts" && <Shortcuts />}
             {section === "picgo" && <Picgo />}
             {section === "wechat" && <WeChat />}
-            {section === "lobster" && <Lobster />}
             {section === "ai" && <AI />}
             {section === "rag" && <RagSettings />}
             {section === "export" && <ImportExport />}
@@ -209,6 +199,31 @@ function Appearance() {
   );
 }
 
+function LanguageCard() {
+  const [loc, setLoc] = useState<Locale>(currentLocale());
+  return (
+    <div className="settings-card">
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">界面语言 · UI language</div>
+          <div className="settings-help">切换后立即生效；部分历史 UI 文案仍为中文，后续版本逐步迁移</div>
+        </div>
+        <SelectBtn
+          value={loc}
+          options={[
+            { value: "zh-CN", label: "简体中文" },
+            { value: "en", label: "English" },
+          ] as const}
+          onChange={(v) => {
+            setLoc(v as Locale);
+            setLocale(v as Locale);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function General() {
   const showLive = useSettings((s) => s.showLiveCursors);
   const setShowLive = useSettings((s) => s.setShowLiveCursors);
@@ -219,6 +234,7 @@ function General() {
     <>
       <h2 className="settings-h">通用</h2>
       <p className="settings-sub">基础行为与启动选项。</p>
+      <LanguageCard />
       <div className="settings-card">
         <div className="settings-row">
           <div className="settings-row-l">
@@ -455,6 +471,10 @@ function Sync() {
       <h2 className="settings-h">同步</h2>
       <p className="settings-sub">每个驱动单独鉴权与配置，互不影响。下面是 V1 预留位。</p>
 
+      <GitSyncCard />
+
+      <WebDavCard />
+
       <div className="settings-card">
         <div className="settings-card-h">驱动</div>
         {DRIVES.map((d) => (
@@ -513,6 +533,435 @@ function Sync() {
   );
 }
 
+type GitStatusInfo = {
+  head?: string;
+  branch?: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  files: Array<{ path: string; kind: string }>;
+};
+
+function GitSyncCard() {
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
+  const workspacePath = activeWorkspace?.path ?? "";
+
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const [pat, setPat] = useState("");
+  const [storedPat, setStoredPat] = useState(false);
+  const [status, setStatus] = useState<GitStatusInfo | null>(null);
+  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [commitMsg, setCommitMsg] = useState("");
+  const [authorName, setAuthorName] = useState("markio");
+  const [authorEmail, setAuthorEmail] = useState("markio@local");
+  const [branches, setBranches] = useState<{
+    current?: string;
+    local: string[];
+    remote: string[];
+  } | null>(null);
+  const [pullRebase, setPullRebase] = useState(false);
+  const [conflict, setConflict] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!remoteUrl) {
+      setStoredPat(false);
+      return;
+    }
+    api.gitHasPat(remoteUrl).then(setStoredPat).catch(() => setStoredPat(false));
+  }, [remoteUrl]);
+
+  const refreshStatus = async () => {
+    if (!workspacePath) return;
+    setBusy("status");
+    try {
+      const s = await api.gitStatus(workspacePath);
+      setStatus(s);
+      setMessage(null);
+      if (s.upstream && !remoteUrl) {
+        // 不主动写 URL，只在用户清空时给个提示
+      }
+    } catch (e) {
+      setStatus(null);
+      setMessage({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const wrap = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    setMessage(null);
+    try {
+      await fn();
+      setMessage({ kind: "ok", text: `${label} 完成` });
+      setConflict(null);
+      await refreshStatus();
+    } catch (e) {
+      const text = String(e);
+      if (text.includes("CONFLICT:")) {
+        const files = text.split("CONFLICT:")[1].split("\n").filter(Boolean);
+        setConflict(files);
+        setMessage({ kind: "err", text: `${label} 冲突，需要解决 ${files.length} 个文件` });
+      } else {
+        setMessage({ kind: "err", text });
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const refreshBranches = async () => {
+    if (!workspacePath) return;
+    try {
+      const b = await api.gitListBranches(workspacePath);
+      setBranches(b);
+    } catch {
+      setBranches(null);
+    }
+  };
+
+  useEffect(() => {
+    void refreshBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspacePath]);
+
+  const savePat = async () => {
+    if (!remoteUrl) {
+      setMessage({ kind: "err", text: "请先填写仓库 URL" });
+      return;
+    }
+    await wrap("PAT 保存", async () => {
+      await api.gitSetPat(remoteUrl, pat);
+      setPat("");
+      setStoredPat(!!pat);
+    });
+  };
+
+  const requireWs = (run: () => Promise<unknown>) => async () => {
+    if (!workspacePath) {
+      setMessage({ kind: "err", text: "请先选择一个工作仓库" });
+      return;
+    }
+    await run();
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">Git 同步</div>
+      <div className="settings-help" style={{ marginBottom: 8 }}>
+        clone / init / status / fetch / commit / pull / push / 分支切换 / 冲突解决。
+        PAT 走系统钥匙串，仅在请求时临时注入 URL。
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">当前工作仓库</div>
+          <div className="settings-help">{workspacePath || "未选择"}</div>
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">远端 URL（HTTPS）</div>
+          <div className="settings-help">
+            形如 https://github.com/&lt;owner&gt;/&lt;repo&gt;.git
+          </div>
+        </div>
+        <input
+          type="text"
+          value={remoteUrl}
+          onChange={(e) => setRemoteUrl(e.target.value)}
+          placeholder="https://github.com/..."
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Personal Access Token</div>
+          <div className="settings-help">
+            {storedPat ? "已存入钥匙串（留空保留原值）" : "未存储"}
+          </div>
+        </div>
+        <input
+          type="password"
+          value={pat}
+          onChange={(e) => setPat(e.target.value)}
+          placeholder="ghp_xxx..."
+          style={{ flex: 1, minWidth: 280 }}
+        />
+        <button
+          className="settings-btn"
+          disabled={!remoteUrl || busy === "PAT 保存"}
+          onClick={savePat}
+        >
+          保存 PAT
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: "8px 0",
+        }}
+      >
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || busy !== null}
+          onClick={requireWs(() => wrap("init", () => api.gitInit(workspacePath)))}
+        >
+          init
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || !remoteUrl || busy !== null}
+          onClick={requireWs(() =>
+            wrap("clone", () => api.gitClone(remoteUrl, workspacePath, pat || undefined)),
+          )}
+        >
+          clone
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || busy !== null}
+          onClick={requireWs(refreshStatus)}
+        >
+          status
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || busy !== null}
+          onClick={requireWs(() =>
+            wrap("fetch", () => api.gitFetch(workspacePath, { pat: pat || undefined })),
+          )}
+        >
+          fetch
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || busy !== null}
+          onClick={requireWs(() =>
+            wrap("pull", () =>
+              api.gitPull(workspacePath, {
+                pat: pat || undefined,
+                rebase: pullRebase,
+              }),
+            ),
+          )}
+        >
+          pull{pullRebase ? " --rebase" : ""}
+        </button>
+        <button
+          className="settings-btn primary"
+          disabled={!workspacePath || busy !== null || !commitMsg.trim()}
+          title={commitMsg.trim() ? "" : "请填写 commit message"}
+          onClick={requireWs(() =>
+            wrap("commit", () =>
+              api.gitCommit(
+                workspacePath,
+                commitMsg.trim(),
+                authorName || "markio",
+                authorEmail || "markio@local",
+              ),
+            ),
+          )}
+        >
+          commit -A
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!workspacePath || busy !== null}
+          onClick={requireWs(() =>
+            wrap("push", () =>
+              api.gitPush(workspacePath, {
+                pat: pat || undefined,
+                setUpstream: !status?.upstream,
+              }),
+            ),
+          )}
+        >
+          push{!status?.upstream ? " -u" : ""}
+        </button>
+      </div>
+
+      <div className="settings-row" style={{ marginTop: 6 }}>
+        <div className="settings-row-l">
+          <div className="settings-label">Commit message</div>
+          <div className="settings-help">作者：{authorName} &lt;{authorEmail}&gt;</div>
+        </div>
+        <input
+          type="text"
+          value={commitMsg}
+          onChange={(e) => setCommitMsg(e.target.value)}
+          placeholder="本次提交说明..."
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">作者</div>
+          <div className="settings-help">写入 GIT_AUTHOR_*</div>
+        </div>
+        <input
+          type="text"
+          value={authorName}
+          onChange={(e) => setAuthorName(e.target.value)}
+          placeholder="Name"
+          style={{ width: 160 }}
+        />
+        <input
+          type="email"
+          value={authorEmail}
+          onChange={(e) => setAuthorEmail(e.target.value)}
+          placeholder="email"
+          style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">分支</div>
+          <div className="settings-help">
+            当前：{branches?.current ?? "-"} · 本地 {branches?.local.length ?? 0}{" "}
+            · 远端 {branches?.remote.length ?? 0}
+          </div>
+        </div>
+        {branches && branches.local.length > 0 && (
+          <select
+            value={branches.current ?? ""}
+            onChange={(e) =>
+              wrap("checkout", () => api.gitCheckout(workspacePath, e.target.value))
+            }
+            disabled={busy !== null}
+            style={{ minWidth: 180 }}
+          >
+            {branches.local.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        )}
+        <button className="settings-btn" disabled={!workspacePath} onClick={refreshBranches}>
+          刷新分支
+        </button>
+        <label
+          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
+        >
+          <input
+            type="checkbox"
+            checked={pullRebase}
+            onChange={(e) => setPullRebase(e.target.checked)}
+          />
+          pull 用 rebase
+        </label>
+      </div>
+
+      {conflict && conflict.length > 0 && (
+        <div
+          className="settings-help"
+          style={{
+            padding: 8,
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            background: "var(--surface-2)",
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>
+            合并冲突 · {conflict.length} 个文件：
+          </div>
+          <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>
+            {conflict.slice(0, 20).map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button
+              className="settings-btn"
+              onClick={() =>
+                wrap("解决冲突 · 保留本地", () =>
+                  api.gitResolveConflict(workspacePath, "ours", conflict),
+                )
+              }
+            >
+              保留本地
+            </button>
+            <button
+              className="settings-btn"
+              onClick={() =>
+                wrap("解决冲突 · 采用远端", () =>
+                  api.gitResolveConflict(workspacePath, "theirs", conflict),
+                )
+              }
+            >
+              采用远端
+            </button>
+            <button
+              className="settings-btn"
+              onClick={() =>
+                wrap("放弃合并", () =>
+                  api.gitResolveConflict(workspacePath, "abort", []),
+                )
+              }
+            >
+              放弃合并
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status && (
+        <div className="settings-help" style={{ paddingTop: 6 }}>
+          <div>
+            分支：{status.branch ?? "(detached)"} · HEAD {status.head ?? "-"} ·
+            上游 {status.upstream ?? "未设置"}
+          </div>
+          <div>
+            未推送 {status.ahead} · 未拉取 {status.behind} · 变更{" "}
+            {status.files.length}
+          </div>
+          {status.files.length > 0 && (
+            <ul
+              style={{
+                margin: "6px 0 0",
+                paddingLeft: 18,
+                maxHeight: 120,
+                overflow: "auto",
+              }}
+            >
+              {status.files.slice(0, 20).map((f, i) => (
+                <li key={i}>
+                  <span style={{ color: "var(--text-3)" }}>[{f.kind}]</span>{" "}
+                  {f.path}
+                </li>
+              ))}
+              {status.files.length > 20 && (
+                <li>… 还有 {status.files.length - 20} 个文件</li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {message && (
+        <div
+          style={{
+            marginTop: 8,
+            color: message.kind === "err" ? "#dc2626" : "var(--accent)",
+            fontSize: 12,
+          }}
+        >
+          {message.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SHORTCUTS = [
   { g: "导航", items: [
     { l: "命令面板 / 快速打开", k: ["⌘", "K"] },
@@ -566,11 +1015,36 @@ function Picgo() {
   const keepLocalCopy = useSettings((s) => s.picgoKeepLocalCopy);
   const compressBeforeUpload = useSettings((s) => s.picgoCompressBeforeUpload);
   const quality = useSettings((s) => s.picgoQuality);
+  const uploadProvider = useSettings((s) => s.uploadProvider);
   const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
       <h2 className="settings-h">图片上传</h2>
       <p className="settings-sub">把粘贴的图片自动上传到图床，并在笔记中插入外链。</p>
+
+      <div className="settings-card">
+        <div className="settings-card-h">上传管线</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">优先 provider</div>
+            <div className="settings-help">
+              s3 直传 / picgo 本地代理 / 关闭（仅保存到 Assets/）
+            </div>
+          </div>
+          <SelectBtn
+            value={uploadProvider}
+            options={[
+              { value: "picgo", label: "PicGo（本地代理）" },
+              { value: "s3", label: "S3 兼容（直传）" },
+              { value: "none", label: "关闭" },
+            ] as const}
+            onChange={(v) => setPreference("uploadProvider", v)}
+          />
+        </div>
+      </div>
+
+      <S3Card />
+
       <div className="settings-card">
         <div className="settings-card-h">PicGo 本地服务</div>
         <div className="settings-row">
@@ -704,57 +1178,6 @@ function WeChat() {
   );
 }
 
-function Lobster() {
-  const modelSource = useSettings((s) => s.lobsterModelSource);
-  const dailyLimit = useSettings((s) => s.lobsterDailyLimit);
-  const setPreference = useSettings((s) => s.setPreference);
-  return (
-    <>
-      <h2 className="settings-h">腾讯龙虾</h2>
-      <p className="settings-sub">把消息通道接入 markio，由 AI 自动回复，回复内容直接来自你的笔记。</p>
-      <div className="settings-card">
-        <div className="settings-card-h">连接状态</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">未连接</div>
-            <div className="settings-help">扫码登录腾讯龙虾后可建立长连接</div>
-          </div>
-          <button className="settings-btn primary">扫码登录</button>
-        </div>
-      </div>
-      <div className="settings-card">
-        <div className="settings-card-h">AI 自动回复</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">回答使用的模型</div>
-          </div>
-          <SelectBtn
-            value={modelSource}
-            options={LOBSTER_MODEL_OPTIONS}
-            onChange={(v) => setPreference("lobsterModelSource", v)}
-          />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">回复中附带笔记引用</div>
-          </div>
-          <Toggle on={true} />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">每日消息上限</div>
-          </div>
-          <SelectBtn
-            value={dailyLimit}
-            options={LOBSTER_LIMIT_OPTIONS}
-            onChange={(v) => setPreference("lobsterDailyLimit", v)}
-          />
-        </div>
-      </div>
-    </>
-  );
-}
-
 const AI_PROVIDERS = [
   { id: "anthropic", n: "Anthropic", sub: "Claude 系列 · 推荐" },
   { id: "openai", n: "OpenAI", sub: "GPT-4 / 4o / o-series" },
@@ -782,7 +1205,6 @@ function AI() {
     let cancelled = false;
     (async () => {
       try {
-        const { api } = await import("@/lib/api");
         const has = await api.secretHas(`ai:${provider}`);
         if (!cancelled) setAi({ aiKeyConfigured: has });
       } catch {
@@ -799,7 +1221,6 @@ function AI() {
     if (!keyDraft) return;
     setSavingKey(true);
     try {
-      const { api } = await import("@/lib/api");
       await api.secretSet(`ai:${provider}`, keyDraft);
       setAi({ aiKeyConfigured: true });
       setKeyDraft("");
@@ -814,7 +1235,6 @@ function AI() {
   const clearKey = async () => {
     if (!window.confirm(`清除 ${provider} 的 API Key？`)) return;
     try {
-      const { api } = await import("@/lib/api");
       await api.secretDelete(`ai:${provider}`);
       setAi({ aiKeyConfigured: false });
       setKeyDraft("");
@@ -828,7 +1248,6 @@ function AI() {
     setTesting(true);
     setTestResult(null);
     try {
-      const { api } = await import("@/lib/api");
       const r = await api.aiChat({
         provider,
         endpoint: endpoint || undefined,
@@ -1124,6 +1543,507 @@ function AI() {
   );
 }
 
+function S3Card() {
+  const endpoint = useSettings((s) => s.s3Endpoint);
+  const region = useSettings((s) => s.s3Region);
+  const bucket = useSettings((s) => s.s3Bucket);
+  const accessKeyId = useSettings((s) => s.s3AccessKeyId);
+  const publicBaseUrl = useSettings((s) => s.s3PublicBaseUrl);
+  const pathStyle = useSettings((s) => s.s3PathStyle);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [secret, setSecret] = useState("");
+  const [stored, setStored] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!endpoint) {
+      setStored(false);
+      return;
+    }
+    api.s3HasSecret(endpoint).then(setStored).catch(() => setStored(false));
+  }, [endpoint]);
+
+  const save = async () => {
+    if (!endpoint) {
+      setMsg({ kind: "err", text: "请先填写 endpoint" });
+      return;
+    }
+    try {
+      await api.s3SetSecret(endpoint, secret);
+      setMsg({ kind: "ok", text: "Secret 已保存到钥匙串" });
+      setSecret("");
+      setStored(!!secret);
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    }
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">S3 兼容存储</div>
+      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
+        AWS S3 / 阿里 OSS / 七牛 / Cloudflare R2 / MinIO 自建都走同一份 SigV4
+        协议。Secret Access Key 经系统钥匙串存储，不写回 zustand 持久化。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Endpoint</div>
+          <div className="settings-help">
+            如 https://s3.us-east-1.amazonaws.com 或 https://oss-cn-hangzhou.aliyuncs.com
+          </div>
+        </div>
+        <input
+          type="text"
+          value={endpoint}
+          onChange={(e) => setPreference("s3Endpoint", e.target.value)}
+          placeholder="https://..."
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Region</div>
+        </div>
+        <input
+          type="text"
+          value={region}
+          onChange={(e) => setPreference("s3Region", e.target.value)}
+          placeholder="us-east-1"
+          style={{ flex: 1, minWidth: 180 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Bucket</div>
+        </div>
+        <input
+          type="text"
+          value={bucket}
+          onChange={(e) => setPreference("s3Bucket", e.target.value)}
+          placeholder="markio-images"
+          style={{ flex: 1, minWidth: 180 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Access Key ID</div>
+        </div>
+        <input
+          type="text"
+          value={accessKeyId}
+          onChange={(e) => setPreference("s3AccessKeyId", e.target.value)}
+          style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Secret Access Key</div>
+          <div className="settings-help">
+            {stored ? "已存入钥匙串（留空保留原值）" : "未存储"}
+          </div>
+        </div>
+        <input
+          type="password"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <button className="settings-btn" onClick={save} disabled={!endpoint}>
+          保存
+        </button>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">公开 URL 前缀（可选）</div>
+          <div className="settings-help">
+            CDN 接管时填这里；留空走 endpoint/bucket 推导
+          </div>
+        </div>
+        <input
+          type="text"
+          value={publicBaseUrl}
+          onChange={(e) => setPreference("s3PublicBaseUrl", e.target.value)}
+          placeholder="https://cdn.example.com/markio"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Path-style URL</div>
+          <div className="settings-help">
+            老版 S3 / MinIO 需要开启；新版 AWS 默认 virtual-hosted
+          </div>
+        </div>
+        <Toggle
+          on={pathStyle}
+          onChange={(v) => setPreference("s3PathStyle", v)}
+        />
+      </div>
+      {msg && (
+        <div
+          style={{
+            padding: "0 16px 12px",
+            fontSize: 12,
+            color: msg.kind === "err" ? "#dc2626" : "var(--accent)",
+          }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebDavCard() {
+  const baseUrl = useSettings((s) => s.webdavBaseUrl);
+  const username = useSettings((s) => s.webdavUsername);
+  const remoteDir = useSettings((s) => s.webdavRemoteDir);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [password, setPassword] = useState("");
+  const [stored, setStored] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!baseUrl) {
+      setStored(false);
+      return;
+    }
+    api.webdavHasPassword(baseUrl).then(setStored).catch(() => setStored(false));
+  }, [baseUrl]);
+
+  const auth = () => ({ username, password });
+
+  const wrap = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg({ kind: "ok", text: `${label} 完成` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const savePassword = async () => {
+    if (!baseUrl) {
+      setMsg({ kind: "err", text: "请先填写 WebDAV URL" });
+      return;
+    }
+    await wrap("密码保存", async () => {
+      await api.webdavSetPassword(baseUrl, password);
+      setPassword("");
+      setStored(!!password);
+    });
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">WebDAV</div>
+      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
+        坚果云、TeraCloud、NextCloud 都兼容。密码经系统钥匙串存储，前端不持久化。
+        高层「双向同步」需要你触发 push/pull；自动化策略后续随 syncFrequency 设置接入。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">服务地址</div>
+          <div className="settings-help">如 https://dav.jianguoyun.com/dav/</div>
+        </div>
+        <input
+          type="text"
+          value={baseUrl}
+          onChange={(e) => setPreference("webdavBaseUrl", e.target.value)}
+          placeholder="https://..."
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">用户名</div>
+        </div>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setPreference("webdavUsername", e.target.value)}
+          style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">应用专用密码</div>
+          <div className="settings-help">
+            {stored ? "已存入钥匙串（留空保留原值）" : "未存储"}
+          </div>
+        </div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="password / app password"
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <button
+          className="settings-btn"
+          disabled={!baseUrl || busy === "密码保存"}
+          onClick={savePassword}
+        >
+          保存
+        </button>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">远端根目录</div>
+          <div className="settings-help">同步到这个相对路径下（自动 mkcol）</div>
+        </div>
+        <input
+          type="text"
+          value={remoteDir}
+          onChange={(e) => setPreference("webdavRemoteDir", e.target.value)}
+          placeholder="markio"
+          style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+      <div
+        style={{ display: "flex", gap: 8, padding: "8px 16px", flexWrap: "wrap" }}
+      >
+        <button
+          className="settings-btn"
+          disabled={!baseUrl || busy !== null}
+          onClick={() => wrap("连接测试", () => api.webdavTest(baseUrl, auth()))}
+        >
+          测试连接
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!baseUrl || busy !== null}
+          onClick={() =>
+            wrap("远端目录初始化", () =>
+              api.webdavMkcol(baseUrl, auth(), remoteDir || "/"),
+            )
+          }
+        >
+          初始化目录
+        </button>
+        <button
+          className="settings-btn"
+          disabled={!baseUrl || busy !== null}
+          onClick={async () => {
+            setBusy("list");
+            setMsg(null);
+            try {
+              const items = await api.webdavList(
+                baseUrl,
+                auth(),
+                remoteDir || "/",
+              );
+              setMsg({
+                kind: "ok",
+                text: `远端共 ${items.length} 项（${items.filter((i) => i.isDir).length} 目录 / ${items.filter((i) => !i.isDir).length} 文件）`,
+              });
+            } catch (e) {
+              setMsg({ kind: "err", text: String(e) });
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
+          列举远端
+        </button>
+      </div>
+      {msg && (
+        <div
+          style={{
+            padding: "0 16px 12px",
+            fontSize: 12,
+            color: msg.kind === "err" ? "#dc2626" : "var(--accent)",
+          }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepoGraphCard() {
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
+  const [graph, setGraph] = useState<{
+    nodes: Array<{ id: number; path: string; inDegree: number; outDegree: number }>;
+    edges: Array<{ from: number; to: number }>;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    if (!activeWorkspace) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const g = await api.ragRepoGraph(activeWorkspace.path);
+      setGraph(g);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hubs = useMemoSort(graph?.nodes ?? [], (a, b) => b.inDegree - a.inDegree)
+    .slice(0, 10);
+  const orphans = (graph?.nodes ?? []).filter(
+    (n) => n.inDegree === 0 && n.outDegree === 0,
+  );
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">链接图谱</div>
+      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
+        基于 `[[wiki]]` / markdown link 索引：哪些笔记是中心，哪些是孤岛。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">
+            {graph
+              ? `共 ${graph.nodes.length} 笔记 · ${graph.edges.length} 条链接`
+              : "未加载"}
+          </div>
+        </div>
+        <button
+          className="settings-btn"
+          disabled={busy || !activeWorkspace}
+          onClick={refresh}
+        >
+          {busy ? "加载中…" : "重新计算"}
+        </button>
+      </div>
+      {error && (
+        <div style={{ color: "#dc2626", fontSize: 12, padding: "4px 16px" }}>
+          {error}
+        </div>
+      )}
+      {graph && hubs.length > 0 && (
+        <div style={{ padding: "0 16px 8px" }}>
+          <div
+            style={{ fontSize: 12, color: "var(--text-3)", margin: "8px 0 4px" }}
+          >
+            高被引（top {hubs.length}）
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+            {hubs.map((h) => (
+              <li key={h.id}>
+                <span style={{ color: "var(--accent)" }}>{h.inDegree}↓</span>{" "}
+                {h.path}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {graph && orphans.length > 0 && (
+        <div style={{ padding: "0 16px 12px" }}>
+          <div
+            style={{ fontSize: 12, color: "var(--text-3)", margin: "8px 0 4px" }}
+          >
+            孤立笔记（无 in/out 链接）· {orphans.length} 条
+          </div>
+          <ul
+            style={{
+              margin: 0,
+              paddingLeft: 18,
+              fontSize: 12,
+              maxHeight: 120,
+              overflow: "auto",
+            }}
+          >
+            {orphans.slice(0, 30).map((n) => (
+              <li key={n.id}>{n.path}</li>
+            ))}
+            {orphans.length > 30 && <li>… 还有 {orphans.length - 30} 条</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useMemoSort<T>(items: readonly T[], cmp: (a: T, b: T) => number): T[] {
+  return useMemo(() => [...items].sort(cmp), [items, cmp]);
+}
+
+function RerankCard() {
+  const enabled = useSettings((s) => s.rerankEnabled);
+  const model = useSettings((s) => s.rerankModel);
+  const baseUrl = useSettings((s) => s.rerankBaseUrl);
+  const apiKey = useSettings((s) => s.rerankApiKey);
+  const setPreference = useSettings((s) => s.setPreference);
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">Reranker（cohere 兼容协议）</div>
+      <div className="settings-help" style={{ padding: "0 16px 8px" }}>
+        在混合检索 RRF 融合之后再走一层 reranker。支持 Cohere 官方 API 及任何
+        兼容 <code>/v1/rerank</code> 路径的本地服务（infinity-emb、TEI 等）。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">启用 Reranker</div>
+          <div className="settings-help">
+            {enabled
+              ? "检索后端会在 top-3K 候选里精排"
+              : "未启用；调用直接走 RRF 结果"}
+          </div>
+        </div>
+        <Toggle
+          on={enabled}
+          onChange={(v) => setPreference("rerankEnabled", v)}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">模型</div>
+          <div className="settings-help">
+            Cohere 默认 <code>rerank-multilingual-v3.0</code>
+          </div>
+        </div>
+        <input
+          type="text"
+          value={model}
+          onChange={(e) => setPreference("rerankModel", e.target.value)}
+          style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">服务地址</div>
+          <div className="settings-help">
+            留空走 https://api.cohere.com；自部署填到 http://host:port
+          </div>
+        </div>
+        <input
+          type="text"
+          value={baseUrl}
+          onChange={(e) => setPreference("rerankBaseUrl", e.target.value)}
+          placeholder="https://api.cohere.com"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">API Key</div>
+          <div className="settings-help">本地服务可留空</div>
+        </div>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setPreference("rerankApiKey", e.target.value)}
+          placeholder="cohere_xxx"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function RagSettings() {
   const provider = useSettings((s) => s.ragProvider);
   const enabled = useSettings((s) => s.ragEnabled);
@@ -1153,7 +2073,6 @@ function RagSettings() {
     let cancelled = false;
     (async () => {
       try {
-        const { api } = await import("@/lib/api");
         const has = await api.secretHas("embed:openai");
         if (!cancelled) setOpenaiKeyConfigured(has);
       } catch {
@@ -1169,7 +2088,6 @@ function RagSettings() {
     if (!openaiKeyDraft) return;
     setSavingKey(true);
     try {
-      const { api } = await import("@/lib/api");
       await api.secretSet("embed:openai", openaiKeyDraft);
       setOpenaiKeyConfigured(true);
       setOpenaiKeyDraft("");
@@ -1184,7 +2102,6 @@ function RagSettings() {
   const clearOpenaiKey = async () => {
     if (!window.confirm("清除 OpenAI Embedding 的 API Key？")) return;
     try {
-      const { api } = await import("@/lib/api");
       await api.secretDelete("embed:openai");
       setOpenaiKeyConfigured(false);
       setMsg("已清除");
@@ -1198,7 +2115,6 @@ function RagSettings() {
       setMsg("请先打开一个仓库");
       return;
     }
-    const { useRag } = await import("@/stores/rag");
     try {
       await useRag.getState().reindex(ws.path);
       setMsg("已触发重建，可继续使用 markio，索引在后台进行");
@@ -1214,7 +2130,6 @@ function RagSettings() {
       !window.confirm("确认清空索引库？已索引的向量会全部丢失，下次需要重建。")
     )
       return;
-    const { useRag } = await import("@/stores/rag");
     try {
       await useRag.getState().clear(ws.id, ws.path);
       setMsg("索引已清空");
@@ -1286,6 +2201,10 @@ function RagSettings() {
           />
         </div>
       </div>
+
+      <RerankCard />
+
+      <RepoGraphCard />
 
       <div className="settings-card">
         <div className="settings-card-h">Embedding 提供方</div>
@@ -1625,12 +2544,11 @@ function useWorkspaceForRag() {
   const [tick, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
   const [ws, setWs] = useState<{ id: string; path: string } | null>(null);
-  const [status, setStatus] = useState<import("@/lib/api").RagStatus | null>(null);
+  const [status, setStatus] = useState<RagStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { useWorkspace } = await import("@/stores/workspace");
-      const active = useWorkspace.getState().activeWorkspace();
+      const active = useWorkspaceStore.getState().activeWorkspace();
       if (!active) {
         if (!cancelled) {
           setWs(null);
@@ -1640,7 +2558,6 @@ function useWorkspaceForRag() {
       }
       if (!cancelled) setWs({ id: active.id, path: active.path });
       try {
-        const { api } = await import("@/lib/api");
         const r = await api.ragStatus(active.path);
         if (!cancelled) setStatus(r);
       } catch (e) {
@@ -1665,10 +2582,75 @@ const IMPORT_SOURCES = [
   { id: "logseq", name: "Logseq", logo: "/brand/import/logseq.svg", color: "#2563eb" },
 ];
 
+type ImportProvider = "notion" | "obsidian" | "bear" | "evernote";
+
+const IMPORT_PROVIDER_MAP: Record<string, ImportProvider | null> = {
+  notion: "notion",
+  obsidian: "obsidian",
+  bear: "bear",
+  evernote: "evernote",
+  roam: null,
+  logseq: null,
+};
+
+function extsFor(p: ImportProvider): string[] {
+  switch (p) {
+    case "notion":
+      return ["zip"];
+    case "bear":
+      return ["bearbook", "zip"];
+    case "evernote":
+      return ["enex"];
+    case "obsidian":
+      return [];
+  }
+}
+
+function providerNeedsDir(p: ImportProvider): boolean {
+  return p === "obsidian";
+}
+
 function ImportExport() {
   const pdfTheme = useSettings((s) => s.exportPdfTheme);
   const pdfMargin = useSettings((s) => s.exportPdfMargin);
   const setPreference = useSettings((s) => s.setPreference);
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
+  const refreshTree = useWorkspaceStore((s) => s.refreshTree);
+  const [importBusy, setImportBusy] = useState<ImportProvider | null>(null);
+  const [importMsg, setImportMsg] = useState<{
+    kind: "ok" | "err" | "info";
+    text: string;
+  } | null>(null);
+
+  const runImport = async (provider: ImportProvider, useDir: boolean) => {
+    if (!activeWorkspace) {
+      setImportMsg({ kind: "err", text: "请先打开一个仓库" });
+      return;
+    }
+    const src = useDir
+      ? await pickDirectory()
+      : await pickFile([
+          { name: provider === "evernote" ? "ENEX" : "Archive", extensions: useDir ? [] : extsFor(provider) },
+        ]);
+    if (!src) return;
+    setImportBusy(provider);
+    setImportMsg({ kind: "info", text: `${provider} 导入中…` });
+    try {
+      const report = await api.importRun(provider, src, activeWorkspace.path);
+      setImportMsg({
+        kind: "ok",
+        text: `${provider} 导入完成：${report.files} 个文件 → ${report.dest}${
+          report.warnings.length > 0 ? `（${report.warnings.length} 条警告）` : ""
+        }`,
+      });
+      await refreshTree(activeWorkspace.id).catch(() => undefined);
+    } catch (e) {
+      setImportMsg({ kind: "err", text: `导入失败：${String(e)}` });
+    } finally {
+      setImportBusy(null);
+    }
+  };
+
   return (
     <>
       <h2 className="settings-h">导入 / 导出</h2>
@@ -1704,6 +2686,10 @@ function ImportExport() {
       </div>
       <div className="settings-card">
         <div className="settings-card-h">从其它工具导入</div>
+        <div className="settings-help" style={{ padding: "0 16px 8px" }}>
+          导入到当前仓库的 <code>imports/&lt;provider&gt;-&lt;timestamp&gt;/</code>。
+          Notion/Bear/印象选归档文件，Obsidian 选 vault 目录。Roam/Logseq 暂未支持。
+        </div>
         <div
           style={{
             display: "grid",
@@ -1712,35 +2698,175 @@ function ImportExport() {
             padding: "12px 16px",
           }}
         >
-          {IMPORT_SOURCES.map((n) => (
-            <button
-              type="button"
-              key={n.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "9px 12px",
-                background: "var(--bg-pane-2)",
-                border: "0.5px solid var(--border)",
-                borderRadius: 8,
-                fontSize: 12.5,
-                color: "var(--text)",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <BrandMark logo={n.logo} color={n.color} size={28} />
-              <div>{n.name}</div>
-            </button>
-          ))}
+          {IMPORT_SOURCES.map((n) => {
+            const provider = IMPORT_PROVIDER_MAP[n.id] ?? null;
+            const disabled =
+              provider === null || importBusy !== null || !activeWorkspace;
+            return (
+              <button
+                type="button"
+                key={n.id}
+                disabled={disabled}
+                onClick={() => {
+                  if (!provider) return;
+                  void runImport(provider, providerNeedsDir(provider));
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "9px 12px",
+                  background: "var(--bg-pane-2)",
+                  border: "0.5px solid var(--border)",
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  color: disabled ? "var(--text-3)" : "var(--text)",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  opacity: disabled ? 0.55 : 1,
+                  textAlign: "left",
+                }}
+                title={
+                  provider === null
+                    ? "未支持"
+                    : !activeWorkspace
+                      ? "请先打开仓库"
+                      : importBusy === provider
+                        ? "导入中…"
+                        : `从 ${n.name} 导入`
+                }
+              >
+                <BrandMark logo={n.logo} color={n.color} size={28} />
+                <div>
+                  {n.name}
+                  {importBusy === provider && (
+                    <div style={{ fontSize: 10, color: "var(--text-3)" }}>导入中…</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
+        {importMsg && (
+          <div
+            style={{
+              padding: "0 16px 12px",
+              fontSize: 12,
+              color:
+                importMsg.kind === "err"
+                  ? "#dc2626"
+                  : importMsg.kind === "ok"
+                    ? "var(--accent)"
+                    : "var(--text-3)",
+            }}
+          >
+            {importMsg.text}
+          </div>
+        )}
       </div>
     </>
   );
 }
 
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "uptodate" }
+  | { kind: "available"; version: string; notes?: string }
+  | { kind: "downloading"; version: string; progress: number; total: number }
+  | { kind: "ready"; version: string }
+  | { kind: "error"; message: string };
+
 function About() {
+  const [version, setVersion] = useState<string>("");
+  const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion("?"));
+  }, []);
+
+  const checkForUpdates = async () => {
+    setUpdate({ kind: "checking" });
+    try {
+      const u = await check();
+      if (!u) {
+        setUpdate({ kind: "uptodate" });
+        return;
+      }
+      setUpdate({ kind: "available", version: u.version, notes: u.body });
+      let downloaded = 0;
+      let contentLength = 0;
+      await u.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          contentLength = event.data.contentLength ?? 0;
+          setUpdate({
+            kind: "downloading",
+            version: u.version,
+            progress: 0,
+            total: contentLength,
+          });
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          setUpdate({
+            kind: "downloading",
+            version: u.version,
+            progress: downloaded,
+            total: contentLength,
+          });
+        } else if (event.event === "Finished") {
+          setUpdate({ kind: "ready", version: u.version });
+        }
+      });
+    } catch (e) {
+      setUpdate({ kind: "error", message: String(e) });
+    }
+  };
+
+  const restartNow = async () => {
+    try {
+      await relaunch();
+    } catch (e) {
+      setUpdate({ kind: "error", message: String(e) });
+    }
+  };
+
+  const renderStatus = () => {
+    switch (update.kind) {
+      case "checking":
+        return <span style={{ color: "var(--text-3)" }}>正在检查…</span>;
+      case "uptodate":
+        return <span style={{ color: "var(--text-3)" }}>已是最新版本</span>;
+      case "available":
+        return (
+          <span style={{ color: "var(--accent)" }}>
+            发现新版本 {update.version}，正在下载…
+          </span>
+        );
+      case "downloading": {
+        const pct =
+          update.total > 0
+            ? Math.round((update.progress / update.total) * 100)
+            : 0;
+        return (
+          <span style={{ color: "var(--accent)" }}>
+            下载中 {update.version} · {pct}%
+          </span>
+        );
+      }
+      case "ready":
+        return (
+          <span style={{ color: "var(--accent)" }}>
+            {update.version} 已就绪，重启生效
+          </span>
+        );
+      case "error":
+        return <span style={{ color: "#dc2626" }}>{update.message}</span>;
+      default:
+        return null;
+    }
+  };
+
+  const checking = update.kind === "checking" || update.kind === "downloading";
+
   return (
     <>
       <h2 className="settings-h">关于</h2>
@@ -1772,12 +2898,35 @@ function About() {
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>markio</div>
           <div style={{ color: "var(--text-3)", marginTop: 2 }}>
-            0.1.0 · 一款本地优先的 Markdown 阅读器
+            {version || "0.1.0"} · 一款本地优先的 Markdown 阅读器
           </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <button className="settings-btn primary">检查更新</button>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {update.kind === "ready" ? (
+              <button className="settings-btn primary" onClick={restartNow}>
+                重启应用
+              </button>
+            ) : (
+              <button
+                className="settings-btn primary"
+                disabled={checking}
+                onClick={checkForUpdates}
+              >
+                {checking ? "处理中…" : "检查更新"}
+              </button>
+            )}
             <button className="settings-btn">发布日志</button>
+            <button
+              className="settings-btn"
+              type="button"
+              onClick={() => {
+                void api.crashOpenDir().catch(() => undefined);
+              }}
+              title="在文件管理器中显示 markio.log 所在目录"
+            >
+              错误日志
+            </button>
             <button className="settings-btn">反馈</button>
+            {renderStatus()}
           </div>
         </div>
       </div>

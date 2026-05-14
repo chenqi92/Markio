@@ -1,5 +1,6 @@
 import { useSettings } from "@/stores/settings";
 import { isDarkTheme } from "@/themes";
+import DOMPurify from "dompurify";
 
 let initialized = false;
 let lastTheme: string | null = null;
@@ -38,10 +39,17 @@ export async function renderMermaidIn(root: HTMLElement) {
     const id = `mmd-${counter++}`;
     try {
       const { svg } = await mermaid.render(id, source);
-      block.innerHTML = svg;
+      block.innerHTML = DOMPurify.sanitize(svg, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      });
       block.dataset.rendered = "1";
     } catch (err) {
-      block.innerHTML = `<pre style="color: var(--text-3); font-size: 12px; white-space: pre-wrap;">mermaid 渲染失败：${(err as Error).message}\n\n${source}</pre>`;
+      const pre = document.createElement("pre");
+      pre.style.color = "var(--text-3)";
+      pre.style.fontSize = "12px";
+      pre.style.whiteSpace = "pre-wrap";
+      pre.textContent = `mermaid 渲染失败：${(err as Error).message}\n\n${source}`;
+      block.replaceChildren(pre);
       block.dataset.rendered = "1";
     }
   }

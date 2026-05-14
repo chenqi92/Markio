@@ -101,12 +101,22 @@ export const useRag = create<RagState>((set, get) => ({
   search: async (workspacePath, query) => {
     const s = useSettings.getState();
     const cfg = resolveEmbedConfig();
+    const rerank =
+      s.rerankEnabled && s.rerankModel
+        ? {
+            provider: "cohere" as const,
+            model: s.rerankModel,
+            baseUrl: s.rerankBaseUrl || undefined,
+            apiKey: s.rerankApiKey || undefined,
+          }
+        : undefined;
     return api.ragSearch({
       workspace: workspacePath,
       query,
       limit: s.ragTopK,
       expandLinks: s.ragExpandLinks,
       config: cfg,
+      rerank,
     });
   },
 }));

@@ -3,6 +3,8 @@ import { Icon, type IconName } from "../ui/Icon";
 import {
   copyHtml,
   copyMarkdown,
+  exportDocx,
+  exportEpub,
   exportHtml,
   exportPdf,
 } from "@/lib/export";
@@ -26,6 +28,24 @@ const ITEMS = [
     sub: "单文件 · 内嵌样式",
     run: async (title: string, source: string) => {
       await exportHtml(title, source);
+    },
+  },
+  {
+    id: "epub",
+    icon: "book",
+    title: "导出为 EPUB",
+    sub: "通过 pandoc · 需先安装",
+    run: async (title: string, source: string) => {
+      await exportEpub(title, source);
+    },
+  },
+  {
+    id: "docx",
+    icon: "file",
+    title: "导出为 Word (DOCX)",
+    sub: "通过 pandoc · 需先安装",
+    run: async (title: string, source: string) => {
+      await exportDocx(title, source);
     },
   },
   {

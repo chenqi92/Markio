@@ -6,6 +6,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useSettings } from "@/stores/settings";
+import { insertBlock } from "@/lib/editor-bridge";
 import { crumbSegments } from "@/lib/utils";
 import type { FileEntry } from "@/types";
 
@@ -89,7 +90,6 @@ export function AIPreview({ name, onClose }: Props) {
   const insertCitation = async () => {
     if (!path) return;
     const stem = name;
-    const { insertBlock } = await import("@/lib/editor-bridge");
     insertBlock(`[[${stem}]] `);
     setToast({ stage: "done", message: "已在当前笔记插入引用" });
     setTimeout(() => setToast(null), 1500);

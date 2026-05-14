@@ -136,7 +136,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const activeSessionId = useAISessions((s) => s.activeId);
   const createSession = useAISessions((s) => s.createSession);
   const appendMessage = useAISessions((s) => s.appendMessage);
+  const appendChunk = useAISessions((s) => s.appendChunk);
+  const patchMessage = useAISessions((s) => s.patchMessage);
   const scope = useAISessions((s) => s.scope);
+  const streamCancelRef = useRef<(() => Promise<void>) | null>(null);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId),
@@ -160,6 +163,12 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       behavior: "smooth",
     });
   }, [history.length, busy]);
+
+  useEffect(() => {
+    return () => {
+      void streamCancelRef.current?.();
+    };
+  }, []);
 
   // 切 provider 时如果当前 model 不在列表里，回到第一个
   useEffect(() => {
@@ -281,33 +290,67 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       .sessions.find((s) => s.id === sessionId);
     const msgs = updated?.messages ?? [];
 
-    try {
-      const r = await api.aiChat({
-        provider,
-        endpoint: endpoint || undefined,
-        model,
-        maxTokens,
-        temperature,
-        system,
-        messages: msgs.map((m) => ({ role: m.role, content: m.text })),
-      });
-      appendMessage(sessionId, {
-        id: `m${Date.now()}`,
-        role: "assistant",
-        text: r.text || "（空响应）",
-        time: Date.now(),
-        refs: collectedRefs.length > 0 ? collectedRefs : undefined,
-      });
-    } catch (e) {
-      appendMessage(sessionId, {
-        id: `m${Date.now()}`,
-        role: "assistant",
-        text: `请求失败：${(e as Error).message}`,
-        time: Date.now(),
-      });
-    } finally {
+    // 先占位一条空 assistant 消息，流式追加 delta
+    const assistantId = `m${Date.now()}`;
+    appendMessage(sessionId, {
+      id: assistantId,
+      role: "assistant",
+      text: "",
+      time: Date.now(),
+      refs: collectedRefs.length > 0 ? collectedRefs : undefined,
+    });
+
+    let receivedAny = false;
+    const finalize = () => {
+      streamCancelRef.current = null;
       setBusy(false);
+    };
+
+    try {
+      const { cancel } = await api.aiChatStream(
+        {
+          provider,
+          endpoint: endpoint || undefined,
+          model,
+          maxTokens,
+          temperature,
+          system,
+          messages: msgs.map((m) => ({ role: m.role, content: m.text })),
+        },
+        {
+          onChunk: (delta) => {
+            receivedAny = true;
+            appendChunk(sessionId, assistantId, delta);
+          },
+          onDone: () => {
+            if (!receivedAny) {
+              patchMessage(sessionId, assistantId, { text: "（空响应）" });
+            }
+            finalize();
+          },
+          onError: (message) => {
+            patchMessage(sessionId, assistantId, {
+              text: `请求失败：${message}`,
+            });
+            finalize();
+          },
+        },
+      );
+      streamCancelRef.current = cancel;
+    } catch (e) {
+      patchMessage(sessionId, assistantId, {
+        text: `请求失败：${(e as Error).message}`,
+      });
+      finalize();
     }
+  };
+
+  const cancelStream = async () => {
+    const fn = streamCancelRef.current;
+    if (!fn) return;
+    await fn();
+    streamCancelRef.current = null;
+    setBusy(false);
   };
 
   return (

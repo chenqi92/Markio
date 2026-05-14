@@ -1,0 +1,47 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "ok": "确定",
+    "delete": "删除",
+    "rename": "重命名",
+    "open": "打开",
+    "close": "关闭",
+    "create": "新建",
+    "search": "搜索",
+    "loading": "加载中"
+  },
+  "settings": {
+    "title": "设置",
+    "sections": {
+      "appear": "外观",
+      "general": "通用",
+      "editor": "编辑器",
+      "sync": "同步",
+      "shortcuts": "快捷键",
+      "picgo": "图片上传",
+      "wechat": "微信公众号",
+      "ai": "AI 助手",
+      "rag": "本地知识库",
+      "export": "导入 / 导出",
+      "about": "关于"
+    },
+    "general": {
+      "language": "界面语言",
+      "languageHelp": "切换后立即生效"
+    }
+  },
+  "toolbar": {
+    "newFile": "新建文件",
+    "openFile": "打开…",
+    "search": "搜索",
+    "ai": "AI 助手"
+  },
+  "outline": {
+    "title": "大纲",
+    "info": "信息",
+    "links": "链接",
+    "empty": "当前文档没有标题",
+    "reorderHint": "章节 · 拖拽可重排"
+  }
+}

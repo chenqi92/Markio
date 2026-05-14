@@ -31,7 +31,21 @@ type PreferenceKey =
   | "ragOpenaiModel"
   | "ragOpenaiDim"
   | "ragTopK"
-  | "ragExpandLinks";
+  | "ragExpandLinks"
+  | "rerankEnabled"
+  | "rerankModel"
+  | "rerankBaseUrl"
+  | "rerankApiKey"
+  | "webdavBaseUrl"
+  | "webdavUsername"
+  | "webdavRemoteDir"
+  | "s3Endpoint"
+  | "s3Region"
+  | "s3Bucket"
+  | "s3AccessKeyId"
+  | "s3PublicBaseUrl"
+  | "s3PathStyle"
+  | "uploadProvider";
 
 interface SettingsState {
   theme: string;
@@ -87,6 +101,24 @@ interface SettingsState {
   ragTopK: number;
   /** 是否启用引用图谱扩展（命中文档的 forward link 也带回） */
   ragExpandLinks: boolean;
+  /** RAG 检索后是否再走一次 cohere 兼容 reranker */
+  rerankEnabled: boolean;
+  rerankModel: string;
+  rerankBaseUrl: string;
+  rerankApiKey: string;
+  // WebDAV 同步
+  webdavBaseUrl: string;
+  webdavUsername: string;
+  webdavRemoteDir: string;
+  // S3 兼容图片上传
+  s3Endpoint: string;
+  s3Region: string;
+  s3Bucket: string;
+  s3AccessKeyId: string;
+  s3PublicBaseUrl: string;
+  s3PathStyle: boolean;
+  /** 粘贴 / 拖拽图片上传走哪条管线 */
+  uploadProvider: "picgo" | "s3" | "none";
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
@@ -158,6 +190,20 @@ export const useSettings = create<SettingsState>()(
       ragOpenaiDim: 1536,
       ragTopK: 6,
       ragExpandLinks: true,
+      rerankEnabled: false,
+      rerankModel: "rerank-multilingual-v3.0",
+      rerankBaseUrl: "",
+      rerankApiKey: "",
+      webdavBaseUrl: "",
+      webdavUsername: "",
+      webdavRemoteDir: "markio",
+      s3Endpoint: "",
+      s3Region: "us-east-1",
+      s3Bucket: "",
+      s3AccessKeyId: "",
+      s3PublicBaseUrl: "",
+      s3PathStyle: false,
+      uploadProvider: "picgo",
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });

@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { formatBytes } from "@/lib/utils";
+import { api, isDesktop } from "@/lib/api";
 
 export function StatusBar({
   words,
@@ -14,6 +16,41 @@ export function StatusBar({
   const ws = useWorkspace((s) => s.activeWorkspace());
   const theme = useSettings((s) => s.theme);
   const autosave = useSettings((s) => s.autosave);
+  const [git, setGit] = useState<{
+    branch?: string;
+    ahead: number;
+    behind: number;
+    files: number;
+  } | null>(null);
+
+  // 每 30s 轮询一次 git status（仅当存在 .git 目录时才显示）
+  useEffect(() => {
+    if (!isDesktop() || !ws) {
+      setGit(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await api.gitStatus(ws.path);
+        if (cancelled) return;
+        setGit({
+          branch: s.branch,
+          ahead: s.ahead,
+          behind: s.behind,
+          files: s.files.length,
+        });
+      } catch {
+        if (!cancelled) setGit(null);
+      }
+    };
+    void tick();
+    const handle = window.setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [ws?.path]);
 
   const charCount = tab?.content.length ?? 0;
   const lineCount = tab?.content.split("\n").length ?? 0;
@@ -61,6 +98,18 @@ export function StatusBar({
             <span className="item">阅读约 {readingMinutes} 分钟</span>
           )}
         </>
+      )}
+      {git && git.branch && (
+        <span
+          className="item"
+          title={`Git · ${git.files} 处变更 · 未推 ${git.ahead} · 未拉 ${git.behind}`}
+          style={{ color: git.ahead + git.behind > 0 ? "var(--accent)" : "var(--text-3)" }}
+        >
+          {"⎇ "}{git.branch}
+          {git.ahead > 0 ? ` ↑${git.ahead}` : ""}
+          {git.behind > 0 ? ` ↓${git.behind}` : ""}
+          {git.files > 0 ? ` ·${git.files}` : ""}
+        </span>
       )}
       <span className="item right">UTF-8</span>
       <span className="item">Markdown</span>

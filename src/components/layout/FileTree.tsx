@@ -1,4 +1,5 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Icon, isIconName } from "../ui/Icon";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { IconPicker } from "../popovers/IconPicker";
@@ -8,8 +9,9 @@ import { TrashSection } from "./TrashSection";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useFileIcons } from "@/stores/fileIcons";
-import { api, pickDirectory } from "@/lib/api";
+import { api, parseError, pickDirectory } from "@/lib/api";
 import { useUI } from "@/stores/ui";
+import { useRag } from "@/stores/rag";
 import type { FileEntry } from "@/types";
 
 export function FileTree() {
@@ -27,6 +29,7 @@ export function FileTree() {
     y: number;
     path: string;
   } | null>(null);
+  const mdCount = useMemo(() => (tree ? countMd(tree) : 0), [tree]);
 
   if (!ws) {
     return (
@@ -82,7 +85,7 @@ export function FileTree() {
         <RecentSection />
         <div className="tree-section">
           <span style={{ flex: 1 }}>文件</span>
-          <span className="count">{countMd(tree)}</span>
+          <span className="count">{mdCount}</span>
           <button
             type="button"
             className="sec-act"
@@ -99,7 +102,6 @@ export function FileTree() {
                 await useWorkspace.getState().refreshTree(ws.id);
                 await useTabs.getState().openFile(ws.id, path);
               } catch (e) {
-                const { parseError } = await import("@/lib/api");
                 const err = parseError(e);
                 if (err.code === "ALREADY_EXISTS") {
                   const reuse = window.confirm(`${fname} 已存在。打开它？`);
@@ -114,18 +116,49 @@ export function FileTree() {
             +
           </button>
         </div>
-        {tree.children?.map((node) => (
-          <TreeNode
-            key={node.path}
-            node={node}
-            depth={0}
-            activePath={activePath}
-            onContext={(e, n) => {
-              e.preventDefault();
-              setCtx({ x: e.clientX, y: e.clientY, node: n });
+        {tree.truncated && (
+          <div
+            role="alert"
+            style={{
+              margin: "4px 10px 8px",
+              padding: "8px 10px",
+              border: "1px solid #d97706",
+              borderLeft: "3px solid #d97706",
+              borderRadius: 6,
+              background: "rgba(217,119,6,0.08)",
+              color: "var(--text-2)",
+              fontSize: 12,
+              lineHeight: 1.5,
+              display: "flex",
+              gap: 8,
+              alignItems: "flex-start",
             }}
-          />
-        ))}
+          >
+            <span
+              aria-hidden
+              style={{ flexShrink: 0, fontWeight: 700, color: "#d97706" }}
+            >
+              !
+            </span>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                列表已截断 · 未显示全部文件
+              </div>
+              <div style={{ color: "var(--text-3)" }}>
+                目录或子项数超过上限（单目录 ≤ 2000 · 总条目 ≤ 8000 · 深度 ≤ 8）。
+                文件并未丢失，使用顶部搜索可定位未显示项。
+              </div>
+            </div>
+          </div>
+        )}
+        <VirtualizedTree
+          roots={tree.children ?? []}
+          activePath={activePath}
+          onContext={(e, n) => {
+            e.preventDefault();
+            setCtx({ x: e.clientX, y: e.clientY, node: n });
+          }}
+        />
         <AttachmentSection />
         <TrashSection />
       </div>
@@ -158,18 +191,137 @@ function countMd(node: FileEntry): number {
   return (node.children ?? []).reduce((acc, c) => acc + countMd(c), 0);
 }
 
-const TreeNode = memo(function TreeNode({
+interface FlatRow {
+  node: FileEntry;
+  depth: number;
+}
+
+function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
+  const out: FlatRow[] = [];
+  const visit = (node: FileEntry, depth: number) => {
+    out.push({ node, depth });
+    if (node.isDir && expanded.has(node.path)) {
+      for (const child of node.children ?? []) {
+        visit(child, depth + 1);
+      }
+    }
+  };
+  for (const r of roots) visit(r, 0);
+  return out;
+}
+
+const ROW_HEIGHT = 26;
+
+function VirtualizedTree({
+  roots,
+  activePath,
+  onContext,
+}: {
+  roots: FileEntry[];
+  activePath?: string;
+  onContext: (e: React.MouseEvent, n: FileEntry) => void;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const flat = useMemo(() => flattenTree(roots, expanded), [roots, expanded]);
+
+  const toggle = useCallback((path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const parentRef = useRef<HTMLDivElement>(null);
+  const useVirtual = flat.length > 200;
+
+  const virtualizer = useVirtualizer({
+    count: flat.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 12,
+    enabled: useVirtual,
+  });
+
+  if (!useVirtual) {
+    return (
+      <>
+        {flat.map(({ node, depth }) => (
+          <TreeRow
+            key={node.path}
+            node={node}
+            depth={depth}
+            isOpen={expanded.has(node.path)}
+            activePath={activePath}
+            onToggle={toggle}
+            onContext={onContext}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const items = virtualizer.getVirtualItems();
+  return (
+    <div
+      ref={parentRef}
+      style={{
+        height: "100%",
+        overflowY: "auto",
+        position: "relative",
+      }}
+    >
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          position: "relative",
+        }}
+      >
+        {items.map((vi) => {
+          const row = flat[vi.index];
+          return (
+            <div
+              key={row.node.path}
+              style={{
+                position: "absolute",
+                top: vi.start,
+                left: 0,
+                right: 0,
+                height: ROW_HEIGHT,
+              }}
+            >
+              <TreeRow
+                node={row.node}
+                depth={row.depth}
+                isOpen={expanded.has(row.node.path)}
+                activePath={activePath}
+                onToggle={toggle}
+                onContext={onContext}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const TreeRow = memo(function TreeRow({
   node,
   depth,
+  isOpen,
   activePath,
+  onToggle,
   onContext,
 }: {
   node: FileEntry;
   depth: number;
+  isOpen: boolean;
   activePath?: string;
+  onToggle: (path: string) => void;
   onContext: (e: React.MouseEvent, n: FileEntry) => void;
 }) {
-  const [open, setOpen] = useState(depth < 1);
   const ws = useWorkspace((s) => s.activeWorkspace());
   const openFile = useTabs((s) => s.openFile);
   const customIcon = useFileIcons((s) => s.icons[node.path]);
@@ -177,55 +329,41 @@ const TreeNode = memo(function TreeNode({
   const isActive = activePath === node.path;
   const onClick = async () => {
     if (node.isDir) {
-      setOpen((v) => !v);
+      onToggle(node.path);
     } else if (ws) {
       await openFile(ws.id, node.path);
     }
   };
 
-  const indent = useMemo(
-    () => ({ paddingLeft: 8 + depth * 12 }),
-    [depth],
-  );
-
   return (
-    <>
-      <div
-        className={
-          "tree-row" +
-          (node.isDir && open ? " open" : "") +
-          (isActive ? " selected" : "")
-        }
-        onClick={onClick}
-        onContextMenu={(e) => onContext(e, node)}
-        style={indent}
-        role="treeitem"
+    <div
+      className={
+        "tree-row" +
+        (node.isDir && isOpen ? " open" : "") +
+        (isActive ? " selected" : "")
+      }
+      onClick={onClick}
+      onContextMenu={(e) => onContext(e, node)}
+      style={{ paddingLeft: 8 + depth * 12 }}
+      role="treeitem"
+    >
+      <span
+        className="chev"
+        style={{ visibility: node.isDir ? "visible" : "hidden" }}
       >
-        <span className="chev" style={{ visibility: node.isDir ? "visible" : "hidden" }}>
-          <Icon name="chevron" size={11} />
-        </span>
-        <span className="ico">
-          {isIconName(customIcon) ? (
-            <Icon name={customIcon} size={13} />
-          ) : node.isDir ? (
-            <Icon name="folder" size={13} />
-          ) : (
-            <Icon name="file" size={13} />
-          )}
-        </span>
-        <span className="lbl">{node.name}</span>
-      </div>
-      {node.isDir && open &&
-        node.children?.map((c) => (
-          <TreeNode
-            key={c.path}
-            node={c}
-            depth={depth + 1}
-            activePath={activePath}
-            onContext={onContext}
-          />
-        ))}
-    </>
+        <Icon name="chevron" size={11} />
+      </span>
+      <span className="ico">
+        {isIconName(customIcon) ? (
+          <Icon name={customIcon} size={13} />
+        ) : node.isDir ? (
+          <Icon name="folder" size={13} />
+        ) : (
+          <Icon name="file" size={13} />
+        )}
+      </span>
+      <span className="lbl">{node.name}</span>
+    </div>
   );
 });
 
@@ -383,7 +521,6 @@ function TreeContextMenu({
 /** 顺手把 RAG 索引里的旧记录擦掉；失败仅吞掉 */
 async function ragRemoveSilently(workspace: string, file: string) {
   try {
-    const { useRag } = await import("@/stores/rag");
     await useRag.getState().removeFile(workspace, file);
   } catch {
     /* ignore */

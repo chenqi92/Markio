@@ -1,10 +1,64 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import type { Backlink, OutlineItem } from "@/types";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
+
+interface HeadingSpan {
+  from: number;
+  to: number;
+  level: number;
+}
+
+/** 扫描 markdown 文本里的 heading（忽略 ``` 围栏内的 `#`），返回每条 heading
+ *  的 [from, to) 字符范围；to 是下一个 ≤ 同级 heading 的 from，或 EOF。 */
+function computeHeadingSpans(content: string): HeadingSpan[] {
+  const lines = content.split("\n");
+  const headings: { line: number; level: number; offset: number }[] = [];
+  let offset = 0;
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^\s*```/.test(ln)) inFence = !inFence;
+    if (!inFence) {
+      const m = /^(#{1,6})[ \t]+\S/.exec(ln);
+      if (m) {
+        headings.push({ line: i, level: m[1].length, offset });
+      }
+    }
+    offset += ln.length + 1; // +1 for "\n"
+  }
+  const totalLen = content.length;
+  return headings.map((h, i) => {
+    let to = totalLen;
+    for (let j = i + 1; j < headings.length; j++) {
+      if (headings[j].level <= h.level) {
+        to = headings[j].offset;
+        break;
+      }
+    }
+    return { from: h.offset, to, level: h.level };
+  });
+}
+
+/** 把 from..to 这段挪到 insertBefore 之前（0-based char offset）。
+ *  insertBefore 必须不在 [from, to) 内。返回新内容；若条件不成立返回原内容。 */
+function moveSection(
+  content: string,
+  from: number,
+  to: number,
+  insertBefore: number,
+): string {
+  if (insertBefore >= from && insertBefore < to) return content;
+  const section = content.slice(from, to);
+  const without =
+    content.slice(0, from) + content.slice(to);
+  const adj =
+    insertBefore > to ? insertBefore - (to - from) : insertBefore;
+  return without.slice(0, adj) + section + without.slice(adj);
+}
 
 export function Outline({
   items,
@@ -24,17 +78,27 @@ export function Outline({
   );
   const [links, setLinks] = useState<Backlink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
+  const linksSeqRef = useRef(0);
 
   useEffect(() => {
+    const seq = ++linksSeqRef.current;
     if (tab !== "links" || !file || !ws) {
+      setLinks([]);
+      setLoadingLinks(false);
       return;
     }
     setLoadingLinks(true);
     api
       .backlinks(ws.path, file.path)
-      .then(setLinks)
-      .catch(() => setLinks([]))
-      .finally(() => setLoadingLinks(false));
+      .then((next) => {
+        if (seq === linksSeqRef.current) setLinks(next);
+      })
+      .catch(() => {
+        if (seq === linksSeqRef.current) setLinks([]);
+      })
+      .finally(() => {
+        if (seq === linksSeqRef.current) setLoadingLinks(false);
+      });
   }, [tab, file?.path, ws?.path]);
 
   const openPath = useTabs((s) => s.openPath);
@@ -75,31 +139,7 @@ export function Outline({
         </div>
 
         {tab === "outline" && (
-          <div className="scroll" style={{ flex: 1 }}>
-            <div className="outline-h">章节</div>
-            {items.length === 0 ? (
-              <div className="outline-empty">当前文档没有标题</div>
-            ) : (
-              <div className="outline-list">
-                {items.map((it, ix) => (
-                  <a
-                    key={ix}
-                    href={`#${it.anchor}`}
-                    className={"outline-item lvl-" + Math.min(it.level, 4)}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const target = document.getElementById(it.anchor);
-                      if (target)
-                        target.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                  >
-                    <span className="num">{ix + 1}</span>
-                    <span className="text">{it.text}</span>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
+          <OutlinePanel items={items} />
         )}
 
         {tab === "info" && (
@@ -168,6 +208,89 @@ export function Outline({
         )}
       </aside>
     </>
+  );
+}
+
+function OutlinePanel({ items }: { items: OutlineItem[] }) {
+  const file = useTabs((s) => s.activeTab());
+  const updateContent = useTabs((s) => s.updateContent);
+  const content = file?.content ?? "";
+  const spans = useMemo(() => computeHeadingSpans(content), [content]);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  const reorder = (sourceIdx: number, targetIdx: number) => {
+    if (!file) return;
+    if (sourceIdx === targetIdx) return;
+    const src = spans[sourceIdx];
+    const tgt = spans[targetIdx];
+    if (!src || !tgt) return;
+    const next = moveSection(content, src.from, src.to, tgt.from);
+    if (next !== content) {
+      updateContent(file.id, next);
+    }
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="scroll" style={{ flex: 1 }}>
+        <div className="outline-h">章节</div>
+        <div className="outline-empty">当前文档没有标题</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="scroll" style={{ flex: 1 }}>
+      <div className="outline-h">章节 · 拖拽可重排</div>
+      <div className="outline-list">
+        {items.map((it, ix) => (
+          <a
+            key={ix}
+            href={`#${it.anchor}`}
+            draggable={!!spans[ix]}
+            className={
+              "outline-item lvl-" +
+              Math.min(it.level, 4) +
+              (overIdx === ix && dragIdx !== ix ? " drop-over" : "") +
+              (dragIdx === ix ? " dragging" : "")
+            }
+            onClick={(e) => {
+              e.preventDefault();
+              const target = document.getElementById(it.anchor);
+              if (target)
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            onDragStart={(e) => {
+              setDragIdx(ix);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => {
+              if (dragIdx === null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (overIdx !== ix) setOverIdx(ix);
+            }}
+            onDragLeave={() => {
+              if (overIdx === ix) setOverIdx(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIdx !== null) reorder(dragIdx, ix);
+              setDragIdx(null);
+              setOverIdx(null);
+            }}
+            onDragEnd={() => {
+              setDragIdx(null);
+              setOverIdx(null);
+            }}
+          >
+            <span className="num">{ix + 1}</span>
+            <span className="text">{it.text}</span>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 

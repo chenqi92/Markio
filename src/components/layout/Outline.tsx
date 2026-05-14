@@ -77,6 +77,7 @@ export function Outline({
     file ? s.workspaces.find((w) => w.id === file.workspaceId) : undefined,
   );
   const [links, setLinks] = useState<Backlink[]>([]);
+  const [mentions, setMentions] = useState<Backlink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
   const linksSeqRef = useRef(0);
 
@@ -84,17 +85,21 @@ export function Outline({
     const seq = ++linksSeqRef.current;
     if (tab !== "links" || !file || !ws) {
       setLinks([]);
+      setMentions([]);
       setLoadingLinks(false);
       return;
     }
     setLoadingLinks(true);
-    api
-      .backlinks(ws.path, file.path)
-      .then((next) => {
-        if (seq === linksSeqRef.current) setLinks(next);
-      })
-      .catch(() => {
-        if (seq === linksSeqRef.current) setLinks([]);
+    Promise.all([
+      api.backlinks(ws.path, file.path).catch(() => [] as Backlink[]),
+      api.mentions(ws.path, file.path).catch(() => [] as Backlink[]),
+    ])
+      .then(([bl, mn]) => {
+        if (seq !== linksSeqRef.current) return;
+        setLinks(bl);
+        // 已显式链接的文件路径，从未链接提及里剔除
+        const linkedPaths = new Set(bl.map((b) => b.path));
+        setMentions(mn.filter((m) => !linkedPaths.has(m.path)));
       })
       .finally(() => {
         if (seq === linksSeqRef.current) setLoadingLinks(false);
@@ -203,6 +208,33 @@ export function Outline({
                   </button>
                 ))}
               </div>
+            )}
+
+            {!loadingLinks && mentions.length > 0 && (
+              <>
+                <div className="outline-h" style={{ marginTop: 8 }}>
+                  未链接的提及 · {mentions.length} 处
+                </div>
+                <div style={{ padding: "0 8px 14px" }}>
+                  {mentions.map((b, i) => (
+                    <button
+                      type="button"
+                      key={`m-${i}`}
+                      className="backlink"
+                      onClick={() => openPath(b.path)}
+                      title="点击打开 · 这些文件正文裸出现了当前笔记的标题"
+                    >
+                      <span className="ico" style={{ opacity: 0.5 }}>
+                        <Icon name="note" size={13} />
+                      </span>
+                      <div className="body">
+                        <div className="ttl">{b.name}</div>
+                        <div className="snip">第 {b.line} 行 · {b.preview}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}

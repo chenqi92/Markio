@@ -8,6 +8,7 @@ import { useRecents } from "./recents";
 import { useUI } from "./ui";
 import { useSettings } from "./settings";
 import { useRag } from "./rag";
+import { useVaultTokens } from "./vaultTokens";
 
 interface TabsState {
   tabs: TabInfo[];
@@ -151,6 +152,8 @@ export const useTabs = create<TabsState>((set, get) => ({
             console.warn("[rag.reindexFile] post-save failed", err);
           }
         })();
+        // 强制刷新 vault token 缓存，新加的 #tag / @mention / 文件名 立刻可补全
+        void useVaultTokens.getState().ensure(ws.path, true);
       }
       set((s) => ({
         tabs: s.tabs.map((t) =>

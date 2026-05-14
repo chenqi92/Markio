@@ -546,6 +546,279 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
     out
 }
 
+/// 是否是 Unicode 词字符（字母 / 数字 / 下划线 / CJK）。
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// 在 line 中找 needle 的"未链接"出现：
+/// 排除已经被 `[[...]]` 包围的位置。
+/// 对 ASCII needle 强制词边界；CJK needle 不强制（中文无分词空格）。
+fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
+    let ascii_needle = needle.chars().all(|c| c.is_ascii());
+    let bytes = line_lower.as_bytes();
+    let nlen = needle.len();
+    let mut start = 0;
+    while let Some(pos) = line_lower[start..].find(needle) {
+        let abs = start + pos;
+        let inside_wiki = line_lower[..abs].ends_with("[[");
+        let blocked = if ascii_needle {
+            let before_is_word = abs > 0
+                && line_lower[..abs]
+                    .chars()
+                    .last()
+                    .map(is_word_char)
+                    .unwrap_or(false);
+            let after_idx = abs + nlen;
+            let after_is_word = after_idx < bytes.len()
+                && line_lower[after_idx..]
+                    .chars()
+                    .next()
+                    .map(is_word_char)
+                    .unwrap_or(false);
+            before_is_word || after_is_word
+        } else {
+            false
+        };
+        if !inside_wiki && !blocked {
+            return true;
+        }
+        start = abs + nlen.max(1);
+        if start >= line_lower.len() {
+            break;
+        }
+    }
+    false
+}
+
+/// 扫描整个 workspace 找正文中"裸出现笔记标题"的未链接提及。
+pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
+    let stem = Path::new(file)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if stem.len() < 2 {
+        return Vec::new();
+    }
+    let needle = stem.to_lowercase();
+    let mut out: Vec<Backlink> = Vec::new();
+
+    fn visit(
+        dir: &Path,
+        depth: usize,
+        needle: &str,
+        skip: &str,
+        out: &mut Vec<Backlink>,
+        max: usize,
+    ) {
+        if out.len() >= max || depth > MAX_DEPTH {
+            return;
+        }
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            if out.len() >= max {
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_hidden(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                if is_skip_dir(&name) {
+                    continue;
+                }
+                visit(&path, depth + 1, needle, skip, out, max);
+            } else if ft.is_file() && is_markdown(&name) {
+                if path.to_string_lossy() == skip {
+                    continue;
+                }
+                if let Ok(meta) = entry.metadata() {
+                    if meta.len() > MAX_GREP_FILE_SIZE {
+                        continue;
+                    }
+                }
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                let lower = content.to_lowercase();
+                if !lower.contains(needle) {
+                    continue;
+                }
+                for (i, line) in content.lines().enumerate() {
+                    let lline = line.to_lowercase();
+                    if !line_has_unlinked(&lline, needle) {
+                        continue;
+                    }
+                    let preview = if line.chars().count() > 160 {
+                        line.chars().take(160).collect::<String>() + "…"
+                    } else {
+                        line.to_string()
+                    };
+                    out.push(Backlink {
+                        path: path.to_string_lossy().to_string(),
+                        name: name.clone(),
+                        line: (i + 1) as u32,
+                        preview,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    visit(Path::new(workspace), 0, &needle, file, &mut out, max);
+    out
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultTokens {
+    pub tags: Vec<String>,
+    pub mentions: Vec<String>,
+    pub files: Vec<String>,
+}
+
+/// 扫描整个 workspace 抽取 #tag / @mention / 文件名 stem，供 Autocomplete 全 vault 使用。
+pub fn index_tokens(workspace: &str) -> VaultTokens {
+    use std::collections::BTreeSet;
+    let mut tags: BTreeSet<String> = BTreeSet::new();
+    let mut mentions: BTreeSet<String> = BTreeSet::new();
+    let mut files: BTreeSet<String> = BTreeSet::new();
+
+    fn visit(
+        dir: &Path,
+        depth: usize,
+        tags: &mut BTreeSet<String>,
+        mentions: &mut BTreeSet<String>,
+        files: &mut BTreeSet<String>,
+    ) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_hidden(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                if is_skip_dir(&name) {
+                    continue;
+                }
+                visit(&path, depth + 1, tags, mentions, files);
+            } else if ft.is_file() && is_markdown(&name) {
+                let stem = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if !stem.is_empty() {
+                    files.insert(stem);
+                }
+                if let Ok(meta) = entry.metadata() {
+                    if meta.len() > MAX_GREP_FILE_SIZE {
+                        continue;
+                    }
+                }
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                extract_tokens_into(&content, tags, mentions);
+                if tags.len() + mentions.len() + files.len() > 5_000 {
+                    return;
+                }
+            }
+        }
+    }
+
+    visit(
+        Path::new(workspace),
+        0,
+        &mut tags,
+        &mut mentions,
+        &mut files,
+    );
+
+    VaultTokens {
+        tags: tags.into_iter().collect(),
+        mentions: mentions.into_iter().collect(),
+        files: files.into_iter().collect(),
+    }
+}
+
+fn extract_tokens_into(
+    content: &str,
+    tags: &mut std::collections::BTreeSet<String>,
+    mentions: &mut std::collections::BTreeSet<String>,
+) {
+    let mut chars = content.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c != '#' && c != '@' {
+            continue;
+        }
+        // 必须在词边界或行首
+        if i > 0 {
+            let prev = content[..i].chars().last();
+            if prev.map(is_word_char).unwrap_or(false) {
+                continue;
+            }
+        }
+        // 收集后续 1..=64 个词字符
+        let mut end = i + c.len_utf8();
+        let rest = &content[end..];
+        let mut count = 0;
+        for ch in rest.chars() {
+            if is_word_char(ch) || ch == '-' {
+                end += ch.len_utf8();
+                count += 1;
+                if count >= 64 {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        if count == 0 {
+            continue;
+        }
+        let token = content[i + c.len_utf8()..end].to_string();
+        if c == '#' {
+            tags.insert(token);
+        } else {
+            mentions.insert(token);
+        }
+        // 让外层迭代继续从 end 之后
+        while let Some(&(j, _)) = chars.peek() {
+            if j < end {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrashItem {
@@ -988,4 +1261,53 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
         max_results,
     );
     hits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn unlinked_skips_wiki_form() {
+        let needle = "笔记";
+        assert!(line_has_unlinked("聊聊笔记的设计", needle));
+        // 被 [[ 包住就不算
+        assert!(!line_has_unlinked("跳转 [[笔记]] 一下", needle));
+        // 中文 needle 不强制词边界（无法分词），所以 "笔记本" 中也会命中
+        assert!(line_has_unlinked("数据笔记本", needle));
+    }
+
+    #[test]
+    fn unlinked_ascii_word_boundary() {
+        let needle = "roadmap";
+        assert!(line_has_unlinked("see roadmap below", needle));
+        assert!(!line_has_unlinked("see roadmaps below", needle));
+        assert!(!line_has_unlinked("link [[roadmap]] here", needle));
+    }
+
+    #[test]
+    fn extract_tokens_collects_tags_and_mentions() {
+        let mut tags = BTreeSet::new();
+        let mut mentions = BTreeSet::new();
+        extract_tokens_into(
+            "今天 #design 和 @han 一起讨论 #project-x，邮件提到 user@example.com",
+            &mut tags,
+            &mut mentions,
+        );
+        assert!(tags.contains("design"));
+        assert!(tags.contains("project-x"));
+        assert!(mentions.contains("han"));
+        // email 中 @ 前是词字符（user），按规则不应被收
+        assert!(!mentions.contains("example"));
+    }
+
+    #[test]
+    fn extract_tokens_dedupes_and_ignores_bare_hash() {
+        let mut tags = BTreeSet::new();
+        let mut mentions = BTreeSet::new();
+        extract_tokens_into("#a #a # not-a-tag", &mut tags, &mut mentions);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.contains("a"));
+    }
 }

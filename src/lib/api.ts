@@ -274,6 +274,13 @@ export const api = {
 
   backlinks: (workspace: string, file: string, max = 50) =>
     invoke<Backlink[]>("fs_backlinks", { workspace, file, max }),
+  mentions: (workspace: string, file: string, max = 50) =>
+    invoke<Backlink[]>("fs_mentions", { workspace, file, max }),
+  indexTokens: (workspace: string) =>
+    invoke<{ tags: string[]; mentions: string[]; files: string[] }>(
+      "fs_index_tokens",
+      { workspace },
+    ),
 
   trashMove: (workspace: string, path: string) =>
     invoke<void>("fs_trash_move", { workspace, path }),

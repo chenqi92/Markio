@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { useVaultTokens } from "@/stores/vaultTokens";
 import { replaceSelection, deleteBeforeCursor } from "@/lib/editor-bridge";
 import type { FileEntry } from "@/types";
 
@@ -49,7 +50,37 @@ function walkMd(node: FileEntry, out: Item[]) {
   for (const c of node.children ?? []) walkMd(c, out);
 }
 
-function uniqueTokens(source: string, prefix: "@" | "#"): Item[] {
+function tokensToItems(tokens: string[], prefix: "@" | "#"): Item[] {
+  const seen = new Set<string>();
+  const out: Item[] = [];
+  for (const raw of tokens) {
+    const t = raw.trim();
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = `${prefix}${t}`;
+    out.push({
+      icon: prefix === "#" ? "hash" : "user",
+      l1: label,
+      insert: `${label} `,
+    });
+  }
+  return out;
+}
+
+function mergeUnique(primary: Item[], extra: Item[]): Item[] {
+  const seen = new Set(primary.map((it) => it.l1.toLowerCase()));
+  const out = primary.slice();
+  for (const it of extra) {
+    if (seen.has(it.l1.toLowerCase())) continue;
+    seen.add(it.l1.toLowerCase());
+    out.push(it);
+  }
+  return out.sort((a, b) => a.l1.localeCompare(b.l1));
+}
+
+function fallbackTokens(source: string, prefix: "@" | "#"): Item[] {
   const seen = new Set<string>();
   const out: Item[] = [];
   const re =
@@ -68,7 +99,7 @@ function uniqueTokens(source: string, prefix: "@" | "#"): Item[] {
     });
     if (out.length >= 100) break;
   }
-  return out.sort((a, b) => a.l1.localeCompare(b.l1));
+  return out;
 }
 
 export function Autocomplete({
@@ -87,19 +118,45 @@ export function Autocomplete({
   onClose: () => void;
 }) {
   const tree = useWorkspace((s) => s.activeTree());
+  const ws = useWorkspace((s) => s.activeWorkspace());
   const indexedText = useTabs((s) => s.tabs.map((t) => t.content).join("\n"));
+  const ensureTokens = useVaultTokens((s) => s.ensure);
+  const vaultTokens = useVaultTokens((s) =>
+    ws ? s.cache[ws.path] : undefined,
+  );
   const [sel, setSel] = useState(0);
 
+  useEffect(() => {
+    if (kind === "tag" || kind === "mention") {
+      if (ws) void ensureTokens(ws.path);
+    }
+  }, [kind, ws?.path, ensureTokens]);
+
   const base: Item[] = useMemo(() => {
-    if (kind === "mention") return uniqueTokens(indexedText, "@");
-    if (kind === "tag") return uniqueTokens(indexedText, "#");
+    if (kind === "mention") {
+      const fromVault = vaultTokens ? tokensToItems(vaultTokens.mentions, "@") : [];
+      const fromTabs = fallbackTokens(indexedText, "@");
+      return mergeUnique(fromVault, fromTabs);
+    }
+    if (kind === "tag") {
+      const fromVault = vaultTokens ? tokensToItems(vaultTokens.tags, "#") : [];
+      const fromTabs = fallbackTokens(indexedText, "#");
+      return mergeUnique(fromVault, fromTabs);
+    }
     if (kind === "emoji") return EMOJIS;
-    // wiki: 用 workspace 的所有 md 名当候选
+    // wiki: 优先全 vault 文件名（来自 indexTokens），fallback 用 tree
+    if (vaultTokens && vaultTokens.files.length > 0) {
+      return vaultTokens.files.slice(0, 500).map((name) => ({
+        icon: "note" as IconName,
+        l1: name,
+        insert: `[[${name}]] `,
+      }));
+    }
     if (!tree) return [];
     const out: Item[] = [];
     walkMd(tree, out);
     return out.slice(0, 200);
-  }, [kind, tree, indexedText]);
+  }, [kind, tree, indexedText, vaultTokens]);
 
   const items = useMemo(() => {
     if (!query) return base.slice(0, 20);

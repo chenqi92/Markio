@@ -1311,6 +1311,37 @@ async fn fs_backlinks(
     Ok(links)
 }
 
+#[tauri::command]
+async fn fs_mentions(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    file: String,
+    max: Option<usize>,
+) -> Result<Vec<Backlink>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let f = validate_path(&state, &file)?;
+    let ws = ws.to_string_lossy().to_string();
+    let f = f.to_string_lossy().to_string();
+    let max = max.unwrap_or(50);
+    let mentions =
+        tauri::async_runtime::spawn_blocking(move || fs_ops::find_mentions(&ws, &f, max))
+            .await
+            .map_err(|e| e.to_string())?;
+    Ok(mentions)
+}
+
+#[tauri::command]
+async fn fs_index_tokens(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<fs_ops::VaultTokens, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws = ws.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || Ok(fs_ops::index_tokens(&ws)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 // ─── 回收站 ─────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2237,6 +2268,8 @@ pub fn run() {
             history_list,
             history_read,
             fs_backlinks,
+            fs_mentions,
+            fs_index_tokens,
             fs_trash_move,
             fs_trash_list,
             fs_trash_restore,

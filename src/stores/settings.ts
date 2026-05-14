@@ -3,6 +3,12 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { applyTheme } from "@/themes";
 import type { ViewMode } from "@/types";
 
+export function generateChannelId(): string {
+  const t = Date.now().toString(36);
+  const r = Math.random().toString(36).slice(2, 10);
+  return `mk-${t}-${r}`;
+}
+
 type PreferenceKey =
   | "startupBehavior"
   | "closeLastTabBehavior"
@@ -17,8 +23,23 @@ type PreferenceKey =
   | "picgoQuality"
   | "wechatStyle"
   | "wechatAuthor"
-  | "lobsterModelSource"
-  | "lobsterDailyLimit"
+  | "wechatAccountName"
+  | "wechatAppId"
+  | "wechatAutoSummary"
+  | "wechatDefaultCover"
+  | "wxAssistantEnabled"
+  | "wxAssistantWebhook"
+  | "wxAssistantDailyDigest"
+  | "wxAssistantDigestTime"
+  | "wxAssistantPublishHook"
+  | "smartChannelEnabled"
+  | "smartChannelId"
+  | "smartChannelModelSource"
+  | "smartChannelScope"
+  | "smartChannelDailyLimit"
+  | "smartChannelMaxChunks"
+  | "smartChannelIncludeAttachments"
+  | "smartChannelResponseStyle"
   | "exportPdfTheme"
   | "exportPdfMargin"
   | "ragEnabled"
@@ -71,8 +92,40 @@ interface SettingsState {
   picgoQuality: number;
   wechatStyle: "warmMagazine" | "cleanTech" | "inkClassic" | "minimal";
   wechatAuthor: "unset" | "appName" | "systemUser";
-  lobsterModelSource: "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama";
-  lobsterDailyLimit: 50 | 100 | 200 | 500 | 1000;
+  /** 已绑定的公众号显示名（appSecret 在系统钥匙串） */
+  wechatAccountName: string;
+  /** 已绑定的公众号 AppID */
+  wechatAppId: string;
+  /** 推送时让 AI 自动生成摘要 */
+  wechatAutoSummary: boolean;
+  /** 默认封面图：none = 不附带 / firstImage = 取正文首图 */
+  wechatDefaultCover: "none" | "firstImage";
+  /** 微信助手开关：开启后保存 / 发布动作会推到下方 webhook */
+  wxAssistantEnabled: boolean;
+  /** Server 酱 / 企业微信机器人 / 自建桥的 webhook */
+  wxAssistantWebhook: string;
+  /** 每日笔记摘要推送 */
+  wxAssistantDailyDigest: boolean;
+  /** 摘要推送时间，24h 格式 "HH:mm" */
+  wxAssistantDigestTime: string;
+  /** 发布公众号草稿后是否再推一条通知 */
+  wxAssistantPublishHook: boolean;
+  /** 智能通道（替代龙虾）：把当前文档工具的内容暴露给其他客户端查询 */
+  smartChannelEnabled: boolean;
+  /** 通道唯一 id，给外部 app（命令面板 / Raycast / 微信助手）调用时用 */
+  smartChannelId: string;
+  /** 智能通道走哪个模型，沿用 AI 设置里的 provider/model 还是单独指定 */
+  smartChannelModelSource: "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama";
+  /** 检索范围：仅当前文件 / 当前仓库 / 全部仓库 */
+  smartChannelScope: "currentFile" | "currentWorkspace" | "allWorkspaces";
+  /** 每日最多被外部触发的次数（防滥用） */
+  smartChannelDailyLimit: 50 | 100 | 200 | 500 | 1000;
+  /** 一次回答带回的相关片段上限 */
+  smartChannelMaxChunks: 3 | 5 | 8 | 12;
+  /** 是否把附件（图片 / 表格 OCR）一起带回 */
+  smartChannelIncludeAttachments: boolean;
+  /** 回答风格 */
+  smartChannelResponseStyle: "concise" | "balanced" | "detailed";
   exportPdfTheme: "current" | "light" | "dark" | "print";
   exportPdfMargin: "standard" | "narrow" | "wide";
   aiProvider: "anthropic" | "openai" | "deepseek" | "ollama" | "google" | "custom";
@@ -170,8 +223,23 @@ export const useSettings = create<SettingsState>()(
       picgoQuality: 85,
       wechatStyle: "warmMagazine",
       wechatAuthor: "unset",
-      lobsterModelSource: "aiDefault",
-      lobsterDailyLimit: 200,
+      wechatAccountName: "",
+      wechatAppId: "",
+      wechatAutoSummary: true,
+      wechatDefaultCover: "firstImage",
+      wxAssistantEnabled: false,
+      wxAssistantWebhook: "",
+      wxAssistantDailyDigest: false,
+      wxAssistantDigestTime: "09:00",
+      wxAssistantPublishHook: true,
+      smartChannelEnabled: false,
+      smartChannelId: generateChannelId(),
+      smartChannelModelSource: "aiDefault",
+      smartChannelScope: "currentWorkspace",
+      smartChannelDailyLimit: 200,
+      smartChannelMaxChunks: 5,
+      smartChannelIncludeAttachments: false,
+      smartChannelResponseStyle: "balanced",
       exportPdfTheme: "current",
       exportPdfMargin: "standard",
       aiProvider: "anthropic",

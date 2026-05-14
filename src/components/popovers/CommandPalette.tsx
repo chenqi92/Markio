@@ -6,6 +6,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useSettings } from "@/stores/settings";
 import { useRecents } from "@/stores/recents";
 import { pickDirectory } from "@/lib/api";
+import { smartChannelQuery } from "@/lib/smartChannel";
 import type { FileEntry, ViewMode } from "@/types";
 import { THEMES } from "@/themes";
 
@@ -139,6 +140,33 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         kbd: ["⌘", ","],
         ico: "settings",
         run: () => openSettings(true),
+      },
+      {
+        id: "smart-channel-query",
+        group: "AI",
+        l1: "通过智能通道查询当前仓库",
+        l2: "把当前问题发给智能通道，AI 会基于仓库内容回答",
+        ico: "flame",
+        run: async () => {
+          const q = window.prompt(
+            "智能通道 · 想问什么？（基于当前仓库检索 + AI 回答）",
+          );
+          if (!q || !q.trim()) return;
+          const { setToast } = useUI.getState();
+          setToast({ stage: "uploading", message: "智能通道查询中…" });
+          try {
+            const res = await smartChannelQuery({ query: q.trim() });
+            setToast({
+              stage: "done",
+              message: `智能通道：${res.answer.replace(/\s+/g, " ").slice(0, 80)}${res.answer.length > 80 ? "…" : ""}`,
+            });
+            // 短摘要 toast 不够看，把全文也打到控制台，方便排查
+            console.info("[smart-channel] 回答：", res.answer, res.refs);
+          } catch (e) {
+            setToast({ stage: "error", message: `智能通道：${(e as Error).message}` });
+          }
+          setTimeout(() => useUI.getState().setToast(null), 4200);
+        },
       },
       ...THEMES.map(
         (t): Cmd => ({

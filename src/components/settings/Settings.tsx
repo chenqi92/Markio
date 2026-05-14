@@ -12,12 +12,14 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon, type IconName } from "../ui/Icon";
 import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
-import { useSettings } from "@/stores/settings";
+import { useSettings, generateChannelId } from "@/stores/settings";
 import { useRag } from "@/stores/rag";
+import { useUI } from "@/stores/ui";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
 import { setLocale, currentLocale, type Locale } from "@/i18n";
 
 const SECTIONS = [
@@ -28,6 +30,8 @@ const SECTIONS = [
   { id: "shortcuts", label: "快捷键", icon: "cmd" },
   { id: "picgo", label: "图片上传", icon: "image" },
   { id: "wechat", label: "微信公众号", icon: "message" },
+  { id: "wxAssistant", label: "微信助手", icon: "bot" },
+  { id: "smartChannel", label: "智能通道", icon: "flame" },
   { id: "ai", label: "AI 助手", icon: "sparkle" },
   { id: "rag", label: "本地知识库", icon: "search" },
   { id: "export", label: "导入 / 导出", icon: "upload" },
@@ -88,6 +92,49 @@ const WECHAT_AUTHOR_OPTIONS = [
   { value: "systemUser", label: "系统用户名" },
 ] as const satisfies readonly SelectOption<"unset" | "appName" | "systemUser">[];
 
+const WECHAT_COVER_OPTIONS = [
+  { value: "firstImage", label: "取正文首图" },
+  { value: "none", label: "不附带" },
+] as const satisfies readonly SelectOption<"firstImage" | "none">[];
+
+const SMART_CHANNEL_MODEL_OPTIONS = [
+  { value: "aiDefault", label: "跟随 AI 助手设置" },
+  { value: "currentClaude", label: "Claude（当前账户）" },
+  { value: "currentOpenAI", label: "OpenAI（当前账户）" },
+  { value: "localOllama", label: "本地 Ollama" },
+] as const satisfies readonly SelectOption<
+  "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama"
+>[];
+
+const SMART_CHANNEL_SCOPE_OPTIONS = [
+  { value: "currentFile", label: "仅当前文档" },
+  { value: "currentWorkspace", label: "当前仓库" },
+  { value: "allWorkspaces", label: "所有仓库" },
+] as const satisfies readonly SelectOption<
+  "currentFile" | "currentWorkspace" | "allWorkspaces"
+>[];
+
+const SMART_CHANNEL_LIMIT_OPTIONS = [
+  { value: 50, label: "50 次 / 天" },
+  { value: 100, label: "100 次 / 天" },
+  { value: 200, label: "200 次 / 天" },
+  { value: 500, label: "500 次 / 天" },
+  { value: 1000, label: "1000 次 / 天" },
+] as const satisfies readonly SelectOption<50 | 100 | 200 | 500 | 1000>[];
+
+const SMART_CHANNEL_CHUNKS_OPTIONS = [
+  { value: 3, label: "3 段 · 精准" },
+  { value: 5, label: "5 段 · 平衡" },
+  { value: 8, label: "8 段 · 宽松" },
+  { value: 12, label: "12 段 · 全面" },
+] as const satisfies readonly SelectOption<3 | 5 | 8 | 12>[];
+
+const SMART_CHANNEL_STYLE_OPTIONS = [
+  { value: "concise", label: "简短 · 直接结论" },
+  { value: "balanced", label: "平衡 · 结论+要点" },
+  { value: "detailed", label: "详细 · 长答+摘录" },
+] as const satisfies readonly SelectOption<"concise" | "balanced" | "detailed">[];
+
 const EXPORT_PDF_THEME_OPTIONS = [
   { value: "current", label: "跟随当前主题" },
   { value: "light", label: "浅色打印" },
@@ -138,6 +185,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             {section === "shortcuts" && <Shortcuts />}
             {section === "picgo" && <Picgo />}
             {section === "wechat" && <WeChat />}
+            {section === "wxAssistant" && <WxAssistant />}
+            {section === "smartChannel" && <SmartChannelSettings />}
             {section === "ai" && <AI />}
             {section === "rag" && <RagSettings />}
             {section === "export" && <ImportExport />}
@@ -1280,27 +1329,234 @@ function Picgo() {
 function WeChat() {
   const style = useSettings((s) => s.wechatStyle);
   const author = useSettings((s) => s.wechatAuthor);
+  const accountName = useSettings((s) => s.wechatAccountName);
+  const appId = useSettings((s) => s.wechatAppId);
+  const autoSummary = useSettings((s) => s.wechatAutoSummary);
+  const defaultCover = useSettings((s) => s.wechatDefaultCover);
   const setPreference = useSettings((s) => s.setPreference);
+  const setToast = useUI((s) => s.setToast);
+
+  const [draftName, setDraftName] = useState(accountName);
+  const [draftAppId, setDraftAppId] = useState(appId);
+  const [secretDraft, setSecretDraft] = useState("");
+  const [secretStored, setSecretStored] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftName(accountName);
+    setDraftAppId(appId);
+  }, [accountName, appId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!appId) {
+      setSecretStored(false);
+      return;
+    }
+    api
+      .secretHas(`wechat:${appId}`)
+      .then((v) => !cancelled && setSecretStored(v))
+      .catch(() => !cancelled && setSecretStored(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [appId]);
+
+  const bound = Boolean(accountName && appId && secretStored);
+
+  const bind = async () => {
+    if (!draftAppId.trim()) {
+      setMsg("请填写 AppID");
+      return;
+    }
+    if (!draftName.trim()) {
+      setMsg("请填写公众号名称");
+      return;
+    }
+    if (!secretDraft.trim() && !secretStored) {
+      setMsg("请填写 AppSecret");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (secretDraft) {
+        await api.secretSet(`wechat:${draftAppId}`, secretDraft);
+      }
+      setPreference("wechatAccountName", draftName.trim());
+      setPreference("wechatAppId", draftAppId.trim());
+      setSecretStored(true);
+      setSecretDraft("");
+      setMsg("✓ 已绑定，凭据写入系统钥匙串");
+      setToast({ stage: "done", message: "公众号已绑定" });
+      setTimeout(() => setToast(null), 2400);
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unbind = async () => {
+    if (!window.confirm(`解绑「${accountName || appId}」？凭据会从钥匙串删除。`)) return;
+    setBusy(true);
+    try {
+      if (appId) await api.secretDelete(`wechat:${appId}`);
+      setPreference("wechatAccountName", "");
+      setPreference("wechatAppId", "");
+      setSecretStored(false);
+      setSecretDraft("");
+      setDraftName("");
+      setDraftAppId("");
+      setMsg("已解绑");
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <h2 className="settings-h">微信公众号</h2>
-      <p className="settings-sub">设置文章样式、绑定公众号、扫码登录管理推送。</p>
+      <p className="settings-sub">
+        绑定公众号、配置发布样式与默认作者署名。凭据保存在系统钥匙串。
+      </p>
+
       <div className="settings-card">
         <div className="settings-card-h">绑定的公众号</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <LabelWithTip tip="绑定后可以一键导出为公众号草稿。">
-              尚未绑定任何公众号
-            </LabelWithTip>
-          </div>
-          <button className="settings-btn primary">扫码绑定</button>
-        </div>
+        {bound ? (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">{accountName}</div>
+                <div className="settings-help">AppID · {appId}</div>
+              </div>
+              <span
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: "var(--accent-glow)",
+                  color: "var(--accent)",
+                  borderRadius: 4,
+                }}
+              >
+                已绑定
+              </span>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-help">
+                  解绑后将无法一键推送草稿；样式与摘要设置会保留。
+                </div>
+              </div>
+              <button
+                className="settings-btn"
+                disabled={busy}
+                onClick={unbind}
+                style={{ color: "#ff453a" }}
+              >
+                解绑公众号
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <LabelWithTip tip="在公众平台 → 开发 → 基本配置 中查到 AppID。">
+                  AppID
+                </LabelWithTip>
+              </div>
+              <input
+                type="text"
+                value={draftAppId}
+                onChange={(e) => setDraftAppId(e.target.value)}
+                placeholder="wx...."
+                style={{
+                  padding: "5px 10px",
+                  background: "var(--bg-input)",
+                  border: "0.5px solid var(--border-strong)",
+                  borderRadius: 6,
+                  width: 220,
+                  fontSize: 12,
+                  color: "var(--text)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <LabelWithTip tip="只在本机展示，方便区分多账号。">
+                  公众号名称
+                </LabelWithTip>
+              </div>
+              <input
+                type="text"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder="例如：markio 实验室"
+                style={{
+                  padding: "5px 10px",
+                  background: "var(--bg-input)",
+                  border: "0.5px solid var(--border-strong)",
+                  borderRadius: 6,
+                  width: 220,
+                  fontSize: 12,
+                  color: "var(--text)",
+                }}
+              />
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <LabelWithTip tip="AppSecret 直接写入系统钥匙串；前端只检测是否存在。">
+                  AppSecret
+                </LabelWithTip>
+                <div className="settings-help">
+                  {secretStored ? "已存储 · 输入新值替换" : "未保存"}
+                </div>
+              </div>
+              <input
+                type="password"
+                value={secretDraft}
+                onChange={(e) => setSecretDraft(e.target.value)}
+                placeholder={secretStored ? "已保存 · 留空保持不变" : "公众号 AppSecret"}
+                style={{
+                  padding: "5px 10px",
+                  background: "var(--bg-input)",
+                  border: "0.5px solid var(--border-strong)",
+                  borderRadius: 6,
+                  width: 220,
+                  fontSize: 12,
+                  color: "var(--text)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            </div>
+            <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
+              <div className="settings-row-l">
+                <div className="settings-help">{msg ?? "填写后保存即可绑定。"}</div>
+              </div>
+              <button
+                className="settings-btn primary"
+                disabled={busy}
+                onClick={bind}
+              >
+                {busy ? "保存中…" : "保存并绑定"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
+
       <div className="settings-card">
-        <div className="settings-card-h">推送行为</div>
+        <div className="settings-card-h">发布默认</div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">默认导出样式</div>
+            <div className="settings-help">在导出抽屉中可临时切换。</div>
           </div>
           <SelectBtn
             value={style}
@@ -1320,11 +1576,513 @@ function WeChat() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip="由 AI 助手提取前 120 字。">
-              AI 自动生成摘要
+            <LabelWithTip tip="发布时自动调用 AI 助手生成摘要；未配置 AI 时退化为正文前 120 字。">
+              自动生成摘要
             </LabelWithTip>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={autoSummary}
+            onChange={(v) => setPreference("wechatAutoSummary", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="发布时优先取文章里的第一张本地图片，作为公众号封面。">
+              默认封面
+            </LabelWithTip>
+          </div>
+          <SelectBtn
+            value={defaultCover}
+            options={WECHAT_COVER_OPTIONS}
+            onChange={(v) => setPreference("wechatDefaultCover", v)}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function WxAssistant() {
+  const enabled = useSettings((s) => s.wxAssistantEnabled);
+  const webhook = useSettings((s) => s.wxAssistantWebhook);
+  const dailyDigest = useSettings((s) => s.wxAssistantDailyDigest);
+  const digestTime = useSettings((s) => s.wxAssistantDigestTime);
+  const publishHook = useSettings((s) => s.wxAssistantPublishHook);
+  const setPreference = useSettings((s) => s.setPreference);
+  const setToast = useUI((s) => s.setToast);
+  const [draftHook, setDraftHook] = useState(webhook);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+
+  useEffect(() => setDraftHook(webhook), [webhook]);
+
+  const saveHook = () => {
+    setPreference("wxAssistantWebhook", draftHook.trim());
+    setTestMsg("✓ 已保存");
+  };
+
+  const test = async () => {
+    if (!draftHook.trim()) {
+      setTestMsg("请先填入 webhook URL");
+      return;
+    }
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      // 通过浏览器 fetch 发一条测试消息（企业微信机器人 / Server酱 / 自建桥兼容 POST JSON）
+      const res = await fetch(draftHook.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          msgtype: "text",
+          text: { content: "[markio] 微信助手连通测试 · 收到这条消息即表示配置成功。" },
+          // 兼容 Server 酱风格
+          title: "markio 微信助手测试",
+          desp: "收到这条消息即表示配置成功。",
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setTestMsg("✓ 已发送，请在微信里查收");
+      setToast({ stage: "done", message: "测试消息已发送" });
+      setTimeout(() => setToast(null), 2400);
+    } catch (e) {
+      setTestMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <>
+      <h2 className="settings-h">微信助手</h2>
+      <p className="settings-sub">
+        通过企业微信机器人 / Server 酱 / 自建 webhook，把 markio 的操作通知推到你的微信。
+      </p>
+
+      <div className="settings-card">
+        <div className="settings-card-h">总开关</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="关闭后所有通知都不会发出，已配置的 webhook 不会丢失。">
+              启用微信助手
+            </LabelWithTip>
+          </div>
+          <Toggle
+            on={enabled}
+            onChange={(v) => setPreference("wxAssistantEnabled", v)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">Webhook 地址</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="支持企业微信群机器人、Server 酱（sctapi.ftqq.com）、自建桥。POST JSON 即可。">
+              推送 URL
+            </LabelWithTip>
+            <div className="settings-help">
+              {webhook ? "已保存" : "未配置 · 推送将失败"}
+            </div>
+          </div>
+          <input
+            type="text"
+            value={draftHook}
+            onChange={(e) => setDraftHook(e.target.value)}
+            onBlur={saveHook}
+            placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+            style={{
+              padding: "5px 10px",
+              background: "var(--bg-input)",
+              border: "0.5px solid var(--border-strong)",
+              borderRadius: 6,
+              width: 320,
+              fontSize: 12,
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+            }}
+          />
+        </div>
+        <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
+          <div className="settings-row-l">
+            <div className="settings-label" style={{ color: "var(--accent)" }}>
+              发送测试
+            </div>
+            <div className="settings-help">
+              {testMsg ?? "向上面的 webhook 推一条 [markio] 测试消息。"}
+            </div>
+          </div>
+          <button
+            className="settings-btn primary"
+            disabled={testing || !enabled}
+            onClick={test}
+            title={!enabled ? "请先打开总开关" : undefined}
+          >
+            {testing ? "发送中…" : "发送测试"}
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">通知触发</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="公众号草稿创建成功后，向微信助手发送一条带链接的通知。">
+              发布公众号草稿后通知
+            </LabelWithTip>
+          </div>
+          <Toggle
+            on={publishHook && enabled}
+            onChange={(v) => enabled && setPreference("wxAssistantPublishHook", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="每天定时把当日新增 / 修改过的笔记标题与摘要推送一次。">
+              每日笔记摘要推送
+            </LabelWithTip>
+          </div>
+          <Toggle
+            on={dailyDigest && enabled}
+            onChange={(v) => enabled && setPreference("wxAssistantDailyDigest", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">摘要推送时间</div>
+            <div className="settings-help">24 小时制 · 仅在每日摘要打开时生效</div>
+          </div>
+          <input
+            type="time"
+            value={digestTime}
+            onChange={(e) => setPreference("wxAssistantDigestTime", e.target.value)}
+            disabled={!enabled || !dailyDigest}
+            style={{
+              padding: "5px 10px",
+              background: "var(--bg-input)",
+              border: "0.5px solid var(--border-strong)",
+              borderRadius: 6,
+              fontSize: 12,
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+              opacity: !enabled || !dailyDigest ? 0.5 : 1,
+            }}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SmartChannelSettings() {
+  const enabled = useSettings((s) => s.smartChannelEnabled);
+  const channelId = useSettings((s) => s.smartChannelId);
+  const modelSource = useSettings((s) => s.smartChannelModelSource);
+  const scope = useSettings((s) => s.smartChannelScope);
+  const dailyLimit = useSettings((s) => s.smartChannelDailyLimit);
+  const maxChunks = useSettings((s) => s.smartChannelMaxChunks);
+  const includeAttachments = useSettings((s) => s.smartChannelIncludeAttachments);
+  const responseStyle = useSettings((s) => s.smartChannelResponseStyle);
+  const setPreference = useSettings((s) => s.setPreference);
+  const setToast = useUI((s) => s.setToast);
+  const ws = useWorkspaceStore((s) => s.activeWorkspace());
+
+  const [usage, setUsage] = useState<{ used: number; limit: number }>({
+    used: 0,
+    limit: dailyLimit,
+  });
+  const [testQuery, setTestQuery] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testAnswer, setTestAnswer] = useState<string | null>(null);
+  const [testRefs, setTestRefs] = useState<
+    Array<{ path: string; heading: string }>
+  >([]);
+  const [testErr, setTestErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUsage(getSmartChannelUsage());
+  }, [enabled, dailyLimit]);
+
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(channelId);
+      setToast({ stage: "done", message: "通道 ID 已复制" });
+      setTimeout(() => setToast(null), 1800);
+    } catch {
+      setToast({ stage: "error", message: "复制失败" });
+      setTimeout(() => setToast(null), 1800);
+    }
+  };
+
+  const rotate = () => {
+    if (!window.confirm("重置通道 ID 会让现有外部 app 失效，确定继续？")) return;
+    setPreference("smartChannelId", generateChannelId());
+  };
+
+  const runTest = async () => {
+    if (!testQuery.trim()) {
+      setTestErr("请输入问题");
+      return;
+    }
+    setTesting(true);
+    setTestErr(null);
+    setTestAnswer(null);
+    setTestRefs([]);
+    try {
+      const res = await smartChannelQuery({ query: testQuery.trim() });
+      setTestAnswer(res.answer);
+      setTestRefs(res.refs.map((r) => ({ path: r.path, heading: r.heading })));
+      setUsage(getSmartChannelUsage());
+    } catch (e) {
+      setTestErr((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <>
+      <h2 className="settings-h">智能通道</h2>
+      <p className="settings-sub">
+        把 markio 文档库做成一个可被外部应用调用的 AI 查询通道：在其他工具里提问，
+        会自动检索当前仓库 + 走 AI 模型给出答案。
+      </p>
+
+      <div className="settings-card">
+        <div className="settings-card-h">总开关</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="关闭后通道 ID 仍然保留，但所有调用都会被拒绝。">
+              启用智能通道
+            </LabelWithTip>
+            <div className="settings-help">
+              {ws ? `当前仓库 · ${ws.name}` : "尚未打开任何仓库 · 通道将无法检索"}
+            </div>
+          </div>
+          <Toggle
+            on={enabled}
+            onChange={(v) => setPreference("smartChannelEnabled", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="发给外部应用作为唯一标识；重置后旧 ID 立即失效。">
+              通道 ID
+            </LabelWithTip>
+            <div
+              className="settings-help"
+              style={{ fontFamily: "var(--font-mono)", userSelect: "all" }}
+            >
+              {channelId}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="settings-btn" onClick={copyId}>
+              复制
+            </button>
+            <button className="settings-btn" onClick={rotate}>
+              重置
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">检索与回答</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="决定从哪里捞片段：当前文档够窄、所有仓库最广。">
+              检索范围
+            </LabelWithTip>
+          </div>
+          <SelectBtn
+            value={scope}
+            options={SMART_CHANNEL_SCOPE_OPTIONS}
+            onChange={(v) => setPreference("smartChannelScope", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="挑选模型。aiDefault 表示使用 AI 助手当前配置。">
+              模型来源
+            </LabelWithTip>
+          </div>
+          <SelectBtn
+            value={modelSource}
+            options={SMART_CHANNEL_MODEL_OPTIONS}
+            onChange={(v) => setPreference("smartChannelModelSource", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">每次回答带回的片段数</div>
+          </div>
+          <SelectBtn
+            value={maxChunks}
+            options={SMART_CHANNEL_CHUNKS_OPTIONS}
+            onChange={(v) => setPreference("smartChannelMaxChunks", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">回答风格</div>
+          </div>
+          <SelectBtn
+            value={responseStyle}
+            options={SMART_CHANNEL_STYLE_OPTIONS}
+            onChange={(v) => setPreference("smartChannelResponseStyle", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <LabelWithTip tip="试验中：把表格 / 图片附件的元数据一起带回。">
+              附带附件元信息
+            </LabelWithTip>
+          </div>
+          <Toggle
+            on={includeAttachments}
+            onChange={(v) => setPreference("smartChannelIncludeAttachments", v)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">配额</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">每日上限</div>
+            <div className="settings-help">
+              今日已调用 {usage.used} / {usage.limit} 次
+            </div>
+          </div>
+          <SelectBtn
+            value={dailyLimit}
+            options={SMART_CHANNEL_LIMIT_OPTIONS}
+            onChange={(v) => setPreference("smartChannelDailyLimit", v)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">提问测试</div>
+        <div className="settings-row" style={{ alignItems: "flex-start" }}>
+          <div className="settings-row-l" style={{ flex: 1 }}>
+            <LabelWithTip tip="模拟外部 app 通过通道发起的查询；结果与外部一致。">
+              测试问题
+            </LabelWithTip>
+            <textarea
+              value={testQuery}
+              onChange={(e) => setTestQuery(e.target.value)}
+              placeholder={`例如：本周我写过哪些和"反脆弱"相关的笔记？`}
+              rows={2}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                padding: "7px 10px",
+                background: "var(--bg-input)",
+                border: "0.5px solid var(--border-strong)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--text)",
+                resize: "vertical",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          <button
+            className="settings-btn primary"
+            onClick={runTest}
+            disabled={testing || !enabled}
+            title={!enabled ? "请先开启总开关" : undefined}
+            style={{ marginLeft: 12, alignSelf: "flex-end" }}
+          >
+            {testing ? "查询中…" : "发送"}
+          </button>
+        </div>
+        {testErr && (
+          <div
+            className="settings-help"
+            style={{ color: "#ff453a", padding: "0 16px 8px" }}
+          >
+            {testErr}
+          </div>
+        )}
+        {testAnswer && (
+          <div style={{ padding: "0 16px 12px", borderTop: "1px solid var(--border)" }}>
+            <div
+              className="settings-help"
+              style={{ marginTop: 8, color: "var(--text-2)" }}
+            >
+              回答
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                padding: 10,
+                background: "var(--bg-pane-2)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.6,
+                color: "var(--text)",
+              }}
+            >
+              {testAnswer}
+            </div>
+            {testRefs.length > 0 && (
+              <>
+                <div className="settings-help" style={{ marginTop: 10 }}>
+                  引用片段
+                </div>
+                <ul
+                  style={{
+                    margin: "4px 0 0",
+                    padding: 0,
+                    listStyle: "none",
+                    fontSize: 11.5,
+                  }}
+                >
+                  {testRefs.map((r, i) => (
+                    <li
+                      key={i}
+                      style={{
+                        padding: "3px 0",
+                        color: "var(--text-3)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      · {r.path.split("/").slice(-1)[0]}
+                      {r.heading ? ` — ${r.heading}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">如何在其他工具里用</div>
+        <div style={{ padding: "10px 16px 14px", fontSize: 12, lineHeight: 1.7, color: "var(--text-2)" }}>
+          <p style={{ margin: 0 }}>
+            智能通道在浏览器环境暴露为 <code>window.__markioSmartChannel</code>；
+            在 Tauri 桌面端会附带本机进程内调用。外部应用可通过以下方式触发：
+          </p>
+          <ol style={{ margin: "8px 0 0 18px", padding: 0 }}>
+            <li>
+              命令面板（<code>⌘K</code>）搜索"<b>通过智能通道查询</b>"，把当前问题发给同一引擎。
+            </li>
+            <li>
+              Raycast / Alfred / 自建脚本通过 markio 的 webhook 触发器（路线图），
+              POST <code>{`{"channelId":"${channelId.slice(0, 14)}…","query":"…"}`}</code>。
+            </li>
+            <li>
+              微信助手 webhook（见左侧"微信助手"）收到查询消息时自动转发到此通道，回答再推回微信。
+            </li>
+          </ol>
         </div>
       </div>
     </>

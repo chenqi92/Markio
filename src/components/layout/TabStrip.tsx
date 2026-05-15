@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { useTabs } from "@/stores/tabs";
@@ -8,19 +8,66 @@ import { writeText } from "@/lib/clipboard";
 import { classNames } from "@/lib/utils";
 import type { TabInfo } from "@/types";
 
+type TabStripItem = Pick<TabInfo, "id" | "path" | "title" | "dirty" | "pinned">;
+
+function selectTabStripItems(): TabStripItem[] {
+  return useTabs
+    .getState()
+    .tabs.map(({ id, path, title, dirty, pinned }) => ({
+      id,
+      path,
+      title,
+      dirty,
+      pinned,
+    }));
+}
+
+function sameTabStripItems(a: TabStripItem[], b: TabStripItem[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.path !== y.path ||
+      x.title !== y.title ||
+      x.dirty !== y.dirty ||
+      x.pinned !== y.pinned
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function useTabStripItems(): TabStripItem[] {
+  const [items, setItems] = useState(selectTabStripItems);
+  useEffect(
+    () =>
+      useTabs.subscribe(() => {
+        setItems((prev) => {
+          const next = selectTabStripItems();
+          return sameTabStripItems(prev, next) ? prev : next;
+        });
+      }),
+    [],
+  );
+  return items;
+}
+
 export function TabStrip() {
-  const tabs = useTabs((s) => s.tabs);
+  const tabs = useTabStripItems();
   const activeId = useTabs((s) => s.activeId);
   const setActive = useTabs((s) => s.setActive);
   const closeTab = useTabs((s) => s.closeTab);
   const togglePin = useTabs((s) => s.togglePin);
   const reorderTabs = useTabs((s) => s.reorderTabs);
   const setToast = useUI((s) => s.setToast);
-  const [ctx, setCtx] = useState<{ x: number; y: number; tab: TabInfo } | null>(null);
+  const [ctx, setCtx] = useState<{ x: number; y: number; tab: TabStripItem } | null>(null);
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
-  const confirmAndClose = (t: TabInfo) => {
+  const confirmAndClose = (t: TabStripItem) => {
     if (t.dirty) {
       const ok = window.confirm(
         `${t.title} 还有未保存的修改。继续关闭会丢失。`,
@@ -30,7 +77,7 @@ export function TabStrip() {
     closeTab(t.id);
   };
 
-  const items = (t: TabInfo): CtxItem[] => [
+  const items = (t: TabStripItem): CtxItem[] => [
     {
       label: t.pinned ? "取消固定" : "固定到最前",
       icon: "pin",

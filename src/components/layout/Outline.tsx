@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import type { Backlink, OutlineItem } from "@/types";
@@ -72,9 +72,24 @@ export function Outline({
   const closed = !useUI((s) => s.outlineOpen);
   const toggle = useUI((s) => s.toggleOutline);
   const [tab, setTab] = useState<"outline" | "info" | "links">("outline");
-  const file = useTabs((s) => s.activeTab());
+  const fileId = useTabs((s) => s.activeId);
+  const fileWorkspaceId = useTabs((s) => {
+    const id = s.activeId;
+    const t = id ? s.tabs.find((x) => x.id === id) : undefined;
+    return t?.workspaceId;
+  });
+  const filePath = useTabs((s) => {
+    const id = s.activeId;
+    const t = id ? s.tabs.find((x) => x.id === id) : undefined;
+    return t?.path;
+  });
+  const fileDirty = useTabs((s) => {
+    const id = s.activeId;
+    const t = id ? s.tabs.find((x) => x.id === id) : undefined;
+    return t?.dirty ?? false;
+  });
   const ws = useWorkspace((s) =>
-    file ? s.workspaces.find((w) => w.id === file.workspaceId) : undefined,
+    fileWorkspaceId ? s.workspaces.find((w) => w.id === fileWorkspaceId) : undefined,
   );
   const [links, setLinks] = useState<Backlink[]>([]);
   const [mentions, setMentions] = useState<Backlink[]>([]);
@@ -83,7 +98,7 @@ export function Outline({
 
   useEffect(() => {
     const seq = ++linksSeqRef.current;
-    if (tab !== "links" || !file || !ws) {
+    if (tab !== "links" || !filePath || !ws) {
       setLinks([]);
       setMentions([]);
       setLoadingLinks(false);
@@ -91,8 +106,8 @@ export function Outline({
     }
     setLoadingLinks(true);
     Promise.all([
-      api.backlinks(ws.path, file.path).catch(() => [] as Backlink[]),
-      api.mentions(ws.path, file.path).catch(() => [] as Backlink[]),
+      api.backlinks(ws.path, filePath).catch(() => [] as Backlink[]),
+      api.mentions(ws.path, filePath).catch(() => [] as Backlink[]),
     ])
       .then(([bl, mn]) => {
         if (seq !== linksSeqRef.current) return;
@@ -104,7 +119,7 @@ export function Outline({
       .finally(() => {
         if (seq === linksSeqRef.current) setLoadingLinks(false);
       });
-  }, [tab, file?.path, ws?.path]);
+  }, [tab, filePath, ws?.path]);
 
   const openPath = useTabs((s) => s.openPath);
 
@@ -156,7 +171,7 @@ export function Outline({
               <Metric v={String(words)} l="字数" />
               <Metric v={`${readingMinutes} 分钟`} l="阅读" />
               <Metric v={String(items.length)} l="章节" />
-              <Metric v={file ? (file.dirty ? "未保存" : "已保存") : "—"} l="状态" />
+              <Metric v={fileId ? (fileDirty ? "未保存" : "已保存") : "—"} l="状态" />
             </div>
             <div className="outline-h" style={{ marginTop: 20, padding: 0 }}>
               路径
@@ -173,7 +188,7 @@ export function Outline({
                 WebkitUserSelect: "text",
               }}
             >
-              {file?.path ?? "—"}
+              {filePath ?? "—"}
             </div>
           </div>
         )}
@@ -244,22 +259,23 @@ export function Outline({
 }
 
 function OutlinePanel({ items }: { items: OutlineItem[] }) {
-  const file = useTabs((s) => s.activeTab());
+  const fileId = useTabs((s) => s.activeId);
   const updateContent = useTabs((s) => s.updateContent);
-  const content = file?.content ?? "";
-  const spans = useMemo(() => computeHeadingSpans(content), [content]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
   const reorder = (sourceIdx: number, targetIdx: number) => {
-    if (!file) return;
+    if (!fileId) return;
     if (sourceIdx === targetIdx) return;
+    const current = useTabs.getState().tabs.find((t) => t.id === fileId);
+    const content = current?.content ?? "";
+    const spans = computeHeadingSpans(content);
     const src = spans[sourceIdx];
     const tgt = spans[targetIdx];
     if (!src || !tgt) return;
     const next = moveSection(content, src.from, src.to, tgt.from);
     if (next !== content) {
-      updateContent(file.id, next);
+      updateContent(fileId, next);
     }
   };
 
@@ -280,7 +296,7 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
           <a
             key={ix}
             href={`#${it.anchor}`}
-            draggable={!!spans[ix]}
+            draggable
             className={
               "outline-item lvl-" +
               Math.min(it.level, 4) +

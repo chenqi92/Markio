@@ -46,7 +46,7 @@ export function AppShell() {
   const openSettings = useUI((s) => s.openSettings);
   const openAi = useUI((s) => s.openAi);
   const openWechat = useUI((s) => s.openWechat);
-  const tab = useTabs((s) => s.activeTab());
+  const activeTabId = useTabs((s) => s.activeId);
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const fontSize = useSettings((s) => s.fontSize);
@@ -78,7 +78,7 @@ export function AppShell() {
             {sidebarOpen && <Sidebar />}
             {sidebarOpen && <SidebarResizer />}
             <div className={classNames("main", focusMode && "focus")}>
-              {tab ? (
+              {activeTabId ? (
                 <>
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />

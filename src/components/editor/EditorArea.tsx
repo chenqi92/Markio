@@ -528,6 +528,110 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     debouncedSave(tabId);
   }, [tabId, dirty, autosave, debouncedSave, tab?.content]);
 
+  const allowBubble =
+    shortcutStyle === "all" || shortcutStyle === "bubble";
+  const allowSlash = shortcutStyle === "all" || shortcutStyle === "slash";
+
+  const handleContentChange = useCallback(
+    (next: string) => {
+      if (tabId) updateContent(tabId, next);
+    },
+    [tabId, updateContent],
+  );
+
+  const handleTableContextMenu = useCallback(
+    (info: {
+      coords: { x: number; y: number };
+      row: number;
+      col: number;
+      rows: number;
+      cols: number;
+      rect: TableSelectionRect | null;
+    }) => {
+      setBubble(null);
+      setSlash(null);
+      setTableMenu({
+        x: info.coords.x,
+        y: info.coords.y,
+        row: info.row,
+        col: info.col,
+        rows: info.rows,
+        cols: info.cols,
+        rect: info.rect,
+      });
+    },
+    [],
+  );
+
+  const handleSelectionChange = useCallback(
+    (info: {
+      hasSelection: boolean;
+      coords: { x: number; y: number } | null;
+    }) => {
+      if (!allowBubble) {
+        setBubble(null);
+      } else if (!info.hasSelection || !info.coords) {
+        setBubble(null);
+      } else {
+        setBubble(info.coords);
+      }
+      // 表格 toolbar：cursor 落在表格行就显示
+      const view = getEditor();
+      if (view) {
+        const tab = detectTable(view);
+        if (tab) {
+          const r = view.coordsAtPos(
+            view.state.selection.main.head,
+          );
+          if (r) {
+            setTableTb({
+              x: r.left,
+              y: Math.max(8, r.top - 36),
+              align: tab.aligns[tab.cursorCol] ?? null,
+              row: Math.max(0, tab.cursorRow),
+              col: tab.cursorCol,
+              rows: tab.cells.length,
+              cols: tab.aligns.length,
+            });
+            return;
+          }
+        }
+      }
+      setTableTb(null);
+    },
+    [allowBubble],
+  );
+
+  const handleSlashTrigger = useCallback((coords: { x: number; y: number }) => {
+    setSlash(coords);
+  }, []);
+
+  const handleAutocompleteUpdate = useCallback(
+    (
+      s:
+        | {
+            kind: AcKind;
+            query: string;
+            triggerLen: number;
+            coords: { x: number; y: number };
+          }
+        | null,
+    ) => {
+      if (!s) {
+        setAc(null);
+        return;
+      }
+      setAc({
+        kind: s.kind,
+        query: s.query,
+        triggerLen: s.triggerLen,
+        x: s.coords.x,
+        y: s.coords.y,
+      });
+    },
+    [],
+  );
+
   if (!tab) {
     return null;
   }
@@ -537,10 +641,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     renderMode === "split" ||
     renderMode === "wysiwyg";
   const showPreview = renderMode === "preview" || renderMode === "split";
-
-  const allowBubble =
-    shortcutStyle === "all" || shortcutStyle === "bubble";
-  const allowSlash = shortcutStyle === "all" || shortcutStyle === "slash";
 
   return (
     <div
@@ -563,7 +663,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           <SourceEditor
             value={tab.content}
             wysiwyg={renderMode === "wysiwyg"}
-            onChange={(v) => updateContent(tab.id, v)}
+            onChange={handleContentChange}
             onScroll={handleSourceScroll}
             scrollTarget={
               scrollSync?.target === "source"
@@ -571,67 +671,12 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
                 : null
             }
             onPasteImages={handlePasteImages}
-            onTableContextMenu={(info) => {
-              setBubble(null);
-              setSlash(null);
-              setTableMenu({
-                x: info.coords.x,
-                y: info.coords.y,
-                row: info.row,
-                col: info.col,
-                rows: info.rows,
-                cols: info.cols,
-                rect: info.rect,
-              });
-            }}
-            onSelectionChange={(info) => {
-              if (!allowBubble) {
-                setBubble(null);
-              } else if (!info.hasSelection || !info.coords) {
-                setBubble(null);
-              } else {
-                setBubble(info.coords);
-              }
-              // 表格 toolbar：cursor 落在表格行就显示
-              const view = getEditor();
-              if (view) {
-                const tab = detectTable(view);
-                if (tab) {
-                  const r = view.coordsAtPos(
-                    view.state.selection.main.head,
-                  );
-                  if (r) {
-                    setTableTb({
-                      x: r.left,
-                      y: Math.max(8, r.top - 36),
-                      align: tab.aligns[tab.cursorCol] ?? null,
-                      row: Math.max(0, tab.cursorRow),
-                      col: tab.cursorCol,
-                      rows: tab.cells.length,
-                      cols: tab.aligns.length,
-                    });
-                    return;
-                  }
-                }
-              }
-              setTableTb(null);
-            }}
+            onTableContextMenu={handleTableContextMenu}
+            onSelectionChange={handleSelectionChange}
             onSlashTrigger={
-              allowSlash ? (coords) => setSlash(coords) : undefined
+              allowSlash ? handleSlashTrigger : undefined
             }
-            onAutocompleteUpdate={(s) => {
-              if (!s) {
-                setAc(null);
-                return;
-              }
-              setAc({
-                kind: s.kind,
-                query: s.query,
-                triggerLen: s.triggerLen,
-                x: s.coords.x,
-                y: s.coords.y,
-              });
-            }}
+            onAutocompleteUpdate={handleAutocompleteUpdate}
           />
         </div>
       )}
@@ -662,7 +707,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               ? { ratio: scrollSync.ratio, nonce: scrollSync.nonce }
               : null
           }
-          onSourceChange={(next) => updateContent(tab.id, next)}
+          onSourceChange={handleContentChange}
         />
       )}
       <Outline

@@ -14,7 +14,10 @@ export function FindBar() {
     useUI.getState().openFind(false);
     setQ("");
   };
-  const content = useTabs((s) => s.activeTab()?.content ?? "");
+  const content = useTabs((s) => {
+    if (!open && !q) return "";
+    return s.activeTab()?.content ?? "";
+  });
 
   // 总数：小文档走 JS indexOf；> 30KB 在桌面端走 Rust，避免主线程被卡
   const jsTotal = useMemo(() => {

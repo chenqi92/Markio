@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import CodeMirror, {
   type ReactCodeMirrorRef,
   EditorView,
@@ -66,7 +66,7 @@ interface Props {
   wysiwyg?: boolean;
 }
 
-export function SourceEditor({
+export const SourceEditor = memo(function SourceEditor({
   value,
   onChange,
   onScroll,
@@ -205,7 +205,7 @@ export function SourceEditor({
 
   useEffect(() => {
     applyScrollTarget();
-  }, [applyScrollTarget, value]);
+  }, [applyScrollTarget]);
 
   useEffect(() => {
     const view = ref.current?.view;
@@ -423,7 +423,7 @@ export function SourceEditor({
       />
     </div>
   );
-}
+});
 
 /** 是否处于围栏代码块 / 行内代码 / 链接 URL 中：跳过智能引号 */
 function isInsideCodeOrUrl(view: EditorView, pos: number): boolean {

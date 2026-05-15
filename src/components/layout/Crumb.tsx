@@ -4,12 +4,15 @@ import { useTabs } from "@/stores/tabs";
 
 export function Crumb() {
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const tab = useTabs((s) => s.activeTab());
-  if (!ws || !tab) return null;
-  const segs = crumbSegments(ws.path, tab.path);
+  const tabPath = useTabs((s) => {
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.path : undefined;
+  });
+  if (!ws || !tabPath) return null;
+  const segs = crumbSegments(ws.path, tabPath);
   if (segs.length === 0) return null;
   return (
-    <div className="crumb" title={tab.path}>
+    <div className="crumb" title={tabPath}>
       {segs.map((s, i) => (
         <span key={i} style={{ display: "inline-flex", alignItems: "center" }}>
           <span className={"seg" + (i === segs.length - 1 ? " current" : "")}>{s}</span>

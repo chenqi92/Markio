@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
@@ -19,6 +19,17 @@ function relativeTime(ts: number | null): string {
   if (hours < 24) return `${hours} 小时前同步`;
   const days = Math.round(hours / 24);
   return `${days} 天前同步`;
+}
+
+const textEncoder = new TextEncoder();
+
+function countLines(content: string): number {
+  if (!content) return 0;
+  let lines = 1;
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) lines++;
+  }
+  return lines;
 }
 
 export function StatusBar({
@@ -77,8 +88,17 @@ export function StatusBar({
     };
   }, [ws?.path]);
 
-  const charCount = tab?.content.length ?? 0;
-  const lineCount = tab?.content.split("\n").length ?? 0;
+  const content = tab?.content ?? "";
+  const deferredContent = useDeferredValue(content);
+  const charCount = content.length;
+  const lineCount = useMemo(
+    () => countLines(deferredContent),
+    [deferredContent],
+  );
+  const byteCount = useMemo(
+    () => textEncoder.encode(deferredContent).length,
+    [deferredContent],
+  );
   const saveLabel = tab
     ? tab.dirty
       ? autosave
@@ -115,7 +135,7 @@ export function StatusBar({
             {saveLabel}
           </span>
           <span className="item">{lineCount} 行 · {charCount} 字符</span>
-          <span className="item">{formatBytes(new TextEncoder().encode(tab.content).length)}</span>
+          <span className="item">{formatBytes(byteCount)}</span>
           {words !== undefined && (
             <span className="item">{words} 字</span>
           )}

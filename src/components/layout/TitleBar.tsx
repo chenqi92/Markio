@@ -22,7 +22,10 @@ export function TitleBar() {
   const openAi = useUI((s) => s.openAi);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const tab = useTabs((s) => s.activeTab());
+  const tabTitle = useTabs((s) => {
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.title : undefined;
+  });
 
   const isMac =
     typeof navigator !== "undefined" && /Mac|iPad|iPhone/.test(navigator.platform);
@@ -77,9 +80,9 @@ export function TitleBar() {
         </div>
       )}
       <div className="title-center" data-tauri-drag-region>
-        {tab ? (
+        {tabTitle ? (
           <>
-            <span data-tauri-drag-region>{tab.title}</span>
+            <span data-tauri-drag-region>{tabTitle}</span>
             {ws && (
               <span className="title-meta" data-tauri-drag-region>
                 <span

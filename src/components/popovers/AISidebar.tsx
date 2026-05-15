@@ -64,8 +64,11 @@ function formatRelative(ts: number): string {
 export function AISidebar({ aiMode }: { aiMode: string }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
-  const tabs = useTabs((s) => s.tabs);
-  const activeTab = useTabs((s) => s.activeTab());
+  const openCount = useTabs((s) => s.tabs.length);
+  const activePath = useTabs((s) => {
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.path : undefined;
+  });
 
   const sessions = useAISessions((s) => s.sessions);
   const activeId = useAISessions((s) => s.activeId);
@@ -91,8 +94,8 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
   }, [activeId, ws?.id, aiMode, createSession]);
 
   const fileCount = vaultFiles?.length ?? 0;
-  const folder = activeTab
-    ? activeTab.path.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop() ?? null
+  const folder = activePath
+    ? activePath.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop() ?? null
     : null;
 
   return (
@@ -156,7 +159,7 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
                 {m.hint({
                   fileCount,
                   folder,
-                  openCount: tabs.length,
+                  openCount,
                 })}
               </span>
             </button>

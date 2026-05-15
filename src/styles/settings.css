@@ -438,6 +438,7 @@
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .settings-btn:hover { background: var(--bg-elev); }
 .settings-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }

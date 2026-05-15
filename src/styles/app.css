@@ -435,7 +435,9 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   color: var(--text);
   cursor: pointer;
   transition: all var(--tr, 160ms);
+  flex-shrink: 0;
 }
+.tb-quick-cap .bolt, .tb-ai-top .orb { flex-shrink: 0; }
 .tb-quick-cap:hover, .tb-ai-top:hover {
   background: var(--bg-elev);
   border-color: var(--border-strong);
@@ -545,6 +547,8 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   background: transparent;
   border: 0;
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .qc2-tseg:hover { color: var(--text); }
 .qc2-tseg.active {
@@ -625,6 +629,8 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   font-weight: 600;
   border: 0;
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .qc2-btn-ghost { background: transparent; color: var(--text-2); }
 .qc2-btn-ghost:hover { background: var(--bg-hover, var(--bg-pane)); color: var(--text); }

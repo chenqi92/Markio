@@ -8,6 +8,7 @@ import { RecentSection } from "./RecentSection";
 import { TrashSection } from "./TrashSection";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { writeText } from "@/lib/clipboard";
 import { useFileIcons } from "@/stores/fileIcons";
 import { api, parseError, pickDirectory } from "@/lib/api";
 import { useUI } from "@/stores/ui";
@@ -452,7 +453,7 @@ function TreeContextMenu({
       icon: "copy",
       onClick: async () => {
         try {
-          await navigator.clipboard.writeText(node.path);
+          await writeText(node.path);
           flash("已复制路径");
         } catch {
           /* ignore */

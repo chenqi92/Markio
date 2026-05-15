@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { api, parseError } from "@/lib/api";
 import { renderMermaidIn } from "@/lib/mermaid";
+import { writeText } from "@/lib/clipboard";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
@@ -108,7 +109,7 @@ export function AIAssistantMessage({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeText(text);
       setToast({ stage: "done", message: "已复制" });
       setTimeout(() => setToast(null), 1500);
     } catch {

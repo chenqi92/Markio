@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { writeText } from "@/lib/clipboard";
+import { openExternal } from "@/lib/opener";
 
 interface Item {
   name?: string;
@@ -292,7 +294,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
                       onClick={() => {
                         const cmd =
                           typeof s.ssh === "string" ? s.ssh : `ssh ${s.ip}`;
-                        void navigator.clipboard?.writeText(cmd);
+                        void writeText(cmd);
                       }}
                     >
                       ⌨ SSH
@@ -302,7 +304,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
                     <button
                       type="button"
                       title={s.panel}
-                      onClick={() => window.open(s.panel as string, "_blank", "noopener")}
+                      onClick={() => void openExternal(s.panel as string)}
                     >
                       ▦ 面板
                     </button>
@@ -311,7 +313,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
                     <button
                       type="button"
                       title={s.logs}
-                      onClick={() => window.open(s.logs as string, "_blank", "noopener")}
+                      onClick={() => void openExternal(s.logs as string)}
                     >
                       ≣ 日志
                     </button>

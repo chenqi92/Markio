@@ -67,6 +67,23 @@ export interface PasteImageResult {
   warning?: string | null;
 }
 
+export interface VaultFile {
+  path: string;
+  name: string;
+  stem: string;
+  mtime: number;
+  size: number;
+  tags: string[];
+  mentions: string[];
+}
+
+export interface VaultIndex {
+  files: VaultFile[];
+  tags: string[];
+  mentions: string[];
+  scannedAt: number;
+}
+
 export type RagProvider = "ollama" | "openai";
 export interface RagEmbedConfig {
   provider: RagProvider;
@@ -239,6 +256,9 @@ export const api = {
   listAttachments: (workspace: string, max = 200) =>
     invoke<Attachment[]>("fs_list_attachments", { workspace, max }),
 
+  /** 把文本（HTML / Markdown）写到 dialog.save 选定的绝对路径 */
+  exportWriteFile: (path: string, content: string) =>
+    invoke<void>("export_write_file", { path, content }),
   exportPandoc: (source: string, format: "epub" | "docx" | "rtf" | "odt", destPath: string) =>
     invoke<void>("export_pandoc", { source, format, destPath }),
 
@@ -270,6 +290,30 @@ export const api = {
     compress?: boolean;
     quality?: number;
   }) => invoke<PasteImageResult>("image_paste", { req }),
+  /** 拖入磁盘图片：Rust 直读路径，避免前端 base64 编码 */
+  pasteImageFromDisk: (req: {
+    workspace: string;
+    note: string;
+    srcPath: string;
+    upload: boolean;
+    keepLocal: boolean;
+    endpoint?: string;
+    compress?: boolean;
+    quality?: number;
+  }) => invoke<PasteImageResult>("image_paste_from_disk", { req }),
+  picgoPing: (endpoint: string) =>
+    invoke<{ ok: boolean; status: number; latencyMs: number; message?: string | null }>(
+      "picgo_ping",
+      { endpoint },
+    ),
+
+  /** 通过 Rust 直连 POST 一个 webhook（绕过 webview CORS） */
+  webhookPost: (url: string, bodyJson: string, timeoutSecs?: number) =>
+    invoke<{ ok: boolean; status: number; bodyExcerpt: string }>("webhook_post", {
+      url,
+      bodyJson,
+      timeoutSecs,
+    }),
 
   historySave: (workspace: string, file: string, content: string) =>
     invoke<void>("history_save", { workspace, file, content }),
@@ -286,6 +330,11 @@ export const api = {
       "fs_index_tokens",
       { workspace },
     ),
+
+  vaultIndexLoad: (workspace: string) =>
+    invoke<VaultIndex | null>("fs_vault_index_load", { workspace }),
+  vaultIndexBuild: (workspace: string, useCache = true) =>
+    invoke<VaultIndex>("fs_vault_index_build", { workspace, useCache }),
 
   themeList: () =>
     invoke<Array<{ id: string; name: string; path: string; size: number }>>(

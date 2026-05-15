@@ -4,6 +4,7 @@ import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { api } from "@/lib/api";
+import { writeText } from "@/lib/clipboard";
 import { classNames } from "@/lib/utils";
 import type { TabInfo } from "@/types";
 
@@ -41,7 +42,7 @@ export function TabStrip() {
       icon: "copy",
       onClick: async () => {
         try {
-          await navigator.clipboard.writeText(t.path);
+          await writeText(t.path);
           setToast({ stage: "done", message: "已复制路径" });
           setTimeout(() => setToast(null), 1500);
         } catch {

@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { writeText } from "./clipboard";
 import { useSettings } from "@/stores/settings";
 
 /** 拼一个独立 HTML 字符串：标题 + 主题 token + 渲染后的 markdown */
@@ -140,8 +141,9 @@ function readThemeTokens(): Record<string, string> {
 
 export async function exportHtml(title: string, source: string): Promise<void> {
   const html = await buildStandaloneHtml(title, source);
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  triggerDownload(blob, sanitizeFileName(title) + ".html");
+  const dest = await pickSaveTarget(title, "html", "HTML");
+  if (!dest) return;
+  await api.exportWriteFile(dest, html);
 }
 
 export async function exportPdf(title: string, source: string): Promise<void> {
@@ -164,7 +166,7 @@ export async function exportPdf(title: string, source: string): Promise<void> {
 }
 
 export async function copyMarkdown(source: string): Promise<void> {
-  await navigator.clipboard.writeText(source);
+  await writeText(source);
 }
 
 async function pickSaveTarget(
@@ -194,7 +196,7 @@ export async function exportDocx(title: string, source: string): Promise<void> {
 
 export async function copyHtml(title: string, source: string): Promise<void> {
   const html = await buildStandaloneHtml(title, source);
-  await navigator.clipboard.writeText(html);
+  await writeText(html);
 }
 
 function sanitizeFileName(name: string): string {
@@ -204,15 +206,3 @@ function sanitizeFileName(name: string): string {
     .trim() || "untitled";
 }
 
-function triggerDownload(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 500);
-}

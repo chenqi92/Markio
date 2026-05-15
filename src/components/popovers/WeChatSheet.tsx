@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { api } from "@/lib/api";
+import { writeText } from "@/lib/clipboard";
 
 const STYLES = [
   { id: "warm", name: "暖橘 · 杂志", accent: "#ff7a45" },
@@ -37,7 +38,7 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
     const inlined = inlineForWeChat(html, style.accent);
     const wrapped = `<section style="font-family: -apple-system, 'PingFang SC', sans-serif; line-height: 1.75; color: #333;">${inlined.html}</section>`;
     try {
-      await navigator.clipboard.writeText(wrapped);
+      await writeText(wrapped);
       const warnings: string[] = [];
       if (inlined.externalImages > 0)
         warnings.push(`${inlined.externalImages} 张外链图`);

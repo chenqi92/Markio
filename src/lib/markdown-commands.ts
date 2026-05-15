@@ -21,6 +21,45 @@ function buildTableMarkdown(rows: number, cols: number): string {
     .join("\n");
 }
 
+function splitDelimitedLine(line: string): string[] {
+  if (line.includes("\t")) return line.split("\t").map((cell) => cell.trim());
+  if (line.includes("|")) {
+    return line
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((cell) => cell.trim());
+  }
+  return line.split(/[,，]/).map((cell) => cell.trim());
+}
+
+function buildTableFromText(input: string): string | null {
+  const lines = input
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  const rows = lines
+    .map(splitDelimitedLine)
+    .filter((row) => row.length > 0 && row.some(Boolean));
+  if (rows.length === 0) return null;
+  const cols = Math.max(...rows.map((row) => row.length));
+  if (cols < 2) return null;
+  const padded = rows.map((row) => {
+    const next = row.slice();
+    while (next.length < cols) next.push("");
+    return next;
+  });
+  const header = padded[0];
+  const body = padded.length > 1 ? padded.slice(1) : [Array(cols).fill("")];
+  const separator = Array(cols).fill("---");
+  return [header, separator, ...body]
+    .map((row) => `| ${row.map((cell) => cell || " ").join(" | ")} |`)
+    .join("\n");
+}
+
 export const markdownCommands = {
   h1: () => prefixLine("# "),
   h2: () => prefixLine("## "),
@@ -64,6 +103,16 @@ export const markdownCommands = {
       selectText: "列 1",
     }),
   table: () => markdownCommands.insertTable(3, 3),
+  selectionToTable: () => {
+    const table = buildTableFromText(selectedText());
+    if (!table) {
+      markdownCommands.table();
+      return;
+    }
+    const firstCell = table.split("|")[1]?.trim();
+    if (firstCell) replaceSelection(table, { selectText: firstCell });
+    else replaceSelection(table);
+  },
   codeBlock: () =>
     insertBlock("```ts\n代码\n```", {
       atLineStart: true,

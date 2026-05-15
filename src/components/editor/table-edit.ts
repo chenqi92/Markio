@@ -88,6 +88,44 @@ function buildTable(cells: string[][], aligns: Array<"left" | "center" | "right"
   return lines.join("\n");
 }
 
+function padCell(value: string, width: number, align: "left" | "center" | "right" | null) {
+  const text = value || "";
+  const gap = Math.max(0, width - text.length);
+  if (align === "right") return " ".repeat(gap) + text;
+  if (align === "center") {
+    const left = Math.floor(gap / 2);
+    return " ".repeat(left) + text + " ".repeat(gap - left);
+  }
+  return text + " ".repeat(gap);
+}
+
+function buildPrettyTable(
+  cells: string[][],
+  aligns: Array<"left" | "center" | "right" | null>,
+): string {
+  const cols = Math.max(1, ...cells.map((r) => r.length), aligns.length);
+  const padded = cells.map((row) => {
+    const out = row.slice();
+    while (out.length < cols) out.push("");
+    return out;
+  });
+  const widths = Array.from({ length: cols }, (_, col) =>
+    Math.max(3, ...padded.map((row) => (row[col] || "").length)),
+  );
+  const rowLine = (row: string[]) =>
+    `| ${row.map((cell, col) => padCell(cell, widths[col], aligns[col] ?? null)).join(" | ")} |`;
+  const separator = widths.map((width, col) => {
+    const dashes = "-".repeat(Math.max(3, width));
+    const align = aligns[col] ?? null;
+    if (align === "center") return `:${dashes}:`;
+    if (align === "left") return `:${dashes}`;
+    if (align === "right") return `${dashes}:`;
+    return dashes;
+  });
+  return [rowLine(padded[0]), `| ${separator.join(" | ")} |`, ...padded.slice(1).map(rowLine)]
+    .join("\n");
+}
+
 function cellRangeInLine(lineText: string, lineFrom: number, col: number): { from: number; to: number } {
   const pipes: number[] = [];
   for (let i = 0; i < lineText.length; i++) {
@@ -328,16 +366,43 @@ export type TableAction =
   | { type: "insertRowAbove" }
   | { type: "insertRowBelow" }
   | { type: "duplicateRow" }
+  | { type: "moveRowUp" }
+  | { type: "moveRowDown" }
   | { type: "insertColLeft" }
   | { type: "insertColRight" }
+  | { type: "duplicateCol" }
+  | { type: "moveColLeft" }
+  | { type: "moveColRight" }
   | { type: "deleteRow" }
   | { type: "deleteCol" }
   | { type: "clearCell" }
   | { type: "clearRow" }
   | { type: "clearCol" }
+  | { type: "fillDown" }
+  | { type: "sortAsc" }
+  | { type: "sortDesc" }
+  | { type: "format" }
   | { type: "selectRow" }
   | { type: "selectCol" }
   | { type: "align"; value: "left" | "center" | "right" | null };
+
+function swapItems<T>(items: T[], a: number, b: number) {
+  const temp = items[a];
+  items[a] = items[b];
+  items[b] = temp;
+}
+
+function compareTableValues(a: string, b: string) {
+  const aa = a.trim();
+  const bb = b.trim();
+  const an = Number(aa.replace(/,/g, ""));
+  const bn = Number(bb.replace(/,/g, ""));
+  if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+  return aa.localeCompare(bb, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
 
 export function applyTableAction(view: EditorView, action: TableAction): boolean {
   const info = detectTable(view);
@@ -416,6 +481,18 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       targetRow = idx;
       break;
     }
+    case "moveRowUp": {
+      if (row <= 1) return false;
+      swapItems(cells, row, row - 1);
+      targetRow = row - 1;
+      break;
+    }
+    case "moveRowDown": {
+      if (row === 0 || row >= cells.length - 1) return false;
+      swapItems(cells, row, row + 1);
+      targetRow = row + 1;
+      break;
+    }
     case "insertColLeft": {
       for (const r of cells) r.splice(col, 0, "");
       aligns.splice(col, 0, null);
@@ -428,9 +505,30 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       targetCol = col + 1;
       break;
     }
+    case "duplicateCol": {
+      for (const r of cells) r.splice(col + 1, 0, r[col] ?? "");
+      aligns.splice(col + 1, 0, aligns[col] ?? null);
+      targetCol = col + 1;
+      break;
+    }
+    case "moveColLeft": {
+      if (col <= 0) return false;
+      for (const r of cells) swapItems(r, col, col - 1);
+      swapItems(aligns, col, col - 1);
+      targetCol = col - 1;
+      break;
+    }
+    case "moveColRight": {
+      if (col >= colCount - 1) return false;
+      for (const r of cells) swapItems(r, col, col + 1);
+      swapItems(aligns, col, col + 1);
+      targetCol = col + 1;
+      break;
+    }
     case "deleteRow": {
       if (cells.length <= 1) return false; // 至少保留表头
-      cells.splice(Math.max(1, row), 1);
+      if (row === 0) return false;
+      cells.splice(row, 1);
       targetRow = Math.min(Math.max(1, row), cells.length - 1);
       break;
     }
@@ -452,6 +550,33 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
     case "clearCol": {
       for (const r of cells) r[col] = "";
       break;
+    }
+    case "fillDown": {
+      const value = cells[row][col] ?? "";
+      for (let r = Math.max(1, row + 1); r < cells.length; r++) {
+        cells[r][col] = value;
+      }
+      break;
+    }
+    case "sortAsc":
+    case "sortDesc": {
+      const header = cells[0];
+      const body = cells.slice(1);
+      const dir = action.type === "sortAsc" ? 1 : -1;
+      body.sort((a, b) => compareTableValues(a[col] ?? "", b[col] ?? "") * dir);
+      cells.splice(0, cells.length, header, ...body);
+      targetRow = Math.min(Math.max(1, row), cells.length - 1);
+      break;
+    }
+    case "format": {
+      const next = buildPrettyTable(cells, aligns);
+      view.dispatch({
+        changes: { from: info.from, to: info.to, insert: next },
+        selection: cellRangeInBuiltTable(next, info.from, targetRow, targetCol),
+        scrollIntoView: true,
+        userEvent: "input",
+      });
+      return true;
     }
     case "align": {
       aligns[col] = action.value;

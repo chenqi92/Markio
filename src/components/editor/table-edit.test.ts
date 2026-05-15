@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { moveTableCell, parseTabularText, pasteTableText } from "./table-edit";
+import {
+  applyTableAction,
+  moveTableCell,
+  parseTabularText,
+  pasteTableText,
+} from "./table-edit";
 
 class FakeDoc {
   readonly length: number;
@@ -82,5 +87,25 @@ describe("table editing", () => {
     const change = view.dispatch.mock.calls[0][0].changes;
     expect(change.insert).toContain("| 1 | 2 |");
     expect(change.insert).toContain("|   |   |");
+  });
+
+  it("moves columns and sorts rows by the current column", () => {
+    const source = [
+      "| Name | Score |",
+      "| --- | ---: |",
+      "| B | 2 |",
+      "| A | 10 |",
+    ].join("\n");
+    const scoreView = fakeView(source, source.indexOf("Score"));
+
+    expect(applyTableAction(scoreView, { type: "moveColLeft" })).toBe(true);
+    expect(scoreView.dispatch.mock.calls[0][0].changes.insert).toContain(
+      "| Score | Name |",
+    );
+
+    const dataView = fakeView(source, source.indexOf("2"));
+    expect(applyTableAction(dataView, { type: "sortDesc" })).toBe(true);
+    const sorted = dataView.dispatch.mock.calls[0][0].changes.insert;
+    expect(sorted.indexOf("| A | 10 |")).toBeLessThan(sorted.indexOf("| B | 2 |"));
   });
 });

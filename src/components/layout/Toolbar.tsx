@@ -293,6 +293,9 @@ function FormatRow() {
       </div>
       <div className="tb-group tb-format">
         <TableInsertButton />
+        <Btn title="所选文本转表格" onClick={markdownCommands.selectionToTable}>
+          <span style={{ fontSize: 10, fontWeight: 700 }}>T→表</span>
+        </Btn>
         <Btn title="代码块" onClick={markdownCommands.codeBlock}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>
             {"{}"}

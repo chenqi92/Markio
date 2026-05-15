@@ -409,6 +409,7 @@ const markdownKeymap = Prec.highest(
     { key: "Mod-Alt-4", run: runMarkdownCommand(markdownCommands.h4) },
     { key: "Mod-Alt-l", run: runMarkdownCommand(markdownCommands.wikiLink) },
     { key: "Mod-Alt-t", run: runMarkdownCommand(markdownCommands.table) },
+    { key: "Mod-Alt-Shift-t", run: runMarkdownCommand(markdownCommands.selectionToTable) },
     { key: "Mod-Alt-c", run: runMarkdownCommand(markdownCommands.codeBlock) },
     { key: "Mod-Alt-m", run: runMarkdownCommand(markdownCommands.mathBlock) },
     { key: "Mod-Alt-g", run: runMarkdownCommand(markdownCommands.chart) },

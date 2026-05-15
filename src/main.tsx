@@ -16,6 +16,7 @@ import { injectSyntaxTheme } from "./lib/syntax-theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { api, isDesktop } from "./lib/api";
 import { preloadTauriStorage } from "./lib/tauriStorage";
+import { installDigestScheduler } from "./lib/digestScheduler";
 import "./i18n";
 
 async function bootstrap() {
@@ -43,6 +44,9 @@ async function bootstrap() {
       .traySetVisible(useSettings.getState().showInTray)
       .catch(() => undefined);
   }
+
+  // 微信助手 · 每日摘要调度（仅 60s 心跳，命中条件才真正推）
+  installDigestScheduler();
 
   // 未捕获 promise / window error 也写到日志
   if (typeof window !== "undefined" && isDesktop()) {

@@ -57,6 +57,9 @@ export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
         <ToolBtn title="选中整张表格" onClick={() => run({ type: "selectTable" })}>
           全表
         </ToolBtn>
+        <ToolBtn title="按列宽整理 Markdown 表格" onClick={() => run({ type: "format" })}>
+          整理
+        </ToolBtn>
       </div>
       <div className="table-toolbar-group">
         <ToolBtn title="上方插入行" onClick={() => run({ type: "insertRowAbove" })}>
@@ -68,11 +71,26 @@ export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
         <ToolBtn title="复制当前行到下方" onClick={() => run({ type: "duplicateRow" })}>
           行×2
         </ToolBtn>
+        <ToolBtn title="上移当前行" onClick={() => run({ type: "moveRowUp" })}>
+          行↑
+        </ToolBtn>
+        <ToolBtn title="下移当前行" onClick={() => run({ type: "moveRowDown" })}>
+          行↓
+        </ToolBtn>
         <ToolBtn title="左侧插入列" onClick={() => run({ type: "insertColLeft" })}>
           列←+
         </ToolBtn>
         <ToolBtn title="右侧插入列" onClick={() => run({ type: "insertColRight" })}>
           列+→
+        </ToolBtn>
+        <ToolBtn title="复制当前列到右侧" onClick={() => run({ type: "duplicateCol" })}>
+          列×2
+        </ToolBtn>
+        <ToolBtn title="左移当前列" onClick={() => run({ type: "moveColLeft" })}>
+          列←
+        </ToolBtn>
+        <ToolBtn title="右移当前列" onClick={() => run({ type: "moveColRight" })}>
+          列→
         </ToolBtn>
       </div>
       <div className="table-toolbar-group">
@@ -97,6 +115,9 @@ export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
         <ToolBtn title="清空当前单元格" onClick={() => run({ type: "clearCell" })}>
           清单元
         </ToolBtn>
+        <ToolBtn title="向下填充当前单元格" onClick={() => run({ type: "fillDown" })}>
+          向下填
+        </ToolBtn>
         <ToolBtn title="选中当前行" onClick={() => run({ type: "selectRow" })}>
           选行
         </ToolBtn>
@@ -108,6 +129,14 @@ export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
         </ToolBtn>
         <ToolBtn title="清空当前列" onClick={() => run({ type: "clearCol" })}>
           清列
+        </ToolBtn>
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn title="按当前列升序排序" onClick={() => run({ type: "sortAsc" })}>
+          A↑
+        </ToolBtn>
+        <ToolBtn title="按当前列降序排序" onClick={() => run({ type: "sortDesc" })}>
+          Z↓
         </ToolBtn>
       </div>
       <div className="table-toolbar-group">

@@ -1884,11 +1884,14 @@ function WxAssistant() {
   const dailyDigest = useSettings((s) => s.wxAssistantDailyDigest);
   const digestTime = useSettings((s) => s.wxAssistantDigestTime);
   const publishHook = useSettings((s) => s.wxAssistantPublishHook);
+  const lastDigestSent = useSettings((s) => s.wxAssistantLastDigestSentDate);
   const setPreference = useSettings((s) => s.setPreference);
   const setToast = useUI((s) => s.setToast);
   const [draftHook, setDraftHook] = useState(webhook);
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [digestBusy, setDigestBusy] = useState(false);
+  const [digestMsg, setDigestMsg] = useState<string | null>(null);
 
   useEffect(() => setDraftHook(webhook), [webhook]);
 
@@ -2043,6 +2046,48 @@ function WxAssistant() {
               opacity: !enabled || !dailyDigest ? 0.5 : 1,
             }}
           />
+        </div>
+        <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
+          <div className="settings-row-l">
+            <div className="settings-label" style={{ color: "var(--accent)" }}>
+              立即发送一次摘要
+            </div>
+            <div className="settings-help">
+              {digestMsg ??
+                (lastDigestSent
+                  ? `上次推送：${lastDigestSent}`
+                  : "拼好今日 recents + 字数后立刻推一次（不更新「今日已发」标记）")}
+            </div>
+          </div>
+          <button
+            className="settings-btn primary"
+            disabled={digestBusy || !enabled || !webhook}
+            onClick={async () => {
+              setDigestBusy(true);
+              setDigestMsg(null);
+              try {
+                const { sendDigestNow } = await import("@/lib/digestScheduler");
+                const r = await sendDigestNow({ markSent: false });
+                setDigestMsg(r.ok ? `✓ ${r.message}` : `✗ ${r.message}`);
+                setToast({
+                  stage: r.ok ? "done" : "error",
+                  message: r.ok ? "摘要已推送" : `推送失败：${r.message}`,
+                });
+                setTimeout(() => setToast(null), 2400);
+              } finally {
+                setDigestBusy(false);
+              }
+            }}
+            title={
+              !enabled
+                ? "请先打开总开关"
+                : !webhook
+                  ? "请先填 webhook URL"
+                  : undefined
+            }
+          >
+            {digestBusy ? "推送中…" : "立即发送"}
+          </button>
         </div>
       </div>
     </>

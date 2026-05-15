@@ -38,6 +38,7 @@ type PreferenceKey =
   | "wxAssistantWebhook"
   | "wxAssistantDailyDigest"
   | "wxAssistantDigestTime"
+  | "wxAssistantLastDigestSentDate"
   | "wxAssistantPublishHook"
   | "smartChannelEnabled"
   | "smartChannelId"
@@ -126,6 +127,8 @@ interface SettingsState {
   wxAssistantDailyDigest: boolean;
   /** 摘要推送时间，24h 格式 "HH:mm" */
   wxAssistantDigestTime: string;
+  /** 上次成功推送的日期（YYYY-MM-DD），用于跨重启去重 */
+  wxAssistantLastDigestSentDate: string;
   /** 发布公众号草稿后是否再推一条通知 */
   wxAssistantPublishHook: boolean;
   /** 智能通道（替代龙虾）：把当前文档工具的内容暴露给其他客户端查询 */
@@ -261,6 +264,7 @@ export const useSettings = create<SettingsState>()(
       wxAssistantWebhook: "",
       wxAssistantDailyDigest: false,
       wxAssistantDigestTime: "09:00",
+      wxAssistantLastDigestSentDate: "",
       wxAssistantPublishHook: true,
       smartChannelEnabled: false,
       smartChannelId: generateChannelId(),

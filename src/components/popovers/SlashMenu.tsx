@@ -129,6 +129,16 @@ const ITEMS = (close: () => void): Item[] => {
       },
     },
     {
+      id: "selection-to-table",
+      icon: "table",
+      ttl: "文本转表格",
+      sub: "将 TSV / CSV / 管道分隔文本转为表格",
+      run: () => {
+        finish();
+        markdownCommands.selectionToTable();
+      },
+    },
+    {
       id: "callout",
       icon: "info",
       ttl: "提示块",

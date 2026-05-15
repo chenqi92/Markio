@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { enhanceCallouts } from "@/lib/callouts";
+import { enhanceCodeBlocks } from "@/lib/code-blocks";
+import { renderMathIn } from "@/lib/math";
 import { renderMermaidIn } from "@/lib/mermaid";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
 import { useUI } from "@/stores/ui";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { openExternal } from "@/lib/opener";
 import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
 import { GraphView } from "./GraphView";
@@ -53,6 +57,19 @@ export function Preview({
   const fm = useMemo(() => parseFrontmatter(source), [source]);
   const viewKind = fm.data.view?.toLowerCase();
 
+  const applyScrollTarget = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || !scrollTarget) return;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    if (Math.abs(el.scrollTop - nextTop) < 1) return;
+    suppressScrollRef.current = true;
+    el.scrollTop = nextTop;
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
+  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+
   useEffect(() => {
     if (!contentRef.current) return;
     // 主题切换后强制重绘 mermaid
@@ -61,8 +78,19 @@ export function Preview({
       .forEach((el) => {
         delete el.dataset.rendered;
       });
-    renderMermaidIn(contentRef.current).catch(() => undefined);
-  }, [html, theme]);
+    const root = contentRef.current;
+    let cancelled = false;
+    enhanceCallouts(root);
+    enhanceCodeBlocks(root);
+    Promise.all([renderMathIn(root), renderMermaidIn(root)])
+      .then(() => {
+        if (!cancelled) applyScrollTarget();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [html, theme, applyScrollTarget]);
 
   // Find 高亮：扫描文字节点，包 <mark class="find-hit"> + 当前项加 .current
   useEffect(() => {
@@ -261,17 +289,8 @@ export function Preview({
   }, [onScroll]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !scrollTarget) return;
-    const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
-    if (Math.abs(el.scrollTop - nextTop) < 1) return;
-    suppressScrollRef.current = true;
-    el.scrollTop = nextTop;
-    requestAnimationFrame(() => {
-      suppressScrollRef.current = false;
-    });
-  }, [scrollTarget?.nonce, scrollTarget?.ratio, html]);
+    applyScrollTarget();
+  }, [applyScrollTarget, html]);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -293,7 +312,7 @@ export function Preview({
       // 外链
       if (/^https?:\/\//.test(href)) {
         e.preventDefault();
-        window.open(href, "_blank", "noopener,noreferrer");
+        void openExternal(href);
       }
     };
     el.addEventListener("click", handler);

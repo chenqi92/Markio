@@ -19,8 +19,17 @@ import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import { writeText } from "@/lib/clipboard";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
 import { setLocale, currentLocale, type Locale } from "@/i18n";
+import {
+  COMMANDS,
+  type CommandDef,
+  type CommandId,
+  eventToBinding,
+  formatBinding,
+  normalizeBinding,
+} from "@/lib/shortcuts";
 
 const SECTIONS = [
   { id: "appear", label: "外观", icon: "palette" },
@@ -1161,51 +1170,221 @@ function GitSyncCard() {
   );
 }
 
-const SHORTCUTS = [
-  { g: "导航", items: [
-    { l: "命令面板 / 快速打开", k: ["⌘", "K"] },
-    { l: "全文搜索", k: ["⌘", "⇧", "F"] },
-    { l: "在文档内查找", k: ["⌘", "F"] },
-    { l: "切换专注模式", k: ["⌘", "."] },
-  ]},
-  { g: "视图", items: [
-    { l: "源码 / 分屏 / 所见即所得 / 阅读", k: ["⌘", "1–4"] },
-    { l: "侧栏开关", k: ["⌘", "⇧", "L"] },
-    { l: "大纲开关", k: ["⌘", "⇧", "R"] },
-  ]},
-  { g: "文档", items: [
-    { l: "保存", k: ["⌘", "S"] },
-    { l: "关闭标签", k: ["⌘", "W"] },
-    { l: "打开单个文件…", k: ["⌘", "O"] },
-    { l: "打开文件夹…", k: ["⌘", "⇧", "O"] },
-  ]},
+const MARKDOWN_EDITOR_SHORTCUTS: { l: string; k: string[] }[] = [
+  { l: "加粗 / 斜体 / 链接", k: ["⌘", "B / I / K"] },
+  { l: "高亮 / 删除线", k: ["⌘", "⇧", "H / X"] },
+  { l: "标题 1–4", k: ["⌘", "⌥", "1–4"] },
+  { l: "双向链接 / 表格 / 代码块 / 公式", k: ["⌘", "⌥", "L / T / C / M"] },
 ];
 
 function Shortcuts() {
+  const overrides = useSettings((s) => s.shortcutOverrides);
+  const setShortcut = useSettings((s) => s.setShortcut);
+  const resetShortcut = useSettings((s) => s.resetShortcut);
+  const resetAllShortcuts = useSettings((s) => s.resetAllShortcuts);
+  const [recording, setRecording] = useState<CommandId | null>(null);
+  const [error, setError] = useState<{ id: CommandId; msg: string } | null>(null);
+
+  const effective = useMemo(() => {
+    const out: Partial<Record<CommandId, string>> = {};
+    for (const c of COMMANDS) {
+      const o = overrides[c.id];
+      const binding = o !== undefined ? o : c.defaultBinding;
+      out[c.id] = normalizeBinding(binding);
+    }
+    return out as Record<CommandId, string>;
+  }, [overrides]);
+
+  const conflicts = useMemo(() => {
+    const map = new Map<string, CommandId[]>();
+    for (const c of COMMANDS) {
+      const b = effective[c.id];
+      if (!b) continue;
+      const list = map.get(b);
+      if (list) list.push(c.id);
+      else map.set(b, [c.id]);
+    }
+    const set = new Set<CommandId>();
+    for (const ids of map.values()) {
+      if (ids.length > 1) ids.forEach((id) => set.add(id));
+    }
+    return set;
+  }, [effective]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(null);
+        setError(null);
+        return;
+      }
+      const binding = eventToBinding(e);
+      if (!binding) return;
+      const normalized = normalizeBinding(binding);
+      const taken = COMMANDS.find(
+        (c) => c.id !== recording && effective[c.id] === normalized,
+      );
+      if (taken) {
+        setError({ id: recording, msg: `与「${taken.label}」冲突，请先解除` });
+        return;
+      }
+      setShortcut(recording, normalized);
+      setRecording(null);
+      setError(null);
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, {
+        capture: true,
+      } as EventListenerOptions);
+  }, [recording, effective, setShortcut]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, CommandDef[]>();
+    for (const c of COMMANDS) {
+      const list = map.get(c.group);
+      if (list) list.push(c);
+      else map.set(c.group, [c]);
+    }
+    return Array.from(map.entries());
+  }, []);
+
+  const dangerColor = "var(--danger, #c1432f)";
+
   return (
     <>
       <h2 className="settings-h">快捷键</h2>
-      <p className="settings-sub">默认绑定（自定义会在后续版本支持）。</p>
-      {SHORTCUTS.map((g) => (
-        <div className="settings-card" key={g.g}>
-          <div className="settings-card-h">{g.g}</div>
-          {g.items.map((it) => (
-            <div className="settings-row" key={it.l}>
-              <div className="settings-row-l">
-                <div className="settings-label">{it.l}</div>
+      <p className="settings-sub">
+        点击「录制」后按下要绑定的键组合；按 Esc 取消录制。冲突项以红色提示。
+      </p>
+      <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+        <button
+          className="settings-btn"
+          onClick={() => {
+            setRecording(null);
+            setError(null);
+            resetAllShortcuts();
+          }}
+        >
+          全部恢复默认
+        </button>
+      </div>
+      {groups.map(([group, items]) => (
+        <div className="settings-card" key={group}>
+          <div className="settings-card-h">{group}</div>
+          {items.map((cmd) => {
+            const binding = effective[cmd.id];
+            const isRecording = recording === cmd.id;
+            const isConflict = conflicts.has(cmd.id);
+            const hasOverride = overrides[cmd.id] !== undefined;
+            const chips = formatBinding(binding);
+            return (
+              <div className="settings-row" key={cmd.id}>
+                <div className="settings-row-l">
+                  <div className="settings-label">{cmd.label}</div>
+                  {error?.id === cmd.id ? (
+                    <div className="settings-help" style={{ color: dangerColor }}>
+                      {error.msg}
+                    </div>
+                  ) : isConflict ? (
+                    <div className="settings-help" style={{ color: dangerColor }}>
+                      与其它命令冲突
+                    </div>
+                  ) : null}
+                </div>
+                <div className="kbd-group">
+                  {isRecording ? (
+                    <span
+                      className="kbd"
+                      style={{ minWidth: 120, textAlign: "center" }}
+                    >
+                      按下新的键…
+                    </span>
+                  ) : binding ? (
+                    chips.map((k, i) => (
+                      <span
+                        key={i}
+                        className="kbd"
+                        style={
+                          isConflict
+                            ? { color: dangerColor, borderColor: dangerColor }
+                            : undefined
+                        }
+                      >
+                        {k}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="kbd" style={{ opacity: 0.6 }}>
+                      未绑定
+                    </span>
+                  )}
+                </div>
+                <button
+                  className="settings-btn"
+                  onClick={() => {
+                    setError(null);
+                    setRecording(isRecording ? null : cmd.id);
+                  }}
+                >
+                  {isRecording ? "取消" : "录制"}
+                </button>
+                <button
+                  className="settings-btn"
+                  onClick={() => {
+                    setError(null);
+                    setShortcut(cmd.id, "");
+                  }}
+                  disabled={!binding}
+                  title="设为未绑定"
+                >
+                  清除
+                </button>
+                <button
+                  className="settings-btn"
+                  onClick={() => {
+                    setError(null);
+                    resetShortcut(cmd.id);
+                  }}
+                  disabled={!hasOverride}
+                  title="恢复默认"
+                >
+                  默认
+                </button>
               </div>
-              <div className="kbd-group">
-                {it.k.map((k, i) => (
-                  <span key={i} className="kbd">{k}</span>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ))}
+      <div className="settings-card">
+        <div className="settings-card-h">Markdown 编辑器内（暂不可改）</div>
+        {MARKDOWN_EDITOR_SHORTCUTS.map((it) => (
+          <div className="settings-row" key={it.l}>
+            <div className="settings-row-l">
+              <div className="settings-label">{it.l}</div>
+            </div>
+            <div className="kbd-group">
+              {it.k.map((k, i) => (
+                <span key={i} className="kbd">
+                  {k}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 }
+
+type PicgoPingState =
+  | { stage: "idle" }
+  | { stage: "probing" }
+  | { stage: "ok"; latencyMs: number }
+  | { stage: "fail"; message: string };
 
 function Picgo() {
   const endpoint = useSettings((s) => s.picgoEndpoint);
@@ -1216,6 +1395,56 @@ function Picgo() {
   const quality = useSettings((s) => s.picgoQuality);
   const uploadProvider = useSettings((s) => s.uploadProvider);
   const setPreference = useSettings((s) => s.setPreference);
+
+  const [ping, setPing] = useState<PicgoPingState>({ stage: "idle" });
+  const probe = useCallback(async (ep: string) => {
+    setPing({ stage: "probing" });
+    try {
+      const r = await api.picgoPing(ep);
+      if (r.ok) {
+        setPing({ stage: "ok", latencyMs: r.latencyMs });
+      } else {
+        setPing({ stage: "fail", message: r.message ?? "服务无响应" });
+      }
+    } catch (e) {
+      setPing({ stage: "fail", message: (e as Error).message });
+    }
+  }, []);
+  useEffect(() => {
+    if (!endpoint) return;
+    let cancelled = false;
+    void (async () => {
+      setPing({ stage: "probing" });
+      try {
+        const r = await api.picgoPing(endpoint);
+        if (cancelled) return;
+        if (r.ok) {
+          setPing({ stage: "ok", latencyMs: r.latencyMs });
+        } else {
+          setPing({ stage: "fail", message: r.message ?? "服务无响应" });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setPing({ stage: "fail", message: (e as Error).message });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint]);
+
+  const statusText = (() => {
+    switch (ping.stage) {
+      case "idle":
+        return "未检测";
+      case "probing":
+        return "检测中…";
+      case "ok":
+        return `已连接 · ${ping.latencyMs} ms`;
+      case "fail":
+        return `未连接 · ${ping.message}`;
+    }
+  })();
   return (
     <>
       <h2 className="settings-h">图片上传</h2>
@@ -1248,9 +1477,27 @@ function Picgo() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">状态</div>
-            <div className="settings-help">未连接 · 启动 PicGo 后会自动探测</div>
+            <div
+              className="settings-help"
+              style={{
+                color:
+                  ping.stage === "ok"
+                    ? "var(--success, #2c9c5a)"
+                    : ping.stage === "fail"
+                    ? "var(--danger, #c1432f)"
+                    : undefined,
+              }}
+            >
+              {statusText}
+            </div>
           </div>
-          <button className="settings-btn">重新检测</button>
+          <button
+            className="settings-btn"
+            onClick={() => probe(endpoint)}
+            disabled={!endpoint || ping.stage === "probing"}
+          >
+            {ping.stage === "probing" ? "检测中…" : "重新检测"}
+          </button>
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -1629,20 +1876,17 @@ function WxAssistant() {
     setTesting(true);
     setTestMsg(null);
     try {
-      // 通过浏览器 fetch 发一条测试消息（企业微信机器人 / Server酱 / 自建桥兼容 POST JSON）
-      const res = await fetch(draftHook.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          msgtype: "text",
-          text: { content: "[markio] 微信助手连通测试 · 收到这条消息即表示配置成功。" },
-          // 兼容 Server 酱风格
-          title: "markio 微信助手测试",
-          desp: "收到这条消息即表示配置成功。",
-        }),
+      const body = JSON.stringify({
+        msgtype: "text",
+        text: { content: "[markio] 微信助手连通测试 · 收到这条消息即表示配置成功。" },
+        title: "markio 微信助手测试",
+        desp: "收到这条消息即表示配置成功。",
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      const r = await api.webhookPost(draftHook.trim(), body);
+      if (!r.ok) {
+        throw new Error(
+          `HTTP ${r.status}${r.bodyExcerpt ? ` · ${r.bodyExcerpt.slice(0, 120)}` : ""}`,
+        );
       }
       setTestMsg("✓ 已发送，请在微信里查收");
       setToast({ stage: "done", message: "测试消息已发送" });
@@ -1807,7 +2051,7 @@ function SmartChannelSettings() {
 
   const copyId = async () => {
     try {
-      await navigator.clipboard.writeText(channelId);
+      await writeText(channelId);
       setToast({ stage: "done", message: "通道 ID 已复制" });
       setTimeout(() => setToast(null), 1800);
     } catch {
@@ -2459,6 +2703,10 @@ function AI() {
   );
 }
 
+// 1x1 透明 PNG，用于 S3 连接测试
+const S3_PROBE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
 function S3Card() {
   const endpoint = useSettings((s) => s.s3Endpoint);
   const region = useSettings((s) => s.s3Region);
@@ -2469,7 +2717,39 @@ function S3Card() {
   const setPreference = useSettings((s) => s.setPreference);
   const [secret, setSecret] = useState("");
   const [stored, setStored] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const testConnection = async () => {
+    if (!endpoint || !bucket || !accessKeyId) {
+      setMsg({ kind: "err", text: "请先填写 endpoint / bucket / access key" });
+      return;
+    }
+    setTesting(true);
+    setMsg(null);
+    try {
+      const key = `markio/_probe/${Date.now()}.png`;
+      const url = await api.s3PutObject(
+        {
+          endpoint,
+          region,
+          bucket,
+          accessKeyId,
+          secretAccessKey: "", // 走 keychain
+          publicBaseUrl: publicBaseUrl || undefined,
+          pathStyle,
+        },
+        key,
+        S3_PROBE_PNG_BASE64,
+        "image/png",
+      );
+      setMsg({ kind: "ok", text: `✓ 连接成功：${url}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: `✗ ${String(e)}` });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => {
     if (!endpoint) {
@@ -2591,6 +2871,20 @@ function S3Card() {
           on={pathStyle}
           onChange={(v) => setPreference("s3PathStyle", v)}
         />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <LabelWithTip tip="上传一张 1px 占位图到 markio/_probe/ 验证凭据与桶可写。">
+            连接测试
+          </LabelWithTip>
+        </div>
+        <button
+          className="settings-btn"
+          onClick={testConnection}
+          disabled={testing || !endpoint || !bucket || !accessKeyId}
+        >
+          {testing ? "测试中…" : "测试连接"}
+        </button>
       </div>
       {msg && (
         <div

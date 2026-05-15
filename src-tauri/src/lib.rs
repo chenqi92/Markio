@@ -87,6 +87,15 @@ pub struct ImagePasteResult {
     pub warning: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PicgoPingResult {
+    pub ok: bool,
+    pub status: u16,
+    pub latency_ms: u64,
+    pub message: Option<String>,
+}
+
 const MAX_IMAGE_INPUT_BYTES: usize = 25 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 80_000_000;
 const MAX_SYNC_BODY_BYTES: usize = 50 * 1024 * 1024;
@@ -782,6 +791,169 @@ async fn upload_with_picgo(endpoint: &str, file_path: &Path) -> Result<String, S
     picgo_result_url(&value).ok_or_else(|| "PicGo 响应中没有图片 URL".to_string())
 }
 
+/// 把文本写到用户通过 dialog.save 选定的绝对路径。
+/// 仅做基本字符校验，不做沙箱（路径来自用户）。
+#[tauri::command]
+async fn export_write_file(path: String, content: String) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("路径为空".to_string());
+    }
+    if path.contains('\0') {
+        return Err("路径含非法字符".to_string());
+    }
+    if content.len() > 64 * 1024 * 1024 {
+        return Err("导出内容过大（>64MB）".to_string());
+    }
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("创建目录失败：{e}"))?;
+        }
+    }
+    std::fs::write(&path, content).map_err(|e| format!("写入失败：{e}"))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePasteFromDiskRequest {
+    pub workspace: String,
+    pub note: String,
+    pub src_path: String,
+    pub upload: bool,
+    pub keep_local: bool,
+    pub endpoint: Option<String>,
+    pub compress: Option<bool>,
+    pub quality: Option<u8>,
+}
+
+#[tauri::command]
+async fn image_paste_from_disk(
+    state: tauri::State<'_, AppState>,
+    req: ImagePasteFromDiskRequest,
+) -> Result<ImagePasteResult, String> {
+    use base64::Engine;
+    let bytes = std::fs::read(&req.src_path)
+        .map_err(|e| format!("读取拖入文件失败：{e}"))?;
+    if bytes.len() > 25 * 1024 * 1024 {
+        return Err("拖入图片过大（>25MB）".to_string());
+    }
+    let mime = match std::path::Path::new(&req.src_path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("avif") => "image/avif",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
+    .to_string();
+    let file_name = std::path::Path::new(&req.src_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string());
+    let data_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    image_paste(
+        state,
+        ImagePasteRequest {
+            workspace: req.workspace,
+            note: req.note,
+            file_name,
+            mime,
+            data_base64,
+            upload: req.upload,
+            keep_local: req.keep_local,
+            endpoint: req.endpoint,
+            compress: req.compress,
+            quality: req.quality,
+        },
+    )
+    .await
+}
+
+#[derive(Serialize)]
+struct WebhookResult {
+    ok: bool,
+    status: u16,
+    body_excerpt: String,
+}
+
+#[tauri::command]
+async fn webhook_post(
+    url: String,
+    body_json: String,
+    timeout_secs: Option<u64>,
+) -> Result<WebhookResult, String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("URL 无效：{e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("仅支持 http/https".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL 不能包含用户名 / 密码".to_string());
+    }
+    if body_json.len() > 64 * 1024 {
+        return Err("请求体过大（>64KB）".to_string());
+    }
+    serde_json::from_str::<serde_json::Value>(&body_json)
+        .map_err(|e| format!("body 不是合法 JSON：{e}"))?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs.unwrap_or(8).clamp(1, 30)))
+        .build()
+        .map_err(|e| format!("初始化 HTTP 客户端失败：{e}"))?;
+    let resp = client
+        .post(parsed)
+        .header("content-type", "application/json")
+        .body(body_json)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status().as_u16();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    let truncated: Vec<u8> = bytes.into_iter().take(512).collect();
+    let body_excerpt = String::from_utf8_lossy(&truncated).to_string();
+    Ok(WebhookResult {
+        ok: (200..300).contains(&status),
+        status,
+        body_excerpt,
+    })
+}
+
+#[tauri::command]
+async fn picgo_ping(endpoint: String) -> Result<PicgoPingResult, String> {
+    let upload_url = normalize_picgo_endpoint(&endpoint)?;
+    let base = upload_url
+        .strip_suffix("/upload")
+        .unwrap_or(&upload_url)
+        .to_string();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("创建探测客户端失败：{e}"))?;
+    let start = std::time::Instant::now();
+    match client.get(&base).send().await {
+        Ok(resp) => Ok(PicgoPingResult {
+            ok: true,
+            status: resp.status().as_u16(),
+            latency_ms: start.elapsed().as_millis() as u64,
+            message: None,
+        }),
+        Err(e) => Ok(PicgoPingResult {
+            ok: false,
+            status: 0,
+            latency_ms: start.elapsed().as_millis() as u64,
+            message: Some(format!("{e}")),
+        }),
+    }
+}
+
 fn compress_image(bytes: &[u8], mime: &str, quality: u8) -> Result<Vec<u8>, String> {
     use image::ImageFormat;
     use std::io::Cursor;
@@ -1421,6 +1593,44 @@ async fn fs_index_tokens(
     tauri::async_runtime::spawn_blocking(move || Ok(fs_ops::index_tokens(&ws)))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn fs_vault_index_load(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Option<fs_ops::VaultIndex>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws = ws.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || Ok(fs_ops::vault_index_load(&ws)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 后台扫描：若磁盘上已有 cache 则做 mtime diff，否则全量扫；扫完写回磁盘。
+#[tauri::command]
+async fn fs_vault_index_build(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    use_cache: Option<bool>,
+) -> Result<fs_ops::VaultIndex, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws = ws.to_string_lossy().to_string();
+    let want_cache = use_cache.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || {
+        let prev = if want_cache {
+            fs_ops::vault_index_load(&ws)
+        } else {
+            None
+        };
+        let next = fs_ops::build_vault_index(&ws, prev.as_ref());
+        if let Err(e) = fs_ops::vault_index_save(&ws, &next) {
+            eprintln!("[vault_index] save failed: {e}");
+        }
+        Ok(next)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ─── 回收站 ─────────────────────────────────────────────────────────
@@ -2403,6 +2613,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             md_render,
@@ -2424,7 +2636,11 @@ pub fn run() {
             fs_reveal,
             fs_list_attachments,
             image_paste,
+            image_paste_from_disk,
+            picgo_ping,
+            webhook_post,
             export_pandoc,
+            export_write_file,
             text_find_ranges,
             crash_append,
             crash_open_dir,
@@ -2435,6 +2651,8 @@ pub fn run() {
             fs_backlinks,
             fs_mentions,
             fs_index_tokens,
+            fs_vault_index_load,
+            fs_vault_index_build,
             theme_list,
             theme_import,
             theme_read,

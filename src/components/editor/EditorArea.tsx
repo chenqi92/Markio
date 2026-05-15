@@ -144,7 +144,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   const handlePasteImages = useCallback(
-    async (files: File[], range: { from: number; to: number }) => {
+    async (
+      files: File[],
+      range: { from: number; to: number },
+      trigger: "paste" | "drop" = "paste",
+    ) => {
       if (!tab || !workspace) {
         setToast({ stage: "error", message: "请先打开一个仓库文件" });
         setTimeout(() => setToast(null), 2200);
@@ -153,7 +157,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       const settings = useSettings.getState();
       const acceptedFiles = files.slice(0, MAX_PASTE_IMAGES);
       const skipped = files.length - acceptedFiles.length;
-      setToast({ stage: "uploading", message: "正在处理剪贴板图片..." });
+      const triggerLabel = trigger === "drop" ? "拖入" : "剪贴板";
+      setToast({ stage: "uploading", message: `正在处理${triggerLabel}图片...` });
       try {
         const markdown: string[] = [];
         const warnings: string[] =
@@ -162,7 +167,9 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           const dataBase64 = await fileToBase64(file);
           // 第一步：始终走 Rust image_paste 写到本地 Assets/（带可选压缩）；
           // upload=false 时不调 PicGo，由前端决定是否再走 S3 直传
-          const usePicgo = settings.uploadProvider === "picgo" && settings.picgoPasteUpload;
+          const triggerEnabled =
+            trigger === "drop" ? settings.picgoDragUpload : settings.picgoPasteUpload;
+          const usePicgo = settings.uploadProvider === "picgo" && triggerEnabled;
           const useS3 =
             settings.uploadProvider === "s3" &&
             !!settings.s3Endpoint &&
@@ -227,6 +234,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
 
   const handleEditorDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
+      // Fallback：网页 / 应用内拖来的 File（OS 文件管理器在 Tauri 里
+      // 不会触发 HTML5 drop，会被原生 onDragDropEvent 截获）
       const dt = e.dataTransfer;
       if (!dt || dt.files.length === 0) return;
       const images = Array.from(dt.files).filter((f) =>
@@ -240,10 +249,134 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         view?.posAtCoords({ x: e.clientX, y: e.clientY }) ??
         view?.state.doc.length ??
         0;
-      await handlePasteImages(images, { from: pos, to: pos });
+      await handlePasteImages(images, { from: pos, to: pos }, "drop");
     },
     [handlePasteImages],
   );
+
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+
+  // Tauri 原生拖入事件：从系统文件管理器拖入文件时，OS 不会触发 webview
+  // 的 HTML5 drop（只能拿到 File blob 没 path），改走 Tauri 给的绝对路径。
+  // - .md / .markdown / .txt → openPath
+  // - 图片 → image_paste_from_disk + 在光标处插入 markdown
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+    const tryRouteToTab = async (paths: string[]): Promise<string[]> => {
+      const remaining: string[] = [];
+      for (const p of paths) {
+        const ext = p.toLowerCase().match(/\.([^.\\/]+)$/)?.[1];
+        if (ext === "md" || ext === "markdown" || ext === "txt") {
+          try {
+            await useTabs.getState().openPath(p);
+          } catch (e) {
+            setToast({
+              stage: "error",
+              message: `打开 ${p.split(/[\\/]/).pop()} 失败：${(e as Error).message}`,
+            });
+            setTimeout(() => setToast(null), 2400);
+          }
+        } else {
+          remaining.push(p);
+        }
+      }
+      return remaining;
+    };
+    const handleDropPaths = async (
+      paths: string[],
+      pos: { x: number; y: number } | null,
+    ) => {
+      const pane = editorPaneRef.current;
+      if (pane && pos) {
+        const rect = pane.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const cssX = pos.x / dpr;
+        const cssY = pos.y / dpr;
+        if (
+          cssX < rect.left ||
+          cssX > rect.right ||
+          cssY < rect.top ||
+          cssY > rect.bottom
+        ) {
+          return; // 没落在编辑器面板上，不抢
+        }
+      }
+      const imgPaths = await tryRouteToTab(paths);
+      if (imgPaths.length === 0) return;
+      const t = useTabs.getState().activeTab();
+      const ws = t
+        ? useWorkspace.getState().workspaces.find((w) => w.id === t.workspaceId)
+        : undefined;
+      if (!t || !ws) {
+        setToast({ stage: "error", message: "请先打开一个仓库文件" });
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const settings = useSettings.getState();
+      const usePicgo =
+        settings.uploadProvider === "picgo" && settings.picgoDragUpload;
+      const view = getEditor();
+      const insertPos =
+        view?.state.selection.main.from ?? view?.state.doc.length ?? 0;
+      const accepted = imgPaths
+        .filter((p) => /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(p))
+        .slice(0, MAX_PASTE_IMAGES);
+      if (accepted.length === 0) return;
+      setToast({ stage: "uploading", message: "正在处理拖入图片..." });
+      const out: string[] = [];
+      const warnings: string[] = [];
+      try {
+        for (const p of accepted) {
+          const r = await api.pasteImageFromDisk({
+            workspace: ws.path,
+            note: t.path,
+            srcPath: p,
+            upload: usePicgo,
+            keepLocal: settings.picgoKeepLocalCopy,
+            endpoint: settings.picgoEndpoint,
+            compress: settings.picgoCompressBeforeUpload,
+            quality: settings.picgoQuality,
+          });
+          out.push(r.markdown);
+          if (r.warning) warnings.push(r.warning);
+        }
+        if (useTabs.getState().activeId !== t.id) return;
+        replaceRange(insertPos, insertPos, out.join("\n"));
+        useWorkspace.getState().refreshTree(t.workspaceId).catch(() => undefined);
+        setToast({
+          stage: warnings.length > 0 ? "error" : "done",
+          message: warnings[0] ?? `已插入 ${out.length} 张图片`,
+        });
+        setTimeout(() => setToast(null), warnings.length > 0 ? 3200 : 1800);
+      } catch (e) {
+        setToast({
+          stage: "error",
+          message: `图片处理失败：${(e as Error).message}`,
+        });
+        setTimeout(() => setToast(null), 3000);
+      }
+    };
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const webview = getCurrentWebview();
+        unlisten = await webview.onDragDropEvent((evt) => {
+          if (!mounted) return;
+          if (evt.payload.type !== "drop") return;
+          const paths = evt.payload.paths;
+          if (!paths || paths.length === 0) return;
+          void handleDropPaths(paths, evt.payload.position ?? null);
+        });
+      } catch {
+        // 非 Tauri 环境忽略
+      }
+    })();
+    return () => {
+      mounted = false;
+      if (unlisten) unlisten();
+    };
+  }, [setToast]);
 
   // 自动保存：按设置里的延迟写盘
   const tabId = tab?.id;
@@ -280,6 +413,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       {showSource && (
         <div
           className="editor-pane"
+          ref={editorPaneRef}
           onDragOver={(e) => {
             if (Array.from(e.dataTransfer.types).includes("Files")) {
               e.preventDefault();

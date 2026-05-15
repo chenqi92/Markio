@@ -1567,3 +1567,16 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .gb-controls button:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .gb-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.7); font-size: 13px; }
 
+/* ── CesiumView (Cesium 真三维地球) ── */
+.cs-view { padding: 16px clamp(14px, 2%, 28px) 24px; max-width: none !important; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.cs-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.cs-title { font-size: 22px; font-weight: 700; margin: 0; color: var(--text); }
+.cs-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.cs-meta .dot { opacity: 0.5; }
+.cs-board { flex: 1; min-height: 640px; position: relative; border-radius: 12px; overflow: hidden; border: 0.5px solid var(--border); background: #000; }
+.cs-canvas { position: absolute; inset: 0; }
+.cs-canvas .cesium-viewer-toolbar { right: 8px !important; top: 8px !important; }
+.cs-canvas .cesium-viewer-bottom { display: none !important; }
+.cs-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.78); font-size: 13px; pointer-events: none; }
+
+

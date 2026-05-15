@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { enhanceCallouts } from "@/lib/callouts";
 import { renderChartsIn } from "@/lib/charts";
@@ -20,6 +20,9 @@ import { ListView } from "./ListView";
 import { GraphView } from "./GraphView";
 import { GeoMapView } from "./GeoMapView";
 import { GlobeView } from "./GlobeView";
+const CesiumView = lazy(() =>
+  import("./CesiumView").then((m) => ({ default: m.CesiumView })),
+);
 
 interface Props {
   source: string;
@@ -204,7 +207,8 @@ export function Preview({
       viewKind === "list" ||
       viewKind === "graph" ||
       viewKind === "geomap" ||
-      viewKind === "globe"
+      viewKind === "globe" ||
+      viewKind === "cesium"
     ) {
       // 仍需把字数 / 标题大纲算出来给 Outline 用
       const words = fm.body
@@ -404,6 +408,21 @@ export function Preview({
     return (
       <div ref={containerRef} className="preview-pane">
         <GlobeView body={fm.body} title={fm.data.title ?? "三维地球"} />
+      </div>
+    );
+  }
+  if (viewKind === "cesium") {
+    return (
+      <div ref={containerRef} className="preview-pane">
+        <Suspense
+          fallback={
+            <div className="preview" style={{ padding: 24, color: "var(--text-3)" }}>
+              正在加载 Cesium 模块…
+            </div>
+          }
+        >
+          <CesiumView body={fm.body} title={fm.data.title ?? "Cesium 3D"} />
+        </Suspense>
       </div>
     );
   }

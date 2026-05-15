@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
-import { useVaultTokens } from "@/stores/vaultTokens";
+import { useVaultIndex } from "@/stores/vaultIndex";
 import { replaceSelection, deleteBeforeCursor } from "@/lib/editor-bridge";
-import type { FileEntry } from "@/types";
 
 export type AcKind = "wiki" | "mention" | "tag" | "emoji";
 
@@ -33,22 +32,6 @@ const TRIGGER_LABEL: Record<AcKind, { badge: string; title: string }> = {
   tag: { badge: "#", title: "标签" },
   emoji: { badge: ":", title: "Emoji" },
 };
-
-function walkMd(node: FileEntry, out: Item[]) {
-  if (!node.isDir) {
-    const name = node.name.replace(/\.md$/i, "");
-    out.push({
-      icon: "note",
-      l1: name,
-      l2: node.path,
-      // 由于 commit 时会先吃掉触发字符 [[ 和 query，
-      // 这里 insert 必须把 [[ 与 ]] 一起补回去
-      insert: `[[${name}]] `,
-    });
-    return;
-  }
-  for (const c of node.children ?? []) walkMd(c, out);
-}
 
 function tokensToItems(tokens: string[], prefix: "@" | "#"): Item[] {
   const seen = new Set<string>();
@@ -117,46 +100,51 @@ export function Autocomplete({
   triggerLen: number;
   onClose: () => void;
 }) {
-  const tree = useWorkspace((s) => s.activeTree());
   const ws = useWorkspace((s) => s.activeWorkspace());
   const indexedText = useTabs((s) => s.tabs.map((t) => t.content).join("\n"));
-  const ensureTokens = useVaultTokens((s) => s.ensure);
-  const vaultTokens = useVaultTokens((s) =>
-    ws ? s.cache[ws.path] : undefined,
+  const ensureIndex = useVaultIndex((s) => s.ensure);
+  const vaultIndex = useVaultIndex((s) =>
+    ws ? s.index[ws.path] : undefined,
   );
   const [sel, setSel] = useState(0);
 
   useEffect(() => {
-    if (kind === "tag" || kind === "mention") {
-      if (ws) void ensureTokens(ws.path);
-    }
-  }, [kind, ws?.path, ensureTokens]);
+    if (ws) void ensureIndex(ws.path);
+  }, [ws?.path, ensureIndex]);
 
   const base: Item[] = useMemo(() => {
     if (kind === "mention") {
-      const fromVault = vaultTokens ? tokensToItems(vaultTokens.mentions, "@") : [];
+      const fromVault = vaultIndex ? tokensToItems(vaultIndex.mentions, "@") : [];
       const fromTabs = fallbackTokens(indexedText, "@");
       return mergeUnique(fromVault, fromTabs);
     }
     if (kind === "tag") {
-      const fromVault = vaultTokens ? tokensToItems(vaultTokens.tags, "#") : [];
+      const fromVault = vaultIndex ? tokensToItems(vaultIndex.tags, "#") : [];
       const fromTabs = fallbackTokens(indexedText, "#");
       return mergeUnique(fromVault, fromTabs);
     }
     if (kind === "emoji") return EMOJIS;
-    // wiki: 优先全 vault 文件名（来自 indexTokens），fallback 用 tree
-    if (vaultTokens && vaultTokens.files.length > 0) {
-      return vaultTokens.files.slice(0, 500).map((name) => ({
-        icon: "note" as IconName,
-        l1: name,
-        insert: `[[${name}]] `,
-      }));
+    // wiki: 全 vault 文件名（来自 vault index 的 stem）
+    if (vaultIndex && vaultIndex.files.length > 0) {
+      const seen = new Set<string>();
+      const out: Item[] = [];
+      for (const f of vaultIndex.files) {
+        const name = f.stem || f.name.replace(/\.md$/i, "");
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          icon: "note" as IconName,
+          l1: name,
+          l2: f.path,
+          insert: `[[${name}]] `,
+        });
+        if (out.length >= 500) break;
+      }
+      return out;
     }
-    if (!tree) return [];
-    const out: Item[] = [];
-    walkMd(tree, out);
-    return out.slice(0, 200);
-  }, [kind, tree, indexedText, vaultTokens]);
+    return [];
+  }, [kind, indexedText, vaultIndex]);
 
   const items = useMemo(() => {
     if (!query) return base.slice(0, 20);

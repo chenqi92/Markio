@@ -5,9 +5,10 @@ import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useSettings } from "@/stores/settings";
 import { useRecents } from "@/stores/recents";
-import { pickDirectory } from "@/lib/api";
+import { useVaultIndex } from "@/stores/vaultIndex";
+import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
-import type { FileEntry, ViewMode } from "@/types";
+import type { ViewMode } from "@/types";
 import { THEMES } from "@/themes";
 
 interface Cmd {
@@ -20,24 +21,17 @@ interface Cmd {
   run: () => void;
 }
 
-/** 在已扫好的文件树里做客户端过滤，避免每次输入触发一次 Rust grep。 */
-function findFiles(tree: FileEntry | undefined, q: string, limit: number): FileEntry[] {
-  if (!tree || !q) return [];
+/** 在已建好的 vault index 里做客户端过滤，避免每次输入触发一次 Rust grep。 */
+function findFiles(files: VaultFile[] | undefined, q: string, limit: number): VaultFile[] {
+  if (!files || !q) return [];
   const needle = q.toLowerCase();
-  const out: FileEntry[] = [];
-  const visit = (node: FileEntry) => {
-    if (out.length >= limit) return;
-    if (!node.isDir && node.name.toLowerCase().includes(needle)) {
-      out.push(node);
+  const out: VaultFile[] = [];
+  for (const f of files) {
+    if (out.length >= limit) break;
+    if (f.name.toLowerCase().includes(needle) || f.stem.toLowerCase().includes(needle)) {
+      out.push(f);
     }
-    if (node.children) {
-      for (const c of node.children) {
-        if (out.length >= limit) return;
-        visit(c);
-      }
-    }
-  };
-  visit(tree);
+  }
   return out;
 }
 
@@ -45,8 +39,13 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const tree = useWorkspace((s) => s.activeTree());
+  const ensureVaultIndex = useVaultIndex((s) => s.ensure);
+  const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
   const recents = useRecents((s) => s.items);
+
+  useEffect(() => {
+    if (ws) void ensureVaultIndex(ws.path);
+  }, [ws?.path, ensureVaultIndex]);
   const setMode = useUI((s) => s.setMode);
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openSettings = useUI((s) => s.openSettings);
@@ -193,8 +192,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   // 客户端文件名过滤 —— 不再触发 Rust grep，瞬时返回
   const fileMatches = useMemo(() => {
     if (q.length < 1) return [];
-    return findFiles(tree, q, 25);
-  }, [q, tree]);
+    return findFiles(vaultFiles, q, 25);
+  }, [q, vaultFiles]);
 
   const visible: Cmd[] = useMemo(() => {
     const lower = q.toLowerCase();

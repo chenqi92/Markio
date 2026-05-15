@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { NewMenu } from "./NewMenu";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { classNames } from "@/lib/utils";
-import { insertBlock, prefixLine, wrapSelection } from "@/lib/editor-bridge";
+import { markdownCommands } from "@/lib/markdown-commands";
 import type { ViewMode } from "@/types";
 
 const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "sparkle" | "eye" }> = [
@@ -199,7 +199,13 @@ function FormatRow() {
     onClick: () => void;
     children: React.ReactNode;
   }) => (
-    <button type="button" className="tb-btn" title={title} onClick={onClick}>
+    <button
+      type="button"
+      className="tb-btn"
+      title={title}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+    >
       {children}
     </button>
   );
@@ -207,27 +213,30 @@ function FormatRow() {
   return (
     <div className="toolbar toolbar-row-format">
       <div className="tb-group tb-format">
-        <Btn title="一级标题" onClick={() => prefixLine("# ")}>
+        <Btn title="一级标题" onClick={markdownCommands.h1}>
           <span className="lvl">H1</span>
         </Btn>
-        <Btn title="二级标题" onClick={() => prefixLine("## ")}>
+        <Btn title="二级标题" onClick={markdownCommands.h2}>
           <span className="lvl">H2</span>
         </Btn>
-        <Btn title="三级标题" onClick={() => prefixLine("### ")}>
+        <Btn title="三级标题" onClick={markdownCommands.h3}>
           <span className="lvl">H3</span>
+        </Btn>
+        <Btn title="四级标题" onClick={markdownCommands.h4}>
+          <span className="lvl">H4</span>
         </Btn>
       </div>
       <div className="tb-group tb-format">
-        <Btn title="加粗 ⌘B" onClick={() => wrapSelection("**", "**", "加粗文字")}>
+        <Btn title="加粗 ⌘B" onClick={markdownCommands.bold}>
           <Icon name="bold" size={12} />
         </Btn>
-        <Btn title="斜体 ⌘I" onClick={() => wrapSelection("*", "*", "斜体")}>
+        <Btn title="斜体 ⌘I" onClick={markdownCommands.italic}>
           <Icon name="italic" size={12} />
         </Btn>
-        <Btn title="删除线" onClick={() => wrapSelection("~~", "~~", "删除")}>
+        <Btn title="删除线" onClick={markdownCommands.strike}>
           <Icon name="strike" size={12} />
         </Btn>
-        <Btn title="高亮 ⌘⇧H" onClick={() => wrapSelection("==", "==", "高亮")}>
+        <Btn title="高亮 ⌘⇧H" onClick={markdownCommands.mark}>
           <span
             style={{
               background: "var(--hl-mark)",
@@ -241,22 +250,18 @@ function FormatRow() {
             H
           </span>
         </Btn>
-        <Btn title="行内代码" onClick={() => wrapSelection("`", "`", "code")}>
+        <Btn title="下划线" onClick={markdownCommands.underline}>
+          <Icon name="under" size={12} />
+        </Btn>
+        <Btn title="行内代码" onClick={markdownCommands.inlineCode}>
           <Icon name="code" size={12} />
         </Btn>
       </div>
       <div className="tb-group tb-format">
-        <Btn
-          title="链接"
-          onClick={() => {
-            const url = window.prompt("链接 URL", "https://");
-            if (!url) return;
-            wrapSelection("[", `](${url})`, "链接文本");
-          }}
-        >
+        <Btn title="链接" onClick={markdownCommands.link}>
           <Icon name="link" size={12} />
         </Btn>
-        <Btn title="双向链接" onClick={() => wrapSelection("[[", "]]", "笔记名")}>
+        <Btn title="双向链接" onClick={markdownCommands.wikiLink}>
           <span
             style={{
               fontSize: 12,
@@ -268,57 +273,32 @@ function FormatRow() {
             [[
           </span>
         </Btn>
-        <Btn
-          title="图片"
-          onClick={() => {
-            const url = window.prompt("图片 URL", "https://");
-            if (!url) return;
-            wrapSelection("![", `](${url})`, "alt");
-          }}
-        >
+        <Btn title="图片" onClick={markdownCommands.image}>
           <Icon name="image" size={12} />
         </Btn>
       </div>
       <div className="tb-group tb-format">
-        <Btn title="无序列表" onClick={() => prefixLine("- ")}>
+        <Btn title="无序列表" onClick={markdownCommands.bulletList}>
           <span style={{ fontSize: 12 }}>•≡</span>
         </Btn>
-        <Btn title="有序列表" onClick={() => prefixLine("1. ")}>
+        <Btn title="有序列表" onClick={markdownCommands.orderedList}>
           <span style={{ fontSize: 11 }}>1.≡</span>
         </Btn>
-        <Btn title="待办清单" onClick={() => prefixLine("- [ ] ")}>
+        <Btn title="待办清单" onClick={markdownCommands.taskList}>
           <Icon name="check-square" size={12} />
         </Btn>
-        <Btn title="引用" onClick={() => prefixLine("> ")}>
+        <Btn title="引用" onClick={markdownCommands.quote}>
           <Icon name="quote" size={12} />
         </Btn>
       </div>
       <div className="tb-group tb-format">
-        <Btn
-          title="表格"
-          onClick={() =>
-            insertBlock(
-              "\n| 列 A | 列 B | 列 C |\n| --- | --- | --- |\n| | | |\n",
-              { atLineStart: true },
-            )
-          }
-        >
-          <Icon name="table" size={12} />
-        </Btn>
-        <Btn
-          title="代码块"
-          onClick={() =>
-            insertBlock("\n```ts\n\n```\n", { atLineStart: true })
-          }
-        >
+        <TableInsertButton />
+        <Btn title="代码块" onClick={markdownCommands.codeBlock}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>
             {"{}"}
           </span>
         </Btn>
-        <Btn
-          title="数学公式"
-          onClick={() => insertBlock("\n$$\n\n$$\n", { atLineStart: true })}
-        >
+        <Btn title="数学公式" onClick={markdownCommands.mathBlock}>
           <span
             style={{
               fontFamily: "var(--font-serif)",
@@ -329,20 +309,93 @@ function FormatRow() {
             ∑
           </span>
         </Btn>
-        <Btn
-          title="Mermaid"
-          onClick={() =>
-            insertBlock("\n```mermaid\ngraph LR\n  A --> B\n```\n", {
-              atLineStart: true,
-            })
-          }
-        >
+        <Btn title="Mermaid" onClick={markdownCommands.mermaid}>
           <span style={{ fontSize: 12, lineHeight: 1 }}>◇</span>
         </Btn>
-        <Btn title="分割线" onClick={() => insertBlock("\n---\n", { atLineStart: true })}>
+        <Btn title="提示块" onClick={markdownCommands.callout}>
+          <Icon name="info" size={12} />
+        </Btn>
+        <Btn title="脚注定义" onClick={markdownCommands.footnote}>
+          <span style={{ fontSize: 11, fontWeight: 700 }}>[1]</span>
+        </Btn>
+        <Btn title="分割线" onClick={markdownCommands.horizontalRule}>
           <span style={{ fontSize: 11, letterSpacing: -2 }}>―</span>
         </Btn>
       </div>
+    </div>
+  );
+}
+
+function TableInsertButton() {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState({ rows: 3, cols: 3 });
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const maxRows = 8;
+  const maxCols = 8;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const insert = (rows: number, cols: number) => {
+    markdownCommands.insertTable(rows, cols);
+    setOpen(false);
+  };
+
+  return (
+    <div className="tb-popover-host" ref={wrapRef}>
+      <button
+        type="button"
+        className="tb-btn"
+        title="表格"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="table" size={12} />
+      </button>
+      {open && (
+        <div
+          className="table-size-popover"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="table-size-title">{hover.rows} x {hover.cols}</div>
+          <div
+            className="table-size-grid"
+            style={{
+              gridTemplateColumns: `repeat(${maxCols}, 18px)`,
+            }}
+          >
+            {Array.from({ length: maxRows * maxCols }, (_, i) => {
+              const row = Math.floor(i / maxCols) + 1;
+              const col = (i % maxCols) + 1;
+              const active = row <= hover.rows && col <= hover.cols;
+              return (
+                <button
+                  key={`${row}-${col}`}
+                  type="button"
+                  className={classNames("table-size-cell", active && "active")}
+                  aria-label={`插入 ${row} 行 ${col} 列表格`}
+                  onMouseEnter={() => setHover({ rows: row, cols: col })}
+                  onClick={() => insert(row, col)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

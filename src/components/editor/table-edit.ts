@@ -9,6 +9,7 @@
 // 工具栏按钮调用 `withTable` 拿到 mutated content 再 dispatch。
 
 import type { EditorView } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
 
 export interface TableInfo {
   /** 表格在 doc 中的 [from, to) 字符范围（含分隔行 + 数据行，含尾部换行） */
@@ -24,6 +25,8 @@ export interface TableInfo {
   cursorRow: number;
   /** 光标所在列 */
   cursorCol: number;
+  /** 表格起始行号（CodeMirror 1-based） */
+  topLine: number;
 }
 
 function isSeparatorRow(line: string): boolean {
@@ -80,6 +83,30 @@ function buildTable(cells: string[][], aligns: Array<"left" | "center" | "right"
     lines.push(buildRow(padded[i]));
   }
   return lines.join("\n");
+}
+
+function cellRangeInLine(lineText: string, lineFrom: number, col: number): { from: number; to: number } {
+  const pipes: number[] = [];
+  for (let i = 0; i < lineText.length; i++) {
+    if (lineText[i] === "|") pipes.push(i);
+  }
+  if (pipes.length < 2) return { from: lineFrom, to: lineFrom };
+  const startPipe = pipes[Math.max(0, Math.min(col, pipes.length - 2))];
+  const endPipe = pipes[Math.max(1, Math.min(col + 1, pipes.length - 1))];
+  let from = startPipe + 1;
+  let to = endPipe;
+  while (from < to && /\s/.test(lineText[from])) from++;
+  while (to > from && /\s/.test(lineText[to - 1])) to--;
+  return { from: lineFrom + from, to: lineFrom + to };
+}
+
+function cellRangeInBuiltTable(table: string, tableFrom: number, row: number, col: number) {
+  const lines = table.split("\n");
+  const lineIndex = row === 0 ? 0 : row + 1;
+  const before = lines.slice(0, lineIndex).join("\n");
+  const lineFrom = tableFrom + (before ? before.length + 1 : 0);
+  const range = cellRangeInLine(lines[lineIndex] ?? "", lineFrom, col);
+  return { anchor: range.from, head: range.to };
 }
 
 export function detectTable(view: EditorView): TableInfo | null {
@@ -153,6 +180,7 @@ export function detectTable(view: EditorView): TableInfo | null {
     aligns,
     cursorRow,
     cursorCol,
+    topLine,
   };
 }
 
@@ -163,6 +191,10 @@ export type TableAction =
   | { type: "insertColRight" }
   | { type: "deleteRow" }
   | { type: "deleteCol" }
+  | { type: "clearRow" }
+  | { type: "clearCol" }
+  | { type: "selectRow" }
+  | { type: "selectCol" }
   | { type: "align"; value: "left" | "center" | "right" | null };
 
 export function applyTableAction(view: EditorView, action: TableAction): boolean {
@@ -174,40 +206,81 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
   const colCount = aligns.length;
   let row = info.cursorRow;
   let col = info.cursorCol;
-  if (row < 0) row = 1;
+  if (row < 0) row = Math.min(1, cells.length - 1);
+  row = Math.max(0, Math.min(cells.length - 1, row));
+  let targetRow = row;
+  let targetCol = col;
+
+  if (action.type === "selectRow") {
+    const lineNumber = info.topLine + (row === 0 ? 0 : row + 1);
+    const line = view.state.doc.line(lineNumber);
+    view.dispatch({
+      selection: { anchor: line.from, head: line.to },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  if (action.type === "selectCol") {
+    const ranges = info.cells.map((_, r) => {
+      const lineNumber = info.topLine + (r === 0 ? 0 : r + 1);
+      const line = view.state.doc.line(lineNumber);
+      const range = cellRangeInLine(line.text, line.from, col);
+      return EditorSelection.range(range.from, range.to);
+    });
+    view.dispatch({
+      selection: EditorSelection.create(ranges, 0),
+      scrollIntoView: true,
+    });
+    return true;
+  }
 
   switch (action.type) {
     case "insertRowAbove": {
       const idx = row;
       const newRow = Array(colCount).fill("");
       cells.splice(idx, 0, newRow);
+      targetRow = idx;
       break;
     }
     case "insertRowBelow": {
       const idx = row + 1;
       const newRow = Array(colCount).fill("");
       cells.splice(idx, 0, newRow);
+      targetRow = idx;
       break;
     }
     case "insertColLeft": {
       for (const r of cells) r.splice(col, 0, "");
       aligns.splice(col, 0, null);
+      targetCol = col;
       break;
     }
     case "insertColRight": {
       for (const r of cells) r.splice(col + 1, 0, "");
       aligns.splice(col + 1, 0, null);
+      targetCol = col + 1;
       break;
     }
     case "deleteRow": {
       if (cells.length <= 1) return false; // 至少保留表头
       cells.splice(Math.max(1, row), 1);
+      targetRow = Math.min(Math.max(1, row), cells.length - 1);
       break;
     }
     case "deleteCol": {
       if (colCount <= 1) return false;
       for (const r of cells) r.splice(col, 1);
       aligns.splice(col, 1);
+      targetCol = Math.min(col, aligns.length - 1);
+      break;
+    }
+    case "clearRow": {
+      cells[row] = cells[row].map(() => "");
+      break;
+    }
+    case "clearCol": {
+      for (const r of cells) r[col] = "";
       break;
     }
     case "align": {
@@ -219,6 +292,8 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
   const next = buildTable(cells, aligns);
   view.dispatch({
     changes: { from: info.from, to: info.to, insert: next },
+    selection: cellRangeInBuiltTable(next, info.from, targetRow, targetCol),
+    scrollIntoView: true,
     userEvent: "input",
   });
   return true;

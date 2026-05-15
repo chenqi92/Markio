@@ -687,6 +687,64 @@
 .slash-item .ttl { color: var(--text); font-weight: 500; }
 .slash-item .sub { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
 
+/* table editing toolbar */
+.table-toolbar {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(760px, calc(100vw - 24px));
+  padding: 5px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-soft);
+  z-index: 90;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.table-toolbar::-webkit-scrollbar { display: none; }
+.table-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 5px;
+  margin-right: 2px;
+  border-right: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+.table-toolbar-group:last-child {
+  border-right: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+.table-toolbar-btn {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans, -apple-system, "PingFang SC", sans-serif);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.table-toolbar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.table-toolbar-btn[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 /* upload toast */
 .upload-toast {
   position: fixed; bottom: 40px; left: 50%;

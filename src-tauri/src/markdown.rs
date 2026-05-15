@@ -8,6 +8,13 @@ use syntect::util::LinesWithEndings;
 
 const MAX_INLINE_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
 
+#[derive(Debug, Clone, Default)]
+struct CodeInfo {
+    lang: String,
+    title: Option<String>,
+    highlight_lines: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OutlineItem {
     pub level: u8,
@@ -74,13 +81,70 @@ fn escape_attr(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn highlight_code(code: &str, lang: &str) -> String {
+fn parse_attr_value(input: &str, key: &str) -> Option<String> {
+    let start = input.find(&format!("{key}="))?;
+    let mut rest = input[start + key.len() + 1..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = rest.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        return Some(stripped[..end].to_string());
+    }
+    if let Some(stripped) = rest.strip_prefix('\'') {
+        let end = stripped.find('\'')?;
+        return Some(stripped[..end].to_string());
+    }
+    let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+    rest = &rest[..end];
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
+}
+
+fn parse_highlight_lines(input: &str) -> Option<String> {
+    let start = input.find('{')?;
+    let end = input[start + 1..].find('}')? + start + 1;
+    let spec = input[start + 1..end].trim();
+    if spec.is_empty()
+        || !spec
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == ',' || c == '-' || c.is_whitespace())
+    {
+        return None;
+    }
+    Some(spec.to_string())
+}
+
+fn parse_code_info(info: &str) -> CodeInfo {
+    let trimmed = info.trim();
+    if trimmed.is_empty() {
+        return CodeInfo::default();
+    }
+    let first = trimmed.split_whitespace().next().unwrap_or("");
+    let lang = if first.starts_with('{') || first.contains('=') {
+        String::new()
+    } else {
+        first.to_ascii_lowercase()
+    };
+    CodeInfo {
+        lang,
+        title: parse_attr_value(trimmed, "title")
+            .or_else(|| parse_attr_value(trimmed, "file"))
+            .or_else(|| parse_attr_value(trimmed, "filename")),
+        highlight_lines: parse_highlight_lines(trimmed),
+    }
+}
+
+fn highlight_code(code: &str, info: &CodeInfo) -> String {
     let ss = syntax_set();
-    let syntax = if lang.is_empty() {
+    let syntax = if info.lang.is_empty() {
         ss.find_syntax_plain_text()
     } else {
-        ss.find_syntax_by_token(lang)
-            .or_else(|| ss.find_syntax_by_name(lang))
+        ss.find_syntax_by_token(&info.lang)
+            .or_else(|| ss.find_syntax_by_name(&info.lang))
             .unwrap_or_else(|| ss.find_syntax_plain_text())
     };
     let mut generator = ClassedHTMLGenerator::new_with_class_style(syntax, ss, ClassStyle::Spaced);
@@ -88,9 +152,19 @@ fn highlight_code(code: &str, lang: &str) -> String {
         let _ = generator.parse_html_for_line_which_includes_newline(line);
     }
     let html = generator.finalize();
+    let title_attr = info
+        .title
+        .as_ref()
+        .map(|title| format!(" data-title=\"{}\"", escape_attr(title)))
+        .unwrap_or_default();
+    let highlight_attr = info
+        .highlight_lines
+        .as_ref()
+        .map(|lines| format!(" data-highlight-lines=\"{}\"", escape_attr(lines)))
+        .unwrap_or_default();
     format!(
-        "<pre class=\"hljs\" data-lang=\"{lang_attr}\"><code class=\"language-{lang_attr}\">{html}</code></pre>",
-        lang_attr = escape_attr(lang),
+        "<pre class=\"hljs\" data-lang=\"{lang_attr}\"{title_attr}{highlight_attr}><code class=\"language-{lang_attr}\">{html}</code></pre>",
+        lang_attr = escape_attr(&info.lang),
         html = html
     )
 }
@@ -265,7 +339,15 @@ fn sanitize(html: &str) -> String {
         "figure",
         "figcaption",
     ]);
-    b.add_generic_attributes(&["class", "id", "data-lang", "data-mermaid", "data-line"]);
+    b.add_generic_attributes(&[
+        "class",
+        "id",
+        "data-lang",
+        "data-title",
+        "data-highlight-lines",
+        "data-mermaid",
+        "data-line",
+    ]);
     b.add_tag_attributes("input", &["type", "checked", "disabled"]);
     // 注意 ammonia 自己控制 <a rel>，写进来会 panic
     b.add_tag_attributes("a", &["href", "title", "target", "id"]);
@@ -285,7 +367,7 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
     let mut heading_events: Vec<Event> = Vec::new();
 
     let mut code_buf = String::new();
-    let mut code_lang = String::new();
+    let mut code_info = CodeInfo::default();
     let mut in_code = false;
     let mut id_counter: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
@@ -351,18 +433,17 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                 Event::Text(t) => code_buf.push_str(t),
                 Event::End(TagEnd::CodeBlock) => {
                     in_code = false;
-                    let lang = code_lang.to_lowercase();
-                    if lang == "mermaid" {
+                    if code_info.lang == "mermaid" {
                         html.push_str(&format!(
                             "<div class=\"mermaid-block\" data-mermaid=\"{}\">{}</div>",
                             urlencode(&code_buf),
                             escape_html(&code_buf)
                         ));
                     } else {
-                        html.push_str(&highlight_code(&code_buf, &lang));
+                        html.push_str(&highlight_code(&code_buf, &code_info));
                     }
                     code_buf.clear();
-                    code_lang.clear();
+                    code_info = CodeInfo::default();
                 }
                 _ => {}
             }
@@ -378,9 +459,9 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                 flush(&mut buffer, &mut html);
                 in_code = true;
                 code_buf.clear();
-                code_lang.clear();
+                code_info = CodeInfo::default();
                 if let CodeBlockKind::Fenced(info) = kind {
-                    code_lang = info.split_whitespace().next().unwrap_or("").to_string();
+                    code_info = parse_code_info(info);
                 }
             }
             _ => buffer.push(ev),
@@ -507,5 +588,14 @@ mod tests {
         assert!(res.html.contains("Hello"));
         assert_eq!(res.outline.len(), 1);
         assert!(res.words > 0);
+    }
+
+    #[test]
+    fn render_preserves_code_block_metadata() {
+        let src = "```ts title=\"src/App.tsx\" {2,4-5}\nconst a = 1;\nconsole.log(a);\n```";
+        let res = render(src, None, &[]);
+        assert!(res.html.contains("data-lang=\"ts\""));
+        assert!(res.html.contains("data-title=\"src/App.tsx\""));
+        assert!(res.html.contains("data-highlight-lines=\"2,4-5\""));
     }
 }

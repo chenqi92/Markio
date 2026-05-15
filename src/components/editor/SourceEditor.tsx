@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import CodeMirror, {
   type ReactCodeMirrorRef,
   EditorView,
 } from "@uiw/react-codemirror";
+import { Prec } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { EditorView as CMView } from "@codemirror/view";
+import { EditorView as CMView, keymap } from "@codemirror/view";
 import { useSettings } from "@/stores/settings";
 import { registerEditor } from "@/lib/editor-bridge";
+import { markdownCommands } from "@/lib/markdown-commands";
 import { wysiwygMarkdown } from "./wysiwyg";
 
 interface Props {
@@ -60,11 +62,26 @@ export function SourceEditor({
   const ref = useRef<ReactCodeMirrorRef>(null);
   const suppressScrollRef = useRef(false);
 
+  const applyScrollTarget = useCallback(() => {
+    const view = ref.current?.view;
+    if (!view || !scrollTarget) return;
+    const el = view.scrollDOM;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    if (Math.abs(el.scrollTop - nextTop) < 1) return;
+    suppressScrollRef.current = true;
+    el.scrollTop = nextTop;
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
+  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+
   const extensions = useMemo(
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       EditorView.lineWrapping,
       ...(wysiwyg ? [wysiwygMarkdown] : []),
+      markdownKeymap,
       mathInputHandler,
       EditorView.updateListener.of((u) => {
         if (u.selectionSet && onSelectionChange) {
@@ -158,18 +175,8 @@ export function SourceEditor({
   }, [onScroll]);
 
   useEffect(() => {
-    const view = ref.current?.view;
-    if (!view || !scrollTarget) return;
-    const el = view.scrollDOM;
-    const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
-    if (Math.abs(el.scrollTop - nextTop) < 1) return;
-    suppressScrollRef.current = true;
-    el.scrollTop = nextTop;
-    requestAnimationFrame(() => {
-      suppressScrollRef.current = false;
-    });
-  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+    applyScrollTarget();
+  }, [applyScrollTarget, value]);
 
   useEffect(() => {
     if (!onPasteImages) return;
@@ -276,4 +283,29 @@ const mathInputHandler = EditorView.inputHandler.of(
     });
     return true;
   },
+);
+
+function runMarkdownCommand(command: () => void) {
+  return () => {
+    command();
+    return true;
+  };
+}
+
+const markdownKeymap = Prec.highest(
+  keymap.of([
+    { key: "Mod-b", run: runMarkdownCommand(markdownCommands.bold) },
+    { key: "Mod-i", run: runMarkdownCommand(markdownCommands.italic) },
+    { key: "Mod-k", run: runMarkdownCommand(markdownCommands.link) },
+    { key: "Mod-Shift-h", run: runMarkdownCommand(markdownCommands.mark) },
+    { key: "Mod-Shift-x", run: runMarkdownCommand(markdownCommands.strike) },
+    { key: "Mod-Alt-1", run: runMarkdownCommand(markdownCommands.h1) },
+    { key: "Mod-Alt-2", run: runMarkdownCommand(markdownCommands.h2) },
+    { key: "Mod-Alt-3", run: runMarkdownCommand(markdownCommands.h3) },
+    { key: "Mod-Alt-4", run: runMarkdownCommand(markdownCommands.h4) },
+    { key: "Mod-Alt-l", run: runMarkdownCommand(markdownCommands.wikiLink) },
+    { key: "Mod-Alt-t", run: runMarkdownCommand(markdownCommands.table) },
+    { key: "Mod-Alt-c", run: runMarkdownCommand(markdownCommands.codeBlock) },
+    { key: "Mod-Alt-m", run: runMarkdownCommand(markdownCommands.mathBlock) },
+  ]),
 );

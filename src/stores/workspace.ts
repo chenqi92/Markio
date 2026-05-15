@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { FileEntry, Workspace } from "@/types";
 import { api } from "@/lib/api";
 import { basename, colorForName, initialFor, uid } from "@/lib/utils";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -250,7 +251,8 @@ export const useWorkspace = create<WorkspaceState>()(
     }),
     {
       name: "markio.workspaces.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
       partialize: (s) => ({
         workspaces: s.workspaces,
         activeId: s.activeId,

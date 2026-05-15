@@ -5,10 +5,12 @@ import { useTabs } from "./stores/tabs";
 import { useWorkspace } from "./stores/workspace";
 import { useSettings } from "./stores/settings";
 import { useRag } from "./stores/rag";
+import { useVaultIndex } from "./stores/vaultIndex";
 import { isDarkTheme } from "./themes";
 import { api, parseError, pickDirectory, pickFile } from "./lib/api";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
+import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -120,6 +122,60 @@ export default function App() {
     })();
   }, [hydrate, setAi]);
 
+  // 当前仓库切换后，后台拉起 vault index（先用 disk cache 立刻有数据，再 mtime diff）
+  useEffect(() => {
+    if (!activeWorkspacePath) return;
+    const t = setTimeout(() => {
+      void useVaultIndex.getState().ensure(activeWorkspacePath);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [activeWorkspacePath]);
+
+  // 全局订阅 rag-status：把后端推送的进度 / 索引快照写入 useRag.status
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      try {
+        unlisten = await listen<import("./lib/api").RagStatus>(
+          "rag-status",
+          (e) => {
+            const payload = e.payload;
+            const ws = useWorkspace
+              .getState()
+              .workspaces.find((w) => {
+                const a = w.path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const b = payload.workspace
+                  .replace(/\\/g, "/")
+                  .replace(/\/+$/, "")
+                  .toLowerCase();
+                return a === b;
+              });
+            if (!ws) return;
+            useRag.setState((s) => ({
+              status: { ...s.status, [ws.id]: payload },
+            }));
+          },
+        );
+      } catch (err) {
+        console.warn("[rag-status] subscribe failed", err);
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // 当前仓库切换 + ragEnabled 时刷新一次 RAG 状态（让 AI 面板 CTA 立即可见）
+  useEffect(() => {
+    if (!activeWorkspacePath) return;
+    const ws = useWorkspace
+      .getState()
+      .workspaces.find((w) => w.path === activeWorkspacePath);
+    if (!ws) return;
+    if (!useSettings.getState().ragEnabled) return;
+    void useRag.getState().refresh(ws.id, ws.path);
+  }, [activeWorkspacePath]);
+
   // Rust watcher 触发的文件系统变动 → 节流刷新文件树
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -135,6 +191,9 @@ export default function App() {
           if (!isTreeRefreshRelevant(path)) return;
           if (Date.now() - appStartedAt < FS_EVENT_STARTUP_GRACE_MS) return;
           scheduleRagForFsEvent(workspace, path, kind);
+          if (isRagFile(path)) {
+            useVaultIndex.getState().scheduleRebuild(workspace);
+          }
           const targetDir = treeRefreshDir(workspace, path, kind);
           const refreshKey = `${workspace}\0${targetDir}`;
           // 同一个目录 1s 内只刷一次
@@ -216,40 +275,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && (e.key === "k" || e.key === "K")) {
-        e.preventDefault();
-        openCommand(true);
-      } else if (mod && e.shiftKey && (e.key === "f" || e.key === "F")) {
-        e.preventDefault();
-        useUI.getState().openGlobalSearch(true);
-      } else if (mod && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        openCommand(true);
-      } else if (mod && (e.key === "f" || e.key === "F")) {
-        e.preventDefault();
-        openFind(true);
-      } else if (mod && (e.key === "s" || e.key === "S")) {
-        e.preventDefault();
-        if (activeDirty) {
-          saveActive().then((outcome) => {
-            if (outcome === "ok") {
-              setToast({ stage: "done", message: "已保存" });
-              setTimeout(() => setToast(null), 1500);
-            } else if (outcome === "conflict") {
-              const force = window.confirm(
-                "文件已被外部修改。继续保存会覆盖磁盘版本。点确认覆盖，取消则放弃保存。",
-              );
-              if (force) {
-                const id = useTabs.getState().activeId;
-                if (id) useTabs.getState().saveTab(id, true);
-              }
+    const handlers: Record<CommandId, () => void> = {
+      "app.commandPalette": () => openCommand(true),
+      "app.commandPaletteP": () => openCommand(true),
+      "app.globalSearch": () => useUI.getState().openGlobalSearch(true),
+      "app.findInFile": () => openFind(true),
+      "app.save": () => {
+        if (!activeDirty) return;
+        saveActive().then((outcome) => {
+          if (outcome === "ok") {
+            setToast({ stage: "done", message: "已保存" });
+            setTimeout(() => setToast(null), 1500);
+          } else if (outcome === "conflict") {
+            const force = window.confirm(
+              "文件已被外部修改。继续保存会覆盖磁盘版本。点确认覆盖，取消则放弃保存。",
+            );
+            if (force) {
+              const id = useTabs.getState().activeId;
+              if (id) useTabs.getState().saveTab(id, true);
             }
-          });
-        }
-      } else if (mod && (e.key === "n" || e.key === "N")) {
-        e.preventDefault();
+          }
+        });
+      },
+      "app.newNote": () => {
         (async () => {
           const ws = useWorkspace.getState().activeWorkspace();
           if (!ws) {
@@ -268,9 +316,7 @@ export default function App() {
           } catch (err) {
             const e2 = parseError(err);
             if (e2.code === "ALREADY_EXISTS") {
-              const reuse = window.confirm(
-                `${fname} 已存在。打开它？`,
-              );
+              const reuse = window.confirm(`${fname} 已存在。打开它？`);
               if (reuse) {
                 await useTabs.getState().openFile(ws.id, path);
               }
@@ -283,68 +329,48 @@ export default function App() {
             }
           }
         })();
-      } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {
-        e.preventDefault();
-        pickDirectory().then((dir) => {
-          if (dir) addWorkspace(dir);
-        });
-      } else if (mod && (e.key === "o" || e.key === "O")) {
-        e.preventDefault();
+      },
+      "app.openFile": () => {
         pickFile([
           { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
         ]).then((f) => {
           if (f) openPath(f);
         });
-      } else if (mod && (e.key === "j" || e.key === "J")) {
-        e.preventDefault();
-        useUI.getState().openAi(!useUI.getState().aiOpen);
-      } else if (mod && (e.key === "e" || e.key === "E")) {
-        e.preventDefault();
+      },
+      "app.openFolder": () => {
+        pickDirectory().then((dir) => {
+          if (dir) addWorkspace(dir);
+        });
+      },
+      "app.toggleAi": () => useUI.getState().openAi(!useUI.getState().aiOpen),
+      "app.openExport": () => {
         const tab = useTabs.getState().activeTab();
         if (tab) useUI.getState().openExportSheet(true);
-      } else if (mod && (e.key === "," || e.key === "<")) {
-        e.preventDefault();
-        openSettings(true);
-      } else if (mod && (e.key === "y" || e.key === "Y")) {
-        e.preventDefault();
-        useUI.getState().openHistory(!useUI.getState().historyOpen);
-      } else if (mod && (e.key === "w" || e.key === "W")) {
-        e.preventDefault();
-        if (activeId) {
-          const t = useTabs.getState().tabs.find((x) => x.id === activeId);
-          if (t && t.dirty) {
-            const ok = window.confirm(
-              `${t.title} 还有未保存的修改。继续关闭会丢失。`,
-            );
-            if (!ok) return;
-          }
-          closeTab(activeId);
+      },
+      "app.openSettings": () => openSettings(true),
+      "app.toggleHistory": () =>
+        useUI.getState().openHistory(!useUI.getState().historyOpen),
+      "app.closeTab": () => {
+        if (!activeId) return;
+        const t = useTabs.getState().tabs.find((x) => x.id === activeId);
+        if (t && t.dirty) {
+          const ok = window.confirm(
+            `${t.title} 还有未保存的修改。继续关闭会丢失。`,
+          );
+          if (!ok) return;
         }
-      } else if (mod && e.key === ".") {
-        e.preventDefault();
-        toggleFocus();
-      } else if (mod && e.shiftKey && (e.key === "l" || e.key === "L")) {
-        e.preventDefault();
-        toggleSidebar();
-      } else if (mod && e.shiftKey && (e.key === "r" || e.key === "R")) {
-        e.preventDefault();
-        toggleOutline();
-      } else if (mod && e.key === "1") {
-        e.preventDefault();
-        setMode("source");
-      } else if (mod && e.key === "2") {
-        e.preventDefault();
-        setMode("split");
-      } else if (mod && e.key === "3") {
-        e.preventDefault();
-        setMode("wysiwyg");
-      } else if (mod && e.key === "4") {
-        e.preventDefault();
-        setMode("preview");
-      } else if (e.altKey && (e.code === "Space" || e.key === " ")) {
-        e.preventDefault();
-        useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen);
-      } else if (e.key === "Escape") {
+        closeTab(activeId);
+      },
+      "app.toggleFocus": toggleFocus,
+      "app.toggleSidebar": toggleSidebar,
+      "app.toggleOutline": toggleOutline,
+      "app.viewSource": () => setMode("source"),
+      "app.viewSplit": () => setMode("split"),
+      "app.viewWysiwyg": () => setMode("wysiwyg"),
+      "app.viewPreview": () => setMode("preview"),
+      "app.quickCapture": () =>
+        useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen),
+      "app.escape": () => {
         openCommand(false);
         openFind(false);
         openSettings(false);
@@ -354,6 +380,20 @@ export default function App() {
         useUI.getState().openGlobalSearch(false);
         useUI.getState().openQuickCapture(false);
         useUI.getState().openExportSheet(false);
+      },
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      const overrides = useSettings.getState().shortcutOverrides;
+      for (const cmd of COMMANDS) {
+        const override = overrides[cmd.id];
+        const binding = override !== undefined ? override : cmd.defaultBinding;
+        if (!binding) continue;
+        if (!matchesBinding(e, binding)) continue;
+        // Escape 不 preventDefault（让其它输入框能正常处理），其它命令都拦截
+        if (cmd.id !== "app.escape") e.preventDefault();
+        handlers[cmd.id]();
+        return;
       }
     };
     window.addEventListener("keydown", onKey);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
-import { deleteBeforeCursor, insertBlock, prefixLine } from "@/lib/editor-bridge";
+import { deleteBeforeCursor } from "@/lib/editor-bridge";
+import { markdownCommands } from "@/lib/markdown-commands";
 
 interface Item {
   id: string;
@@ -24,7 +25,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "# 标题",
       run: () => {
         finish();
-        prefixLine("# ");
+        markdownCommands.h1();
       },
     },
     {
@@ -34,7 +35,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "## 标题",
       run: () => {
         finish();
-        prefixLine("## ");
+        markdownCommands.h2();
       },
     },
     {
@@ -44,7 +45,17 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "### 标题",
       run: () => {
         finish();
-        prefixLine("### ");
+        markdownCommands.h3();
+      },
+    },
+    {
+      id: "h4",
+      mark: "H4",
+      ttl: "四级标题",
+      sub: "#### 标题",
+      run: () => {
+        finish();
+        markdownCommands.h4();
       },
     },
     {
@@ -54,7 +65,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "可勾选清单",
       run: () => {
         finish();
-        prefixLine("- [ ] ");
+        markdownCommands.taskList();
       },
     },
     {
@@ -64,7 +75,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "- 项目",
       run: () => {
         finish();
-        prefixLine("- ");
+        markdownCommands.bulletList();
       },
     },
     {
@@ -74,7 +85,27 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "缩进引用",
       run: () => {
         finish();
-        prefixLine("> ");
+        markdownCommands.quote();
+      },
+    },
+    {
+      id: "link",
+      icon: "link",
+      ttl: "链接",
+      sub: "[文本](URL)",
+      run: () => {
+        finish();
+        markdownCommands.link();
+      },
+    },
+    {
+      id: "image",
+      icon: "image",
+      ttl: "图片",
+      sub: "![alt](URL)",
+      run: () => {
+        finish();
+        markdownCommands.image();
       },
     },
     {
@@ -84,7 +115,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "支持 90+ 语言高亮",
       run: () => {
         finish();
-        insertBlock("\n```\n\n```\n", { atLineStart: true });
+        markdownCommands.codeBlock();
       },
     },
     {
@@ -94,10 +125,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "插入 3 × 3 表格",
       run: () => {
         finish();
-        insertBlock(
-          "\n| 列 A | 列 B | 列 C |\n| --- | --- | --- |\n| | | |\n",
-          { atLineStart: true },
-        );
+        markdownCommands.table();
       },
     },
     {
@@ -107,7 +135,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "info / warn / tip",
       run: () => {
         finish();
-        insertBlock("\n> [!TIP]\n> ", { atLineStart: true });
+        markdownCommands.callout();
       },
     },
     {
@@ -117,7 +145,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "LaTeX 语法",
       run: () => {
         finish();
-        insertBlock("\n$$\n\n$$\n", { atLineStart: true });
+        markdownCommands.mathBlock();
       },
     },
     {
@@ -127,9 +155,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "graph / sequence / gantt",
       run: () => {
         finish();
-        insertBlock("\n```mermaid\ngraph LR\n  A --> B\n```\n", {
-          atLineStart: true,
-        });
+        markdownCommands.mermaid();
       },
     },
     {
@@ -139,7 +165,17 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "[[ 引用其它笔记",
       run: () => {
         finish();
-        insertBlock("[[]] ", {});
+        markdownCommands.wikiLink();
+      },
+    },
+    {
+      id: "footnote",
+      mark: "[1]",
+      ttl: "脚注定义",
+      sub: "[^1]: 内容",
+      run: () => {
+        finish();
+        markdownCommands.footnote();
       },
     },
     {
@@ -149,7 +185,7 @@ const ITEMS = (close: () => void): Item[] => {
       sub: "---",
       run: () => {
         finish();
-        insertBlock("\n---\n", { atLineStart: true });
+        markdownCommands.horizontalRule();
       },
     },
   ];

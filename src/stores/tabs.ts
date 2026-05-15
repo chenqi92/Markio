@@ -8,7 +8,7 @@ import { useRecents } from "./recents";
 import { useUI } from "./ui";
 import { useSettings } from "./settings";
 import { useRag } from "./rag";
-import { useVaultTokens } from "./vaultTokens";
+import { useVaultIndex } from "./vaultIndex";
 
 interface TabsState {
   tabs: TabInfo[];
@@ -57,7 +57,7 @@ function scheduleVaultTokenRefresh(workspacePath: string) {
   if (current) clearTimeout(current);
   const timer = setTimeout(() => {
     tokenRefreshTimers.delete(workspacePath);
-    void useVaultTokens.getState().ensure(workspacePath);
+    useVaultIndex.getState().scheduleRebuild(workspacePath);
   }, POST_SAVE_TOKEN_DELAY_MS);
   tokenRefreshTimers.set(workspacePath, timer);
 }

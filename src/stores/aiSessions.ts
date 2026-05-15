@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 export type AIScope = "all" | "folder" | "open" | "tag" | "custom";
 
@@ -171,7 +172,8 @@ export const useAISessions = create<AISessionsState>()(
     }),
     {
       name: "markio.aiSessions.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
       partialize: (s) => ({
         sessions: s.sessions,
         activeId: s.activeId,

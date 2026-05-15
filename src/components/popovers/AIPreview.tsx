@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
-import { api } from "@/lib/api";
+import { api, type VaultFile } from "@/lib/api";
 import { renderMermaidIn } from "@/lib/mermaid";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useSettings } from "@/stores/settings";
+import { useVaultIndex } from "@/stores/vaultIndex";
 import { insertBlock } from "@/lib/editor-bridge";
 import { crumbSegments } from "@/lib/utils";
-import type { FileEntry } from "@/types";
 
 interface Props {
   /** wiki 名（不带 .md） */
@@ -16,18 +16,12 @@ interface Props {
   onClose: () => void;
 }
 
-/** 在文件树里递归找首个匹配文件名的 .md（不区分大小写、忽略扩展名） */
-function findByName(tree: FileEntry | undefined, name: string): FileEntry | null {
-  if (!tree) return null;
+/** 在 vault index 里找首个匹配文件名的 .md（不区分大小写、忽略扩展名） */
+function findByName(files: VaultFile[] | undefined, name: string): VaultFile | null {
+  if (!files) return null;
   const target = name.toLowerCase();
-  const stack: FileEntry[] = [tree];
-  while (stack.length) {
-    const n = stack.pop()!;
-    if (!n.isDir) {
-      const base = n.name.replace(/\.(md|markdown|mdown|mkd)$/i, "").toLowerCase();
-      if (base === target) return n;
-    }
-    if (n.children) for (const c of n.children) stack.push(c);
+  for (const f of files) {
+    if (f.stem.toLowerCase() === target) return f;
   }
   return null;
 }
@@ -40,7 +34,7 @@ function findByName(tree: FileEntry | undefined, name: string): FileEntry | null
  */
 export function AIPreview({ name, onClose }: Props) {
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const tree = useWorkspace((s) => s.activeTree());
+  const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
   const setToast = useUI((s) => s.setToast);
   const openFile = useTabs((s) => s.openFile);
   const openAi = useUI((s) => s.openAi);
@@ -54,7 +48,7 @@ export function AIPreview({ name, onClose }: Props) {
     let cancelled = false;
     setHtml("");
     setPath(null);
-    const node = findByName(tree, name);
+    const node = findByName(vaultFiles, name);
     if (!node) return;
     setPath(node.path);
     api
@@ -73,7 +67,7 @@ export function AIPreview({ name, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [name, tree]);
+  }, [name, vaultFiles]);
 
   useEffect(() => {
     if (!ref.current) return;

@@ -1,8 +1,13 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { useVaultIndex } from "@/stores/vaultIndex";
 import { useAISessions, type AIScope } from "@/stores/aiSessions";
+import { useSettings } from "@/stores/settings";
+import { useRag } from "@/stores/rag";
+import { useUI } from "@/stores/ui";
+import type { Workspace } from "@/types";
 
 interface ScopeMode {
   id: AIScope;
@@ -44,11 +49,6 @@ const SCOPE_MODES: ScopeMode[] = [
   },
 ];
 
-function countMd(node: ReturnType<typeof useWorkspace.getState>["treeCache"][string]): number {
-  if (!node) return 0;
-  if (!node.isDir) return 1;
-  return (node.children ?? []).reduce((acc, c) => acc + countMd(c), 0);
-}
 
 function formatRelative(ts: number): string {
   const diff = Date.now() - ts;
@@ -63,7 +63,7 @@ function formatRelative(ts: number): string {
 
 export function AISidebar({ aiMode }: { aiMode: string }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const tree = useWorkspace((s) => s.activeTree());
+  const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
   const tabs = useTabs((s) => s.tabs);
   const activeTab = useTabs((s) => s.activeTab());
 
@@ -90,7 +90,7 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
     }
   }, [activeId, ws?.id, aiMode, createSession]);
 
-  const fileCount = countMd(tree);
+  const fileCount = vaultFiles?.length ?? 0;
   const folder = activeTab
     ? activeTab.path.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop() ?? null
     : null;
@@ -137,6 +137,8 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
             未打开仓库
           </div>
         )}
+
+        {ws && <RagIndexCard ws={ws} />}
 
         <div className="ai-scope-modes">
           {SCOPE_MODES.map((m) => (
@@ -214,5 +216,169 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function formatIndexedAt(ts?: number | null): string {
+  if (!ts) return "尚未构建";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`;
+  const d = new Date(ts);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function RagIndexCard({ ws }: { ws: Workspace }) {
+  const ragEnabled = useSettings((s) => s.ragEnabled);
+  const setPreference = useSettings((s) => s.setPreference);
+  const status = useRag((s) => s.status[ws.id]);
+  const refresh = useRag((s) => s.refresh);
+  const reindex = useRag((s) => s.reindex);
+  const openSettings = useUI((s) => s.openSettings);
+  const setToast = useUI((s) => s.setToast);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (ragEnabled) void refresh(ws.id, ws.path);
+  }, [ragEnabled, ws.id, ws.path, refresh]);
+
+  if (!ragEnabled) {
+    return (
+      <div className="rag-cta rag-cta-hint">
+        <div className="rag-cta-title">
+          <Icon name="info" size={12} />
+          <span>仅关键词检索</span>
+        </div>
+        <div className="rag-cta-sub">
+          启用本地索引可使用向量检索，回答更精准。
+        </div>
+        <div className="rag-cta-actions">
+          <button
+            type="button"
+            className="rag-cta-btn rag-cta-btn-primary"
+            onClick={() => {
+              setPreference("ragEnabled", true);
+              void refresh(ws.id, ws.path);
+            }}
+          >
+            启用本地索引
+          </button>
+          <button
+            type="button"
+            className="rag-cta-btn"
+            onClick={() => openSettings(true)}
+          >
+            打开设置
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const running = status?.progress?.running ?? false;
+  const totalChunks = status?.totalChunks ?? 0;
+  const totalDocs = status?.totalDocs ?? 0;
+  const indexedAt = status?.indexedAt ?? null;
+  const processed = status?.progress?.processed ?? 0;
+  const total = status?.progress?.total ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : null;
+
+  const runBuild = async () => {
+    if (busy || running) return;
+    setBusy(true);
+    try {
+      await reindex(ws.path);
+      setToast({ stage: "done", message: "索引构建已开始" });
+      setTimeout(() => setToast(null), 1500);
+    } catch (e) {
+      setToast({
+        stage: "error",
+        message: `构建失败：${(e as Error).message}`,
+      });
+      setTimeout(() => setToast(null), 2500);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (running) {
+    return (
+      <div className="rag-cta rag-cta-progress">
+        <div className="rag-cta-title">
+          <Icon name="sync" size={12} />
+          <span>正在构建本地索引…</span>
+        </div>
+        <div className="rag-cta-sub">
+          {processed} / {total || "…"} {pct != null ? `· ${pct}%` : ""}
+        </div>
+        {pct != null && (
+          <div className="rag-cta-bar">
+            <div className="rag-cta-bar-fill" style={{ width: `${pct}%` }} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (totalChunks === 0) {
+    return (
+      <div className="rag-cta rag-cta-warn">
+        <div className="rag-cta-title">
+          <Icon name="lightbulb" size={12} />
+          <span>本地索引未构建</span>
+        </div>
+        <div className="rag-cta-sub">
+          构建后才能用向量检索回答跨笔记问题。
+        </div>
+        <div className="rag-cta-actions">
+          <button
+            type="button"
+            className="rag-cta-btn rag-cta-btn-primary"
+            disabled={busy}
+            onClick={runBuild}
+          >
+            {busy ? "正在启动…" : "构建本地索引"}
+          </button>
+          <button
+            type="button"
+            className="rag-cta-btn"
+            onClick={() => openSettings(true)}
+          >
+            参数…
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rag-cta rag-cta-ready">
+      <div className="rag-cta-title">
+        <Icon name="check" size={12} />
+        <span>本地索引已就绪</span>
+      </div>
+      <div className="rag-cta-sub">
+        {totalDocs} 篇 · {totalChunks} 片段 · {formatIndexedAt(indexedAt)}
+      </div>
+      <div className="rag-cta-actions">
+        <button
+          type="button"
+          className="rag-cta-btn"
+          disabled={busy}
+          onClick={runBuild}
+        >
+          {busy ? "重建中…" : "重建"}
+        </button>
+        <button
+          type="button"
+          className="rag-cta-btn"
+          onClick={() => openSettings(true)}
+        >
+          参数…
+        </button>
+      </div>
+    </div>
   );
 }

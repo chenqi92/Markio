@@ -236,10 +236,14 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       );
     }
     let collectedRefs: AIMsgRef[] = [];
+    let retrievalNote: string | null = null;
     if ((useWorkspaceCtx || scope !== "open") && ws) {
       const ragEnabled = useSettings.getState().ragEnabled;
+      const ragStatus = useRag.getState().status[ws.id];
+      const hasIndex = (ragStatus?.totalChunks ?? 0) > 0;
+      const indexing = ragStatus?.progress?.running ?? false;
       let used = false;
-      if (ragEnabled) {
+      if (ragEnabled && hasIndex) {
         try {
           const hits = await useRag.getState().search(ws.path, text);
           if (hits.length > 0) {
@@ -265,6 +269,12 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         } catch (e) {
           console.warn("[ai.send] rag.search failed, fallback to grep", e);
         }
+      } else if (ragEnabled && !hasIndex) {
+        retrievalNote = indexing
+          ? "本地索引正在构建中，本次回答暂用关键词检索。"
+          : "本地索引尚未构建。在右侧侧栏点「构建本地索引」开启向量检索。";
+      } else if (!ragEnabled) {
+        retrievalNote = "当前为关键词检索模式。在右侧侧栏可启用本地索引。";
       }
       if (!used) {
         try {
@@ -283,9 +293,12 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                   `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
               )
               .join("\n\n---\n\n");
-            parts.push(
-              `仓库相关片段（关键词检索，可能并不精准；建议在"设置 · 本地知识库"里构建向量索引）：\n\n${ctx}`,
-            );
+            const header = retrievalNote
+              ? `${retrievalNote}\n\n仓库相关片段（关键词检索）：`
+              : "仓库相关片段（关键词检索）：";
+            parts.push(`${header}\n\n${ctx}`);
+          } else if (retrievalNote) {
+            parts.push(retrievalNote);
           }
         } catch {
           /* ignore */
@@ -550,7 +563,11 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             scope={scope}
             wsName={ws?.name ?? null}
             indexedCount={
-              useTabs.getState().tabs.length /* 临时：直到 RAG 接入再换索引数 */
+              (() => {
+                const rs = ws ? useRag.getState().status[ws.id] : null;
+                if (rs && rs.totalChunks > 0) return rs.totalDocs;
+                return useTabs.getState().tabs.length;
+              })()
             }
             configured={configured}
           />

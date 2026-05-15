@@ -43,6 +43,33 @@ export function wrapSelection(
   view.focus();
 }
 
+type SelectionTarget =
+  | { anchor: number }
+  | { anchor: number; head: number };
+
+function selectionForInsertedText(
+  from: number,
+  inserted: string,
+  options?: {
+    cursorOffset?: number;
+    selectText?: string;
+  },
+): SelectionTarget {
+  if (typeof options?.cursorOffset === "number") {
+    return { anchor: from + Math.max(0, Math.min(inserted.length, options.cursorOffset)) };
+  }
+  if (options?.selectText) {
+    const ix = inserted.indexOf(options.selectText);
+    if (ix >= 0) {
+      return {
+        anchor: from + ix,
+        head: from + ix + options.selectText.length,
+      };
+    }
+  }
+  return { anchor: from + inserted.length };
+}
+
 /** 在当前行开头加前缀（# / - / > 等） */
 export function prefixLine(prefix: string) {
   const view = active;
@@ -62,18 +89,44 @@ export function prefixLine(prefix: string) {
 }
 
 /** 在光标位置插入一段文本（支持多行模板） */
-export function insertBlock(template: string, options?: { atLineStart?: boolean }) {
+export function insertBlock(
+  template: string,
+  options?: {
+    atLineStart?: boolean;
+    ensureBlankLines?: boolean;
+    selectText?: string;
+    cursorOffset?: number;
+  },
+) {
   const view = active;
   if (!view) return;
   const sel = view.state.selection.main;
   let from = sel.from;
+  let to = sel.to;
   if (options?.atLineStart) {
-    const line = view.state.doc.lineAt(from);
-    from = line.from;
+    const startLine = view.state.doc.lineAt(sel.from);
+    const endLine = view.state.doc.lineAt(sel.to);
+    if (sel.empty) {
+      from = startLine.from;
+      to = startLine.text.trim() === "" ? startLine.to : startLine.from;
+    } else {
+      from = startLine.from;
+      to = endLine.to;
+    }
+  }
+  let insert = template;
+  if (options?.ensureBlankLines) {
+    const doc = view.state.doc;
+    const body = template.replace(/^\n+|\n+$/g, "");
+    const before = from > 0 ? doc.sliceString(Math.max(0, from - 2), from) : "";
+    const after = to < doc.length ? doc.sliceString(to, Math.min(doc.length, to + 2)) : "";
+    const needsLeadingBlank = from > 0 && !before.endsWith("\n\n");
+    const needsTrailingBlank = to < doc.length && !after.startsWith("\n\n");
+    insert = `${needsLeadingBlank ? "\n" : ""}${body}${needsTrailingBlank ? "\n" : ""}`;
   }
   view.dispatch({
-    changes: { from, to: sel.to, insert: template },
-    selection: { anchor: from + template.length },
+    changes: { from, to, insert },
+    selection: selectionForInsertedText(from, insert, options),
   });
   view.focus();
 }
@@ -97,13 +150,16 @@ export function selectionCoords(): { x: number; y: number } | null {
 }
 
 /** 把选区替换为指定文本（一般给 Slash 菜单用） */
-export function replaceSelection(text: string) {
+export function replaceSelection(
+  text: string,
+  options?: { selectText?: string; cursorOffset?: number },
+) {
   const view = active;
   if (!view) return;
   const sel = view.state.selection.main;
   view.dispatch({
     changes: { from: sel.from, to: sel.to, insert: text },
-    selection: { anchor: sel.from + text.length },
+    selection: selectionForInsertedText(sel.from, text, options),
   });
   view.focus();
 }

@@ -1,5 +1,6 @@
 import { Icon } from "../ui/Icon";
 import { wrapSelection } from "@/lib/editor-bridge";
+import { markdownCommands } from "@/lib/markdown-commands";
 
 interface Props {
   x: number;
@@ -15,7 +16,11 @@ export function BubbleMenu({ x, y, onAskAi, onClose }: Props) {
     onClose();
   };
   return (
-    <div className="bubble" style={{ left: x, top: y }}>
+    <div
+      className="bubble"
+      style={{ left: x, top: y }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
       <button title="加粗 ⌘B" onClick={() => wrap("**")}>
         <Icon name="bold" size={13} />
       </button>
@@ -46,9 +51,7 @@ export function BubbleMenu({ x, y, onAskAi, onClose }: Props) {
       <button
         title="链接"
         onClick={() => {
-          const url = window.prompt("链接 URL", "https://");
-          if (!url) return;
-          wrapSelection("[", `](${url})`);
+          markdownCommands.link();
           onClose();
         }}
       >

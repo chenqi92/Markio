@@ -9,6 +9,14 @@ interface Props {
 }
 
 export function TableToolbar({ x, y, align }: Props) {
+  const left =
+    typeof window === "undefined"
+      ? x
+      : Math.min(Math.max(8, x), Math.max(8, window.innerWidth - 760));
+  const top =
+    typeof window === "undefined"
+      ? y
+      : Math.max(8, Math.min(y, window.innerHeight - 42));
   const run = (action: TableAction) => {
     const view = getEditor();
     if (!view) return;
@@ -18,62 +26,70 @@ export function TableToolbar({ x, y, align }: Props) {
   return (
     <div
       className="table-toolbar"
-      style={{
-        position: "fixed",
-        left: x,
-        top: y,
-        display: "inline-flex",
-        gap: 2,
-        background: "var(--bg-pane)",
-        border: "0.5px solid var(--border)",
-        borderRadius: 8,
-        padding: 4,
-        boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
-        zIndex: 90,
-      }}
+      style={{ left, top }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <ToolBtn title="上方插入行" onClick={() => run({ type: "insertRowAbove" })}>
-        ↑+
-      </ToolBtn>
-      <ToolBtn title="下方插入行" onClick={() => run({ type: "insertRowBelow" })}>
-        ↓+
-      </ToolBtn>
-      <ToolBtn title="左侧插入列" onClick={() => run({ type: "insertColLeft" })}>
-        ←+
-      </ToolBtn>
-      <ToolBtn title="右侧插入列" onClick={() => run({ type: "insertColRight" })}>
-        +→
-      </ToolBtn>
-      <span style={{ width: 1, background: "var(--border)" }} />
-      <ToolBtn title="删除当前行" onClick={() => run({ type: "deleteRow" })}>
-        <Icon name="trash" size={12} />
-      </ToolBtn>
-      <ToolBtn title="删除当前列" onClick={() => run({ type: "deleteCol" })}>
-        ⨯|
-      </ToolBtn>
-      <span style={{ width: 1, background: "var(--border)" }} />
-      <ToolBtn
-        title="左对齐"
-        active={align === "left"}
-        onClick={() => run({ type: "align", value: "left" })}
-      >
-        ⇤
-      </ToolBtn>
-      <ToolBtn
-        title="居中对齐"
-        active={align === "center"}
-        onClick={() => run({ type: "align", value: "center" })}
-      >
-        ⇔
-      </ToolBtn>
-      <ToolBtn
-        title="右对齐"
-        active={align === "right"}
-        onClick={() => run({ type: "align", value: "right" })}
-      >
-        ⇥
-      </ToolBtn>
+      <div className="table-toolbar-group">
+        <ToolBtn title="上方插入行" onClick={() => run({ type: "insertRowAbove" })}>
+          行↑+
+        </ToolBtn>
+        <ToolBtn title="下方插入行" onClick={() => run({ type: "insertRowBelow" })}>
+          行↓+
+        </ToolBtn>
+        <ToolBtn title="左侧插入列" onClick={() => run({ type: "insertColLeft" })}>
+          列←+
+        </ToolBtn>
+        <ToolBtn title="右侧插入列" onClick={() => run({ type: "insertColRight" })}>
+          列+→
+        </ToolBtn>
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn title="选中当前行" onClick={() => run({ type: "selectRow" })}>
+          选行
+        </ToolBtn>
+        <ToolBtn title="选中当前列" onClick={() => run({ type: "selectCol" })}>
+          选列
+        </ToolBtn>
+        <ToolBtn title="清空当前行" onClick={() => run({ type: "clearRow" })}>
+          清行
+        </ToolBtn>
+        <ToolBtn title="清空当前列" onClick={() => run({ type: "clearCol" })}>
+          清列
+        </ToolBtn>
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn title="删除当前行" onClick={() => run({ type: "deleteRow" })}>
+          <Icon name="trash" size={12} />
+          行
+        </ToolBtn>
+        <ToolBtn title="删除当前列" onClick={() => run({ type: "deleteCol" })}>
+          <Icon name="trash" size={12} />
+          列
+        </ToolBtn>
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn
+          title="左对齐"
+          active={align === "left"}
+          onClick={() => run({ type: "align", value: "left" })}
+        >
+          ⇤
+        </ToolBtn>
+        <ToolBtn
+          title="居中对齐"
+          active={align === "center"}
+          onClick={() => run({ type: "align", value: "center" })}
+        >
+          ⇔
+        </ToolBtn>
+        <ToolBtn
+          title="右对齐"
+          active={align === "right"}
+          onClick={() => run({ type: "align", value: "right" })}
+        >
+          ⇥
+        </ToolBtn>
+      </div>
     </div>
   );
 }
@@ -92,24 +108,10 @@ function ToolBtn({
   return (
     <button
       type="button"
+      className="table-toolbar-btn"
       title={title}
       onClick={onClick}
-      style={{
-        minWidth: 24,
-        height: 24,
-        padding: "0 6px",
-        border: 0,
-        borderRadius: 6,
-        cursor: "pointer",
-        background: active ? "var(--accent-soft)" : "transparent",
-        color: active ? "var(--accent)" : "var(--text)",
-        fontSize: 11,
-        fontFamily:
-          "var(--font-sans, -apple-system, 'PingFang SC', sans-serif)",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+      data-active={active ? "true" : undefined}
     >
       {children}
     </button>

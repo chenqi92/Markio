@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { applyTheme } from "@/themes";
 import type { ViewMode } from "@/types";
+import type { CommandId } from "@/lib/shortcuts";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 export function generateChannelId(): string {
   const t = Date.now().toString(36);
@@ -177,6 +179,11 @@ interface SettingsState {
   autoSyncEnabled: boolean;
   /** 已应用的自定义 CSS 主题 id（null 表示未应用） */
   customThemeId: string | null;
+  /** 全局快捷键的用户覆盖：commandId → binding 字符串。空串表示用户显式取消绑定。 */
+  shortcutOverrides: Partial<Record<CommandId, string>>;
+  setShortcut: (id: CommandId, binding: string) => void;
+  resetShortcut: (id: CommandId) => void;
+  resetAllShortcuts: () => void;
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
   setDefaultMode: (m: ViewMode) => void;
@@ -277,6 +284,18 @@ export const useSettings = create<SettingsState>()(
       uploadProvider: "picgo",
       autoSyncEnabled: false,
       customThemeId: null,
+      shortcutOverrides: {},
+      setShortcut: (id, binding) =>
+        set((s) => ({
+          shortcutOverrides: { ...s.shortcutOverrides, [id]: binding },
+        })),
+      resetShortcut: (id) =>
+        set((s) => {
+          const next = { ...s.shortcutOverrides };
+          delete next[id];
+          return { shortcutOverrides: next };
+        }),
+      resetAllShortcuts: () => set({ shortcutOverrides: {} }),
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });
@@ -293,7 +312,8 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: "markio.settings.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme);
       },

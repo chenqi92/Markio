@@ -86,6 +86,48 @@
   font-size: 11px;
   letter-spacing: -0.5px;
 }
+.tb-popover-host {
+  position: relative;
+  display: inline-flex;
+}
+.table-size-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  padding: 8px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-soft);
+  z-index: 120;
+}
+.table-size-title {
+  height: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.table-size-grid {
+  display: grid;
+  gap: 3px;
+}
+.table-size-cell {
+  width: 18px;
+  height: 18px;
+  border: 0.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-pane-2);
+  cursor: pointer;
+  transition: background var(--tr), border-color var(--tr);
+}
+.table-size-cell.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
 
 /* AI button */
 .tb-btn.ai-btn-tb {

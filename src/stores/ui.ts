@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ViewMode } from "@/types";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 interface UIState {
   sidebarOpen: boolean;
@@ -81,7 +82,8 @@ export const useUI = create<UIState>()(
     }),
     {
       name: "markio.ui.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
       partialize: (s) => ({
         sidebarOpen: s.sidebarOpen,
         sidebarWidth: s.sidebarWidth,

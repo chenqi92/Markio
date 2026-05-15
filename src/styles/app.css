@@ -1089,3 +1089,363 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   font-size: 13px;
 }
 .welcome .btn-secondary:hover { background: var(--bg-elev); }
+
+/* ── PlanBoardView (kanban with meta/pin/progress) ── */
+.pl-view {
+  padding: 28px clamp(20px, 4%, 48px) 60px;
+  height: 100%;
+  display: flex; flex-direction: column;
+  max-width: none !important;
+  gap: 0;
+}
+.pl-view .pl-header {
+  display: flex; align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 18px;
+}
+.pl-view .pl-header > div:first-child { flex: 1; min-width: 0; }
+.pl-title {
+  font-size: 24px; font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.pl-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-3);
+}
+.pl-meta .dot { color: var(--text-4); }
+.pl-header-r { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.pl-progress-mini {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 6px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px; color: var(--text-2);
+}
+.pl-progress-mini .ring { position: relative; width: 28px; height: 28px; }
+.pl-progress-mini .ring span {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: var(--accent);
+}
+.pl-pin-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px; color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--tr, .15s ease), color var(--tr, .15s ease);
+}
+.pl-pin-btn:hover { background: var(--bg-elev); color: var(--text); }
+.pl-pin-btn.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.pl-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  align-content: start;
+}
+.pl-col {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.pl-col-h {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg-pane);
+}
+.pl-col-h .ic { font-size: 13px; }
+.pl-col-h .t {
+  flex: 1; font-size: 12px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pl-col-h .n {
+  font-size: 10.5px; padding: 1px 6px;
+  background: var(--bg-pane-2);
+  border-radius: 999px;
+  color: var(--text-3); font-weight: 600;
+}
+.pl-col-add {
+  width: 20px; height: 20px;
+  border-radius: 4px;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pl-col-add:hover { background: var(--bg-hover); color: var(--text); }
+.pl-col-list {
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+.pl-task {
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 10px;
+  transition: all var(--tr, .15s ease);
+}
+.pl-task:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+.pl-task.done { opacity: 0.55; background: var(--bg-pane-2); }
+.pl-task-draft { padding: 6px 8px; }
+.pl-task-draft input {
+  width: 100%;
+  background: transparent;
+  border: 0; outline: none;
+  font-size: 13px; color: var(--text);
+}
+.pl-task-head { display: flex; gap: 8px; align-items: flex-start; }
+.pl-check {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-input, var(--bg));
+  flex-shrink: 0;
+  margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.pl-check.on {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-size: 10px;
+}
+.pl-task-body { flex: 1; min-width: 0; }
+.pl-task-title {
+  font-size: 13px; color: var(--text); font-weight: 500;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.pl-task.done .pl-task-title { text-decoration: line-through; color: var(--text-3); }
+.pl-task-prio {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-top: 6px;
+  box-shadow: 0 0 4px currentColor;
+  flex-shrink: 0;
+}
+.pl-task-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 8px;
+  margin-top: 6px;
+}
+.pl-task-tag {
+  padding: 1px 7px;
+  font-size: 10px; font-weight: 500;
+  border-radius: 4px;
+}
+.pl-task-due, .pl-task-est { font-size: 10.5px; color: var(--text-3); }
+.pl-task-due { color: var(--text-2); }
+.pl-task-progress {
+  margin-top: 6px;
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--bg-pane-2);
+  overflow: hidden;
+}
+.pl-task-progress > div {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+  border-radius: 999px;
+}
+.pl-task-progress > span {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9.5px; font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+.pl-quick-add {
+  padding: 7px 10px;
+  font-size: 11px; color: var(--text-3);
+  background: transparent;
+  border: 0.5px dashed var(--border-strong);
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+.pl-quick-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow, rgba(10,132,255,0.08));
+}
+
+/* ── PinnedPlanBar (floating bottom-right) ── */
+.pin-plan-widget {
+  position: fixed;
+  bottom: 48px; right: 24px;
+  width: 320px;
+  background: var(--bg-elev);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-deep, 0 8px 24px rgba(0,0,0,0.25));
+  z-index: 80;
+  overflow: hidden;
+  transition: width .25s, height .25s;
+  font-size: 12.5px;
+}
+.pin-plan-widget.collapsed { width: 280px; }
+.pin-plan-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 12px;
+  background: linear-gradient(135deg, var(--accent-glow, rgba(10,132,255,0.18)), transparent);
+  cursor: pointer;
+  border-bottom: 0.5px solid var(--border);
+}
+.pin-plan-widget.collapsed .pin-plan-hd { border-bottom: 0; }
+.pin-plan-progress { position: relative; width: 28px; height: 28px; flex-shrink: 0; }
+.pin-plan-progress span {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: var(--accent);
+}
+.pin-plan-meta { flex: 1; min-width: 0; }
+.pin-plan-title {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12.5px; font-weight: 700; color: var(--text);
+}
+.pin-plan-sub {
+  font-size: 10.5px; color: var(--text-3); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pin-plan-collapse, .pin-plan-x {
+  width: 22px; height: 22px; border-radius: 5px;
+  color: var(--text-3);
+  background: transparent; border: 0;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.pin-plan-collapse:hover, .pin-plan-x:hover { background: var(--bg-hover); color: var(--text); }
+.pin-plan-list { padding: 6px; max-height: 360px; overflow-y: auto; }
+.pin-plan-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pin-plan-row:hover { background: var(--bg-hover); }
+.pin-plan-row.done { opacity: 0.55; }
+.pin-plan-row.done .tx { text-decoration: line-through; color: var(--text-3); }
+.pin-plan-row .ck {
+  width: 14px; height: 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px;
+  padding: 0;
+}
+.pin-plan-row .ck.on {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.pin-plan-row .tx {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12.5px; color: var(--text);
+  background: transparent; border: 0; text-align: left; cursor: pointer;
+}
+.pin-plan-row .dt { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pin-plan-row .prio {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ff453a; box-shadow: 0 0 4px #ff453a;
+}
+.pin-plan-done-sec {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 0.5px dashed var(--border);
+}
+.pin-plan-done-h {
+  font-size: 10px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0 8px 4px;
+}
+.pin-plan-foot {
+  display: flex; gap: 6px;
+  padding: 8px 6px 6px;
+  border-top: 0.5px solid var(--border);
+  margin-top: 4px;
+}
+.pin-plan-open {
+  flex: 1;
+  padding: 5px;
+  font-size: 11px;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.pin-plan-open:hover { filter: brightness(1.1); }
+.pin-plan-empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* ── ListView extras (filter row + card actions) ── */
+.lv-filters {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 0 0 12px;
+  margin-top: 6px;
+  border-bottom: 0.5px solid var(--border);
+}
+.lv-filter {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--tr, .15s ease);
+}
+.lv-filter:hover { color: var(--text-2); border-color: var(--border-strong); }
+.lv-filter.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.lv-card-actions {
+  display: flex; gap: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--border);
+}
+.lv-card-actions button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.lv-card-actions button:hover { background: var(--bg-elev); color: var(--text); }
+.lv-card-actions button:last-child { flex: 0; min-width: 28px; }

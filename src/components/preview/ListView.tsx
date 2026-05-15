@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 interface Item {
   name?: string;
@@ -16,6 +16,9 @@ interface Item {
   mem?: number;
   disk?: number;
   note?: string;
+  ssh?: string;
+  panel?: string;
+  logs?: string;
   [key: string]: unknown;
 }
 
@@ -77,6 +80,7 @@ function Meter({
 
 export function ListView({ body, title }: { body: string; title?: string }) {
   const items = useMemo(() => parseItems(body), [body]);
+  const [filter, setFilter] = useState<string>("all");
 
   const stats = useMemo(() => {
     const m: Record<string, number> = { up: 0, warn: 0, down: 0, stale: 0, other: 0 };
@@ -86,6 +90,22 @@ export function ListView({ body, title }: { body: string; title?: string }) {
     }
     return m;
   }, [items]);
+
+  const tags = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) {
+      const t = it.tag;
+      if (typeof t === "string" && t.length > 0) s.add(t);
+    }
+    return Array.from(s);
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return items;
+    return items.filter(
+      (it) => it.tag === filter || it.status === filter,
+    );
+  }, [items, filter]);
 
   if (items.length === 0) {
     return (
@@ -141,8 +161,48 @@ export function ListView({ body, title }: { body: string; title?: string }) {
         </div>
       </div>
 
+      {(tags.length > 0 || stats.warn > 0 || stats.down > 0) && (
+        <div className="lv-filters">
+          <button
+            type="button"
+            className={"lv-filter" + (filter === "all" ? " active" : "")}
+            onClick={() => setFilter("all")}
+          >
+            全部
+          </button>
+          {tags.map((t) => (
+            <button
+              key={`tag-${t}`}
+              type="button"
+              className={"lv-filter" + (filter === t ? " active" : "")}
+              onClick={() => setFilter(t)}
+            >
+              {t}
+            </button>
+          ))}
+          {stats.warn > 0 && (
+            <button
+              type="button"
+              className={"lv-filter" + (filter === "warn" ? " active" : "")}
+              onClick={() => setFilter("warn")}
+            >
+              需要关注
+            </button>
+          )}
+          {stats.down > 0 && (
+            <button
+              type="button"
+              className={"lv-filter" + (filter === "down" ? " active" : "")}
+              onClick={() => setFilter("down")}
+            >
+              离线
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="lv-grid">
-        {items.map((s, i) => {
+        {filtered.map((s, i) => {
           const status = s.status as string | undefined;
           const meta = status ? STATUS_META[status] : undefined;
           const name = s.name ?? s.title ?? `item ${i + 1}`;
@@ -222,6 +282,42 @@ export function ListView({ body, title }: { body: string; title?: string }) {
                 )}
 
               {s.note && <div className="lv-card-note">⚠ {s.note}</div>}
+
+              {(s.ip || s.ssh || s.panel || s.logs) && (
+                <div className="lv-card-actions">
+                  {(s.ssh || s.ip) && (
+                    <button
+                      type="button"
+                      title={typeof s.ssh === "string" ? s.ssh : `ssh ${s.ip ?? ""}`}
+                      onClick={() => {
+                        const cmd =
+                          typeof s.ssh === "string" ? s.ssh : `ssh ${s.ip}`;
+                        void navigator.clipboard?.writeText(cmd);
+                      }}
+                    >
+                      ⌨ SSH
+                    </button>
+                  )}
+                  {typeof s.panel === "string" && (
+                    <button
+                      type="button"
+                      title={s.panel}
+                      onClick={() => window.open(s.panel as string, "_blank", "noopener")}
+                    >
+                      ▦ 面板
+                    </button>
+                  )}
+                  {typeof s.logs === "string" && (
+                    <button
+                      type="button"
+                      title={s.logs}
+                      onClick={() => window.open(s.logs as string, "_blank", "noopener")}
+                    >
+                      ≣ 日志
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

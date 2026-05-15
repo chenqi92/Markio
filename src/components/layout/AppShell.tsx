@@ -16,6 +16,7 @@ import { AIPanel } from "../popovers/AIPanel";
 import { WeChatSheet } from "../popovers/WeChatSheet";
 import { QuickCapture } from "../popovers/QuickCapture";
 import { ExportSheet } from "../popovers/ExportSheet";
+import { PinnedPlanBar } from "../popovers/PinnedPlanBar";
 import { Settings } from "../settings/Settings";
 import { ToastHost } from "../popovers/Toast";
 import { useUI } from "@/stores/ui";
@@ -110,6 +111,7 @@ export function AppShell() {
       {exportSheetOpen && (
         <ExportSheet onClose={() => openExportSheet(false)} />
       )}
+      <PinnedPlanBar />
       <ToastHost />
     </div>
   );

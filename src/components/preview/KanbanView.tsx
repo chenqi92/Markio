@@ -1,215 +1,238 @@
-import { useMemo } from "react";
-
-interface Task {
-  raw: string;
-  /** 在原 source 中的行号 (0-based)，用于回写 checkbox */
-  lineIndex: number;
-  text: string;
-  done: boolean;
-  tag?: string;
-}
-
-interface Column {
-  title: string;
-  tasks: Task[];
-}
-
-/** 从 markdown body 解析 # Heading + 子任务 (- [ ]/-[x])。 */
-function parseColumns(body: string): Column[] {
-  const lines = body.split("\n");
-  const cols: Column[] = [];
-  let current: Column | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    const hMatch = ln.match(/^#{1,3}\s+(.+?)\s*$/);
-    if (hMatch) {
-      current = { title: hMatch[1].trim(), tasks: [] };
-      cols.push(current);
-      continue;
-    }
-    const tMatch = ln.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (tMatch && current) {
-      const done = tMatch[1].toLowerCase() === "x";
-      let text = tMatch[2];
-      let tag: string | undefined;
-      const tagMatch = text.match(/#([\p{L}\p{N}_-]+)/u);
-      if (tagMatch) tag = tagMatch[1];
-      current.tasks.push({
-        raw: ln,
-        lineIndex: i,
-        text,
-        done,
-        tag,
-      });
-    }
-  }
-  return cols;
-}
+import { useMemo, useState } from "react";
+import { usePinnedPlan } from "@/stores/pinnedPlan";
+import {
+  PRIO_COLOR,
+  TAG_PALETTE,
+  appendTaskToColumn,
+  computeProgress,
+  parseKanban,
+  toggleTaskInSource,
+  type Task,
+} from "@/lib/kanbanParse";
 
 interface Props {
   body: string;
   source: string;
+  /** 当前文件路径，用于钉到所有页面 */
+  filePath?: string;
+  /** 来自 frontmatter 的元信息 */
+  meta?: { title?: string; week?: string; updated?: string };
   onSourceChange?: (next: string) => void;
 }
 
-export function KanbanView({ body, source, onSourceChange }: Props) {
-  const columns = useMemo(() => parseColumns(body), [body]);
+export function KanbanView({ body, source, filePath, meta, onSourceChange }: Props) {
+  const columns = useMemo(() => parseKanban(body), [body]);
+  const progress = useMemo(() => computeProgress(columns), [columns]);
+  const pinnedPath = usePinnedPlan((s) => s.path);
+  const togglePin = usePinnedPlan((s) => s.toggle);
+  const isPinned = !!filePath && pinnedPath === filePath;
 
-  const toggleTask = (task: Task) => {
+  const [adding, setAdding] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  const handleToggle = (task: Task) => {
     if (!onSourceChange) return;
-    // body 在 source 中的偏移
-    const bodyOffset = source.length - body.length;
-    const lines = source.split("\n");
-    // body 的第 task.lineIndex 行对应 source 中的哪行
-    const linesBefore = source.slice(0, bodyOffset).split("\n").length - 1;
-    const idx = linesBefore + task.lineIndex;
-    if (idx < 0 || idx >= lines.length) return;
-    const oldLine = lines[idx];
-    if (!oldLine.includes("[ ]") && !/\[[xX]\]/.test(oldLine)) return;
-    const replaced = task.done
-      ? oldLine.replace(/\[[xX]\]/, "[ ]")
-      : oldLine.replace("[ ]", "[x]");
-    if (replaced === oldLine) return;
-    lines[idx] = replaced;
-    onSourceChange(lines.join("\n"));
+    const next = toggleTaskInSource(source, body, task);
+    if (next != null) onSourceChange(next);
   };
 
-  const totalDone = columns.reduce(
-    (acc, c) => acc + c.tasks.filter((t) => t.done).length,
-    0,
-  );
-  const totalTasks = columns.reduce((acc, c) => acc + c.tasks.length, 0);
+  const commitAdd = (colTitle: string) => {
+    const text = draft.trim();
+    setAdding(null);
+    setDraft("");
+    if (!text || !onSourceChange) return;
+    const next = appendTaskToColumn(source, body, colTitle, text);
+    if (next != null) onSourceChange(next);
+  };
 
   if (columns.length === 0) {
     return (
       <div className="preview" style={{ padding: 24 }}>
         <h2 style={{ marginTop: 0 }}>看板视图为空</h2>
         <p style={{ color: "var(--text-3)" }}>
-          在 frontmatter 设 <code>view: kanban</code>，然后用 <code>#</code>{" "}
-          / <code>##</code> 标题分列，子项用 <code>- [ ]</code> / <code>- [x]</code> 标记。
+          在 frontmatter 设 <code>view: kanban</code>，用 <code>#</code> 标题分列，
+          子项 <code>- [ ] 文案 #tag !high @05-16 ~2h</code>。
         </p>
       </div>
     );
   }
 
+  const ringDash = 56.5;
+  const ringOffset = ringDash * (1 - progress.pct / 100);
+
   return (
-    <div
-      className="preview kanban-view"
-      style={{
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        height: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-          看板视图 · {totalDone} / {totalTasks} 已完成
-        </div>
-      </div>
-      <div
-        style={{
-          flex: 1,
-          display: "grid",
-          gridTemplateColumns: `repeat(${columns.length}, minmax(220px, 1fr))`,
-          gap: 12,
-          overflow: "auto",
-        }}
-      >
-        {columns.map((col, ci) => (
-          <div
-            key={ci}
-            style={{
-              background: "var(--bg-elev)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              minHeight: 100,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                paddingBottom: 6,
-                borderBottom: "1px solid var(--border)",
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ flex: 1 }}>{col.title}</span>
-              <span style={{ color: "var(--text-3)", fontSize: 11 }}>
-                {col.tasks.filter((t) => !t.done).length} / {col.tasks.length}
-              </span>
-            </div>
-            {col.tasks.length === 0 ? (
-              <div style={{ color: "var(--text-3)", fontSize: 12 }}>
-                — 空 —
-              </div>
-            ) : (
-              col.tasks.map((t, ti) => (
-                <label
-                  key={ti}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                    padding: "6px 8px",
-                    background: "var(--bg)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    cursor: onSourceChange ? "pointer" : "default",
-                    opacity: t.done ? 0.55 : 1,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={t.done}
-                    onChange={() => toggleTask(t)}
-                    disabled={!onSourceChange}
-                    style={{ marginTop: 2 }}
-                  />
-                  <span
-                    style={{
-                      flex: 1,
-                      textDecoration: t.done ? "line-through" : "none",
-                      fontSize: 13,
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    {t.text}
-                  </span>
-                  {t.tag && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "var(--accent)",
-                        background: "var(--accent-glow, rgba(10,132,255,0.12))",
-                        padding: "1px 6px",
-                        borderRadius: 999,
-                      }}
-                    >
-                      #{t.tag}
-                    </span>
-                  )}
-                </label>
-              ))
+    <div className="preview pl-view">
+      <div className="pl-header">
+        <div>
+          <h1 className="pl-title">{meta?.title ?? "看板"}</h1>
+          <div className="pl-meta">
+            {meta?.week && <span>{meta.week}</span>}
+            {meta?.week && <span className="dot">·</span>}
+            <span style={{ color: "var(--accent)" }}>
+              {progress.total} 项 · {progress.done} 已完成
+            </span>
+            {meta?.updated && (
+              <>
+                <span className="dot">·</span>
+                <span>{meta.updated}</span>
+              </>
             )}
           </div>
-        ))}
+        </div>
+        <div className="pl-header-r">
+          <div className="pl-progress-mini" title={`完成度 ${progress.pct}%`}>
+            <div className="ring">
+              <svg viewBox="0 0 24 24" width={28} height={28} aria-hidden>
+                <circle cx="12" cy="12" r="9" stroke="var(--border)" strokeWidth="2" fill="none" />
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeDasharray={ringDash}
+                  strokeDashoffset={ringOffset}
+                  strokeLinecap="round"
+                  transform="rotate(-90 12 12)"
+                />
+              </svg>
+              <span>{progress.pct}%</span>
+            </div>
+            <span>完成度</span>
+          </div>
+          {filePath && (
+            <button
+              type="button"
+              className={"pl-pin-btn" + (isPinned ? " active" : "")}
+              onClick={() => togglePin(filePath)}
+              title="钉到所有页面右下角"
+            >
+              <span aria-hidden>📌</span>
+              <span>{isPinned ? "已钉选" : "钉到所有页面"}</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="pl-board">
+        {columns.map((col, ci) => {
+          const undone = col.tasks.filter((t) => !t.done).length;
+          const isAdding = adding === col.title;
+          return (
+            <div key={ci} className="pl-col">
+              <div className="pl-col-h">
+                {col.emoji && <span className="ic">{col.emoji}</span>}
+                <span className="t">{col.title}</span>
+                <span className="n">{undone}</span>
+                {onSourceChange && (
+                  <button
+                    type="button"
+                    className="pl-col-add"
+                    title="在此列添加任务"
+                    onClick={() => {
+                      setAdding(col.title);
+                      setDraft("");
+                    }}
+                  >
+                    +
+                  </button>
+                )}
+              </div>
+              <div className="pl-col-list">
+                {col.tasks.map((t, ti) => (
+                  <TaskCard key={ti} task={t} onToggle={() => handleToggle(t)} />
+                ))}
+                {isAdding && onSourceChange && (
+                  <div className="pl-task pl-task-draft">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => commitAdd(col.title)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitAdd(col.title);
+                        } else if (e.key === "Escape") {
+                          setAdding(null);
+                          setDraft("");
+                        }
+                      }}
+                      placeholder="任务文案 #tag !high @05-16"
+                    />
+                  </div>
+                )}
+                {!isAdding && onSourceChange && (
+                  <button
+                    type="button"
+                    className="pl-quick-add"
+                    onClick={() => {
+                      setAdding(col.title);
+                      setDraft("");
+                    }}
+                  >
+                    + 快速添加
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TaskCard({ task, onToggle }: { task: Task; onToggle: () => void }) {
+  const tagStyle = task.tag ? TAG_PALETTE[task.tag.toLowerCase()] : undefined;
+  return (
+    <div className={"pl-task" + (task.done ? " done" : "")}>
+      <div className="pl-task-head">
+        <button
+          type="button"
+          className={"pl-check" + (task.done ? " on" : "")}
+          onClick={onToggle}
+          aria-label={task.done ? "取消完成" : "标记完成"}
+        >
+          {task.done && <span>✓</span>}
+        </button>
+        <div className="pl-task-body">
+          <div className="pl-task-title">{task.text}</div>
+        </div>
+        {task.prio && !task.done && (
+          <span
+            className="pl-task-prio"
+            style={{ background: PRIO_COLOR[task.prio] }}
+            title={`优先级: ${task.prio}`}
+          />
+        )}
+      </div>
+      {!task.done && (task.tag || task.due || task.est) && (
+        <div className="pl-task-meta">
+          {task.tag && (
+            <span
+              className="pl-task-tag"
+              style={
+                tagStyle
+                  ? { background: tagStyle[0], color: tagStyle[1] }
+                  : { background: "var(--bg-pane-2)", color: "var(--text-3)" }
+              }
+            >
+              #{task.tag}
+            </span>
+          )}
+          {task.due && <span className="pl-task-due">⏱ {task.due}</span>}
+          {task.est && <span className="pl-task-est">{task.est}</span>}
+        </div>
+      )}
+      {typeof task.progress === "number" && !task.done && (
+        <div className="pl-task-progress">
+          <div style={{ width: `${task.progress}%` }} />
+          <span>{task.progress}%</span>
+        </div>
+      )}
     </div>
   );
 }

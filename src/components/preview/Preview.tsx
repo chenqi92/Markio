@@ -306,6 +306,12 @@ export function Preview({
         <KanbanView
           body={fm.body}
           source={source}
+          filePath={basePath}
+          meta={{
+            title: fm.data.title ?? basePath?.split(/[\\/]/).pop()?.replace(/\.md$/, ""),
+            week: fm.data.week,
+            updated: fm.data.updated,
+          }}
           onSourceChange={onSourceChange}
         />
       </div>

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { IconName } from "@/components/ui/Icon";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 /**
  * 给具体文件 / 文件夹设一个内置 SVG 符号，用绝对路径做 key，工作区无关，跨重启持久化。
@@ -29,7 +30,8 @@ export const useFileIcons = create<FileIconsState>()(
     }),
     {
       name: "markio.fileIcons.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
     },
   ),
 );

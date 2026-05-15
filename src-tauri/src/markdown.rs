@@ -169,6 +169,10 @@ fn highlight_code(code: &str, info: &CodeInfo) -> String {
     )
 }
 
+fn is_chart_lang(lang: &str) -> bool {
+    matches!(lang, "chart" | "markio-chart" | "charts")
+}
+
 fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
@@ -346,6 +350,7 @@ fn sanitize(html: &str) -> String {
         "data-title",
         "data-highlight-lines",
         "data-mermaid",
+        "data-chart",
         "data-line",
     ]);
     b.add_tag_attributes("input", &["type", "checked", "disabled"]);
@@ -436,6 +441,12 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                     if code_info.lang == "mermaid" {
                         html.push_str(&format!(
                             "<div class=\"mermaid-block\" data-mermaid=\"{}\">{}</div>",
+                            urlencode(&code_buf),
+                            escape_html(&code_buf)
+                        ));
+                    } else if is_chart_lang(&code_info.lang) {
+                        html.push_str(&format!(
+                            "<div class=\"chart-block\" data-chart=\"{}\">{}</div>",
                             urlencode(&code_buf),
                             escape_html(&code_buf)
                         ));
@@ -597,5 +608,14 @@ mod tests {
         assert!(res.html.contains("data-lang=\"ts\""));
         assert!(res.html.contains("data-title=\"src/App.tsx\""));
         assert!(res.html.contains("data-highlight-lines=\"2,4-5\""));
+    }
+
+    #[test]
+    fn render_outputs_chart_blocks() {
+        let src = "```chart\n{\"type\":\"bar\",\"labels\":[\"A\"],\"values\":[1]}\n```";
+        let res = render(src, None, &[]);
+        assert!(res.html.contains("class=\"chart-block\""));
+        assert!(res.html.contains("data-chart="));
+        assert!(!res.html.contains("data-lang=\"chart\""));
     }
 }

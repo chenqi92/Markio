@@ -4,9 +4,13 @@ import { enhanceCallouts } from "@/lib/callouts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderMathIn } from "@/lib/math";
 import { renderMermaidIn } from "@/lib/mermaid";
+import { enhanceWikiLinks } from "@/lib/wikilinks";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
+import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
+import { useVaultIndex } from "@/stores/vaultIndex";
+import { useWorkspace } from "@/stores/workspace";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { openExternal } from "@/lib/opener";
 import { KanbanView } from "./KanbanView";
@@ -53,9 +57,21 @@ export function Preview({
   const theme = useSettings((s) => s.theme);
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
+  const activeWorkspace = useWorkspace((s) =>
+    s.workspaces.find((w) => w.id === s.activeId),
+  );
+  const vaultFiles = useVaultIndex((s) =>
+    activeWorkspace ? s.index[activeWorkspace.path]?.files : undefined,
+  );
 
   const fm = useMemo(() => parseFrontmatter(source), [source]);
   const viewKind = fm.data.view?.toLowerCase();
+
+  useEffect(() => {
+    if (activeWorkspace) {
+      void useVaultIndex.getState().ensure(activeWorkspace.path);
+    }
+  }, [activeWorkspace?.path]);
 
   const applyScrollTarget = useCallback(() => {
     const el = containerRef.current;
@@ -82,6 +98,7 @@ export function Preview({
     let cancelled = false;
     enhanceCallouts(root);
     enhanceCodeBlocks(root);
+    enhanceWikiLinks(root, vaultFiles);
     Promise.all([renderMathIn(root), renderMermaidIn(root)])
       .then(() => {
         if (!cancelled) applyScrollTarget();
@@ -90,7 +107,7 @@ export function Preview({
     return () => {
       cancelled = true;
     };
-  }, [html, theme, applyScrollTarget]);
+  }, [html, theme, applyScrollTarget, vaultFiles]);
 
   // Find 高亮：扫描文字节点，包 <mark class="find-hit"> + 当前项加 .current
   useEffect(() => {
@@ -298,6 +315,21 @@ export function Preview({
     const handler = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest("a");
       if (!a) return;
+      if (a.classList.contains("wikilink")) {
+        e.preventDefault();
+        const path = a.getAttribute("data-path");
+        if (path) {
+          void useTabs.getState().openPath(path);
+          return;
+        }
+        const name = a.getAttribute("data-wiki-target") ?? a.textContent ?? "";
+        useUI.getState().setToast({
+          stage: "error",
+          message: `未找到笔记：${name}`,
+        });
+        window.setTimeout(() => useUI.getState().setToast(null), 1800);
+        return;
+      }
       const href = a.getAttribute("href");
       if (!href) return;
       // 内部锚点

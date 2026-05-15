@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 export type PomodoroMode = "focus" | "short" | "long";
 
@@ -89,7 +90,8 @@ export const usePomodoro = create<State>()(
     }),
     {
       name: "markio.pomodoro.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
       partialize: (s) => ({
         completedDay: s.completedDay,
         completedFocus: s.completedFocus,

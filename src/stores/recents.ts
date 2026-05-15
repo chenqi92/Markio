@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 interface RecentItem {
   workspaceId: string;
@@ -33,7 +34,8 @@ export const useRecents = create<RecentsState>()(
     }),
     {
       name: "markio.recents.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
     },
   ),
 );

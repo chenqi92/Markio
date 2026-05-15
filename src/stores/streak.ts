@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 /**
  * 本地"写作连击"统计：
@@ -64,7 +65,8 @@ export const useStreak = create<StreakState>()(
     }),
     {
       name: "markio.streak.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
     },
   ),
 );

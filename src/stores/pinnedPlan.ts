@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 interface PinnedPlanState {
   /** 被钉选的 markdown 文件绝对路径；null 表示未钉选 */
@@ -27,7 +28,8 @@ export const usePinnedPlan = create<PinnedPlanState>()(
     }),
     {
       name: "markio.pinned-plan.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
+      skipHydration: true,
     },
   ),
 );

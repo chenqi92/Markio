@@ -48,6 +48,47 @@
 .preview p { margin: 0 0 16px; }
 .preview a { color: var(--accent); text-decoration-color: var(--accent-glow); text-underline-offset: 3px; }
 .preview a:hover { text-decoration-thickness: 2px; }
+.preview a.wikilink {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 0.94em;
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.preview a.wikilink::before {
+  content: "[[";
+  margin-right: 2px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.preview a.wikilink::after {
+  content: "]]";
+  margin-left: 2px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.preview a.wikilink:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--text);
+}
+.preview a.wikilink.missing {
+  background: color-mix(in srgb, #ff453a 8%, transparent);
+  color: #d92d20;
+  border-bottom: 1px dashed currentColor;
+}
+.preview a.wikilink.missing::before,
+.preview a.wikilink.missing::after {
+  color: currentColor;
+  opacity: 0.5;
+}
 .preview strong { font-weight: 700; }
 .preview em { font-style: italic; }
 .preview mark { background: var(--hl-mark); color: var(--text); padding: 0 3px; border-radius: 2px; }

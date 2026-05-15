@@ -88,7 +88,26 @@ const tauriBackedStorage: StateStorage = {
   },
 };
 
+const memoryStorage = new Map<string, string>();
+const testSafeStorage: StateStorage = {
+  getItem(name) {
+    return memoryStorage.get(name) ?? null;
+  },
+  setItem(name, value) {
+    memoryStorage.set(name, value);
+  },
+  removeItem(name) {
+    memoryStorage.delete(name);
+  },
+};
+
+function browserStorage(): StateStorage {
+  return typeof localStorage === "undefined"
+    ? testSafeStorage
+    : (localStorage as unknown as StateStorage);
+}
+
 /** zustand 的 createJSONStorage 接收这个对象作为底层存储。 */
 export const tauriStorage: StateStorage = isTauri()
   ? tauriBackedStorage
-  : (localStorage as unknown as StateStorage);
+  : browserStorage();

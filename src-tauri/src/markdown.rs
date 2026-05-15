@@ -13,6 +13,7 @@ struct CodeInfo {
     lang: String,
     title: Option<String>,
     highlight_lines: Option<String>,
+    server: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -135,6 +136,7 @@ fn parse_code_info(info: &str) -> CodeInfo {
             .or_else(|| parse_attr_value(trimmed, "file"))
             .or_else(|| parse_attr_value(trimmed, "filename")),
         highlight_lines: parse_highlight_lines(trimmed),
+        server: parse_attr_value(trimmed, "server"),
     }
 }
 
@@ -171,6 +173,14 @@ fn highlight_code(code: &str, info: &CodeInfo) -> String {
 
 fn is_chart_lang(lang: &str) -> bool {
     matches!(lang, "chart" | "markio-chart" | "charts")
+}
+
+fn is_graphviz_lang(lang: &str) -> bool {
+    matches!(lang, "dot" | "graphviz")
+}
+
+fn is_plantuml_lang(lang: &str) -> bool {
+    matches!(lang, "plantuml" | "puml")
 }
 
 fn urlencode(s: &str) -> String {
@@ -351,6 +361,9 @@ fn sanitize(html: &str) -> String {
         "data-highlight-lines",
         "data-mermaid",
         "data-chart",
+        "data-graphviz",
+        "data-plantuml",
+        "data-plantuml-server",
         "data-line",
     ]);
     b.add_tag_attributes("input", &["type", "checked", "disabled"]);
@@ -448,6 +461,26 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                         html.push_str(&format!(
                             "<div class=\"chart-block\" data-chart=\"{}\">{}</div>",
                             urlencode(&code_buf),
+                            escape_html(&code_buf)
+                        ));
+                    } else if is_graphviz_lang(&code_info.lang) {
+                        html.push_str(&format!(
+                            "<div class=\"graphviz-block\" data-graphviz=\"{}\">{}</div>",
+                            urlencode(&code_buf),
+                            escape_html(&code_buf)
+                        ));
+                    } else if is_plantuml_lang(&code_info.lang) {
+                        let server_attr = code_info
+                            .server
+                            .as_ref()
+                            .map(|server| {
+                                format!(" data-plantuml-server=\"{}\"", escape_attr(server))
+                            })
+                            .unwrap_or_default();
+                        html.push_str(&format!(
+                            "<div class=\"plantuml-block\" data-plantuml=\"{}\"{}>{}</div>",
+                            urlencode(&code_buf),
+                            server_attr,
                             escape_html(&code_buf)
                         ));
                     } else {
@@ -617,5 +650,24 @@ mod tests {
         assert!(res.html.contains("class=\"chart-block\""));
         assert!(res.html.contains("data-chart="));
         assert!(!res.html.contains("data-lang=\"chart\""));
+    }
+
+    #[test]
+    fn render_outputs_graphviz_blocks() {
+        let src = "```dot\ndigraph G { A -> B }\n```";
+        let res = render(src, None, &[]);
+        assert!(res.html.contains("class=\"graphviz-block\""));
+        assert!(res.html.contains("data-graphviz="));
+        assert!(!res.html.contains("data-lang=\"dot\""));
+    }
+
+    #[test]
+    fn render_outputs_plantuml_blocks_with_optional_server() {
+        let src = "```plantuml server=\"https://example.test/plantuml\"\n@startuml\nA -> B\n@enduml\n```";
+        let res = render(src, None, &[]);
+        assert!(res.html.contains("class=\"plantuml-block\""));
+        assert!(res.html.contains("data-plantuml="));
+        assert!(res.html.contains("data-plantuml-server=\"https://example.test/plantuml\""));
+        assert!(!res.html.contains("data-lang=\"plantuml\""));
     }
 }

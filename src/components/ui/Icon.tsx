@@ -239,6 +239,17 @@ const PATHS = {
       <rect x="17" y="10" width="3" height="6" rx="1" />
     </>
   ),
+  diagram: (
+    <>
+      <rect x="3" y="4" width="6" height="5" rx="1.5" />
+      <rect x="15" y="4" width="6" height="5" rx="1.5" />
+      <rect x="9" y="15" width="6" height="5" rx="1.5" />
+      <path d="M9 6.5h6" />
+      <path d="M12 9v6" />
+      <path d="M6 9v3a3 3 0 0 0 3 3" />
+      <path d="M18 9v3a3 3 0 0 1-3 3" />
+    </>
+  ),
   "check-square": (
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" />

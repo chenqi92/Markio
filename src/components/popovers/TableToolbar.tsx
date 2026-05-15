@@ -1,18 +1,28 @@
 import { Icon } from "../ui/Icon";
-import { applyTableAction, type TableAction } from "../editor/table-edit";
+import {
+  applyTableAction,
+  tableClipboardText,
+  type TableAction,
+  type TableClipboardMode,
+} from "../editor/table-edit";
 import { getEditor } from "@/lib/editor-bridge";
+import { writeText } from "@/lib/clipboard";
 
 interface Props {
   x: number;
   y: number;
   align: "left" | "center" | "right" | null;
+  row: number;
+  col: number;
+  rows: number;
+  cols: number;
 }
 
-export function TableToolbar({ x, y, align }: Props) {
+export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
   const left =
     typeof window === "undefined"
       ? x
-      : Math.min(Math.max(8, x), Math.max(8, window.innerWidth - 760));
+      : Math.min(Math.max(8, x), Math.max(8, window.innerWidth - 920));
   const top =
     typeof window === "undefined"
       ? y
@@ -23,18 +33,40 @@ export function TableToolbar({ x, y, align }: Props) {
     applyTableAction(view, action);
     view.focus();
   };
+  const copy = async (mode: TableClipboardMode) => {
+    const view = getEditor();
+    if (!view) return;
+    const text = tableClipboardText(view, mode);
+    if (text == null) return;
+    await writeText(text);
+    view.focus();
+  };
   return (
     <div
       className="table-toolbar"
       style={{ left, top }}
       onMouseDown={(e) => e.preventDefault()}
     >
+      <div className="table-toolbar-status">
+        {rows}x{cols} · R{row + 1} C{col + 1}
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn title="选中当前单元格" onClick={() => run({ type: "selectCell" })}>
+          单元
+        </ToolBtn>
+        <ToolBtn title="选中整张表格" onClick={() => run({ type: "selectTable" })}>
+          全表
+        </ToolBtn>
+      </div>
       <div className="table-toolbar-group">
         <ToolBtn title="上方插入行" onClick={() => run({ type: "insertRowAbove" })}>
           行↑+
         </ToolBtn>
         <ToolBtn title="下方插入行" onClick={() => run({ type: "insertRowBelow" })}>
           行↓+
+        </ToolBtn>
+        <ToolBtn title="复制当前行到下方" onClick={() => run({ type: "duplicateRow" })}>
+          行×2
         </ToolBtn>
         <ToolBtn title="左侧插入列" onClick={() => run({ type: "insertColLeft" })}>
           列←+
@@ -44,6 +76,27 @@ export function TableToolbar({ x, y, align }: Props) {
         </ToolBtn>
       </div>
       <div className="table-toolbar-group">
+        <ToolBtn title="复制单元格" onClick={() => void copy("cell")}>
+          <Icon name="copy" size={12} />
+          单元
+        </ToolBtn>
+        <ToolBtn title="复制当前行为制表符数据" onClick={() => void copy("row")}>
+          <Icon name="copy" size={12} />
+          行
+        </ToolBtn>
+        <ToolBtn title="复制当前列为制表符数据" onClick={() => void copy("col")}>
+          <Icon name="copy" size={12} />
+          列
+        </ToolBtn>
+        <ToolBtn title="复制整张表为制表符数据" onClick={() => void copy("table")}>
+          <Icon name="copy" size={12} />
+          表
+        </ToolBtn>
+      </div>
+      <div className="table-toolbar-group">
+        <ToolBtn title="清空当前单元格" onClick={() => run({ type: "clearCell" })}>
+          清单元
+        </ToolBtn>
         <ToolBtn title="选中当前行" onClick={() => run({ type: "selectRow" })}>
           选行
         </ToolBtn>

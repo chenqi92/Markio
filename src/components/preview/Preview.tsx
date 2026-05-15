@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { enhanceCallouts } from "@/lib/callouts";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
+import { renderDiagramsIn } from "@/lib/diagrams";
 import { renderMathIn } from "@/lib/math";
 import { renderMermaidIn } from "@/lib/mermaid";
 import { enhanceWikiLinks } from "@/lib/wikilinks";
@@ -101,7 +102,7 @@ export function Preview({
     renderChartsIn(root);
     enhanceCodeBlocks(root);
     enhanceWikiLinks(root, vaultFiles);
-    Promise.all([renderMathIn(root), renderMermaidIn(root)])
+    Promise.all([renderMathIn(root), renderMermaidIn(root), renderDiagramsIn(root)])
       .then(() => {
         if (!cancelled) applyScrollTarget();
       })

@@ -103,6 +103,18 @@ export const markdownCommands = {
         selectText: "月度趋势",
       },
     ),
+  graphviz: () =>
+    insertBlock("```dot\ndigraph G {\n  A -> B\n}\n```", {
+      atLineStart: true,
+      ensureBlankLines: true,
+      selectText: "A -> B",
+    }),
+  plantuml: () =>
+    insertBlock("```plantuml\n@startuml\nA -> B: message\n@enduml\n```", {
+      atLineStart: true,
+      ensureBlankLines: true,
+      selectText: "A -> B: message",
+    }),
   callout: () =>
     insertBlock("> [!TIP]\n> 提示内容", {
       atLineStart: true,

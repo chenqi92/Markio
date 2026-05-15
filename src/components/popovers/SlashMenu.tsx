@@ -169,6 +169,26 @@ const ITEMS = (close: () => void): Item[] => {
       },
     },
     {
+      id: "graphviz",
+      icon: "diagram",
+      ttl: "Graphviz / DOT",
+      sub: "本地渲染节点关系图",
+      run: () => {
+        finish();
+        markdownCommands.graphviz();
+      },
+    },
+    {
+      id: "plantuml",
+      mark: "PU",
+      ttl: "PlantUML",
+      sub: "需配置 PlantUML server",
+      run: () => {
+        finish();
+        markdownCommands.plantuml();
+      },
+    },
+    {
       id: "wiki",
       icon: "link",
       ttl: "双向链接",

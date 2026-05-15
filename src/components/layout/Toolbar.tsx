@@ -315,6 +315,12 @@ function FormatRow() {
         <Btn title="图表 ⌘⌥G" onClick={markdownCommands.chart}>
           <Icon name="chart" size={12} />
         </Btn>
+        <Btn title="Graphviz / DOT" onClick={markdownCommands.graphviz}>
+          <Icon name="diagram" size={12} />
+        </Btn>
+        <Btn title="PlantUML" onClick={markdownCommands.plantuml}>
+          <span style={{ fontSize: 10, fontWeight: 700 }}>PU</span>
+        </Btn>
         <Btn title="提示块" onClick={markdownCommands.callout}>
           <Icon name="info" size={12} />
         </Btn>

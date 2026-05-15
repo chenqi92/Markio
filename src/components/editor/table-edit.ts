@@ -29,6 +29,9 @@ export interface TableInfo {
   topLine: number;
 }
 
+export type TableClipboardMode = "cell" | "row" | "col" | "table";
+export type TableMoveDirection = "next" | "prev" | "down" | "up";
+
 function isSeparatorRow(line: string): boolean {
   // |:----|----:| 之类；至少要有 ---
   const inner = line.trim().replace(/^\||\|$/g, "");
@@ -70,7 +73,7 @@ function buildRow(cells: string[]): string {
 }
 
 function buildTable(cells: string[][], aligns: Array<"left" | "center" | "right" | null>): string {
-  const cols = Math.max(...cells.map((r) => r.length));
+  const cols = Math.max(1, ...cells.map((r) => r.length), aligns.length);
   const padded = cells.map((row) => {
     const out = row.slice();
     while (out.length < cols) out.push("");
@@ -107,6 +110,141 @@ function cellRangeInBuiltTable(table: string, tableFrom: number, row: number, co
   const lineFrom = tableFrom + (before ? before.length + 1 : 0);
   const range = cellRangeInLine(lines[lineIndex] ?? "", lineFrom, col);
   return { anchor: range.from, head: range.to };
+}
+
+function rowLineNumber(info: TableInfo, row: number): number {
+  return info.topLine + (row === 0 ? 0 : row + 1);
+}
+
+function normalizeCursor(info: TableInfo) {
+  const row =
+    info.cursorRow < 0
+      ? Math.min(1, info.cells.length - 1)
+      : Math.max(0, Math.min(info.cells.length - 1, info.cursorRow));
+  const col = Math.max(0, Math.min(info.aligns.length - 1, info.cursorCol));
+  return { row, col };
+}
+
+function replaceTable(
+  view: EditorView,
+  info: TableInfo,
+  cells: string[][],
+  aligns: Array<"left" | "center" | "right" | null>,
+  targetRow: number,
+  targetCol: number,
+) {
+  const next = buildTable(cells, aligns);
+  view.dispatch({
+    changes: { from: info.from, to: info.to, insert: next },
+    selection: cellRangeInBuiltTable(next, info.from, targetRow, targetCol),
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+}
+
+export function parseTabularText(text: string): string[][] | null {
+  const trimmed = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "");
+  if (!trimmed) return null;
+  const lines = trimmed.split("\n");
+
+  if (lines.length >= 2 && /^\s*\|/.test(lines[0]) && isSeparatorRow(lines[1])) {
+    return lines
+      .filter((line, index) => index !== 1 && /^\s*\|/.test(line))
+      .map(splitRow)
+      .filter((row) => row.length > 0);
+  }
+
+  if (!trimmed.includes("\t") && lines.length < 2) return null;
+  return lines.map((line) => line.split("\t").map((cell) => cell.trim()));
+}
+
+export function tableClipboardText(view: EditorView, mode: TableClipboardMode): string | null {
+  const info = detectTable(view);
+  if (!info) return null;
+  const { row, col } = normalizeCursor(info);
+  if (mode === "cell") return info.cells[row]?.[col] ?? "";
+  if (mode === "row") return (info.cells[row] ?? []).join("\t");
+  if (mode === "col") return info.cells.map((r) => r[col] ?? "").join("\n");
+  return info.cells.map((r) => r.join("\t")).join("\n");
+}
+
+export function pasteTableText(view: EditorView, text: string): boolean {
+  const data = parseTabularText(text);
+  if (!data || data.length === 0) return false;
+  const info = detectTable(view);
+  if (!info) return false;
+
+  const cells = info.cells.map((r) => r.slice());
+  const aligns = info.aligns.slice();
+  const { row: startRow, col: startCol } = normalizeCursor(info);
+  const requiredRows = startRow + data.length;
+  const requiredCols = startCol + Math.max(...data.map((r) => r.length));
+
+  while (cells.length < requiredRows) {
+    cells.push(Array(aligns.length).fill(""));
+  }
+  while (aligns.length < requiredCols) {
+    aligns.push(null);
+    for (const row of cells) row.push("");
+  }
+  for (let r = 0; r < data.length; r++) {
+    for (let c = 0; c < data[r].length; c++) {
+      cells[startRow + r][startCol + c] = data[r][c];
+    }
+  }
+
+  replaceTable(
+    view,
+    info,
+    cells,
+    aligns,
+    startRow + data.length - 1,
+    startCol + data[data.length - 1].length - 1,
+  );
+  return true;
+}
+
+export function moveTableCell(view: EditorView, direction: TableMoveDirection): boolean {
+  const info = detectTable(view);
+  if (!info) return false;
+  const cells = info.cells.map((r) => r.slice());
+  const aligns = info.aligns.slice();
+  const { row, col } = normalizeCursor(info);
+  let nextRow = row;
+  let nextCol = col;
+
+  if (direction === "next") {
+    nextCol += 1;
+    if (nextCol >= aligns.length) {
+      nextCol = 0;
+      nextRow += 1;
+    }
+  } else if (direction === "prev") {
+    nextCol -= 1;
+    if (nextCol < 0) {
+      nextRow -= 1;
+      nextCol = aligns.length - 1;
+    }
+  } else if (direction === "down") {
+    nextRow += 1;
+  } else {
+    nextRow -= 1;
+  }
+
+  if (nextRow < 0) return false;
+  if (nextRow >= cells.length) {
+    cells.push(Array(aligns.length).fill(""));
+    replaceTable(view, info, cells, aligns, cells.length - 1, nextCol);
+    return true;
+  }
+
+  const line = view.state.doc.line(rowLineNumber(info, nextRow));
+  const range = cellRangeInLine(line.text, line.from, nextCol);
+  view.dispatch({
+    selection: { anchor: range.from, head: range.to },
+    scrollIntoView: true,
+  });
+  return true;
 }
 
 export function detectTable(view: EditorView): TableInfo | null {
@@ -185,12 +323,16 @@ export function detectTable(view: EditorView): TableInfo | null {
 }
 
 export type TableAction =
+  | { type: "selectCell" }
+  | { type: "selectTable" }
   | { type: "insertRowAbove" }
   | { type: "insertRowBelow" }
+  | { type: "duplicateRow" }
   | { type: "insertColLeft" }
   | { type: "insertColRight" }
   | { type: "deleteRow" }
   | { type: "deleteCol" }
+  | { type: "clearCell" }
   | { type: "clearRow" }
   | { type: "clearCol" }
   | { type: "selectRow" }
@@ -211,8 +353,26 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
   let targetRow = row;
   let targetCol = col;
 
+  if (action.type === "selectCell") {
+    const line = view.state.doc.line(rowLineNumber(info, row));
+    const range = cellRangeInLine(line.text, line.from, col);
+    view.dispatch({
+      selection: { anchor: range.from, head: range.to },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
+  if (action.type === "selectTable") {
+    view.dispatch({
+      selection: { anchor: info.from, head: info.to },
+      scrollIntoView: true,
+    });
+    return true;
+  }
+
   if (action.type === "selectRow") {
-    const lineNumber = info.topLine + (row === 0 ? 0 : row + 1);
+    const lineNumber = rowLineNumber(info, row);
     const line = view.state.doc.line(lineNumber);
     view.dispatch({
       selection: { anchor: line.from, head: line.to },
@@ -223,7 +383,7 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
 
   if (action.type === "selectCol") {
     const ranges = info.cells.map((_, r) => {
-      const lineNumber = info.topLine + (r === 0 ? 0 : r + 1);
+      const lineNumber = rowLineNumber(info, r);
       const line = view.state.doc.line(lineNumber);
       const range = cellRangeInLine(line.text, line.from, col);
       return EditorSelection.range(range.from, range.to);
@@ -247,6 +407,12 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       const idx = row + 1;
       const newRow = Array(colCount).fill("");
       cells.splice(idx, 0, newRow);
+      targetRow = idx;
+      break;
+    }
+    case "duplicateRow": {
+      const idx = row + 1;
+      cells.splice(idx, 0, cells[row].slice());
       targetRow = idx;
       break;
     }
@@ -275,6 +441,10 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       targetCol = Math.min(col, aligns.length - 1);
       break;
     }
+    case "clearCell": {
+      cells[row][col] = "";
+      break;
+    }
     case "clearRow": {
       cells[row] = cells[row].map(() => "");
       break;
@@ -289,12 +459,6 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
     }
   }
 
-  const next = buildTable(cells, aligns);
-  view.dispatch({
-    changes: { from: info.from, to: info.to, insert: next },
-    selection: cellRangeInBuiltTable(next, info.from, targetRow, targetCol),
-    scrollIntoView: true,
-    userEvent: "input",
-  });
+  replaceTable(view, info, cells, aligns, targetRow, targetCol);
   return true;
 }

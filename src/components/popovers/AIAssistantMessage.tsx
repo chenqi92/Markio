@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { api, parseError } from "@/lib/api";
 import { renderChartsIn } from "@/lib/charts";
+import { renderDiagramsIn } from "@/lib/diagrams";
 import { renderMermaidIn } from "@/lib/mermaid";
 import { writeText } from "@/lib/clipboard";
 import { useSettings } from "@/stores/settings";
@@ -91,6 +92,7 @@ export function AIAssistantMessage({
         delete el.dataset.rendered;
       });
     renderChartsIn(ref.current);
+    renderDiagramsIn(ref.current).catch(() => undefined);
     renderMermaidIn(ref.current).catch(() => undefined);
   }, [html, theme]);
 

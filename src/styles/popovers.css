@@ -693,7 +693,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: min(760px, calc(100vw - 24px));
+  max-width: min(920px, calc(100vw - 24px));
   padding: 5px;
   border: 0.5px solid var(--border-strong);
   border-radius: 8px;
@@ -704,6 +704,20 @@
   scrollbar-width: none;
 }
 .table-toolbar::-webkit-scrollbar { display: none; }
+.table-toolbar-status {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .table-toolbar-group {
   display: inline-flex;
   align-items: center;

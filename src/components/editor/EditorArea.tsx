@@ -96,6 +96,10 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     x: number;
     y: number;
     align: "left" | "center" | "right" | null;
+    row: number;
+    col: number;
+    rows: number;
+    cols: number;
   } | null>(null);
   const [ac, setAc] = useState<{
     kind: AcKind;
@@ -454,6 +458,10 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
                       x: r.left,
                       y: Math.max(8, r.top - 36),
                       align: tab.aligns[tab.cursorCol] ?? null,
+                      row: Math.max(0, tab.cursorRow),
+                      col: tab.cursorCol,
+                      rows: tab.cells.length,
+                      cols: tab.aligns.length,
                     });
                     return;
                   }
@@ -511,7 +519,15 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         />
       )}
       {tableTb && (
-        <TableToolbar x={tableTb.x} y={tableTb.y} align={tableTb.align} />
+        <TableToolbar
+          x={tableTb.x}
+          y={tableTb.y}
+          align={tableTb.align}
+          row={tableTb.row}
+          col={tableTb.col}
+          rows={tableTb.rows}
+          cols={tableTb.cols}
+        />
       )}
       {slash && (
         <SlashMenu

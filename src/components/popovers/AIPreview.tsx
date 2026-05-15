@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { api, type VaultFile } from "@/lib/api";
 import { renderChartsIn } from "@/lib/charts";
+import { renderDiagramsIn } from "@/lib/diagrams";
 import { renderMermaidIn } from "@/lib/mermaid";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
@@ -73,6 +74,7 @@ export function AIPreview({ name, onClose }: Props) {
   useEffect(() => {
     if (!ref.current) return;
     renderChartsIn(ref.current);
+    renderDiagramsIn(ref.current).catch(() => undefined);
     renderMermaidIn(ref.current).catch(() => undefined);
   }, [html]);
 

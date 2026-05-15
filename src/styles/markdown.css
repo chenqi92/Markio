@@ -520,6 +520,106 @@
   white-space: pre-wrap;
 }
 
+/* graphviz / plantuml fenced blocks */
+.preview .graphviz-block,
+.preview .plantuml-block {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  margin: 18px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  white-space: pre-wrap;
+}
+.preview .graphviz-block.diagram-rendered,
+.preview .plantuml-block.diagram-rendered {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: initial;
+  white-space: normal;
+  font-family: var(--font-sans);
+}
+.preview .diagram-card {
+  margin: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-pane) 92%, var(--bg-pane-2));
+  font-family: var(--font-sans);
+}
+.preview .diagram-head {
+  padding: 14px 16px 8px;
+  display: grid;
+  gap: 3px;
+  border-bottom: 0.5px solid var(--border);
+}
+.preview .diagram-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.preview .diagram-subtitle {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.preview .diagram-viewport {
+  overflow: auto;
+  padding: 16px;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+}
+.preview .diagram-viewport svg {
+  max-width: 100%;
+  height: auto;
+}
+.preview .diagram-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.preview .diagram-notice {
+  width: 100%;
+  max-width: 620px;
+  padding: 12px 14px;
+  border: 0.5px solid color-mix(in srgb, #b7791f 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, #b7791f 10%, var(--bg-pane-2));
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.preview .diagram-source {
+  border-top: 0.5px solid var(--border);
+  padding: 9px 16px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.preview .diagram-source summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-3);
+}
+.preview .diagram-source pre,
+.preview .diagram-error {
+  margin: 8px 0 0;
+  border-radius: 8px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+  text-align: left;
+}
+.preview .diagram-error {
+  width: 100%;
+  margin: 0;
+}
+
 /* doc meta */
 .preview .doc-meta {
   display: flex; align-items: center; gap: 8px;

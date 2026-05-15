@@ -10,6 +10,7 @@ import { EditorView as CMView, keymap } from "@codemirror/view";
 import { useSettings } from "@/stores/settings";
 import { registerEditor } from "@/lib/editor-bridge";
 import { markdownCommands } from "@/lib/markdown-commands";
+import { moveTableCell, pasteTableText } from "./table-edit";
 import { wysiwygMarkdown } from "./wysiwyg";
 
 interface Props {
@@ -81,7 +82,10 @@ export function SourceEditor({
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       EditorView.lineWrapping,
       ...(wysiwyg ? [wysiwygMarkdown] : []),
+      tableKeymap,
       markdownKeymap,
+      listContinuationKeymap,
+      smartQuotesHandler,
       mathInputHandler,
       EditorView.updateListener.of((u) => {
         if (u.selectionSet && onSelectionChange) {
@@ -179,7 +183,6 @@ export function SourceEditor({
   }, [applyScrollTarget, value]);
 
   useEffect(() => {
-    if (!onPasteImages) return;
     const view = ref.current?.view;
     if (!view) return;
     const handler = (e: ClipboardEvent) => {
@@ -193,11 +196,18 @@ export function SourceEditor({
         file.type.startsWith("image/"),
       );
       const files = fromItems.length > 0 ? fromItems : fromFiles;
-      if (files.length === 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const sel = view.state.selection.main;
-      void onPasteImages(files, { from: sel.from, to: sel.to });
+      if (files.length > 0 && onPasteImages) {
+        e.preventDefault();
+        e.stopPropagation();
+        const sel = view.state.selection.main;
+        void onPasteImages(files, { from: sel.from, to: sel.to });
+        return;
+      }
+      const text = data.getData("text/plain");
+      if (text && pasteTableText(view, text)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     };
     view.contentDOM.addEventListener("paste", handler);
     return () => view.contentDOM.removeEventListener("paste", handler);
@@ -255,6 +265,52 @@ export function SourceEditor({
   );
 }
 
+/** 是否处于围栏代码块 / 行内代码 / 链接 URL 中：跳过智能引号 */
+function isInsideCodeOrUrl(view: EditorView, pos: number): boolean {
+  const doc = view.state.doc;
+  const line = doc.lineAt(pos);
+  // 行内代码：行内已出现奇数个未闭合的反引号
+  let inInline = false;
+  for (let i = 0; i < pos - line.from; i++) {
+    if (line.text[i] === "`") inInline = !inInline;
+  }
+  if (inInline) return true;
+  // 围栏代码块：从文档头扫到此行，统计 ``` / ~~~ 切换
+  let inFence = false;
+  for (let n = 1; n < line.number; n++) {
+    const t = doc.line(n).text;
+    if (/^\s*(```|~~~)/.test(t)) inFence = !inFence;
+  }
+  if (inFence) return true;
+  // markdown 链接 URL：粗略判断 (...) 内
+  const before = line.text.slice(0, pos - line.from);
+  const lastOpen = before.lastIndexOf("](");
+  const lastClose = before.lastIndexOf(")");
+  if (lastOpen > lastClose) return true;
+  return false;
+}
+
+const smartQuotesHandler = EditorView.inputHandler.of(
+  (view, from, to, text) => {
+    if (!useSettings.getState().smartQuotes) return false;
+    if (text !== '"' && text !== "'") return false;
+    if (isInsideCodeOrUrl(view, from)) return false;
+    const doc = view.state.doc;
+    const prevCh = from > 0 ? doc.sliceString(from - 1, from) : "";
+    // 「上一个字符是字母数字/中文」→ 闭合；否则开
+    const closing = /[\p{L}\p{N}\p{P}]/u.test(prevCh);
+    let insert: string;
+    if (text === '"') insert = closing ? "”" : "“";
+    else insert = closing ? "’" : "‘";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      userEvent: "input.type",
+    });
+    return true;
+  },
+);
+
 /**
  * 输入 `$` 时自动补一个 `$`，光标停在中间；适配公式输入。
  * 已经在 `$...$` 内部、或行起始 `$$` → 不接管，让默认行为生效。
@@ -292,6 +348,54 @@ function runMarkdownCommand(command: () => void) {
   };
 }
 
+/** Enter 在 - / * / + / 数字. / [ ] 行末时续标记；空 marker 则消除 marker */
+const listContinuationKeymap = Prec.high(
+  keymap.of([
+    {
+      key: "Enter",
+      run: (view) => {
+        if (!useSettings.getState().autoListContinuation) return false;
+        const sel = view.state.selection.main;
+        if (!sel.empty) return false;
+        const line = view.state.doc.lineAt(sel.head);
+        if (sel.head !== line.to) return false;
+        const m = line.text.match(/^(\s*)([-*+]|\d+\.)\s+(\[[ xX]\]\s+)?(.*)$/);
+        if (!m) return false;
+        const [, indent, marker, task, rest] = m;
+        // 若该 marker 行无内容（只剩 marker）→ 清掉 marker，光标停在原位
+        if (rest.trim().length === 0) {
+          view.dispatch({
+            changes: { from: line.from, to: line.to, insert: indent },
+            selection: { anchor: line.from + indent.length },
+            userEvent: "delete.selection",
+          });
+          return true;
+        }
+        const nextMarker =
+          /^\d+\./.test(marker)
+            ? `${parseInt(marker, 10) + 1}.`
+            : marker;
+        const insert = `\n${indent}${nextMarker} ${task ?? ""}`;
+        view.dispatch({
+          changes: { from: sel.head, to: sel.head, insert },
+          selection: { anchor: sel.head + insert.length },
+          userEvent: "input.type",
+        });
+        return true;
+      },
+    },
+  ]),
+);
+
+const tableKeymap = Prec.highest(
+  keymap.of([
+    { key: "Tab", run: (view) => moveTableCell(view, "next") },
+    { key: "Shift-Tab", run: (view) => moveTableCell(view, "prev") },
+    { key: "Enter", run: (view) => moveTableCell(view, "down") },
+    { key: "Shift-Enter", run: (view) => moveTableCell(view, "up") },
+  ]),
+);
+
 const markdownKeymap = Prec.highest(
   keymap.of([
     { key: "Mod-b", run: runMarkdownCommand(markdownCommands.bold) },
@@ -308,5 +412,7 @@ const markdownKeymap = Prec.highest(
     { key: "Mod-Alt-c", run: runMarkdownCommand(markdownCommands.codeBlock) },
     { key: "Mod-Alt-m", run: runMarkdownCommand(markdownCommands.mathBlock) },
     { key: "Mod-Alt-g", run: runMarkdownCommand(markdownCommands.chart) },
+    { key: "Mod-Alt-d", run: runMarkdownCommand(markdownCommands.graphviz) },
+    { key: "Mod-Alt-u", run: runMarkdownCommand(markdownCommands.plantuml) },
   ]),
 );

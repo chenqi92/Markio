@@ -38,7 +38,6 @@
     "@uiw/codemirror-themes": "^4.23.5",
     "@uiw/react-codemirror": "^4.23.5",
     "@viz-js/viz": "^3.27.0",
-    "cesium": "^1.141.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "dompurify": "^3.2.0",
@@ -59,7 +58,6 @@
     "react-i18next": "^17.0.7",
     "react-resizable-panels": "^2.1.7",
     "tailwind-merge": "^2.5.4",
-    "vite-plugin-cesium": "^1.2.23",
     "zustand": "^5.0.1"
   },
   "devDependencies": {

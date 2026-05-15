@@ -4,6 +4,7 @@ import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
+import { shortcutText } from "@/lib/shortcuts";
 import type { GrepHit } from "@/types";
 
 /**
@@ -107,7 +108,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <span className="esc">⌘⇧F</span>
+          <span className="esc">{shortcutText("⌘⇧F")}</span>
         </div>
         <div className="cmdk-body">
           {!ws ? (

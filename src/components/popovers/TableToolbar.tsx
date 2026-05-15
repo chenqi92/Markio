@@ -16,17 +16,35 @@ interface Props {
   col: number;
   rows: number;
   cols: number;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
+export function TableToolbar({
+  x,
+  y,
+  align,
+  row,
+  col,
+  rows,
+  cols,
+  onMouseEnter,
+  onMouseLeave,
+}: Props) {
+  // x is treated as the horizontal CENTER of the toolbar (CSS uses
+  // translateX(-50%)). Clamp center so the toolbar can never poke outside
+  // the viewport assuming worst-case ~920px width.
   const left =
     typeof window === "undefined"
       ? x
-      : Math.min(Math.max(8, x), Math.max(8, window.innerWidth - 920));
+      : (() => {
+          const half = Math.min(460, Math.floor((window.innerWidth - 16) / 2));
+          return Math.max(half + 8, Math.min(x, window.innerWidth - half - 8));
+        })();
   const top =
     typeof window === "undefined"
       ? y
-      : Math.max(8, Math.min(y, window.innerHeight - 42));
+      : Math.max(8, Math.min(y, window.innerHeight - 48));
   const run = (action: TableAction) => {
     const view = getEditor();
     if (!view) return;
@@ -46,6 +64,8 @@ export function TableToolbar({ x, y, align, row, col, rows, cols }: Props) {
       className="table-toolbar"
       style={{ left, top }}
       onMouseDown={(e) => e.preventDefault()}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <div className="table-toolbar-status">
         {rows}x{cols} · R{row + 1} C{col + 1}

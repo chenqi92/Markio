@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, {
   type ReactCodeMirrorRef,
   EditorView,
@@ -80,26 +80,19 @@ export const SourceEditor = memo(function SourceEditor({
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
   const ref = useRef<ReactCodeMirrorRef>(null);
+  const [view, setView] = useState<EditorView | null>(null);
   const suppressScrollRef = useRef(false);
+  // 把最新的 onScroll 锁进 ref，给 CodeMirror 扩展里注册的 listener 用
+  // —— 否则 listener 闭包会捕获最初的 onScroll，无法响应后续 callback 身份变化
+  const onScrollRef = useRef(onScroll);
+  useEffect(() => {
+    onScrollRef.current = onScroll;
+  }, [onScroll]);
   const tableSelectionRectRef = useRef<TableSelectionRect | null>(null);
   const tableDragRef = useRef<{
     tableFrom: number;
     anchor: TableCellCoord;
   } | null>(null);
-
-  const applyScrollTarget = useCallback(() => {
-    const view = ref.current?.view;
-    if (!view || !scrollTarget) return;
-    const el = view.scrollDOM;
-    const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
-    if (Math.abs(el.scrollTop - nextTop) < 1) return;
-    suppressScrollRef.current = true;
-    el.scrollTop = nextTop;
-    requestAnimationFrame(() => {
-      suppressScrollRef.current = false;
-    });
-  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
 
   const extensions = useMemo(
     () => [
@@ -111,6 +104,22 @@ export const SourceEditor = memo(function SourceEditor({
       listContinuationKeymap,
       smartQuotesHandler,
       mathInputHandler,
+      // 用 CodeMirror 自己的 domEventHandlers 注册 scroll —— 它内部会把 handler
+      // 挂到正确的 scrollDOM/scroller 上（用 React useEffect 的 [view] 依赖在某些
+      // 渲染时序下不一定能正确触发重绑）
+      EditorView.domEventHandlers({
+        scroll(_event, v) {
+          if (suppressScrollRef.current) return;
+          const fn = onScrollRef.current;
+          if (!fn) return;
+          const el = v.scrollDOM;
+          fn({
+            top: el.scrollTop,
+            height: el.scrollHeight,
+            clientHeight: el.clientHeight,
+          });
+        },
+      }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) tableSelectionRectRef.current = null;
         if (u.selectionSet && onSelectionChange) {
@@ -170,7 +179,12 @@ export const SourceEditor = memo(function SourceEditor({
             fontFamily: "var(--font-mono)",
             fontSize: `${fontSize - 2}px`,
             lineHeight: "1.7",
+            cursor: "text",
           },
+          ".cm-content": { cursor: "text" },
+          ".cm-line": { cursor: "text" },
+          ".cm-gutters": { cursor: "default" },
+          ".cm-gutterElement": { cursor: "default" },
         },
         { dark: false },
       ),
@@ -179,36 +193,26 @@ export const SourceEditor = memo(function SourceEditor({
   );
 
   useEffect(() => {
-    const view = ref.current?.view;
     if (!view) return;
     registerEditor(view);
     return () => registerEditor(null);
-  }, [ref.current?.view]);
+  }, [view]);
 
+  // 应用同步对端写过来的目标比例
   useEffect(() => {
-    const view = ref.current?.view;
-    if (!view) return;
+    if (!view || !scrollTarget) return;
     const el = view.scrollDOM;
-    if (onScroll) {
-      const handler = () => {
-        if (suppressScrollRef.current) return;
-        onScroll({
-          top: el.scrollTop,
-          height: el.scrollHeight,
-          clientHeight: el.clientHeight,
-        });
-      };
-      el.addEventListener("scroll", handler, { passive: true });
-      return () => el.removeEventListener("scroll", handler);
-    }
-  }, [onScroll]);
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const next = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    if (Math.abs(el.scrollTop - next) < 1) return;
+    suppressScrollRef.current = true;
+    el.scrollTop = next;
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
+  }, [view, scrollTarget?.nonce, scrollTarget?.ratio]);
 
   useEffect(() => {
-    applyScrollTarget();
-  }, [applyScrollTarget]);
-
-  useEffect(() => {
-    const view = ref.current?.view;
     if (!view) return;
     const pasteHandler = (e: ClipboardEvent) => {
       const data = e.clipboardData;
@@ -266,10 +270,9 @@ export const SourceEditor = memo(function SourceEditor({
       view.contentDOM.removeEventListener("copy", copyHandler);
       view.contentDOM.removeEventListener("cut", cutHandler);
     };
-  }, [onPasteImages]);
+  }, [view, onPasteImages]);
 
   useEffect(() => {
-    const view = ref.current?.view;
     if (!view) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -283,10 +286,9 @@ export const SourceEditor = memo(function SourceEditor({
     };
     view.contentDOM.addEventListener("keydown", handler, true);
     return () => view.contentDOM.removeEventListener("keydown", handler, true);
-  }, []);
+  }, [view]);
 
   useEffect(() => {
-    const view = ref.current?.view;
     if (!view) return;
 
     const clearDragListeners = (move: (e: MouseEvent) => void, up: () => void) => {
@@ -371,13 +373,11 @@ export const SourceEditor = memo(function SourceEditor({
       view.contentDOM.removeEventListener("mousedown", handleMouseDown, true);
       view.contentDOM.removeEventListener("contextmenu", handleContextMenu, true);
     };
-  }, [onTableContextMenu]);
+  }, [view, onTableContextMenu]);
 
   // 监听 `/` 触发斜杠菜单
   useEffect(() => {
-    if (!onSlashTrigger) return;
-    const view = ref.current?.view;
-    if (!view) return;
+    if (!view || !onSlashTrigger) return;
     const el = view.scrollDOM;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -396,7 +396,7 @@ export const SourceEditor = memo(function SourceEditor({
     };
     el.addEventListener("keydown", handler);
     return () => el.removeEventListener("keydown", handler);
-  }, [onSlashTrigger]);
+  }, [view, onSlashTrigger]);
 
   return (
     <div
@@ -419,6 +419,7 @@ export const SourceEditor = memo(function SourceEditor({
           bracketMatching: true,
           closeBrackets: true,
         }}
+        onCreateEditor={(v) => setView(v)}
         onChange={onChange}
       />
     </div>

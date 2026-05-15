@@ -27,6 +27,27 @@ interface Props {
   scrollTarget?: { ratio: number; nonce: number } | null;
   /** kanban 等可写视图回写 source */
   onSourceChange?: (next: string) => void;
+  /** 鼠标悬停在渲染后的表格上时上报；index 是 doc 顺序 */
+  onTableHover?: (info: { index: number; rect: DOMRect } | null) => void;
+  /** 右键 / hover-加号 触发：上报 doc 顺序的 table index、行列、屏幕坐标 */
+  onTableCellContext?: (
+    info: {
+      tableIndex: number;
+      row: number;
+      col: number;
+      x: number;
+      y: number;
+    },
+  ) => void;
+  /** 快捷"行 / 列加号"触发：在指定位置插入空行 / 空列（无需打开 menu） */
+  onTableQuickAdd?: (
+    info: {
+      tableIndex: number;
+      kind: "row" | "col";
+      /** 插入的目标位置（0-based）；row 时 = 在哪行之后插入；col 时 = 在哪列之后插入 */
+      after: number;
+    },
+  ) => void;
 }
 
 function escapeHtml(input: string): string {
@@ -50,6 +71,9 @@ export function Preview({
   onScroll,
   scrollTarget,
   onSourceChange,
+  onTableHover,
+  onTableCellContext,
+  onTableQuickAdd,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -87,6 +111,132 @@ export function Preview({
       suppressScrollRef.current = false;
     });
   }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+
+  // 给渲染后的每个 <table> 绑定 hover 上报 + 右键上下文菜单 + 快捷"加号"按钮
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const tables = Array.from(root.querySelectorAll<HTMLTableElement>("table"));
+    const cleanups: Array<() => void> = [];
+
+    /** 计算被点 cell 在 table 中的 (row, col)。row 0 = thead；body 行从 1 起 */
+    const cellRowCol = (
+      table: HTMLTableElement,
+      cell: HTMLTableCellElement,
+    ): { row: number; col: number } | null => {
+      const tr = cell.parentElement;
+      if (!tr) return null;
+      const col = Array.from(tr.children).indexOf(cell);
+      if (col < 0) return null;
+      const inHead = !!cell.closest("thead");
+      if (inHead) return { row: 0, col };
+      const tbody = cell.closest("tbody");
+      if (!tbody) return null;
+      const bodyRowIdx = Array.from(tbody.children).indexOf(tr as HTMLTableRowElement);
+      if (bodyRowIdx < 0) return null;
+      return { row: 1 + bodyRowIdx, col };
+    };
+
+    tables.forEach((table, index) => {
+      table.dataset.mdTableIndex = String(index);
+
+      // 包一层 div 作为定位容器：直接把 <button> 挂到 <table> 是非法 HTML，
+      // 浏览器会自动把按钮丢到 <table> 外面，绝对定位就乱掉
+      let host: HTMLDivElement;
+      if (table.parentElement?.classList.contains("md-table-host")) {
+        host = table.parentElement as HTMLDivElement;
+      } else {
+        host = document.createElement("div");
+        host.className = "md-table-host";
+        table.parentElement?.insertBefore(host, table);
+        host.appendChild(table);
+      }
+      host.dataset.mdTableIndex = String(index);
+      cleanups.push(() => {
+        if (host.isConnected && host.parentElement) {
+          host.parentElement.insertBefore(table, host);
+          host.remove();
+        }
+      });
+
+      // hover：浮动 toolbar 用
+      if (onTableHover) {
+        const onEnter = () => {
+          onTableHover({ index, rect: table.getBoundingClientRect() });
+        };
+        const onLeave = () => onTableHover(null);
+        table.addEventListener("mouseenter", onEnter);
+        table.addEventListener("mouseleave", onLeave);
+        cleanups.push(() => {
+          table.removeEventListener("mouseenter", onEnter);
+          table.removeEventListener("mouseleave", onLeave);
+        });
+      }
+
+      // 右键单元格 → 上报，由 EditorArea 把 cursor 移到对应源码 cell + 弹 TableContextMenu
+      if (onTableCellContext) {
+        const onCtx = (e: MouseEvent) => {
+          const target = e.target as HTMLElement;
+          const cell = target.closest("th, td") as HTMLTableCellElement | null;
+          if (!cell || !table.contains(cell)) return;
+          const rc = cellRowCol(table, cell);
+          if (!rc) return;
+          e.preventDefault();
+          onTableCellContext({
+            tableIndex: index,
+            row: rc.row,
+            col: rc.col,
+            x: e.clientX,
+            y: e.clientY,
+          });
+        };
+        table.addEventListener("contextmenu", onCtx);
+        cleanups.push(() => table.removeEventListener("contextmenu", onCtx));
+      }
+
+      // 快捷"+ 行" / "+ 列"：CSS 浮在 table 右边 / 下边，hover 才出现
+      if (onTableQuickAdd) {
+        const tbody = table.querySelector("tbody");
+        const lastBodyRow = tbody?.lastElementChild as HTMLTableRowElement | null;
+        const headRow = table.querySelector("thead tr") as HTMLTableRowElement | null;
+        const colCount = headRow?.children.length ?? lastBodyRow?.children.length ?? 0;
+        const bodyRowCount = tbody?.children.length ?? 0;
+
+        const addRowBtn = document.createElement("button");
+        addRowBtn.type = "button";
+        addRowBtn.className = "md-table-add md-table-add-row";
+        addRowBtn.title = "在末尾插入一行";
+        addRowBtn.textContent = "+ 行";
+        addRowBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onTableQuickAdd({ tableIndex: index, kind: "row", after: bodyRowCount });
+        });
+
+        const addColBtn = document.createElement("button");
+        addColBtn.type = "button";
+        addColBtn.className = "md-table-add md-table-add-col";
+        addColBtn.title = "在末尾插入一列";
+        addColBtn.textContent = "+ 列";
+        addColBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onTableQuickAdd({ tableIndex: index, kind: "col", after: colCount - 1 });
+        });
+
+        host.appendChild(addRowBtn);
+        host.appendChild(addColBtn);
+        cleanups.push(() => {
+          addRowBtn.remove();
+          addColBtn.remove();
+        });
+      }
+    });
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+    };
+  }, [html, onTableHover, onTableCellContext, onTableQuickAdd]);
 
   useEffect(() => {
     if (!contentRef.current) return;
@@ -176,6 +326,7 @@ export function Preview({
   // reset timer，先前的渲染如果还没发就直接被替换。
   const timerRef = useRef<number | null>(null);
   const seqRef = useRef(0);
+  const hasRenderedOnceRef = useRef(false);
   const onMetaRef = useRef(onMeta);
   useEffect(() => {
     onMetaRef.current = onMeta;
@@ -220,8 +371,16 @@ export function Preview({
       });
       return;
     }
-    const renderDelay =
-      source.length > 100_000 ? 350 : source.length > 30_000 ? 180 : 60;
+    // 首次 mount（html 还没填）就立刻渲染，免得切到分屏后右侧空一帧再出现；
+    // 已有 html（用户连续输入）时才走 debounce 节流
+    const isFirst = !hasRenderedOnceRef.current;
+    const renderDelay = isFirst
+      ? 0
+      : source.length > 100_000
+        ? 350
+        : source.length > 30_000
+          ? 180
+          : 60;
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
@@ -246,6 +405,7 @@ export function Preview({
               if (cancelled || seq !== seqRef.current) return;
               clearFlushTimer();
               setHtml(chunks.join(""));
+              hasRenderedOnceRef.current = true;
               onMetaRef.current?.({
                 outline: info.outline,
                 words: info.words,
@@ -270,6 +430,7 @@ export function Preview({
         const r = await api.renderMarkdown(source, basePath);
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
         setHtml(r.html);
+        hasRenderedOnceRef.current = true;
         onMetaRef.current?.({
           outline: r.outline,
           words: r.words,

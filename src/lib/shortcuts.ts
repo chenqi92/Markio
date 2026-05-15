@@ -195,6 +195,35 @@ export function matchesBinding(e: KeyboardEvent, binding: string): boolean {
 const IS_MAC =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
+export const isMacPlatform = IS_MAC;
+
+/** 把任意含有 mac 风格修饰符号 (⌘ / ⌥ / ⇧ / ⌃) 的字符串改写成
+ *  当前平台的展示形式：mac 原样、其它平台改成 Ctrl/Alt/Shift 加 + 号。
+ *  例：
+ *    "加粗 ⌘B"         → win: "加粗 Ctrl+B"
+ *    "⌘⇧L"             → win: "Ctrl+Shift+L"
+ *    "⌘"  (单字符)     → win: "Ctrl"
+ *    "⌘↩ 发送"         → win: "Ctrl+Enter 发送"
+ */
+export function shortcutText(s: string): string {
+  if (IS_MAC) return s;
+  // 把连续修饰符号 + 紧跟的一个键合并：⌘⇧L → Ctrl+Shift+L、⌘ → Ctrl、⌘↩ → Ctrl+Enter
+  return s.replace(
+    /([⌘⌥⇧⌃]+)([A-Za-z0-9.,/↩↑↓←→]?)/g,
+    (_, mods: string, key: string) => {
+      const out: string[] = [];
+      for (const ch of mods) {
+        if (ch === "⌘" || ch === "⌃") out.push("Ctrl");
+        else if (ch === "⌥") out.push("Alt");
+        else if (ch === "⇧") out.push("Shift");
+      }
+      const pretty = key === "↩" ? "Enter" : key;
+      if (pretty) out.push(pretty);
+      return out.join("+");
+    },
+  );
+}
+
 /** 把 binding 字符串渲染成给用户看的按键 chip 数组。 */
 export function formatBinding(binding: string): string[] {
   const p = parseBinding(binding);

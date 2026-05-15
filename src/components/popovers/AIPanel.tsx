@@ -6,10 +6,17 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { useAISessions, type AIMsgRecord, type AIMsgRef } from "@/stores/aiSessions";
 import { useRag } from "@/stores/rag";
+import { useVaultIndex } from "@/stores/vaultIndex";
 import { api } from "@/lib/api";
+import { shortcutText } from "@/lib/shortcuts";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
 import { AIPreview } from "./AIPreview";
+
+export interface AIAttachedItem {
+  path: string;
+  isDir: boolean;
+}
 
 function nowTimeStr(ts: number) {
   const d = new Date(ts);
@@ -132,14 +139,14 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWorkspaceCtx = useSettings((s) => s.aiUseWorkspace);
   const tab = useTabs((s) => s.activeTab());
-  const openSettings = useUI((s) => s.openSettings);
 
   const [aiMode, setAIMode] = useState<AIMode>("ask");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [attachedItems, setAttachedItems] = useState<AIAttachedItem[]>([]);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const ensureVaultIndex = useVaultIndex((s) => s.ensure);
 
   const ws = useWorkspace((s) => s.activeWorkspace());
   const sessions = useAISessions((s) => s.sessions);
@@ -179,6 +186,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       void streamCancelRef.current?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (ws?.path) void ensureVaultIndex(ws.path);
+  }, [ws?.path, ensureVaultIndex]);
 
   // 切 provider 时如果当前 model 不在列表里，回到第一个
   useEffect(() => {
@@ -234,6 +245,44 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       parts.push(
         `当前打开的笔记：${tab.title}\n路径：${tab.path}\n\n--- 内容（前 6000 字符）---\n${tab.content.slice(0, 6000)}`,
       );
+    }
+
+    if (attachedItems.length > 0) {
+      const idxFiles =
+        (ws ? useVaultIndex.getState().index[ws.path]?.files : undefined) ?? [];
+      for (const item of attachedItems) {
+        if (item.isDir) {
+          const sep = item.path.includes("\\") ? "\\" : "/";
+          const prefix = item.path.endsWith(sep) ? item.path : item.path + sep;
+          const inDir = idxFiles
+            .filter((f) => f.path.startsWith(prefix))
+            .slice(0, 10);
+          const chunks: string[] = [];
+          for (const f of inDir) {
+            try {
+              const c = await api.readText(f.path);
+              chunks.push(`--- ${f.name} (${f.path}) ---\n${c.slice(0, 2000)}`);
+            } catch (e) {
+              console.warn("[ai.send] readText failed", f.path, e);
+            }
+          }
+          if (chunks.length > 0) {
+            parts.push(
+              `已附加文件夹「${item.path}」下的内容（${chunks.length} 篇，单篇前 2000 字符）：\n\n${chunks.join("\n\n")}`,
+            );
+          }
+        } else {
+          try {
+            const c = await api.readText(item.path);
+            const name = item.path.split(/[\\/]/).pop() ?? item.path;
+            parts.push(
+              `已附加文件：${name}\n路径：${item.path}\n\n--- 内容（前 6000 字符）---\n${c.slice(0, 6000)}`,
+            );
+          } catch (e) {
+            console.warn("[ai.send] readText failed", item.path, e);
+          }
+        }
+      }
     }
     let collectedRefs: AIMsgRef[] = [];
     let retrievalNote: string | null = null;
@@ -386,73 +435,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             <div className="ai-sub">{subtitle}</div>
           </div>
         </div>
-        <div className="ai-top-r">
-          <button
-            type="button"
-            className="ai-pill"
-            onClick={() => setModelMenuOpen((v) => !v)}
-          >
-            <span className={"ai-pill-dot" + (configured ? "" : " off")} />
-            <span>
-              {modelList.find((m) => m.id === model)?.name ?? (model || "未选模型")}
-            </span>
-            <span style={{ opacity: 0.5 }}>▾</span>
-          </button>
-          {modelMenuOpen && (
-            <div
-              className="ai-model-menu"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {modelList.length === 0 ? (
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    fontSize: 11.5,
-                    color: "var(--text-3)",
-                  }}
-                >
-                  当前提供方没有内置模型清单，请到设置里手填 Model ID
-                </div>
-              ) : (
-                modelList.map((m) => (
-                  <button
-                    type="button"
-                    key={m.id}
-                    className={
-                      "ai-model-item" + (m.id === model ? " active" : "")
-                    }
-                    onClick={() => {
-                      setAi({ aiModel: m.id });
-                      setModelMenuOpen(false);
-                    }}
-                  >
-                    <div className="t">{m.name}</div>
-                    <div className="s">{m.tag}</div>
-                  </button>
-                ))
-              )}
-              <div className="ai-model-foot">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelMenuOpen(false);
-                    openSettings(true);
-                  }}
-                >
-                  在 设置 → AI 助手 中管理
-                </button>
-              </div>
-            </div>
-          )}
-          <button
-            type="button"
-            className="ai-exit"
-            onClick={onClose}
-            title="退出 AI 模式 (⌘J / Esc)"
-          >
-            <Icon name="x" size={14} />
-          </button>
-        </div>
       </div>
 
       <div className="ai-workspace-body">
@@ -570,6 +552,9 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               })()
             }
             configured={configured}
+            attachedItems={attachedItems}
+            setAttachedItems={setAttachedItems}
+            modelList={modelList}
           />
         </div>
       </div>
@@ -588,6 +573,9 @@ interface InputBarProps {
   wsName: string | null;
   indexedCount: number;
   configured: boolean;
+  attachedItems: AIAttachedItem[];
+  setAttachedItems: (next: AIAttachedItem[] | ((prev: AIAttachedItem[]) => AIAttachedItem[])) => void;
+  modelList: Array<{ id: string; name: string; tag: string }>;
 }
 
 function estimateTokens(text: string): number {
@@ -629,14 +617,31 @@ function AIInputBar({
   indexedCount,
   configured,
   setAIMode,
+  attachedItems,
+  setAttachedItems,
+  modelList,
 }: InputBarPropsExt) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
   const setAi = useSettings((s) => s.setAi);
   const setToast = useUI((s) => s.setToast);
+  const openSettings = useUI((s) => s.openSettings);
   const model = useSettings((s) => s.aiModel);
+  const ws = useWorkspace((s) => s.activeWorkspace());
+  const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const styleRef = useRef<HTMLButtonElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [atTrigger, setAtTrigger] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+  const pickerWrapRef = useRef<HTMLDivElement>(null);
+  const pickerInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!styleMenuOpen) return;
@@ -649,11 +654,178 @@ function AIInputBar({
     return () => window.removeEventListener("mousedown", h);
   }, [styleMenuOpen]);
 
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const h = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const insidePicker = pickerWrapRef.current?.contains(target);
+      const insideTextarea = textareaRef.current?.contains(target);
+      if (!insidePicker && !insideTextarea) {
+        setPickerOpen(false);
+        setAtTrigger(null);
+      }
+    };
+    window.addEventListener("mousedown", h);
+    return () => window.removeEventListener("mousedown", h);
+  }, [pickerOpen]);
+
+  useEffect(() => {
+    if (pickerOpen && !atTrigger) {
+      setPickerQuery("");
+      setTimeout(() => pickerInputRef.current?.focus(), 0);
+    }
+  }, [pickerOpen, atTrigger]);
+
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    const h = (e: MouseEvent) => {
+      if (
+        modelWrapRef.current &&
+        !modelWrapRef.current.contains(e.target as Node)
+      ) {
+        setModelMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", h);
+    return () => window.removeEventListener("mousedown", h);
+  }, [modelMenuOpen]);
+
+  const pickerCandidates = useMemo<{
+    folders: string[];
+    files: Array<{ path: string; name: string }>;
+  }>(() => {
+    if (!vaultFiles || !ws) return { folders: [], files: [] };
+    const sep = ws.path.includes("\\") ? "\\" : "/";
+    const folderSet = new Set<string>();
+    for (const f of vaultFiles) {
+      let dir = f.path;
+      const cut = dir.lastIndexOf(sep);
+      if (cut < 0) continue;
+      dir = dir.substring(0, cut);
+      while (dir.length > ws.path.length && dir.startsWith(ws.path + sep)) {
+        folderSet.add(dir);
+        const idx = dir.lastIndexOf(sep);
+        if (idx <= ws.path.length) break;
+        dir = dir.substring(0, idx);
+      }
+    }
+    const folders = Array.from(folderSet);
+    const q = pickerQuery.trim().toLowerCase();
+    const match = (s: string) => !q || s.toLowerCase().includes(q);
+    return {
+      folders: folders
+        .filter((p) => match(p))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 12),
+      files: vaultFiles
+        .filter((f) => match(f.path) || match(f.name))
+        .slice(0, 30),
+    };
+  }, [vaultFiles, pickerQuery, ws]);
+
+  const isAttached = (path: string) =>
+    attachedItems.some((it) => it.path === path);
+
+  const toggleAttach = (path: string, isDir: boolean) => {
+    setAttachedItems((prev) => {
+      if (prev.some((it) => it.path === path)) {
+        return prev.filter((it) => it.path !== path);
+      }
+      return [...prev, { path, isDir }];
+    });
+  };
+
+  const removeAttached = (path: string) => {
+    setAttachedItems((prev) => prev.filter((it) => it.path !== path));
+  };
+
+  const attachByPath = (path: string, isDir: boolean) => {
+    setAttachedItems((prev) =>
+      prev.some((it) => it.path === path) ? prev : [...prev, { path, isDir }],
+    );
+  };
+
+  const detectAtToken = (
+    value: string,
+    cursor: number,
+  ): { start: number; end: number; query: string } | null => {
+    let i = cursor - 1;
+    while (i >= 0) {
+      const ch = value[i];
+      if (ch === "@") {
+        const prev = i > 0 ? value[i - 1] : "";
+        if (i === 0 || /\s/.test(prev)) {
+          return {
+            start: i,
+            end: cursor,
+            query: value.substring(i + 1, cursor),
+          };
+        }
+        return null;
+      }
+      if (/\s/.test(ch)) return null;
+      i--;
+    }
+    return null;
+  };
+
+  const updateAtFromTextarea = (value: string, cursor: number) => {
+    const trig = detectAtToken(value, cursor);
+    if (trig) {
+      setAtTrigger({ start: trig.start, end: trig.end });
+      setPickerQuery(trig.query);
+      setPickerOpen(true);
+    } else if (atTrigger) {
+      setAtTrigger(null);
+      setPickerOpen(false);
+      setPickerQuery("");
+    }
+  };
+
+  const handlePickerSelect = (path: string, isDir: boolean) => {
+    if (atTrigger) {
+      attachByPath(path, isDir);
+      const next = draft.slice(0, atTrigger.start) + draft.slice(atTrigger.end);
+      setDraft(next);
+      setAtTrigger(null);
+      setPickerOpen(false);
+      setPickerQuery("");
+      setTimeout(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          const pos = atTrigger.start;
+          ta.setSelectionRange(pos, pos);
+        }
+      }, 0);
+    } else {
+      toggleAttach(path, isDir);
+    }
+  };
+
+  const shortLabel = (p: string) => {
+    const sep = p.includes("\\") ? "\\" : "/";
+    const seg = p.split(sep).filter(Boolean);
+    return seg[seg.length - 1] ?? p;
+  };
+  const relPath = (p: string) => {
+    if (!ws) return p;
+    const sep = ws.path.includes("\\") ? "\\" : "/";
+    const prefix = ws.path.endsWith(sep) ? ws.path : ws.path + sep;
+    return p.startsWith(prefix) ? p.slice(prefix.length) : p;
+  };
+
   const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0];
 
-  // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab
+  // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab + @ 添加的文件/文件夹
   const ctxChips = useMemo(() => {
-    const list: Array<{ id: string; label: string; pinned?: boolean }> = [];
+    const list: Array<{
+      id: string;
+      label: string;
+      pinned?: boolean;
+      attached?: boolean;
+      isDir?: boolean;
+    }> = [];
     if (useCurrentFile && currentTab) {
       list.push({
         id: currentTab.path,
@@ -668,8 +840,16 @@ function AIInputBar({
         list.push({ id: t.path, label: t.title.replace(/\.md$/i, "") });
       }
     }
+    for (const it of attachedItems) {
+      list.push({
+        id: it.path,
+        label: shortLabel(it.path).replace(/\.md$/i, ""),
+        attached: true,
+        isDir: it.isDir,
+      });
+    }
     return list;
-  }, [useCurrentFile, currentTab, scope]);
+  }, [useCurrentFile, currentTab, scope, attachedItems]);
 
   const tokens = useMemo(() => {
     let total = estimateTokens(draft);
@@ -687,7 +867,7 @@ function AIInputBar({
 
   const placeholder =
     aiMode === "ask"
-      ? "问点什么，⌘↩ 发送，⇧↩ 换行…"
+      ? shortcutText("问点什么，⌘↩ 发送，⇧↩ 换行…")
       : `描述你想 "${MODES.find((m) => m.id === aiMode)?.label}" 的内容…`;
 
   return (
@@ -720,11 +900,24 @@ function AIInputBar({
               ctxChips.map((c) => (
                 <span
                   key={c.id}
-                  className={"ai-ctx-chip" + (c.pinned ? " pinned" : "")}
+                  className={
+                    "ai-ctx-chip" +
+                    (c.pinned ? " pinned" : "") +
+                    (c.attached ? " attached" : "")
+                  }
                   title={c.id}
                 >
                   <span className="ico">
-                    <Icon name={c.pinned ? "pin" : "note"} size={11} />
+                    <Icon
+                      name={
+                        c.pinned
+                          ? "pin"
+                          : c.isDir
+                          ? "folder"
+                          : "note"
+                      }
+                      size={11}
+                    />
                   </span>
                   <span className="lbl">{c.label}</span>
                   {c.pinned && (
@@ -737,36 +930,129 @@ function AIInputBar({
                       ×
                     </button>
                   )}
+                  {c.attached && (
+                    <button
+                      type="button"
+                      className="x"
+                      title="移除附加上下文"
+                      onClick={() => removeAttached(c.id)}
+                    >
+                      ×
+                    </button>
+                  )}
                 </span>
               ))
             )}
-            <button
-              type="button"
-              className="ai-ctx-add"
-              title="切换 scope = 当前打开，把所有打开的 tab 当上下文"
-              onClick={() => {
-                if (scope !== "open") {
-                  useAISessions.getState().setScope("open");
-                  setToast({
-                    stage: "done",
-                    message: "已切到「当前打开的笔记」",
-                  });
-                  setTimeout(() => setToast(null), 1500);
-                } else {
-                  setAi({ aiUseWorkspace: !useWsCtx });
-                  setToast({
-                    stage: "done",
-                    message: useWsCtx
-                      ? "已关闭仓库检索"
-                      : "已开启仓库 grep 检索",
-                  });
-                  setTimeout(() => setToast(null), 1500);
-                }
-              }}
+            <div
+              className="ai-ctx-add-wrap"
+              ref={pickerWrapRef}
+              style={{ position: "relative" }}
             >
-              <span style={{ fontSize: 12 }}>＠</span>
-              <span>添加</span>
-            </button>
+              <button
+                type="button"
+                className="ai-ctx-add"
+                title="从当前仓库选择文件或文件夹作为上下文"
+                onClick={() => setPickerOpen((v) => !v)}
+                disabled={!ws}
+              >
+                <span style={{ fontSize: 12 }}>＠</span>
+                <span>添加</span>
+              </button>
+              {pickerOpen && ws && (
+                <div
+                  className="ai-ctx-picker"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {atTrigger ? (
+                    <div className="ai-ctx-picker-h ai-ctx-picker-at">
+                      <span>@</span>
+                      <span className="q">{pickerQuery || "输入名称…"}</span>
+                      <span className="hint">↩ 选择 · Esc 取消</span>
+                    </div>
+                  ) : (
+                    <div className="ai-ctx-picker-h">
+                      <input
+                        ref={pickerInputRef}
+                        type="text"
+                        value={pickerQuery}
+                        onChange={(e) => setPickerQuery(e.target.value)}
+                        placeholder="搜索文件 / 文件夹…"
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setPickerOpen(false);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="ai-ctx-picker-body scroll">
+                    {pickerCandidates.folders.length === 0 &&
+                    pickerCandidates.files.length === 0 ? (
+                      <div className="ai-ctx-picker-empty">
+                        {vaultFiles
+                          ? "没有匹配项"
+                          : "仓库索引尚未构建，请稍候…"}
+                      </div>
+                    ) : (
+                      <>
+                        {pickerCandidates.folders.length > 0 && (
+                          <div className="ai-ctx-picker-group">文件夹</div>
+                        )}
+                        {pickerCandidates.folders.map((p) => (
+                          <button
+                            type="button"
+                            key={"d:" + p}
+                            className={
+                              "ai-ctx-picker-item" +
+                              (isAttached(p) ? " on" : "")
+                            }
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handlePickerSelect(p, true);
+                            }}
+                          >
+                            <Icon name="folder" size={12} />
+                            <span className="t">{shortLabel(p)}</span>
+                            <span className="s">{relPath(p)}</span>
+                          </button>
+                        ))}
+                        {pickerCandidates.files.length > 0 && (
+                          <div className="ai-ctx-picker-group">文件</div>
+                        )}
+                        {pickerCandidates.files.map((f) => (
+                          <button
+                            type="button"
+                            key={"f:" + f.path}
+                            className={
+                              "ai-ctx-picker-item" +
+                              (isAttached(f.path) ? " on" : "")
+                            }
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handlePickerSelect(f.path, false);
+                            }}
+                          >
+                            <Icon name="note" size={12} />
+                            <span className="t">{f.name.replace(/\.md$/i, "")}</span>
+                            <span className="s">{relPath(f.path)}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                  <div className="ai-ctx-picker-foot">
+                    <span>{attachedItems.length} 个已附加</span>
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(false)}
+                    >
+                      完成
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <span className="ai-ctx-meta">
               {ctxChips.length} 篇 · 约 {tokens.toLocaleString()} tokens
             </span>
@@ -774,10 +1060,45 @@ function AIInputBar({
 
           <div className="ai-input-textarea-wrap">
             <textarea
+              ref={textareaRef}
               placeholder={placeholder}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDraft(v);
+                const cursor = e.target.selectionStart ?? v.length;
+                updateAtFromTextarea(v, cursor);
+              }}
+              onKeyUp={(e) => {
+                if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") {
+                  const ta = e.target as HTMLTextAreaElement;
+                  updateAtFromTextarea(ta.value, ta.selectionStart ?? 0);
+                }
+              }}
+              onClick={(e) => {
+                const ta = e.target as HTMLTextAreaElement;
+                updateAtFromTextarea(ta.value, ta.selectionStart ?? 0);
+              }}
               onKeyDown={(e) => {
+                if (atTrigger && e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setAtTrigger(null);
+                  setPickerOpen(false);
+                  setPickerQuery("");
+                  return;
+                }
+                if (atTrigger && e.key === "Enter") {
+                  const first =
+                    pickerCandidates.folders[0] ??
+                    pickerCandidates.files[0]?.path;
+                  if (first) {
+                    e.preventDefault();
+                    const isDir = pickerCandidates.folders.includes(first);
+                    handlePickerSelect(first, isDir);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                   // 单按 Enter 发送，Shift+Enter 换行（按设计稿）
                   e.preventDefault();
@@ -848,10 +1169,70 @@ function AIInputBar({
                   </div>
                 )}
               </button>
-              <span className="ai-tool chip ai-tool-static" title="当前模型">
-                <Icon name="sparkle" size={11} />
-                <span>{model || "未选模型"}</span>
-              </span>
+              <div
+                ref={modelWrapRef}
+                style={{ position: "relative", display: "inline-flex" }}
+              >
+                <button
+                  type="button"
+                  className="ai-tool chip ai-model-btn"
+                  title="切换模型"
+                  onClick={() => setModelMenuOpen((v) => !v)}
+                >
+                  <Icon name="sparkle" size={11} />
+                  <span>
+                    {modelList.find((m) => m.id === model)?.name ??
+                      (model || "未选模型")}
+                  </span>
+                  <span style={{ opacity: 0.5, marginLeft: 2 }}>▾</span>
+                </button>
+                {modelMenuOpen && (
+                  <div
+                    className="ai-model-menu ai-model-menu-up"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {modelList.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "8px 10px",
+                          fontSize: 11.5,
+                          color: "var(--text-3)",
+                        }}
+                      >
+                        当前提供方没有内置模型清单，请到设置里手填 Model ID
+                      </div>
+                    ) : (
+                      modelList.map((m) => (
+                        <button
+                          type="button"
+                          key={m.id}
+                          className={
+                            "ai-model-item" + (m.id === model ? " active" : "")
+                          }
+                          onClick={() => {
+                            setAi({ aiModel: m.id });
+                            setModelMenuOpen(false);
+                          }}
+                        >
+                          <div className="t">{m.name}</div>
+                          <div className="s">{m.tag}</div>
+                        </button>
+                      ))
+                    )}
+                    <div className="ai-model-foot">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModelMenuOpen(false);
+                          openSettings(true);
+                        }}
+                      >
+                        在 设置 → AI 助手 中管理
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="ai-input-actions">
               <span
@@ -866,7 +1247,7 @@ function AIInputBar({
                 className="ai-send"
                 onClick={() => onSend(draft)}
                 disabled={!draft.trim() || busy}
-                title="发送（⌘↩ 或 ↩）"
+                title={shortcutText("发送（⌘↩ 或 ↩）")}
               >
                 <span>↑</span>
                 <span>发送</span>
@@ -898,7 +1279,7 @@ function AIInputBar({
             · {indexedCount} 篇
           </span>
           <span className="meta-chip" style={{ color: "var(--text-4)" }}>
-            ⌘↩ 发送 · ⇧↩ 换行
+            {shortcutText("⌘↩ 发送 · ⇧↩ 换行")}
           </span>
         </div>
       </div>

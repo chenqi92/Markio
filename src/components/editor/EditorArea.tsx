@@ -19,7 +19,14 @@ import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
 import { getEditor, replaceRange } from "@/lib/editor-bridge";
-import { detectTable, type TableSelectionRect } from "./table-edit";
+import {
+  applyTableAction,
+  detectTable,
+  findAllTablesInText,
+  tableCellSourcePos,
+  type TableSelectionRect,
+} from "./table-edit";
+import { EditorSelection } from "@codemirror/state";
 import { TableToolbar } from "../popovers/TableToolbar";
 import { TableContextMenu } from "../popovers/TableContextMenu";
 import { classNames, debounce } from "@/lib/utils";
@@ -95,6 +102,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const scrollSyncLock = useRef<"source" | "preview" | null>(null);
   const scrollSyncLockTimer = useRef<number | null>(null);
   const splitRootRef = useRef<HTMLDivElement>(null);
+  const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
     if (typeof window === "undefined") return 50;
     const saved = Number(window.localStorage.getItem(SPLIT_WIDTH_KEY));
@@ -388,8 +396,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     [handlePasteImages],
   );
 
-  const editorPaneRef = useRef<HTMLDivElement>(null);
-
   // Tauri 原生拖入事件：从系统文件管理器拖入文件时，OS 不会触发 webview
   // 的 HTML5 drop（只能拿到 File blob 没 path），改走 Tauri 给的绝对路径。
   // - .md / .markdown / .txt → openPath
@@ -575,31 +581,126 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       } else {
         setBubble(info.coords);
       }
-      // 表格 toolbar：cursor 落在表格行就显示
-      const view = getEditor();
-      if (view) {
-        const tab = detectTable(view);
-        if (tab) {
-          const r = view.coordsAtPos(
-            view.state.selection.main.head,
-          );
-          if (r) {
-            setTableTb({
-              x: r.left,
-              y: Math.max(8, r.top - 36),
-              align: tab.aligns[tab.cursorCol] ?? null,
-              row: Math.max(0, tab.cursorRow),
-              col: tab.cursorCol,
-              rows: tab.cells.length,
-              cols: tab.aligns.length,
-            });
-            return;
-          }
-        }
-      }
-      setTableTb(null);
+      // 表格 toolbar 不再由源码 cursor 触发；改由 Preview 中的 table hover 触发，
+      // 见 handleTableHover —— 这样 toolbar 只会浮在渲染后的 table 上方，不污染 md 编辑区
     },
     [allowBubble],
+  );
+
+  // toolbar 自身 hover 时延迟消失：Preview 上 mouseleave + toolbar 上 mouseleave 都
+  // 会调度一个 200ms 后清空的 timer；mouseenter 任一边都取消它
+  const tbDismissTimerRef = useRef<number | null>(null);
+  const cancelTbDismiss = useCallback(() => {
+    if (tbDismissTimerRef.current != null) {
+      window.clearTimeout(tbDismissTimerRef.current);
+      tbDismissTimerRef.current = null;
+    }
+  }, []);
+  const scheduleTbDismiss = useCallback(() => {
+    cancelTbDismiss();
+    tbDismissTimerRef.current = window.setTimeout(() => {
+      tbDismissTimerRef.current = null;
+      setTableTb(null);
+    }, 220);
+  }, [cancelTbDismiss]);
+  useEffect(() => () => cancelTbDismiss(), [cancelTbDismiss]);
+
+  const handleTableHover = useCallback(
+    (info: { index: number; rect: DOMRect } | null) => {
+      if (!info) {
+        scheduleTbDismiss();
+        return;
+      }
+      cancelTbDismiss();
+      const view = getEditor();
+      const src = view?.state.doc.toString() ?? tab?.content ?? "";
+      const tables = findAllTablesInText(src);
+      const target = tables[info.index];
+      if (!target || !view) {
+        setTableTb(null);
+        return;
+      }
+      // 把 cursor 移到该表格首个数据行的首个单元格（跳过 header + 分隔行）
+      // 这样 detectTable 能拿到 align/row/col，工具栏的所有 action 也作用在正确位置
+      const dataLine = view.state.doc.line(
+        Math.min(target.dataRowLine, view.state.doc.lines),
+      );
+      const firstCellPos = Math.min(dataLine.from + 2, dataLine.to);
+      view.dispatch({
+        selection: EditorSelection.cursor(firstCellPos),
+        // 不滚动到位 —— Preview 已经在那张表上了，源码侧滚动会打断分栏同步
+        scrollIntoView: false,
+      });
+      const tinfo = detectTable(view);
+      if (!tinfo) {
+        setTableTb(null);
+        return;
+      }
+      setTableTb({
+        x: info.rect.left + info.rect.width / 2,
+        y: Math.max(8, info.rect.top - 38),
+        align: tinfo.aligns[tinfo.cursorCol] ?? null,
+        row: Math.max(0, tinfo.cursorRow),
+        col: tinfo.cursorCol,
+        rows: tinfo.cells.length,
+        cols: tinfo.aligns.length,
+      });
+    },
+    [cancelTbDismiss, scheduleTbDismiss, tab?.content],
+  );
+
+  // Preview 中右键 cell：把源码 cursor 移到对应 cell，再弹出已有的 TableContextMenu
+  const handleTableCellContext = useCallback(
+    (info: { tableIndex: number; row: number; col: number; x: number; y: number }) => {
+      const view = getEditor();
+      if (!view) return;
+      const tables = findAllTablesInText(view.state.doc.toString());
+      const target = tables[info.tableIndex];
+      if (!target) return;
+      const pos = tableCellSourcePos(view, target.topLine, info.row, info.col);
+      if (pos == null) return;
+      view.dispatch({
+        selection: EditorSelection.cursor(pos),
+        scrollIntoView: false,
+      });
+      // 拿一下当前 table info 用于 menu 标题
+      const tinfo = detectTable(view);
+      setBubble(null);
+      setSlash(null);
+      setTableTb(null);
+      setTableMenu({
+        x: info.x,
+        y: info.y,
+        row: tinfo ? Math.max(0, tinfo.cursorRow) : info.row,
+        col: tinfo?.cursorCol ?? info.col,
+        rows: tinfo?.cells.length ?? 1,
+        cols: tinfo?.aligns.length ?? 1,
+        rect: null,
+      });
+    },
+    [],
+  );
+
+  // Preview 的 "+ 行 / + 列" 快捷按钮：定位到表格末尾对应位置后调用现有 applyTableAction
+  const handleTableQuickAdd = useCallback(
+    (info: { tableIndex: number; kind: "row" | "col"; after: number }) => {
+      const view = getEditor();
+      if (!view) return;
+      const tables = findAllTablesInText(view.state.doc.toString());
+      const target = tables[info.tableIndex];
+      if (!target) return;
+      // 行：定位到最后一行；列：定位到最后一列
+      const row = info.kind === "row" ? info.after : 1;
+      const col = info.kind === "col" ? info.after : 0;
+      const pos = tableCellSourcePos(view, target.topLine, row, col);
+      if (pos == null) return;
+      view.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: false });
+      applyTableAction(
+        view,
+        info.kind === "row" ? { type: "insertRowBelow" } : { type: "insertColRight" },
+      );
+    },
+    [],
   );
 
   const handleSlashTrigger = useCallback((coords: { x: number; y: number }) => {
@@ -708,6 +809,9 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               : null
           }
           onSourceChange={handleContentChange}
+          onTableHover={handleTableHover}
+          onTableCellContext={handleTableCellContext}
+          onTableQuickAdd={handleTableQuickAdd}
         />
       )}
       <Outline
@@ -735,6 +839,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           col={tableTb.col}
           rows={tableTb.rows}
           cols={tableTb.cols}
+          onMouseEnter={cancelTbDismiss}
+          onMouseLeave={scheduleTbDismiss}
         />
       )}
       {tableMenu && (

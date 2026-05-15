@@ -4,6 +4,7 @@ import { api, parseError } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { displayPath } from "@/lib/utils";
+import { shortcutText } from "@/lib/shortcuts";
 
 type Target = "inbox" | "today";
 
@@ -213,7 +214,7 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
               onClick={() => void save()}
               disabled={saving || !ws}
             >
-              {saving ? "保存中…" : "保存"} <kbd>⌘↩</kbd>
+              {saving ? "保存中…" : "保存"} <kbd>{shortcutText("⌘↩")}</kbd>
             </button>
           </div>
         </div>

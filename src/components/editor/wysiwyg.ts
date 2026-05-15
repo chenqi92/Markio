@@ -48,35 +48,46 @@ class HrWidget extends WidgetType {
   }
 }
 
+class TableSepWidget extends WidgetType {
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cm-md-table-sep";
+    return el;
+  }
+  eq() {
+    return true;
+  }
+}
+
 interface PendingDeco {
   from: number;
   to: number;
   deco: Decoration;
 }
 
-function build(view: EditorView): DecorationSet {
+interface BuildResult {
+  decorations: DecorationSet;
+  /** 隐藏掉的 marker 字符范围，给 EditorView.atomicRanges 用 ——
+   *  防止鼠标拖动选区时光标"落进"被隐藏的字符里、导致选区视觉上溢出到下方行 */
+  atomic: DecorationSet;
+}
+
+function build(view: EditorView): BuildResult {
   const decos: PendingDeco[] = [];
-  const cursorLines = new Set<number>();
-  // 把所有选区覆盖到的行号都收集起来 —— 选区可能跨多行
-  for (const r of view.state.selection.ranges) {
-    const startLine = view.state.doc.lineAt(r.from).number;
-    const endLine = view.state.doc.lineAt(r.to).number;
-    for (let n = startLine; n <= endLine; n++) cursorLines.add(n);
-  }
+  const atomic: PendingDeco[] = [];
 
-  const lineOf = (pos: number) => view.state.doc.lineAt(pos).number;
-  const cursorOnSameLine = (from: number, to: number) => {
-    const a = lineOf(from);
-    const b = lineOf(to);
-    for (let n = a; n <= b; n++) if (cursorLines.has(n)) return true;
-    return false;
-  };
-
-  /** 用 replace 把 [from,to) 之间的字符隐藏起来；光标在本行时不隐藏 */
+  /** 用 replace 把 [from,to) 之间的字符隐藏起来。
+   *
+   *  注意：之前实现"光标在本行时还原 marker"会导致行长度变化，drawSelection
+   *  把 cursor 画到新的视觉位置上，看起来"鼠标点击位置和实际位置不符"——
+   *  Typora / iA Writer 等成熟 WYSIWYG 都是稳定布局：marker 始终隐藏，靠
+   *  快捷键 / 工具栏改样式。所以这里去掉 cursorOnSameLine 兜底，保证视觉稳定。
+   *
+   *  同时把范围登记进 atomic，CM 选区移动时整段跳过被隐藏的 marker。 */
   const hide = (from: number, to: number) => {
     if (from >= to) return;
-    if (cursorOnSameLine(from, to)) return;
     decos.push({ from, to, deco: Decoration.replace({}) });
+    atomic.push({ from, to, deco: Decoration.mark({}) });
   };
 
   /** 给一个范围加 mark 装饰（行内文字样式） */
@@ -153,7 +164,40 @@ function build(view: EditorView): DecorationSet {
 
       // ─── 列表 ───
       if (n === "ListItem") {
-        lineMark(node.from, "cm-md-line cm-md-list");
+        // 用父节点判断有序 / 无序，加不同 line class（CSS 给 .cm-md-list-ol 加序号样式）
+        const parent = node.node.parent?.name;
+        const isOrdered = parent === "OrderedList";
+        lineMark(
+          node.from,
+          isOrdered ? "cm-md-line cm-md-list cm-md-list-ol" : "cm-md-line cm-md-list",
+        );
+        return;
+      }
+      // 列表标记（- / * / 1. ）光标不在本行时隐藏；本行时保留以便编辑
+      if (n === "ListMark") {
+        const after = view.state.doc.sliceString(node.to, node.to + 1);
+        const to = after === " " ? node.to + 1 : node.to;
+        hide(node.from, to);
+        return;
+      }
+
+      // ─── 表格 ───
+      if (n === "Table") {
+        markLines(node.from, node.to, "cm-md-line cm-md-table-line");
+        return;
+      }
+      // TableDelimiter 在 lezer-markdown 里有两种用法：
+      //   * 单字符 `|`（每行内的 cell 分隔符）—— 此时 to-from === 1，保留显示
+      //   * 整行 `|---|---|` 的对齐分隔行 —— 此时长度 > 1，替换成一条细线
+      if (n === "TableDelimiter") {
+        if (node.to - node.from > 1) {
+          decos.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.replace({ widget: new TableSepWidget() }),
+          });
+          atomic.push({ from: node.from, to: node.to, deco: Decoration.mark({}) });
+        }
         return;
       }
 
@@ -165,13 +209,13 @@ function build(view: EditorView): DecorationSet {
           to: line.from,
           deco: Decoration.line({ class: "cm-md-line cm-md-hr" }),
         });
-        if (!cursorLines.has(line.number)) {
-          decos.push({
-            from: node.from,
-            to: node.to,
-            deco: Decoration.replace({ widget: new HrWidget() }),
-          });
-        }
+        // 始终把 --- 替换为视觉横线（稳定布局，不依赖 cursor）
+        decos.push({
+          from: node.from,
+          to: node.to,
+          deco: Decoration.replace({ widget: new HrWidget() }),
+        });
+        atomic.push({ from: node.from, to: node.to, deco: Decoration.mark({}) });
         return;
       }
 
@@ -234,17 +278,15 @@ function build(view: EditorView): DecorationSet {
       if (n === "TaskMarker") {
         const text = view.state.doc.sliceString(node.from, node.to);
         const checked = /x/i.test(text);
-        const line = view.state.doc.lineAt(node.from);
-        // 当光标在这一行时显示原始 [ ]，否则换成漂亮的 □ / ☑
-        if (!cursorLines.has(line.number)) {
-          decos.push({
-            from: node.from,
-            to: node.to,
-            deco: Decoration.replace({
-              widget: new TaskCheckbox(checked),
-            }),
-          });
-        }
+        // 始终用 □ / ☑ 替代 [ ] / [x]，点击 widget 切换；保持布局稳定
+        decos.push({
+          from: node.from,
+          to: node.to,
+          deco: Decoration.replace({
+            widget: new TaskCheckbox(checked),
+          }),
+        });
+        atomic.push({ from: node.from, to: node.to, deco: Decoration.mark({}) });
         // 标记整行
         lineMark(node.from, `cm-md-line cm-md-task-line${checked ? " done" : ""}`);
         return;
@@ -260,43 +302,61 @@ function build(view: EditorView): DecorationSet {
   }
 
   decos.sort((a, b) => a.from - b.from || a.to - b.to);
-  return Decoration.set(
-    decos.map((d) => d.deco.range(d.from, d.to)),
-    true,
-  );
+  atomic.sort((a, b) => a.from - b.from || a.to - b.to);
+  return {
+    decorations: Decoration.set(
+      decos.map((d) => d.deco.range(d.from, d.to)),
+      true,
+    ),
+    atomic: Decoration.set(
+      atomic.map((d) => d.deco.range(d.from, d.to)),
+      true,
+    ),
+  };
 }
 
-export const wysiwygMarkdown = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) {
-      this.decorations = build(view);
+class WysiwygPlugin {
+  decorations: DecorationSet;
+  atomic: DecorationSet;
+  constructor(view: EditorView) {
+    const r = build(view);
+    this.decorations = r.decorations;
+    this.atomic = r.atomic;
+  }
+  update(u: ViewUpdate) {
+    // 装饰不再随 selection 变化（保持视觉稳定），只在文档 / 视口变化时重建
+    if (u.docChanged || u.viewportChanged) {
+      const r = build(u.view);
+      this.decorations = r.decorations;
+      this.atomic = r.atomic;
     }
-    update(u: ViewUpdate) {
-      if (u.docChanged || u.viewportChanged || u.selectionSet) {
-        this.decorations = build(u.view);
-      }
-    }
-  },
-  {
-    decorations: (v) => v.decorations,
-    eventHandlers: {
-      mousedown(this, e, view) {
-        // 点击任务复选框时切换 - [ ] / - [x]
-        const target = e.target as HTMLElement;
-        if (!target.classList?.contains("cm-md-task")) return;
-        const pos = view.posAtDOM(target);
-        if (pos == null) return;
-        const line = view.state.doc.lineAt(pos);
-        const text = line.text;
-        const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
-        if (!m) return;
-        const insert = m[2].toLowerCase() === "x" ? " " : "x";
-        const from = line.from + m[1].length;
-        const to = from + 1;
-        view.dispatch({ changes: { from, to, insert } });
-        e.preventDefault();
-      },
+  }
+}
+
+const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
+  decorations: (v) => v.decorations,
+  provide: (plugin) =>
+    EditorView.atomicRanges.of(
+      (view) => view.plugin(plugin)?.atomic ?? Decoration.none,
+    ),
+  eventHandlers: {
+    mousedown(this, e, view) {
+      // 点击任务复选框时切换 - [ ] / - [x]
+      const target = e.target as HTMLElement;
+      if (!target.classList?.contains("cm-md-task")) return;
+      const pos = view.posAtDOM(target);
+      if (pos == null) return;
+      const line = view.state.doc.lineAt(pos);
+      const text = line.text;
+      const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
+      if (!m) return;
+      const insert = m[2].toLowerCase() === "x" ? " " : "x";
+      const from = line.from + m[1].length;
+      const to = from + 1;
+      view.dispatch({ changes: { from, to, insert } });
+      e.preventDefault();
     },
   },
-);
+});
+
+export const wysiwygMarkdown = wysiwygPlugin;

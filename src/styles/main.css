@@ -211,10 +211,17 @@
   flex: 1;
   min-height: 0;
   display: grid;
+  /* 单行铺满容器高度，避免 grid 默认 auto-row 用内容尺寸撑高，导致
+     overflow: hidden 的 .editor-pane 没法限定 CodeMirror 的滚动区高度 */
+  grid-template-rows: minmax(0, 1fr);
   position: relative;
   overflow: hidden;
 }
-.editor-split.split { grid-template-columns: minmax(0, var(--split-source, 50%)) 8px minmax(0, 1fr); }
+/* split mode — left pane width via --split-source, resizer is a 1px hairline that
+   only shows on hover; the grid cell stays 1px so panes can sit flush */
+.editor-split.split {
+  grid-template-columns: minmax(0, var(--split-source, 50%)) 1px minmax(0, 1fr);
+}
 .editor-split.source-only,
 .editor-split.preview-only,
 .editor-split.wysiwyg { grid-template-columns: 1fr; }
@@ -230,15 +237,15 @@
 .editor-split.preview-only .editor-pane,
 .editor-split.wysiwyg .editor-pane { border-right: 0; }
 
+/* draggable splitter — a 1px column with a wider invisible hit zone overlapping
+   its neighbours; the visible line fades in on hover/focus/active only */
 .split-resizer {
   position: relative;
-  min-width: 8px;
+  width: 1px;
   height: 100%;
   cursor: col-resize;
   touch-action: none;
-  background: var(--bg-pane-2);
-  border-left: 0.5px solid var(--border);
-  border-right: 0.5px solid var(--border);
+  background: transparent;
   outline: none;
   z-index: 5;
 }
@@ -248,35 +255,42 @@
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 2px;
+  width: 1px;
   transform: translateX(-50%);
-  background: transparent;
-  transition: background var(--tr), box-shadow var(--tr);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
 }
 .split-resizer::after {
+  /* invisible widened hit zone so the user can grab the 1px line easily */
   content: "";
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   left: 50%;
-  width: 3px;
-  height: 34px;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: var(--text-4);
-  opacity: 0.45;
-  transition: opacity var(--tr), background var(--tr);
+  width: 11px;
+  transform: translateX(-50%);
+  background: transparent;
 }
 .split-resizer:hover::before,
 .split-resizer:active::before,
 .split-resizer:focus-visible::before {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-.split-resizer:hover::after,
-.split-resizer:active::after,
-.split-resizer:focus-visible::after {
-  background: var(--accent);
   opacity: 1;
+}
+
+/* I-beam cursor across editor surfaces */
+.editor-pane,
+.editor-pane .cm-host,
+.editor-pane .cm-editor,
+.editor-pane .cm-scroller,
+.editor-pane .cm-content {
+  cursor: text;
+}
+.editor-pane .cm-gutters,
+.editor-pane .cm-gutter,
+.editor-pane .cm-gutterElement {
+  cursor: default;
 }
 
 /* code editor placeholder when CodeMirror not yet mounted */

@@ -4,6 +4,7 @@ import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
+import { shortcutText } from "@/lib/shortcuts";
 import type { Snapshot } from "@/types";
 
 function formatTs(ts: number) {
@@ -146,7 +147,7 @@ export function HistorySheet() {
               lineHeight: 1.6,
             }}
           >
-            还没有快照。保存（⌘S）后会在
+            还没有快照。保存（{shortcutText("⌘S")}）后会在
             <br />
             <code
               style={{

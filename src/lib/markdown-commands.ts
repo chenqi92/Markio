@@ -8,17 +8,13 @@ import {
 
 const URL_RE = /^(https?:\/\/|mailto:|\/|\.{1,2}\/|#)/i;
 
+/** 生成空 GFM 表格：所有单元格为单空格占位（保证 markdown table 解析成立） */
 function buildTableMarkdown(rows: number, cols: number): string {
   const safeRows = Math.max(1, Math.min(20, Math.floor(rows)));
   const safeCols = Math.max(1, Math.min(12, Math.floor(cols)));
-  const header = Array.from({ length: safeCols }, (_, i) => `列 ${i + 1}`);
-  const separator = Array.from({ length: safeCols }, () => "---");
-  const bodyRows = Array.from({ length: safeRows }, () =>
-    Array.from({ length: safeCols }, () => "内容"),
-  );
-  return [header, separator, ...bodyRows]
-    .map((row) => `| ${row.join(" | ")} |`)
-    .join("\n");
+  const emptyRow = "| " + Array(safeCols).fill(" ").join(" | ") + " |";
+  const sepRow = "| " + Array(safeCols).fill("---").join(" | ") + " |";
+  return [emptyRow, sepRow, ...Array(safeRows).fill(emptyRow)].join("\n");
 }
 
 function splitDelimitedLine(line: string): string[] {
@@ -100,7 +96,8 @@ export const markdownCommands = {
     insertBlock(buildTableMarkdown(rows, cols), {
       atLineStart: true,
       ensureBlankLines: true,
-      selectText: "列 1",
+      // 把光标落在表头第一个单元格的空格内，方便直接打字命名列
+      cursorOffset: 2,
     }),
   table: () => markdownCommands.insertTable(3, 3),
   selectionToTable: () => {
@@ -111,7 +108,7 @@ export const markdownCommands = {
     }
     const firstCell = table.split("|")[1]?.trim();
     if (firstCell) replaceSelection(table, { selectText: firstCell });
-    else replaceSelection(table);
+    else replaceSelection(table, { cursorOffset: 2 });
   },
   codeBlock: () =>
     insertBlock("```ts\n代码\n```", {

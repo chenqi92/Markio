@@ -5,6 +5,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { api, parseError, pickDirectory, pickFile } from "@/lib/api";
+import { shortcutText } from "@/lib/shortcuts";
 
 interface Template {
   id: string;
@@ -27,7 +28,7 @@ const TEMPLATES: Template[] = [
     id: "blank",
     icon: "note",
     title: "空白笔记",
-    sub: "⌘N",
+    sub: shortcutText("⌘N"),
     build: () => ({ name: "未命名.md", content: "# 未命名\n\n" }),
   },
   {
@@ -158,7 +159,7 @@ export function NewMenu({
         </span>
         <div className="meta">
           <div className="ttl">打开文件夹…</div>
-          <div className="sub">⌘⇧O</div>
+          <div className="sub">{shortcutText("⌘⇧O")}</div>
         </div>
       </button>
     </ToolbarMenuPortal>

@@ -296,9 +296,57 @@
   border-collapse: collapse; margin: 20px 0; width: 100%;
   font-family: var(--font-sans); font-size: 14px;
 }
-.preview th, .preview td { padding: 9px 14px; border-bottom: 0.5px solid var(--border); text-align: left; }
+.preview th, .preview td {
+  padding: 9px 14px; border-bottom: 0.5px solid var(--border); text-align: left;
+  /* 右键菜单和 hover 高亮要看清当前 cell */
+  transition: background var(--tr);
+}
 .preview th { font-weight: 600; color: var(--text-2); border-bottom: 1px solid var(--border-strong); background: var(--bg-pane-2); }
 .preview td:first-child { color: var(--text); }
+.preview tbody tr:hover { background: var(--bg-hover); }
+
+/* preview 中表格的 "+ 行 / + 列" 浮动按钮：默认隐藏，hover 整张表才显形 */
+.preview .md-table-host {
+  position: relative;
+  margin: 20px 0;
+  /* 给右侧 + 列按钮留位 */
+  padding-right: 8px;
+}
+.preview .md-table-host > table { margin: 0; }
+.preview .md-table-host .md-table-add {
+  position: absolute;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-3);
+  background: var(--bg-elev);
+  border: 0.5px dashed var(--border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, color var(--tr), border-color var(--tr), background var(--tr);
+  z-index: 3;
+  white-space: nowrap;
+  user-select: none;
+}
+.preview .md-table-host:hover .md-table-add { opacity: 1; }
+.preview .md-table-host .md-table-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+}
+.preview .md-table-host .md-table-add-row {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -28px;
+}
+.preview .md-table-host .md-table-add-col {
+  top: 50%;
+  transform: translateY(-50%);
+  right: -56px;
+}
 
 /* tasklist (GFM via pulldown-cmark) */
 .preview input[type="checkbox"] {

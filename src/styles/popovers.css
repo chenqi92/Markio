@@ -6,6 +6,7 @@
   backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex; justify-content: center;
+  align-items: flex-start;
   padding-top: 12vh;
 }
 .cmdk {
@@ -329,8 +330,8 @@
 
 /* WeChat 抽屉 */
 .wechat-sheet {
-  width: 920px; max-width: 94vw;
-  height: 640px; max-height: 88vh;
+  width: 1120px; max-width: 96vw;
+  height: 820px; max-height: 92vh;
   background: var(--bg-window);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
@@ -349,7 +350,7 @@
 .wechat-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 240px 1fr;
   overflow: hidden;
 }
 .wechat-styles {
@@ -360,7 +361,7 @@
 }
 .wechat-style-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 10px;
   margin-bottom: 4px;
   border-radius: 7px;
   width: 100%;
@@ -378,19 +379,199 @@
 }
 .wechat-preview-pane {
   overflow-y: auto;
-  padding: 30px;
+  padding: 40px 30px 60px;
   display: flex;
   justify-content: center;
-  background: linear-gradient(180deg, var(--bg-pane-2), var(--bg-pane));
+  align-items: flex-start;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(7,193,96,0.10), transparent 60%),
+    linear-gradient(180deg, #2a2a2e, #1c1c20);
 }
+
+/* ─── iPhone 15 Pro 钛金属机身 mockup ───────────────────────── */
 .wechat-phone {
-  width: 375px;
-  background: white;
-  border-radius: 22px;
-  padding: 30px 24px;
-  box-shadow: 0 16px 50px rgba(0,0,0,0.12), 0 0 0 8px rgba(0,0,0,0.04);
-  color: #333;
+  position: relative;
+  width: 384px;
+  height: 780px;
+  border-radius: 55px;
+  padding: 11px;
+  /* 钛金属机身：4 stops，模拟拉丝 / 倒角 */
+  background:
+    linear-gradient(135deg,
+      #5b5b60 0%,
+      #828287 16%,
+      #3a3a3e 32%,
+      #6b6b70 50%,
+      #2f2f33 68%,
+      #888890 84%,
+      #4a4a4e 100%);
+  box-shadow:
+    /* 外环高光 */
+    0 0 0 1px #b8b8bd,
+    /* 阴影投落 */
+    0 40px 90px rgba(0,0,0,0.55),
+    0 12px 40px rgba(0,0,0,0.35),
+    /* 内圈深色框（机身→屏幕边界） */
+    inset 0 0 0 2px rgba(0,0,0,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.12);
   font-family: -apple-system, "PingFang SC", sans-serif;
+  flex-shrink: 0;
+}
+/* 钛金属表面磨砂 + 反射高光 */
+.wechat-phone::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 55px;
+  background:
+    linear-gradient(115deg,
+      rgba(255,255,255,0.18) 0%,
+      rgba(255,255,255,0) 18%,
+      rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.14) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+/* 屏幕黑色内框 */
+.wechat-phone::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: 47px;
+  background: #000;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 侧边按键 */
+.wechat-phone .btn-side {
+  position: absolute;
+  background: linear-gradient(90deg, #2a2a2e, #5d5d62 40%, #3a3a3e 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    inset 0 -1px 0 rgba(0,0,0,0.4),
+    0 0 0 0.5px #1d1d20;
+  z-index: 2;
+}
+.wechat-phone .btn-side.action  { left: -3px;  top: 110px; width: 4px; height: 30px;  border-radius: 1.5px 0 0 1.5px; }
+.wechat-phone .btn-side.vol-up  { left: -3px;  top: 165px; width: 4px; height: 56px;  border-radius: 1.5px 0 0 1.5px; }
+.wechat-phone .btn-side.vol-dn  { left: -3px;  top: 235px; width: 4px; height: 56px;  border-radius: 1.5px 0 0 1.5px; }
+.wechat-phone .btn-side.power   { right: -3px; top: 175px; width: 4px; height: 90px;  border-radius: 0 1.5px 1.5px 0; }
+
+.wechat-phone-screen {
+  position: relative;
+  z-index: 2;
+  width: 100%; height: 100%;
+  background: #fff;
+  border-radius: 45px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: #1a1a1a;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+}
+
+/* 状态栏 */
+.wechat-phone-status {
+  height: 50px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 30px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a1a;
+  background: #fff;
+  position: relative;
+  z-index: 2;
+  letter-spacing: -0.2px;
+}
+.wechat-phone-status-time {
+  font-variant-numeric: tabular-nums;
+}
+.wechat-phone-status-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1a1a1a;
+}
+.wechat-phone-status-icons svg { display: block; }
+
+/* 灵动岛（126×37，距顶 11px） */
+.wechat-phone-island {
+  position: absolute;
+  top: 11px; left: 50%;
+  transform: translateX(-50%);
+  width: 126px; height: 37px;
+  background: #000;
+  border-radius: 22px;
+  z-index: 4;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255,255,255,0.06),
+    0 1px 2px rgba(0,0,0,0.4);
+}
+.wechat-phone-island::after {
+  /* 微弱的镜头点缀 */
+  content: "";
+  position: absolute;
+  right: 14px; top: 50%;
+  transform: translateY(-50%);
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #1a1f30 0%, #050608 70%);
+  box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.08);
+}
+
+/* 微信顶栏 */
+.wechat-phone-nav {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  border-bottom: 0.5px solid #e5e5e5;
+  background: #ededed;
+  letter-spacing: 0.3px;
+}
+.wechat-phone-nav-back,
+.wechat-phone-nav-more {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px; height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a1a1a;
+}
+.wechat-phone-nav-back { left: 12px; }
+.wechat-phone-nav-more { right: 12px; }
+
+/* 内容滚动区 */
+.wechat-phone-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px 36px;
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+}
+.wechat-phone-scroll::-webkit-scrollbar { width: 0; }
+
+/* home indicator */
+.wechat-phone-home {
+  position: absolute;
+  bottom: 9px; left: 50%;
+  transform: translateX(-50%);
+  width: 134px; height: 5px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  opacity: 0.9;
+  z-index: 3;
 }
 .wechat-phone-content { font-size: 15px; line-height: 1.75; }
 .wechat-phone-content h1 {
@@ -646,10 +827,25 @@
 .bubble .sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
 .bubble .ai-btn {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: white; font-weight: 600; padding: 0 10px;
+  color: #fff; font-weight: 600; padding: 0 10px;
   margin-left: 4px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 1px 2px rgba(0,0,0,0.12);
 }
-.bubble .ai-btn:hover { color: white; filter: brightness(1.1); }
+.bubble .ai-btn:hover {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  filter: brightness(1.06);
+}
+.bubble .ai-btn:active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  filter: brightness(0.92);
+  transform: translateY(0.5px);
+}
+.bubble .ai-btn:focus-visible {
+  outline: 2px solid var(--accent-glow, rgba(80,110,220,0.4));
+  outline-offset: 1px;
+}
 
 /* slash menu */
 .slash {
@@ -696,29 +892,33 @@
 .slash-item .ttl { color: var(--text); font-weight: 500; }
 .slash-item .sub { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
 
-/* table editing toolbar */
+/* table editing toolbar — pinned to top-center of editor pane */
 .table-toolbar {
   position: fixed;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   max-width: min(920px, calc(100vw - 24px));
-  padding: 5px;
+  padding: 6px 8px;
   border: 0.5px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg-elev);
-  box-shadow: var(--shadow-soft);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.18),
+              0 2px 6px rgba(0, 0, 0, 0.06);
   z-index: 90;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .table-toolbar::-webkit-scrollbar { display: none; }
 .table-toolbar-status {
-  height: 26px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
-  padding: 0 8px;
-  border-radius: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
   background: var(--bg-pane-2);
   color: var(--text-3);
   font-size: 10.5px;
@@ -726,12 +926,13 @@
   font-family: var(--font-mono);
   white-space: nowrap;
   flex-shrink: 0;
+  min-width: max-content;
 }
 .table-toolbar-group {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding-right: 5px;
+  padding-right: 6px;
   margin-right: 2px;
   border-right: 0.5px solid var(--border);
   flex-shrink: 0;
@@ -742,9 +943,9 @@
   padding-right: 0;
 }
 .table-toolbar-btn {
-  min-width: 28px;
-  height: 26px;
-  padding: 0 7px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -756,8 +957,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .table-toolbar-btn:hover {
   background: var(--bg-hover);

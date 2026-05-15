@@ -5,13 +5,14 @@ import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { classNames } from "@/lib/utils";
 import { markdownCommands } from "@/lib/markdown-commands";
+import { shortcutText } from "@/lib/shortcuts";
 import type { ViewMode } from "@/types";
 
 const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "sparkle" | "eye" }> = [
-  { id: "source", label: "源码 ⌘1", icon: "code" },
-  { id: "split", label: "分屏 ⌘2", icon: "split" },
-  { id: "wysiwyg", label: "所见即所得 ⌘3", icon: "sparkle" },
-  { id: "preview", label: "阅读 ⌘4", icon: "eye" },
+  { id: "source", label: shortcutText("源码 ⌘1"), icon: "code" },
+  { id: "split", label: shortcutText("分屏 ⌘2"), icon: "split" },
+  { id: "wysiwyg", label: shortcutText("所见即所得 ⌘3"), icon: "sparkle" },
+  { id: "preview", label: shortcutText("阅读 ⌘4"), icon: "eye" },
 ];
 
 export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
@@ -61,7 +62,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
       <div className="toolbar">
         <button
           className={classNames("tb-btn", sidebarOpen && "active")}
-          title="侧边栏 ⌘⇧L"
+          title={shortcutText("侧边栏 ⌘⇧L")}
           onClick={toggleSidebar}
         >
           <Icon name="sidebar" size={13} />
@@ -106,17 +107,17 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
 
         <button
           className={classNames("tb-btn", focusMode && "active")}
-          title="专注模式 ⌘."
+          title={shortcutText("专注模式 ⌘.")}
           onClick={toggleFocus}
         >
           <Icon name="focus" size={13} />
         </button>
-        <button className="tb-btn" title="查找 ⌘F" onClick={() => openFind(true)}>
+        <button className="tb-btn" title={shortcutText("查找 ⌘F")} onClick={() => openFind(true)}>
           <Icon name="search" size={13} />
         </button>
         <button
           className="tb-btn"
-          title="保存 ⌘S"
+          title={shortcutText("保存 ⌘S")}
           onClick={onSave}
           disabled={!dirty}
           style={{ opacity: dirty ? 1 : 0.5 }}
@@ -125,14 +126,14 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
         </button>
         <button
           className="tb-btn"
-          title="历史 ⌘Y"
+          title={shortcutText("历史 ⌘Y")}
           onClick={() => openHistory(true)}
         >
           <Icon name="history" size={13} />
         </button>
         <button
           className="tb-btn"
-          title="导出 ⌘E"
+          title={shortcutText("导出 ⌘E")}
           onClick={() => useUI.getState().openExportSheet(true)}
         >
           <Icon name="download" size={13} />
@@ -142,7 +143,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
 
         <div className="tb-pill" onClick={() => openCommand(true)}>
           <Icon name="cmd" size={11} />
-          <span>⌘K</span>
+          <span>{shortcutText("⌘K")}</span>
         </div>
 
         <button
@@ -155,7 +156,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
 
         <button
           className={classNames("tb-btn", outlineOpen && "active")}
-          title="大纲 ⌘⇧R"
+          title={shortcutText("大纲 ⌘⇧R")}
           onClick={toggleOutline}
         >
           <Icon name="outline" size={13} />
@@ -205,16 +206,16 @@ function FormatRow() {
         </Btn>
       </div>
       <div className="tb-group tb-format">
-        <Btn title="加粗 ⌘B" onClick={markdownCommands.bold}>
+        <Btn title={shortcutText("加粗 ⌘B")} onClick={markdownCommands.bold}>
           <Icon name="bold" size={12} />
         </Btn>
-        <Btn title="斜体 ⌘I" onClick={markdownCommands.italic}>
+        <Btn title={shortcutText("斜体 ⌘I")} onClick={markdownCommands.italic}>
           <Icon name="italic" size={12} />
         </Btn>
         <Btn title="删除线" onClick={markdownCommands.strike}>
           <Icon name="strike" size={12} />
         </Btn>
-        <Btn title="高亮 ⌘⇧H" onClick={markdownCommands.mark}>
+        <Btn title={shortcutText("高亮 ⌘⇧H")} onClick={markdownCommands.mark}>
           <span
             style={{
               background: "var(--hl-mark)",
@@ -293,7 +294,7 @@ function FormatRow() {
         <Btn title="Mermaid" onClick={markdownCommands.mermaid}>
           <span style={{ fontSize: 12, lineHeight: 1 }}>◇</span>
         </Btn>
-        <Btn title="图表 ⌘⌥G" onClick={markdownCommands.chart}>
+        <Btn title={shortcutText("图表 ⌘⌥G")} onClick={markdownCommands.chart}>
           <Icon name="chart" size={12} />
         </Btn>
         <Btn title="Graphviz / DOT" onClick={markdownCommands.graphviz}>

@@ -5,6 +5,7 @@ import { TodayBar } from "./TodayBar";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { pickDirectory } from "@/lib/api";
+import { shortcutText } from "@/lib/shortcuts";
 
 export function Sidebar() {
   const workspaces = useWorkspace((s) => s.workspaces);
@@ -219,7 +220,7 @@ export function Sidebar() {
             onFocus={() => openCommand(true)}
             readOnly
           />
-          <span className="search-kbd">⌘K</span>
+          <span className="search-kbd">{shortcutText("⌘K")}</span>
         </div>
       </div>
 

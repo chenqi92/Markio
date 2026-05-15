@@ -6,6 +6,7 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { isDarkTheme } from "@/themes";
+import { shortcutText } from "@/lib/shortcuts";
 
 /**
  * macOS 在 titleBarStyle: "Overlay" 模式下，需要靠 `data-tauri-drag-region` 把
@@ -20,6 +21,7 @@ export function TitleBar() {
   const openSettings = useUI((s) => s.openSettings);
   const openQuickCapture = useUI((s) => s.openQuickCapture);
   const openAi = useUI((s) => s.openAi);
+  const aiOpen = useUI((s) => s.aiOpen);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspace((s) => s.activeWorkspace());
   const tabTitle = useTabs((s) => {
@@ -114,12 +116,12 @@ export function TitleBar() {
         </button>
         <button
           type="button"
-          className="tb-ai-top"
-          title="AI 助手 ⌘J"
-          onClick={() => openAi(true)}
+          className={"tb-ai-top" + (aiOpen ? " active" : "")}
+          title={shortcutText(aiOpen ? "返回编辑器 ⌘J" : "AI 助手 ⌘J")}
+          onClick={() => openAi(!aiOpen)}
         >
-          <span className="orb" aria-hidden>✦</span>
-          <span>AI</span>
+          <span className="orb" aria-hidden>{aiOpen ? "←" : "✦"}</span>
+          <span>{aiOpen ? "编辑器" : "AI"}</span>
         </button>
         <div className="tb-divider" aria-hidden />
         <button className="icon-btn" title="同步" onClick={onSyncClick}>

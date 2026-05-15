@@ -1,6 +1,7 @@
 import { Icon } from "../ui/Icon";
 import { wrapSelection } from "@/lib/editor-bridge";
 import { markdownCommands } from "@/lib/markdown-commands";
+import { shortcutText } from "@/lib/shortcuts";
 
 interface Props {
   x: number;
@@ -21,10 +22,10 @@ export function BubbleMenu({ x, y, onAskAi, onClose }: Props) {
       style={{ left: x, top: y }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <button title="加粗 ⌘B" onClick={() => wrap("**")}>
+      <button title={shortcutText("加粗 ⌘B")} onClick={() => wrap("**")}>
         <Icon name="bold" size={13} />
       </button>
-      <button title="斜体 ⌘I" onClick={() => wrap("*")}>
+      <button title={shortcutText("斜体 ⌘I")} onClick={() => wrap("*")}>
         <Icon name="italic" size={13} />
       </button>
       <button title="删除线" onClick={() => wrap("~~")}>

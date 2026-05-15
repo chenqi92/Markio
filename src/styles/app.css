@@ -461,6 +461,16 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   font-weight: 700;
   box-shadow: 0 1px 4px var(--accent-glow, rgba(10,132,255,0.4));
 }
+.tb-ai-top.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tb-ai-top.active .orb {
+  background: var(--bg-pane);
+  color: var(--accent);
+  box-shadow: none;
+}
 .tb-divider {
   width: 0.5px; height: 16px;
   background: var(--border-strong, var(--border));

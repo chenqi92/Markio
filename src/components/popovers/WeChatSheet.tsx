@@ -183,13 +183,114 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
           </aside>
           <div className="wechat-preview-pane">
             <div className="wechat-phone">
-              <div
-                className="wechat-phone-content"
-                style={{
-                  ["--accent" as never]: style.accent,
-                } as React.CSSProperties}
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
+              <span className="btn-side action" />
+              <span className="btn-side vol-up" />
+              <span className="btn-side vol-dn" />
+              <span className="btn-side power" />
+              <div className="wechat-phone-island" />
+              <div className="wechat-phone-screen">
+                <div className="wechat-phone-status">
+                  <span className="wechat-phone-status-time">9:41</span>
+                  <span className="wechat-phone-status-icons">
+                    {/* 信号格 */}
+                    <svg
+                      width="18"
+                      height="11"
+                      viewBox="0 0 18 11"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <rect x="0" y="7" width="3" height="4" rx="0.5" />
+                      <rect x="5" y="5" width="3" height="6" rx="0.5" />
+                      <rect x="10" y="3" width="3" height="8" rx="0.5" />
+                      <rect x="15" y="1" width="3" height="10" rx="0.5" />
+                    </svg>
+                    {/* Wi-Fi */}
+                    <svg
+                      width="16"
+                      height="12"
+                      viewBox="0 0 16 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M1 4.4a11 11 0 0 1 14 0" />
+                      <path d="M3.5 6.8a7 7 0 0 1 9 0" />
+                      <path d="M6 9a3.3 3.3 0 0 1 4 0" />
+                      <circle cx="8" cy="10.6" r="0.8" fill="currentColor" />
+                    </svg>
+                    {/* 电池 */}
+                    <svg
+                      width="26"
+                      height="12"
+                      viewBox="0 0 26 12"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <rect
+                        x="0.6"
+                        y="0.6"
+                        width="22.8"
+                        height="10.8"
+                        rx="2.6"
+                        stroke="currentColor"
+                        strokeOpacity="0.45"
+                        strokeWidth="1"
+                      />
+                      <rect
+                        x="2"
+                        y="2"
+                        width="18"
+                        height="8"
+                        rx="1.4"
+                        fill="currentColor"
+                      />
+                      <rect
+                        x="24"
+                        y="4"
+                        width="1.6"
+                        height="4"
+                        rx="0.8"
+                        fill="currentColor"
+                        fillOpacity="0.45"
+                      />
+                    </svg>
+                  </span>
+                </div>
+                <div className="wechat-phone-nav">
+                  <span className="wechat-phone-nav-back" aria-hidden="true">
+                    <svg width="11" height="18" viewBox="0 0 11 18" fill="none">
+                      <path
+                        d="M9 1L2 9l7 8"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  公众号文章
+                  <span className="wechat-phone-nav-more" aria-hidden="true">
+                    <svg width="20" height="6" viewBox="0 0 20 6" fill="currentColor">
+                      <circle cx="3" cy="3" r="1.7" />
+                      <circle cx="10" cy="3" r="1.7" />
+                      <circle cx="17" cy="3" r="1.7" />
+                    </svg>
+                  </span>
+                </div>
+                <div className="wechat-phone-scroll">
+                  <div
+                    className="wechat-phone-content"
+                    style={{
+                      ["--accent" as never]: style.accent,
+                    } as React.CSSProperties}
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                </div>
+                <div className="wechat-phone-home" />
+              </div>
             </div>
           </div>
         </div>

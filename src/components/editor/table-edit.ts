@@ -40,6 +40,78 @@ export type TableSelectionRect = {
   endCol: number;
 };
 
+/** 给定 doc 的整个表格 cells[][] 与一个 (row, col)，返回 cursor 应当落在
+ *  源码中的字符位置（cell 内容的开头，跳过 "| "）。row 0 = 表头，1+ = 数据行。
+ *  分隔行不计入 row。 */
+export function tableCellSourcePos(
+  view: EditorView,
+  tableTopLine: number,
+  row: number,
+  col: number,
+): number | null {
+  const lineNum = row === 0 ? tableTopLine : tableTopLine + 1 + row;
+  if (lineNum < 1 || lineNum > view.state.doc.lines) return null;
+  const line = view.state.doc.line(lineNum);
+  const text = line.text;
+  const pipes: number[] = [];
+  for (let i = 0; i < text.length; i++) if (text[i] === "|") pipes.push(i);
+  const fromIdx = pipes[col];
+  const toIdx = pipes[col + 1];
+  if (fromIdx == null || toIdx == null) return null;
+  return Math.min(line.from + fromIdx + 2, line.from + toIdx);
+}
+
+/** 扫描整个 markdown 源码，按文档顺序列出所有 GFM 表格。
+ *  规则与 detectTable 相同：连续 ≥ 2 行、首尾以 `|` 包裹、第二行是分隔行。
+ *  返回每张表格的字符 from/to 与首个数据行的 1-based 行号 —— Preview
+ *  侧 hover 第 N 个 <table> 时可借此把 cursor 移到对应源码位置。 */
+export function findAllTablesInText(doc: string): Array<{
+  from: number;
+  to: number;
+  topLine: number;
+  dataRowLine: number;
+}> {
+  const lines = doc.split("\n");
+  const result: Array<{ from: number; to: number; topLine: number; dataRowLine: number }> = [];
+  // 预计算每行的字符起始偏移（含换行）
+  const offsets: number[] = new Array(lines.length);
+  let acc = 0;
+  for (let i = 0; i < lines.length; i++) {
+    offsets[i] = acc;
+    acc += lines[i].length + 1; // +1 for "\n"
+  }
+  let i = 0;
+  while (i < lines.length) {
+    const head = lines[i].trim();
+    if (
+      head.startsWith("|") &&
+      head.endsWith("|") &&
+      i + 1 < lines.length &&
+      isSeparatorRow(lines[i + 1])
+    ) {
+      let end = i + 2;
+      while (end < lines.length) {
+        const t = lines[end].trim();
+        if (!t.startsWith("|") || !t.endsWith("|")) break;
+        end++;
+      }
+      const from = offsets[i];
+      const to =
+        end < lines.length ? offsets[end] : offsets[end - 1] + lines[end - 1].length;
+      result.push({
+        from,
+        to,
+        topLine: i + 1,
+        dataRowLine: Math.min(i + 3, lines.length), // 1-based first data row
+      });
+      i = end;
+    } else {
+      i++;
+    }
+  }
+  return result;
+}
+
 function isSeparatorRow(line: string): boolean {
   // |:----|----:| 之类；至少要有 ---
   const inner = line.trim().replace(/^\||\|$/g, "");

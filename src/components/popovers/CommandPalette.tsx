@@ -8,6 +8,7 @@ import { useRecents } from "@/stores/recents";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
+import { shortcutText } from "@/lib/shortcuts";
 import type { ViewMode } from "@/types";
 import { THEMES } from "@/themes";
 
@@ -62,7 +63,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到源码模式",
         l2: "纯 markdown 源码",
-        kbd: ["⌘", "1"],
+        kbd: [shortcutText("⌘"), "1"],
         ico: "code",
         run: () => setMode("source" as ViewMode),
       },
@@ -71,7 +72,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到分屏模式",
         l2: "左源码 · 右预览",
-        kbd: ["⌘", "2"],
+        kbd: [shortcutText("⌘"), "2"],
         ico: "split",
         run: () => setMode("split" as ViewMode),
       },
@@ -80,7 +81,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到所见即所得",
         l2: "行内渲染（暂以预览替代）",
-        kbd: ["⌘", "3"],
+        kbd: [shortcutText("⌘"), "3"],
         ico: "sparkle",
         run: () => setMode("wysiwyg" as ViewMode),
       },
@@ -89,7 +90,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到阅读模式",
         l2: "只读阅读视图",
-        kbd: ["⌘", "4"],
+        kbd: [shortcutText("⌘"), "4"],
         ico: "book",
         run: () => setMode("preview" as ViewMode),
       },
@@ -98,7 +99,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换专注模式",
         l2: "隐藏工具栏与面包屑",
-        kbd: ["⌘", "."],
+        kbd: [shortcutText("⌘"), "."],
         ico: "focus",
         run: () => toggleFocus(),
       },
@@ -107,7 +108,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "文档",
         l1: "在当前文档中查找…",
         l2: "高亮匹配项",
-        kbd: ["⌘", "F"],
+        kbd: [shortcutText("⌘"), "F"],
         ico: "search",
         run: () => openFind(true),
       },
@@ -116,7 +117,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "文档",
         l1: "保存当前文档",
         l2: "写入磁盘",
-        kbd: ["⌘", "S"],
+        kbd: [shortcutText("⌘"), "S"],
         ico: "save",
         run: () => saveActive(),
       },
@@ -136,7 +137,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "应用",
         l1: "打开设置",
         l2: "主题、字号、快捷键…",
-        kbd: ["⌘", ","],
+        kbd: [shortcutText("⌘"), ","],
         ico: "settings",
         run: () => openSettings(true),
       },

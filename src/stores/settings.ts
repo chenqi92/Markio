@@ -18,6 +18,11 @@ type PreferenceKey =
   | "syncConflictStrategy"
   | "syncFrequency"
   | "picgoEndpoint"
+  | "smartQuotes"
+  | "autoListContinuation"
+  | "autoSpaceCJK"
+  | "snapshotOnSave"
+  | "showInTray"
   | "picgoPasteUpload"
   | "picgoDragUpload"
   | "picgoKeepLocalCopy"
@@ -44,6 +49,7 @@ type PreferenceKey =
   | "smartChannelResponseStyle"
   | "exportPdfTheme"
   | "exportPdfMargin"
+  | "htmlExportInlineImages"
   | "ragEnabled"
   | "ragAutoReindexOnSave"
   | "ragProvider"
@@ -84,6 +90,16 @@ interface SettingsState {
   lightVariant: string;
   autosave: boolean;
   autosaveDelayMs: 500 | 800 | 1500 | 3000;
+  /** 输入 " ' 时自动转曲引号 “ ” ‘ ’ */
+  smartQuotes: boolean;
+  /** 在 - / 1. 行按 Enter 时自动续标记 */
+  autoListContinuation: boolean;
+  /** 保存前在 CJK 与 ASCII 之间补一个空格 */
+  autoSpaceCJK: boolean;
+  /** 每次保存写一份历史快照（可在大纲右侧时间轴查看） */
+  snapshotOnSave: boolean;
+  /** 在系统菜单栏 / 任务栏托盘显示 markio 图标 */
+  showInTray: boolean;
   syncConflictStrategy: "ask" | "newest" | "local" | "remote";
   syncFrequency: "manual" | "30s" | "1m" | "5m";
   picgoEndpoint: string;
@@ -130,6 +146,8 @@ interface SettingsState {
   smartChannelResponseStyle: "concise" | "balanced" | "detailed";
   exportPdfTheme: "current" | "light" | "dark" | "print";
   exportPdfMargin: "standard" | "narrow" | "wide";
+  /** 导出 HTML 时是否把远端图片内嵌为 data URL（离线可看） */
+  htmlExportInlineImages: boolean;
   aiProvider: "anthropic" | "openai" | "deepseek" | "ollama" | "google" | "custom";
   /** 是否已配置 API Key（真实值在 OS 钥匙串里，不进 localStorage） */
   aiKeyConfigured: boolean;
@@ -220,6 +238,11 @@ export const useSettings = create<SettingsState>()(
       lightVariant: "light",
       autosave: true,
       autosaveDelayMs: 800,
+      smartQuotes: true,
+      autoListContinuation: true,
+      autoSpaceCJK: false,
+      snapshotOnSave: true,
+      showInTray: true,
       syncConflictStrategy: "ask",
       syncFrequency: "30s",
       picgoEndpoint: "http://127.0.0.1:36677",
@@ -249,6 +272,7 @@ export const useSettings = create<SettingsState>()(
       smartChannelResponseStyle: "balanced",
       exportPdfTheme: "current",
       exportPdfMargin: "standard",
+      htmlExportInlineImages: true,
       aiProvider: "anthropic",
       aiKeyConfigured: false,
       aiEndpoint: "",

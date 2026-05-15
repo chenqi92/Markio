@@ -791,6 +791,105 @@ async fn upload_with_picgo(endpoint: &str, file_path: &Path) -> Result<String, S
     picgo_result_url(&value).ok_or_else(|| "PicGo 响应中没有图片 URL".to_string())
 }
 
+// ─── 系统托盘 ──────────────────────────────────────────────────────
+//
+// 在 setup() 里建一个 id="main" 的 TrayIcon；前端通过 tray_set_visible
+// 命令显隐。点击托盘 → 显示并聚焦主窗口；右键菜单提供 "显示窗口" / "退出"。
+
+const TRAY_ID: &str = "main";
+
+fn show_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+}
+
+fn install_tray(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+    let show_item = MenuItemBuilder::with_id("tray_show", "显示窗口")
+        .build(app)
+        .map_err(|e| e.to_string())?;
+    let quit_item = MenuItemBuilder::with_id("tray_quit", "退出 markio")
+        .build(app)
+        .map_err(|e| e.to_string())?;
+    let menu = MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()
+        .map_err(|e| e.to_string())?;
+    TrayIconBuilder::with_id(TRAY_ID)
+        .tooltip("markio")
+        .icon(app.default_window_icon().cloned().ok_or("缺少默认图标")?)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray_show" => show_main_window(app),
+            "tray_quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn tray_set_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_visible(visible).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 拉取一张远端图片并 base64 内联，用于 exportHtml 的离线导出。
+/// 失败时返回原 url（让 HTML 里仍然是 http(s) 链接，不影响在线打开）。
+#[tauri::command]
+async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("URL 无效：{e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("仅支持 http/https".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("初始化 HTTP 客户端失败：{e}"))?;
+    let resp = client
+        .get(parsed)
+        .send()
+        .await
+        .map_err(|e| format!("下载失败：{e}"))?;
+    let mime = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err("单张图片超过 10MB 上限".to_string());
+    }
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
+}
+
 /// 把文本写到用户通过 dialog.save 选定的绝对路径。
 /// 仅做基本字符校验，不做沙箱（路径来自用户）。
 #[tauri::command]
@@ -2641,6 +2740,7 @@ pub fn run() {
             webhook_post,
             export_pandoc,
             export_write_file,
+            fetch_image_as_data_url,
             text_find_ranges,
             crash_append,
             crash_open_dir,
@@ -2701,8 +2801,14 @@ pub fn run() {
             rag_search,
             rag_clear,
             rag_repo_graph,
+            tray_set_visible,
         ])
-        .setup(|_app| Ok(()))
+        .setup(|app| {
+            if let Err(e) = install_tray(&app.handle()) {
+                eprintln!("install_tray failed: {e}");
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!());
     if let Err(e) = result {
         eprintln!("error while running tauri application: {e}");

@@ -37,6 +37,13 @@ async function bootstrap() {
   applyTheme(useSettings.getState().theme);
   injectSyntaxTheme();
 
+  // 把持久化的"显示在菜单栏"应用到原生托盘
+  if (isDesktop()) {
+    api
+      .traySetVisible(useSettings.getState().showInTray)
+      .catch(() => undefined);
+  }
+
   // 未捕获 promise / window error 也写到日志
   if (typeof window !== "undefined" && isDesktop()) {
     window.addEventListener("error", (e) => {

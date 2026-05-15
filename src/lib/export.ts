@@ -140,10 +140,38 @@ function readThemeTokens(): Record<string, string> {
 }
 
 export async function exportHtml(title: string, source: string): Promise<void> {
-  const html = await buildStandaloneHtml(title, source);
+  let html = await buildStandaloneHtml(title, source);
+  if (useSettings.getState().htmlExportInlineImages) {
+    html = await inlineRemoteImages(html);
+  }
   const dest = await pickSaveTarget(title, "html", "HTML");
   if (!dest) return;
   await api.exportWriteFile(dest, html);
+}
+
+/** 把 HTML 里所有 http(s) 的 <img src> 替换为 data: URL；失败的保留原 src。 */
+async function inlineRemoteImages(html: string): Promise<string> {
+  const matches = Array.from(
+    html.matchAll(/<img\b[^>]*\bsrc=["'](https?:\/\/[^"']+)["'][^>]*>/gi),
+  );
+  if (matches.length === 0) return html;
+  const cache = new Map<string, string>();
+  for (const m of matches) {
+    const url = m[1];
+    if (cache.has(url)) continue;
+    try {
+      cache.set(url, await api.fetchImageAsDataUrl(url));
+    } catch {
+      // 抓不动就保留原 url
+    }
+  }
+  return html.replace(
+    /(<img\b[^>]*\bsrc=["'])(https?:\/\/[^"']+)(["'])/gi,
+    (whole, p1, url, p3) => {
+      const data = cache.get(url);
+      return data ? `${p1}${data}${p3}` : whole;
+    },
+  );
 }
 
 export async function exportPdf(title: string, source: string): Promise<void> {

@@ -440,6 +440,7 @@ function LanguageCard() {
 function General() {
   const startupBehavior = useSettings((s) => s.startupBehavior);
   const closeLastTabBehavior = useSettings((s) => s.closeLastTabBehavior);
+  const showInTray = useSettings((s) => s.showInTray);
   const setPreference = useSettings((s) => s.setPreference);
   return (
     <>
@@ -470,8 +471,17 @@ function General() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">显示在菜单栏</div>
+            <div className="settings-help">macOS 顶部菜单栏 / Windows 任务栏托盘 · 点击图标快速唤起窗口</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={showInTray}
+            onChange={(v) => {
+              setPreference("showInTray", v);
+              api.traySetVisible(v).catch(() => {
+                /* 非桌面环境忽略 */
+              });
+            }}
+          />
         </div>
       </div>
     </>
@@ -487,6 +497,10 @@ function Editor() {
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const setShortcutStyle = useSettings((s) => s.setShortcutStyle);
   const setPreference = useSettings((s) => s.setPreference);
+  const smartQuotes = useSettings((s) => s.smartQuotes);
+  const autoListContinuation = useSettings((s) => s.autoListContinuation);
+  const autoSpaceCJK = useSettings((s) => s.autoSpaceCJK);
+  const snapshotOnSave = useSettings((s) => s.snapshotOnSave);
   return (
     <>
       <h2 className="settings-h">编辑器</h2>
@@ -558,21 +572,32 @@ function Editor() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">智能引号</div>
-            <div className="settings-help">把 &quot; &quot; 自动替换为 “ ”</div>
+            <div className="settings-help">输入 &quot; &apos; 时自动转 “ ” ‘ ’（已成对/在代码块里跳过）</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={smartQuotes}
+            onChange={(v) => setPreference("smartQuotes", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">自动列表续行</div>
+            <div className="settings-help">在 - / 1. / [ ] 行末按 Enter 自动续标记，空行则取消</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={autoListContinuation}
+            onChange={(v) => setPreference("autoListContinuation", v)}
+          />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">中英文之间自动空格</div>
+            <div className="settings-help">仅在保存时生效，避免输入时频繁跳光标</div>
           </div>
-          <Toggle on={false} />
+          <Toggle
+            on={autoSpaceCJK}
+            onChange={(v) => setPreference("autoSpaceCJK", v)}
+          />
         </div>
       </div>
       <div className="settings-card">
@@ -590,8 +615,12 @@ function Editor() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">每次保存写入历史快照</div>
+            <div className="settings-help">对编辑过的同一文件 5 分钟内只留一份，避免快照膨胀</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={snapshotOnSave}
+            onChange={(v) => setPreference("snapshotOnSave", v)}
+          />
         </div>
       </div>
     </>
@@ -3831,6 +3860,7 @@ function providerNeedsDir(p: ImportProvider): boolean {
 function ImportExport() {
   const pdfTheme = useSettings((s) => s.exportPdfTheme);
   const pdfMargin = useSettings((s) => s.exportPdfMargin);
+  const inlineImages = useSettings((s) => s.htmlExportInlineImages);
   const setPreference = useSettings((s) => s.setPreference);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
   const refreshTree = useWorkspaceStore((s) => s.refreshTree);
@@ -3898,8 +3928,12 @@ function ImportExport() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">HTML 内嵌图片</div>
+            <div className="settings-help">把远端图片下载并以 base64 嵌入 HTML，离线可看（单张 ≤10MB）</div>
           </div>
-          <Toggle on={true} />
+          <Toggle
+            on={inlineImages}
+            onChange={(v) => setPreference("htmlExportInlineImages", v)}
+          />
         </div>
       </div>
       <div className="settings-card">

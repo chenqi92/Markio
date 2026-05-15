@@ -259,6 +259,12 @@ export const api = {
   /** 把文本（HTML / Markdown）写到 dialog.save 选定的绝对路径 */
   exportWriteFile: (path: string, content: string) =>
     invoke<void>("export_write_file", { path, content }),
+  /** 拉远端图片为 data URL（离线 HTML 导出用） */
+  fetchImageAsDataUrl: (url: string) =>
+    invoke<string>("fetch_image_as_data_url", { url }),
+  /** 系统托盘图标显隐 */
+  traySetVisible: (visible: boolean) =>
+    invoke<void>("tray_set_visible", { visible }),
   exportPandoc: (source: string, format: "epub" | "docx" | "rtf" | "odt", destPath: string) =>
     invoke<void>("export_pandoc", { source, format, destPath }),
 

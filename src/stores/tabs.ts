@@ -9,6 +9,11 @@ import { useUI } from "./ui";
 import { useSettings } from "./settings";
 import { useRag } from "./rag";
 import { useVaultIndex } from "./vaultIndex";
+import { spaceCJK } from "@/lib/pangu";
+
+/** 同一文件 5 分钟内只写一次快照，避免自动保存把磁盘塞满 */
+const SNAPSHOT_DEDUP_MS = 5 * 60 * 1000;
+const lastSnapshotAt = new Map<string, number>();
 
 interface TabsState {
   tabs: TabInfo[];
@@ -165,10 +170,23 @@ export const useTabs = create<TabsState>((set, get) => ({
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab) return "error";
     const sig = get().sigs[id];
+    const settings = useSettings.getState();
+    // 保存前若开启 CJK 空格，先对 content 做一遍 pangu
+    let content = tab.content;
+    if (settings.autoSpaceCJK) {
+      const normalized = spaceCJK(content);
+      if (normalized !== content) {
+        content = normalized;
+        // 把规范化后的内容回灌到当前 tab，避免下一次 saveTab 再算一遍
+        set((s) => ({
+          tabs: s.tabs.map((t) => (t.id === id ? { ...t, content } : t)),
+        }));
+      }
+    }
     try {
       const newSig = await api.save(
         tab.path,
-        tab.content,
+        content,
         sig?.mtime,
         force,
       );
@@ -179,10 +197,20 @@ export const useTabs = create<TabsState>((set, get) => ({
         // 自动保存可能很频繁，后台索引和 token 扫描必须合并触发。
         scheduleRagReindex(ws.path, tab.path);
         scheduleVaultTokenRefresh(ws.path);
+        // 历史快照：每个文件 5 分钟内最多一次，跨自动保存合并
+        if (settings.snapshotOnSave) {
+          const last = lastSnapshotAt.get(tab.path) ?? 0;
+          if (Date.now() - last > SNAPSHOT_DEDUP_MS) {
+            lastSnapshotAt.set(tab.path, Date.now());
+            api.historySave(ws.path, tab.path, content).catch((e) => {
+              console.warn("historySave failed", e);
+            });
+          }
+        }
       }
       set((s) => ({
         tabs: s.tabs.map((t) =>
-          t.id === id ? { ...t, baseline: t.content, dirty: false } : t,
+          t.id === id ? { ...t, baseline: content, dirty: false } : t,
         ),
         sigs: { ...s.sigs, [id]: newSig },
       }));

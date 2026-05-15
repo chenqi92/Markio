@@ -958,18 +958,18 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 
 /* ── GraphView (知识地图) ── */
 .gv-view {
-  padding: 24px clamp(20px, 5%, 60px);
+  padding: 16px clamp(14px, 2%, 28px) 24px;
   max-width: none !important;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
   display: grid;
   grid-template-rows: auto 1fr;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 1fr 180px;
   grid-template-areas:
     "header header"
     "board  aside";
-  gap: 16px;
+  gap: 12px;
 }
 .gv-header { grid-area: header; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
 .gv-title { font-size: 22px; font-weight: 700; margin: 0; }
@@ -982,11 +982,13 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .gv-meta .dot { opacity: 0.5; }
 .gv-board {
   grid-area: board;
-  background: var(--bg-pane);
+  background:
+    radial-gradient(ellipse at center, var(--bg-pane) 0%, var(--bg-pane-2) 100%);
   border: 0.5px solid var(--border);
   border-radius: 12px;
-  min-height: 400px;
+  min-height: 600px;
   overflow: hidden;
+  position: relative;
 }
 .gv-aside { grid-area: aside; }
 .gv-aside-h {
@@ -1449,3 +1451,119 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 }
 .lv-card-actions button:hover { background: var(--bg-elev); color: var(--text); }
 .lv-card-actions button:last-child { flex: 0; min-width: 28px; }
+
+/* ── GeoMapView (真实地理地图) ── */
+.gm-view {
+  padding: 16px clamp(14px, 2%, 28px) 24px;
+  max-width: none !important;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gm-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.gm-title { font-size: 22px; font-weight: 700; margin: 0; color: var(--text); }
+.gm-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.gm-meta .dot { opacity: 0.5; }
+.gm-board {
+  flex: 1;
+  min-height: 600px;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+}
+.gm-canvas {
+  position: absolute;
+  inset: 0;
+}
+.gm-canvas .maplibregl-ctrl-attrib { font-size: 10px; }
+.gm-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 36px;
+  z-index: 5;
+  background: var(--bg-elev);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  min-width: 180px;
+}
+.gm-legend-h { font-size: 11px; font-weight: 700; color: var(--text-2); margin-bottom: 6px; }
+.gm-legend-bar {
+  height: 10px;
+  width: 100%;
+  border-radius: 5px;
+  border: 0.5px solid var(--border);
+}
+.gm-legend-labels {
+  display: flex; justify-content: space-between;
+  margin-top: 4px;
+  font-size: 10.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.gm-tooltip {
+  position: absolute;
+  z-index: 10;
+  transform: translate(-50%, -100%);
+  background: var(--bg-elev);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+.gm-tip-h { font-weight: 700; margin-bottom: 4px; }
+.gm-tip-row {
+  display: flex; gap: 8px; align-items: baseline;
+  font-size: 11.5px; color: var(--text-2);
+}
+.gm-tip-row span:first-child { color: var(--text-3); min-width: 32px; }
+.gm-tip-desc {
+  margin-top: 4px; padding-top: 4px;
+  border-top: 0.5px solid var(--border);
+  font-size: 11px; color: var(--text-3);
+  white-space: normal; max-width: 240px;
+}
+
+/* ── GlobeView (三维地球 · maplibre globe projection) ── */
+.gb-view { padding: 16px clamp(14px, 2%, 28px) 24px; max-width: none !important; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.gb-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.gb-title { font-size: 22px; font-weight: 700; margin: 0; color: var(--text); }
+.gb-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.gb-meta .dot { opacity: 0.5; }
+.gb-board { flex: 1; min-height: 640px; position: relative; border-radius: 12px; overflow: hidden; border: 0.5px solid var(--border); background: #0a1224; }
+.gb-canvas { position: absolute; inset: 0; }
+.gb-controls {
+  position: absolute; left: 12px; top: 12px; z-index: 5;
+  display: flex; gap: 6px; flex-wrap: wrap;
+  background: rgba(15, 23, 42, 0.78);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 0.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px;
+}
+.gb-controls button {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.gb-controls button:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.gb-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.7); font-size: 13px; }
+

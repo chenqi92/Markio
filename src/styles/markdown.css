@@ -366,6 +366,160 @@
   white-space: pre-wrap;
 }
 
+/* chart fenced blocks */
+.preview .chart-block {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  margin: 18px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  white-space: pre-wrap;
+}
+.preview .chart-block.chart-rendered {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: initial;
+  white-space: normal;
+  font-family: var(--font-sans);
+}
+.preview .chart-card {
+  --chart-1: #0a84ff;
+  --chart-2: #30a46c;
+  --chart-3: #ff9f0a;
+  --chart-4: #bf5af2;
+  --chart-5: #ff453a;
+  --chart-6: #00a5b5;
+  --chart-7: #6e7681;
+  --chart-8: #f97316;
+  margin: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-pane) 92%, var(--bg-pane-2));
+  font-family: var(--font-sans);
+}
+.preview .chart-head {
+  padding: 14px 16px 8px;
+  display: grid;
+  gap: 3px;
+}
+.preview .chart-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.preview .chart-subtitle {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.preview .chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 4px 16px 8px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.preview .chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.preview .chart-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, #000 18%, transparent);
+  flex-shrink: 0;
+}
+.preview .chart-viewport {
+  overflow-x: auto;
+  padding: 0 12px 12px;
+}
+.preview .chart-svg {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  height: auto;
+}
+.preview .chart-grid {
+  stroke: color-mix(in srgb, var(--border) 78%, transparent);
+  stroke-width: 1;
+}
+.preview .chart-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.preview .chart-axis-label {
+  fill: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+.preview .chart-bar {
+  opacity: 0.88;
+  transition: opacity 120ms;
+}
+.preview .chart-bar:hover { opacity: 1; }
+.preview .chart-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.preview .chart-point {
+  stroke: var(--bg-pane);
+  stroke-width: 1.5;
+}
+.preview .chart-pie-slice {
+  stroke: var(--bg-pane);
+  stroke-width: 2;
+}
+.preview .chart-pie-total {
+  fill: var(--text);
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 700;
+}
+.preview .chart-pie-label {
+  fill: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.preview .chart-data {
+  border-top: 0.5px solid var(--border);
+  padding: 9px 16px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.preview .chart-data summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-3);
+}
+.preview .chart-data table {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.preview .chart-data th,
+.preview .chart-data td {
+  padding: 6px 8px;
+}
+.preview .chart-error {
+  margin: 0;
+  color: var(--text-3);
+  white-space: pre-wrap;
+}
+
 /* doc meta */
 .preview .doc-meta {
   display: flex; align-items: center; gap: 8px;

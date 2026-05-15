@@ -312,6 +312,9 @@ function FormatRow() {
         <Btn title="Mermaid" onClick={markdownCommands.mermaid}>
           <span style={{ fontSize: 12, lineHeight: 1 }}>◇</span>
         </Btn>
+        <Btn title="图表 ⌘⌥G" onClick={markdownCommands.chart}>
+          <Icon name="chart" size={12} />
+        </Btn>
         <Btn title="提示块" onClick={markdownCommands.callout}>
           <Icon name="info" size={12} />
         </Btn>

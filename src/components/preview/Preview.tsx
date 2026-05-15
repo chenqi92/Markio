@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { enhanceCallouts } from "@/lib/callouts";
+import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderMathIn } from "@/lib/math";
 import { renderMermaidIn } from "@/lib/mermaid";
@@ -97,6 +98,7 @@ export function Preview({
     const root = contentRef.current;
     let cancelled = false;
     enhanceCallouts(root);
+    renderChartsIn(root);
     enhanceCodeBlocks(root);
     enhanceWikiLinks(root, vaultFiles);
     Promise.all([renderMathIn(root), renderMermaidIn(root)])

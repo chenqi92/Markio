@@ -159,6 +159,16 @@ const ITEMS = (close: () => void): Item[] => {
       },
     },
     {
+      id: "chart",
+      icon: "chart",
+      ttl: "图表",
+      sub: "bar / line / pie",
+      run: () => {
+        finish();
+        markdownCommands.chart();
+      },
+    },
+    {
       id: "wiki",
       icon: "link",
       ttl: "双向链接",

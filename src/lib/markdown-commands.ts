@@ -82,6 +82,27 @@ export const markdownCommands = {
       ensureBlankLines: true,
       selectText: "graph LR",
     }),
+  chart: () =>
+    insertBlock(
+      [
+        "```chart",
+        "{",
+        '  "type": "bar",',
+        '  "title": "月度趋势",',
+        '  "labels": ["一月", "二月", "三月"],',
+        '  "series": [',
+        '    { "name": "收入", "data": [12, 18, 24] },',
+        '    { "name": "成本", "data": [8, 11, 14] }',
+        "  ]",
+        "}",
+        "```",
+      ].join("\n"),
+      {
+        atLineStart: true,
+        ensureBlankLines: true,
+        selectText: "月度趋势",
+      },
+    ),
   callout: () =>
     insertBlock("> [!TIP]\n> 提示内容", {
       atLineStart: true,

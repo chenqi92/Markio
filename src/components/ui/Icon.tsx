@@ -230,6 +230,15 @@ const PATHS = {
       <line x1="12" y1="3" x2="12" y2="21" />
     </>
   ),
+  chart: (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h17" />
+      <rect x="7" y="12" width="3" height="4" rx="1" />
+      <rect x="12" y="8" width="3" height="8" rx="1" />
+      <rect x="17" y="10" width="3" height="6" rx="1" />
+    </>
+  ),
   "check-square": (
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" />

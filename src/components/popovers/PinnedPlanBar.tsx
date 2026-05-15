@@ -19,17 +19,17 @@ export function PinnedPlanBar() {
   const setCollapsed = usePinnedPlan((s) => s.setCollapsed);
   const unpin = usePinnedPlan((s) => s.unpin);
   const openPath = useTabs((s) => s.openPath);
-  const tabs = useTabs((s) => s.tabs);
-  const activeTab = useTabs((s) => s.activeTab());
+  const activePath = useTabs((s) => {
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.path : undefined;
+  });
+  const liveSource = useTabs((s) => {
+    if (!path || activePath === path) return undefined;
+    return s.tabs.find((t) => t.path === path)?.content;
+  });
 
   const [source, setSource] = useState<string>("");
   const [missing, setMissing] = useState(false);
-
-  // 如果钉选的文件在 tabs 中已有，且 dirty content 在内存里，优先读内存
-  const liveTab = useMemo(
-    () => (path ? tabs.find((t) => t.path === path) : null),
-    [tabs, path],
-  );
 
   useEffect(() => {
     if (!path) {
@@ -37,8 +37,13 @@ export function PinnedPlanBar() {
       setMissing(false);
       return;
     }
-    if (liveTab) {
-      setSource(liveTab.content);
+    if (liveSource != null) {
+      setSource(liveSource);
+      setMissing(false);
+      return;
+    }
+    if (activePath === path) {
+      setSource("");
       setMissing(false);
       return;
     }
@@ -62,7 +67,7 @@ export function PinnedPlanBar() {
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [path, liveTab]);
+  }, [path, liveSource, activePath]);
 
   const { columns, undone, done, progress } = useMemo(() => {
     const fm = parseFrontmatter(source);
@@ -78,7 +83,7 @@ export function PinnedPlanBar() {
 
   if (!path) return null;
   // 钉选文件正在当前 tab 中显示就不要重复 — 视觉冗余
-  if (activeTab?.path === path) return null;
+  if (activePath === path) return null;
 
   const title = basename(path);
 

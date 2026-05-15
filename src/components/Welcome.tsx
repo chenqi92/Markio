@@ -4,6 +4,7 @@ import { isDarkTheme } from "@/themes";
 import { pickDirectory, pickFile } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { displayPath } from "@/lib/utils";
 
 export function Welcome() {
   const theme = useSettings((s) => s.theme);
@@ -137,7 +138,7 @@ export function Welcome() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {w.path}
+                  {displayPath(w.path)}
                 </div>
               </div>
             </button>

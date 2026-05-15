@@ -12,6 +12,25 @@ export function basename(path: string): string {
   return idx >= 0 ? norm.slice(idx + 1) : norm;
 }
 
+/**
+ * 把磁盘路径转成给用户看的形式：
+ * - 去掉 Windows 扩展长度前缀 `\\?\` 和 `\\?\UNC\`
+ * - 反斜杠统一为正斜杠，便于跨平台显示
+ *
+ * 仅用于显示；实际写盘 / 调 Tauri 命令仍要用原始路径。
+ */
+export function displayPath(path: string): string {
+  if (!path) return "";
+  let p = path;
+  if (p.startsWith("\\\\?\\UNC\\")) {
+    p = "\\\\" + p.slice("\\\\?\\UNC\\".length);
+  } else if (p.startsWith("\\\\?\\")) {
+    p = p.slice("\\\\?\\".length);
+  }
+  // 统一斜杠
+  return p.replace(/\\/g, "/");
+}
+
 export function dirname(path: string): string {
   if (!path) return "";
   const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");

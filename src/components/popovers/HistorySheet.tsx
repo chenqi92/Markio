@@ -21,9 +21,24 @@ function formatTs(ts: number) {
 export function HistorySheet() {
   const open = useUI((s) => s.historyOpen);
   const close = () => useUI.getState().openHistory(false);
-  const tab = useTabs((s) => s.activeTab());
+  const tabId = useTabs((s) => (open ? s.activeId : null));
+  const tabTitle = useTabs((s) => {
+    if (!open) return undefined;
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.title : undefined;
+  });
+  const tabPath = useTabs((s) => {
+    if (!open) return undefined;
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.path : undefined;
+  });
+  const tabWorkspaceId = useTabs((s) => {
+    if (!open) return undefined;
+    const id = s.activeId;
+    return id ? s.tabs.find((t) => t.id === id)?.workspaceId : undefined;
+  });
   const ws = useWorkspace((s) =>
-    tab ? s.workspaces.find((w) => w.id === tab.workspaceId) : undefined,
+    tabWorkspaceId ? s.workspaces.find((w) => w.id === tabWorkspaceId) : undefined,
   );
   const updateContent = useTabs((s) => s.updateContent);
   const setToast = useUI((s) => s.setToast);
@@ -34,18 +49,18 @@ export function HistorySheet() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!open || !tab || !ws) {
+    if (!open || !tabPath || !ws) {
       setSnapshots([]);
       setPreview(null);
       return;
     }
     setLoading(true);
     api
-      .historyList(ws.path, tab.path)
+      .historyList(ws.path, tabPath)
       .then((s) => setSnapshots(s))
       .catch(() => setSnapshots([]))
       .finally(() => setLoading(false));
-  }, [open, tab?.id, ws?.id]);
+  }, [open, tabPath, ws?.id]);
 
   if (!open) return null;
 
@@ -63,7 +78,7 @@ export function HistorySheet() {
   };
 
   const onRestore = (s: Snapshot) => {
-    if (!tab) return;
+    if (!tabId) return;
     const ok = window.confirm(
       `恢复到 ${formatTs(s.timestamp)} 的版本？未保存的更改会丢失。`,
     );
@@ -71,7 +86,7 @@ export function HistorySheet() {
     api
       .historyRead(s.path)
       .then((c) => {
-        updateContent(tab.id, c);
+        updateContent(tabId, c);
         setToast({ stage: "done", message: "已恢复（记得保存）" });
         setTimeout(() => setToast(null), 2000);
       })
@@ -89,7 +104,7 @@ export function HistorySheet() {
     <div className="history-sheet">
       <div className="history-hd">
         <span>
-          历史版本{tab ? ` · ${tab.title}` : ""}{" "}
+          历史版本{tabTitle ? ` · ${tabTitle}` : ""}{" "}
           <span style={{ color: "var(--text-3)", fontSize: 11, fontWeight: 400 }}>
             {snapshots.length} 个快照
           </span>
@@ -99,7 +114,7 @@ export function HistorySheet() {
         </button>
       </div>
       <div className="history-list">
-        {!tab ? (
+        {!tabId ? (
           <div
             style={{
               padding: 32,

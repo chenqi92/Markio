@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { api, parseError } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
+import { displayPath } from "@/lib/utils";
 
 type Target = "inbox" | "today";
 
@@ -163,7 +164,7 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
         <div className="qc2-target-hint">
           <span aria-hidden>↳</span>
           <span>将追加到</span>
-          <span className="qc2-path">{targetMeta[target].path}</span>
+          <span className="qc2-path">{displayPath(targetMeta[target].path)}</span>
         </div>
 
         <div className="qc2-edit">

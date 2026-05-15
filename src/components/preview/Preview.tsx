@@ -18,8 +18,6 @@ import { openExternal } from "@/lib/opener";
 import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
 import { GraphView } from "./GraphView";
-import { GeoMapView } from "./GeoMapView";
-import { GlobeView } from "./GlobeView";
 
 interface Props {
   source: string;
@@ -199,13 +197,7 @@ export function Preview({
       }
     };
     // 自定义视图模板（kanban / list / graph）走前端渲染，跳过 Rust HTML 流水线
-    if (
-      viewKind === "kanban" ||
-      viewKind === "list" ||
-      viewKind === "graph" ||
-      viewKind === "geomap" ||
-      viewKind === "globe"
-    ) {
+    if (viewKind === "kanban" || viewKind === "list" || viewKind === "graph") {
       // 仍需把字数 / 标题大纲算出来给 Outline 用
       const words = fm.body
         .replace(/[`*_#>\-\[\]()]/g, "")
@@ -390,20 +382,6 @@ export function Preview({
     return (
       <div ref={containerRef} className="preview-pane">
         <GraphView title={fm.data.title ?? "知识地图"} />
-      </div>
-    );
-  }
-  if (viewKind === "geomap") {
-    return (
-      <div ref={containerRef} className="preview-pane">
-        <GeoMapView body={fm.body} title={fm.data.title ?? "地图"} />
-      </div>
-    );
-  }
-  if (viewKind === "globe") {
-    return (
-      <div ref={containerRef} className="preview-pane">
-        <GlobeView body={fm.body} title={fm.data.title ?? "三维地球"} />
       </div>
     );
   }

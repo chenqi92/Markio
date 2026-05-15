@@ -33,8 +33,7 @@ function layout(nodes: Node[], radius: number) {
     const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
     const x = cx + radius * Math.cos(ang);
     const y = cy + radius * Math.sin(ang);
-    // 圆圈半径放大：基线 10、随入度对数增长，封顶 38
-    const r = Math.max(10, Math.min(38, 10 + Math.sqrt(sorted[i].inDegree) * 6));
+    const r = Math.max(4, Math.min(18, 4 + Math.sqrt(sorted[i].inDegree) * 3));
     positions.set(sorted[i].id, { x, y, r });
   }
   return { positions, ordered: sorted };
@@ -69,9 +68,8 @@ export function GraphView({ title }: { title?: string }) {
 
   const nodes = graph?.nodes ?? [];
   const edges = graph?.edges ?? [];
-  // viewBox 尺寸固定，节点按容器自适应——少节点不会缩成一团，多节点也撑得开
-  const view = 1000;
-  const radius = Math.min(view * 0.42, Math.max(280, 80 + nodes.length * 5));
+  const radius = Math.max(180, 30 + nodes.length * 6);
+  const view = radius * 2 + 60;
 
   const positions = useMemo(() => layout(nodes, radius).positions, [nodes, radius]);
 
@@ -160,57 +158,6 @@ export function GraphView({ title }: { title?: string }) {
           width="100%"
           height="100%"
         >
-          <defs>
-            {/* 地图风格的细网格 + 等距同心圆，让"知识地图"真的有 map 感 */}
-            <pattern
-              id="gv-grid"
-              x="0"
-              y="0"
-              width="40"
-              height="40"
-              patternUnits="userSpaceOnUse"
-            >
-              <path
-                d="M 40 0 L 0 0 0 40"
-                fill="none"
-                stroke="var(--border)"
-                strokeOpacity="0.35"
-                strokeWidth="0.6"
-              />
-            </pattern>
-            <radialGradient id="gv-vignette" cx="50%" cy="50%" r="60%">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.04" />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          <rect
-            x={-view / 2}
-            y={-view / 2}
-            width={view}
-            height={view}
-            fill="url(#gv-grid)"
-          />
-          <rect
-            x={-view / 2}
-            y={-view / 2}
-            width={view}
-            height={view}
-            fill="url(#gv-vignette)"
-          />
-          {/* 同心环作为"等高线"暗示 */}
-          {[radius * 0.4, radius * 0.7, radius].map((r, i) => (
-            <circle
-              key={i}
-              cx={0}
-              cy={0}
-              r={r}
-              fill="none"
-              stroke="var(--border)"
-              strokeOpacity="0.35"
-              strokeWidth="0.6"
-              strokeDasharray="3 6"
-            />
-          ))}
           {edges.map((e, i) => {
             const a = positions.get(e.from);
             const b = positions.get(e.to);
@@ -226,7 +173,7 @@ export function GraphView({ title }: { title?: string }) {
                 y2={b.y}
                 stroke={dim ? "var(--border)" : "var(--accent)"}
                 strokeOpacity={dim ? 0.25 : 0.55}
-                strokeWidth={dim ? 1 : 1.6}
+                strokeWidth={dim ? 0.6 : 1}
               />
             );
           })}
@@ -249,14 +196,13 @@ export function GraphView({ title }: { title?: string }) {
                   fill={dim ? "var(--bg-pane-2)" : "var(--accent)"}
                   fillOpacity={dim ? 0.4 : 0.9}
                   stroke="var(--bg)"
-                  strokeWidth="2.5"
+                  strokeWidth="1.5"
                 />
                 <text
                   x="0"
-                  y={p.r + 18}
+                  y={p.r + 11}
                   textAnchor="middle"
-                  fontSize="14"
-                  fontWeight="500"
+                  fontSize="9"
                   fill={dim ? "var(--text-3)" : "var(--text)"}
                   opacity={dim ? 0.5 : 1}
                   style={{ pointerEvents: "none" }}

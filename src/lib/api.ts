@@ -614,6 +614,126 @@ export const api = {
     invoke<void>("s3_set_secret", { endpoint, secretAccessKey }),
   s3HasSecret: (endpoint: string) =>
     invoke<boolean>("s3_has_secret", { endpoint }),
+  s3ListObjects: (
+    cfg: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      publicBaseUrl?: string;
+      pathStyle?: boolean;
+    },
+    prefix: string,
+    continuationToken?: string,
+    maxKeys?: number,
+  ) =>
+    invoke<{
+      objects: Array<{ key: string; size: number; etag: string; lastModified: string }>;
+      isTruncated: boolean;
+      nextContinuationToken: string | null;
+    }>("s3_list_objects", { cfg, prefix, continuationToken, maxKeys }),
+  s3GetObject: (
+    cfg: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      publicBaseUrl?: string;
+      pathStyle?: boolean;
+    },
+    key: string,
+  ) => invoke<string>("s3_get_object", { cfg, key }),
+  s3DeleteObject: (
+    cfg: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      publicBaseUrl?: string;
+      pathStyle?: boolean;
+    },
+    key: string,
+  ) => invoke<void>("s3_delete_object", { cfg, key }),
+
+  // iCloud Drive 本地镜像目录侦测
+  icloudDefaultPath: () => invoke<string>("icloud_default_path"),
+
+  // Dropbox OAuth + Files API
+  dropboxAuthorize: (clientId: string) =>
+    invoke<{
+      connected: boolean;
+      display: string;
+      accountId: string;
+      expiresInSecs: number;
+    }>("dropbox_authorize", { clientId }),
+  dropboxStatus: () =>
+    invoke<{
+      connected: boolean;
+      display: string;
+      accountId: string;
+      expiresInSecs: number;
+    }>("dropbox_status"),
+  dropboxSignout: () => invoke<void>("dropbox_signout"),
+  dropboxList: (path: string) =>
+    invoke<{
+      entries: Array<{
+        tag: string;
+        name: string;
+        pathLower: string;
+        size: number;
+        serverModified: string;
+      }>;
+      hasMore: boolean;
+      cursor: string | null;
+    }>("dropbox_list", { path }),
+  dropboxUpload: (path: string, bodyBase64: string) =>
+    invoke<void>("dropbox_upload", { path, bodyBase64 }),
+  dropboxDownload: (path: string) =>
+    invoke<string>("dropbox_download", { path }),
+  dropboxDelete: (path: string) => invoke<void>("dropbox_delete", { path }),
+
+  // Google Drive OAuth + Drive v3 API
+  gdriveAuthorize: (clientId: string) =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>(
+      "gdrive_authorize",
+      { clientId },
+    ),
+  gdriveStatus: () =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>(
+      "gdrive_status",
+    ),
+  gdriveSignout: () => invoke<void>("gdrive_signout"),
+  gdriveList: (q: string, pageToken?: string) =>
+    invoke<{
+      files: Array<{
+        id: string;
+        name: string;
+        mimeType: string;
+        size: number;
+        modifiedTime: string;
+      }>;
+      nextPageToken: string | null;
+    }>("gdrive_list", { q, pageToken }),
+  gdriveUpload: (
+    name: string,
+    parentId: string | null,
+    existingId: string | null,
+    bodyBase64: string,
+    mimeType: string,
+  ) =>
+    invoke<string>("gdrive_upload", {
+      name,
+      parentId,
+      existingId,
+      bodyBase64,
+      mimeType,
+    }),
+  gdriveDownload: (fileId: string) =>
+    invoke<string>("gdrive_download", { fileId }),
+  gdriveDelete: (fileId: string) => invoke<void>("gdrive_delete", { fileId }),
 
   // 第三方笔记导入
   importRun: (

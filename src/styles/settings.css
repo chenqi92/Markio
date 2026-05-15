@@ -491,3 +491,15 @@
   border-color: var(--accent);
   box-shadow: inset 0 0 0 3px var(--bg-pane);
 }
+
+
+/* 用户点击网盘卡的「配置」按钮时，把目标卡片高亮一下，方便定位 */
+.mk-flash {
+  animation: mk-flash-pulse 1.6s ease-out;
+  border-radius: 10px;
+}
+@keyframes mk-flash-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent); }
+  20%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}

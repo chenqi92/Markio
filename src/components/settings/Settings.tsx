@@ -12,13 +12,14 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon, type IconName } from "../ui/Icon";
 import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
-import { useSettings, generateChannelId } from "@/stores/settings";
+import { useSettings, generateChannelId, type DriveId, type DriveConfig } from "@/stores/settings";
 import { useRag } from "@/stores/rag";
 import { useUI } from "@/stores/ui";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import { openExternal } from "@/lib/opener";
 import { writeText } from "@/lib/clipboard";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
 import type { Locale } from "@/i18n";
@@ -30,6 +31,7 @@ import {
   eventToBinding,
   formatBinding,
   normalizeBinding,
+  shortcutText,
 } from "@/lib/shortcuts";
 import {
   UI_FONT_PRESETS,
@@ -827,35 +829,15 @@ function Sync() {
     <>
       <SectionHeader id="sync" />
 
-      <GitSyncCard />
-
-      <WebDavCard />
-
-      <div className="settings-card">
-        <div className="settings-card-h">{t("settings.sync.drivesCard")}</div>
-        {DRIVES.map((d) => (
-          <div className="settings-row" key={d.id}>
-            <div className="settings-row-l">
-              <div
-                className="settings-label"
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <BrandMark
-                  logo={"logo" in d ? d.logo : undefined}
-                  icon={"icon" in d ? d.icon : undefined}
-                  color={d.color}
-                  size={22}
-                />
-                {d.name}
-              </div>
-              <div className="settings-help">
-                {t("settings.sync.driveStatus.disconnected")}
-              </div>
-            </div>
-            <button className="settings-btn">{t("common.configure")}</button>
-          </div>
-        ))}
+      <div id="mk-sync-card-github">
+        <GitSyncCard />
       </div>
+
+      <div id="mk-sync-card-webdav">
+        <WebDavCard />
+      </div>
+
+      <DrivesCard />
 
       <div className="settings-card">
         <CardTitle tip={t("settings.sync.policyTip")}>
@@ -894,6 +876,1146 @@ function Sync() {
       </div>
     </>
   );
+}
+
+function flashHighlight(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.add("mk-flash");
+  window.setTimeout(() => el.classList.remove("mk-flash"), 1600);
+}
+
+const DRIVE_HAS_NATIVE_CARD: Partial<Record<DriveId, string>> = {
+  github: "mk-sync-card-github",
+  webdav: "mk-sync-card-webdav",
+};
+
+function DrivesCard() {
+  const { t } = useTranslation();
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const webdavBaseUrl = useSettings((s) => s.webdavBaseUrl);
+  const s3Bucket = useSettings((s) => s.s3Bucket);
+  const s3AccessKeyId = useSettings((s) => s.s3AccessKeyId);
+  const [expanded, setExpanded] = useState<DriveId | null>(null);
+
+  const driveStatusText = (id: DriveId): string => {
+    if (id === "github") {
+      // GitSyncCard 自己管远端，这里只显示"详见上方卡片"
+      return t("settings.sync.drive.openExisting", { name: "GitHub" });
+    }
+    if (id === "webdav") {
+      return webdavBaseUrl
+        ? t("settings.sync.driveStatus.connected", { folder: webdavBaseUrl })
+        : t("settings.sync.driveStatus.disconnected");
+    }
+    if (id === "s3") {
+      return s3Bucket && s3AccessKeyId
+        ? t("settings.sync.driveStatus.connected", {
+            folder: `${s3Bucket} · ${s3AccessKeyId.slice(0, 6)}…`,
+          })
+        : t("settings.sync.driveStatus.disconnected");
+    }
+    const cfg = driveConfigs[id];
+    if (!cfg || !cfg.folder) {
+      return t("settings.sync.driveStatus.disconnected");
+    }
+    if (!cfg.enabled) {
+      return t("settings.sync.driveStatus.paused");
+    }
+    return t("settings.sync.driveStatus.connected", { folder: cfg.folder });
+  };
+
+  const onConfigureClick = (id: DriveId) => {
+    const nativeId = DRIVE_HAS_NATIVE_CARD[id];
+    if (nativeId) {
+      flashHighlight(nativeId);
+      return;
+    }
+    setExpanded((cur) => (cur === id ? null : id));
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">{t("settings.sync.drivesCard")}</div>
+      {DRIVES.map((d) => {
+        const id = d.id as DriveId;
+        const isExpanded = expanded === id;
+        return (
+          <div key={d.id}>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div
+                  className="settings-label"
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <BrandMark
+                    logo={"logo" in d ? d.logo : undefined}
+                    icon={"icon" in d ? d.icon : undefined}
+                    color={d.color}
+                    size={22}
+                  />
+                  {d.name}
+                </div>
+                <div className="settings-help">{driveStatusText(id)}</div>
+              </div>
+              <button
+                className="settings-btn"
+                type="button"
+                onClick={() => onConfigureClick(id)}
+              >
+                {DRIVE_HAS_NATIVE_CARD[id]
+                  ? t("settings.sync.drive.configure")
+                  : isExpanded
+                    ? t("settings.sync.drive.collapse")
+                    : t("settings.sync.drive.configure")}
+              </button>
+            </div>
+            {isExpanded && id === "s3" && <S3DriveDrawer />}
+            {isExpanded && id === "drop" && <DropboxDriveDrawer />}
+            {isExpanded && id === "drive" && <GDriveDriveDrawer />}
+            {isExpanded && id === "icloud" && (
+              <FolderDriveDrawer driveId={id} driveName={d.name} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FolderDriveDrawer({
+  driveId,
+  driveName,
+}: {
+  driveId: DriveId;
+  driveName: string;
+}) {
+  const { t } = useTranslation();
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const cfg: DriveConfig = driveConfigs[driveId] ?? { folder: "", enabled: false };
+  const [autoDetected, setAutoDetected] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (driveId !== "icloud") return;
+    api
+      .icloudDefaultPath()
+      .then((p) => setAutoDetected(p || null))
+      .catch(() => setAutoDetected(null));
+  }, [driveId]);
+
+  const updateCfg = (patch: Partial<DriveConfig>) => {
+    const next: Partial<Record<DriveId, DriveConfig>> = {
+      ...driveConfigs,
+      [driveId]: { ...cfg, ...patch },
+    };
+    setPreference("driveConfigs", next);
+  };
+
+  const pickFolder = async () => {
+    const picked = await pickDirectory();
+    if (picked) updateCfg({ folder: picked });
+  };
+
+  const useAutoDetected = () => {
+    if (autoDetected) updateCfg({ folder: autoDetected });
+  };
+
+  const openInFileManager = () => {
+    if (cfg.folder) void openExternal(cfg.folder);
+  };
+
+  const disconnect = () => {
+    const next = { ...driveConfigs };
+    delete next[driveId];
+    setPreference("driveConfigs", next);
+  };
+
+  const isIcloud = driveId === "icloud";
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+      }}
+    >
+      <div className="settings-help" style={{ marginBottom: 8 }}>
+        {isIcloud
+          ? "把 markio 仓库放进 iCloud Drive 文件夹，Apple 客户端会自动镜像到云端和其它设备。"
+          : t("settings.sync.drive.folderHint", { name: driveName })}
+      </div>
+      {isIcloud && autoDetected && (
+        <div
+          className="settings-help"
+          style={{
+            padding: 8,
+            border: "1px dashed var(--border)",
+            borderRadius: 6,
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span style={{ flex: 1, wordBreak: "break-all" }}>
+            侦测到本机 iCloud Drive：{autoDetected}
+          </span>
+          <button
+            className="settings-btn"
+            type="button"
+            onClick={useAutoDetected}
+            disabled={cfg.folder === autoDetected}
+          >
+            采用
+          </button>
+        </div>
+      )}
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">{t("settings.sync.drive.pickFolder")}</div>
+          <div className="settings-help" style={{ wordBreak: "break-all" }}>
+            {cfg.folder || t("settings.sync.drive.noFolder")}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="settings-btn" type="button" onClick={pickFolder}>
+            {t("settings.sync.drive.pickFolder")}
+          </button>
+          {cfg.folder && (
+            <button className="settings-btn" type="button" onClick={openInFileManager}>
+              打开
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">{t("settings.sync.drive.enable")}</div>
+        </div>
+        <Toggle
+          on={cfg.enabled && !!cfg.folder}
+          onChange={(v) => updateCfg({ enabled: v })}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-help" style={{ color: "var(--text-3)" }}>
+            {isIcloud
+              ? "iCloud 的真实同步由 Apple 客户端进程负责；markio 只是把这个目录认作仓库根。"
+              : t("settings.sync.drive.comingSoon")}
+          </div>
+        </div>
+        {cfg.folder && (
+          <button className="settings-btn" type="button" onClick={disconnect}>
+            {t("settings.sync.drive.disconnect")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function S3DriveDrawer() {
+  const { t } = useTranslation();
+  const s3Endpoint = useSettings((s) => s.s3Endpoint);
+  const s3Region = useSettings((s) => s.s3Region);
+  const s3Bucket = useSettings((s) => s.s3Bucket);
+  const s3AccessKeyId = useSettings((s) => s.s3AccessKeyId);
+  const s3PublicBaseUrl = useSettings((s) => s.s3PublicBaseUrl);
+  const s3PathStyle = useSettings((s) => s.s3PathStyle);
+  const setPreference = useSettings((s) => s.setPreference);
+
+  const [secret, setSecret] = useState("");
+  const [hasStoredSecret, setHasStoredSecret] = useState(false);
+  const [busy, setBusy] = useState<"save" | "test" | "list" | "delete" | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [listPrefix, setListPrefix] = useState("");
+  const [remoteObjects, setRemoteObjects] = useState<Array<{
+    key: string;
+    size: number;
+    etag: string;
+    lastModified: string;
+  }> | null>(null);
+  const [listTruncated, setListTruncated] = useState(false);
+
+  const cfgPayload = () => ({
+    endpoint: s3Endpoint,
+    region: s3Region,
+    bucket: s3Bucket,
+    accessKeyId: s3AccessKeyId,
+    secretAccessKey: "",
+    publicBaseUrl: s3PublicBaseUrl || undefined,
+    pathStyle: s3PathStyle,
+  });
+
+  useEffect(() => {
+    if (!s3Endpoint) {
+      setHasStoredSecret(false);
+      return;
+    }
+    api.s3HasSecret(s3Endpoint).then(setHasStoredSecret).catch(() => setHasStoredSecret(false));
+  }, [s3Endpoint]);
+
+  const save = async () => {
+    if (!s3Endpoint) {
+      setMsg({ kind: "err", text: "endpoint 必填" });
+      return;
+    }
+    setBusy("save");
+    setMsg(null);
+    try {
+      if (secret) {
+        await api.s3SetSecret(s3Endpoint, secret);
+        setSecret("");
+        setHasStoredSecret(true);
+      }
+      setMsg({ kind: "ok", text: t("settings.sync.drive.save") });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async () => {
+    if (!s3Endpoint || !s3Bucket || !s3AccessKeyId) {
+      setMsg({ kind: "err", text: "endpoint / bucket / accessKeyId 必填" });
+      return;
+    }
+    setBusy("test");
+    setMsg(null);
+    try {
+      const probeKey = `.markio/probe-${Date.now()}.txt`;
+      const body = btoa("markio s3 connection probe");
+      await api.s3PutObject(cfgPayload(), probeKey, body, "text/plain");
+      setMsg({ kind: "ok", text: t("settings.sync.drive.testOk") });
+    } catch (e) {
+      setMsg({
+        kind: "err",
+        text: t("settings.sync.drive.testFailed", { msg: String(e) }),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const listRemote = async () => {
+    if (!s3Endpoint || !s3Bucket || !s3AccessKeyId) {
+      setMsg({ kind: "err", text: "endpoint / bucket / accessKeyId 必填" });
+      return;
+    }
+    setBusy("list");
+    setMsg(null);
+    try {
+      const r = await api.s3ListObjects(cfgPayload(), listPrefix, undefined, 200);
+      setRemoteObjects(r.objects);
+      setListTruncated(r.isTruncated);
+      if (r.objects.length === 0) {
+        setMsg({ kind: "ok", text: "远端没有匹配的对象" });
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+      setRemoteObjects(null);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteRemote = async (key: string) => {
+    if (!confirm(`确认删除远端对象 ${key}？此操作不可撤销。`)) return;
+    setBusy("delete");
+    setMsg(null);
+    try {
+      await api.s3DeleteObject(cfgPayload(), key);
+      setRemoteObjects((cur) => cur?.filter((o) => o.key !== key) ?? null);
+      setMsg({ kind: "ok", text: `已删除 ${key}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const formatSize = (n: number): string => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Endpoint</div>
+        </div>
+        <input
+          type="text"
+          value={s3Endpoint}
+          onChange={(e) => setPreference("s3Endpoint", e.target.value)}
+          placeholder="https://s3.amazonaws.com"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Region</div>
+        </div>
+        <input
+          type="text"
+          value={s3Region}
+          onChange={(e) => setPreference("s3Region", e.target.value)}
+          placeholder="us-east-1"
+          style={{ width: 200 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Bucket</div>
+        </div>
+        <input
+          type="text"
+          value={s3Bucket}
+          onChange={(e) => setPreference("s3Bucket", e.target.value)}
+          placeholder="markio-sync"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Access Key ID</div>
+        </div>
+        <input
+          type="text"
+          value={s3AccessKeyId}
+          onChange={(e) => setPreference("s3AccessKeyId", e.target.value)}
+          placeholder="AKIA…"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Secret Access Key</div>
+          <div className="settings-help">
+            {hasStoredSecret ? "已存入系统钥匙串" : "尚未保存"}
+          </div>
+        </div>
+        <input
+          type="password"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          placeholder={hasStoredSecret ? "•••••• (留空保持现有)" : "secret"}
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Public Base URL</div>
+          <div className="settings-help">CDN/自定义域名，可留空</div>
+        </div>
+        <input
+          type="text"
+          value={s3PublicBaseUrl}
+          onChange={(e) => setPreference("s3PublicBaseUrl", e.target.value)}
+          placeholder="https://cdn.example.com"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">Path-style URL</div>
+          <div className="settings-help">兼容 MinIO / 自建 S3</div>
+        </div>
+        <Toggle
+          on={s3PathStyle}
+          onChange={(v) => setPreference("s3PathStyle", v)}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">前缀（用于浏览）</div>
+          <div className="settings-help">可选；只列出 key 以此开头的对象</div>
+        </div>
+        <input
+          type="text"
+          value={listPrefix}
+          onChange={(e) => setListPrefix(e.target.value)}
+          placeholder="例如 markio/"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l" />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button
+            className="settings-btn"
+            type="button"
+            disabled={busy !== null}
+            onClick={save}
+          >
+            {t("settings.sync.drive.save")}
+          </button>
+          <button
+            className="settings-btn"
+            type="button"
+            disabled={busy !== null}
+            onClick={listRemote}
+          >
+            {busy === "list" ? "…" : "浏览远端"}
+          </button>
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null}
+            onClick={test}
+          >
+            {busy === "test" ? "…" : t("settings.sync.drive.testUpload")}
+          </button>
+        </div>
+      </div>
+      {remoteObjects && remoteObjects.length > 0 && (
+        <div
+          className="settings-help"
+          style={{
+            padding: 8,
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            background: "var(--bg-pane)",
+            maxHeight: 240,
+            overflow: "auto",
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>
+            {remoteObjects.length} 个对象
+            {listTruncated ? "（仅显示前 200）" : ""}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+            {remoteObjects.map((o) => (
+              <li
+                key={o.key}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  padding: "2px 0",
+                  borderBottom: "1px dashed var(--border)",
+                }}
+              >
+                <span style={{ flex: 1, wordBreak: "break-all" }}>{o.key}</span>
+                <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+                  {formatSize(o.size)}
+                </span>
+                <button
+                  className="settings-btn"
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => deleteRemote(o.key)}
+                  title={`删除 ${o.key}`}
+                  style={{ padding: "2px 8px" }}
+                >
+                  删除
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropboxDriveDrawer() {
+  const clientId = useSettings((s) => s.dropboxClientId);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [status, setStatus] = useState<{
+    connected: boolean;
+    display: string;
+    accountId: string;
+    expiresInSecs: number;
+  } | null>(null);
+  const [busy, setBusy] = useState<
+    "auth" | "list" | "delete" | "upload" | "signout" | null
+  >(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [listPath, setListPath] = useState("");
+  const [entries, setEntries] = useState<
+    Array<{ tag: string; name: string; pathLower: string; size: number; serverModified: string }>
+    | null
+  >(null);
+  const [uploadPath, setUploadPath] = useState("");
+
+  useEffect(() => {
+    api.dropboxStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
+  const authorize = async () => {
+    if (!clientId.trim()) {
+      setMsg({ kind: "err", text: "请先填写 Dropbox App key (Client ID)" });
+      return;
+    }
+    setBusy("auth");
+    setMsg(null);
+    try {
+      const s = await api.dropboxAuthorize(clientId.trim());
+      setStatus(s);
+      setMsg({ kind: "ok", text: `授权成功：${s.display}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const signout = async () => {
+    if (!confirm("注销 Dropbox 授权？token 将从系统钥匙串中清除。")) return;
+    setBusy("signout");
+    try {
+      await api.dropboxSignout();
+      setStatus({ connected: false, display: "", accountId: "", expiresInSecs: 0 });
+      setEntries(null);
+      setMsg({ kind: "ok", text: "已注销" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const list = async () => {
+    setBusy("list");
+    setMsg(null);
+    try {
+      const r = await api.dropboxList(listPath || "");
+      setEntries(r.entries);
+      if (r.entries.length === 0) setMsg({ kind: "ok", text: "目录为空" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+      setEntries(null);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const del = async (path: string) => {
+    if (!confirm(`从 Dropbox 删除 ${path}？此操作不可撤销。`)) return;
+    setBusy("delete");
+    try {
+      await api.dropboxDelete(path);
+      setEntries((cur) => cur?.filter((e) => e.pathLower !== path.toLowerCase()) ?? null);
+      setMsg({ kind: "ok", text: `已删除 ${path}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const upload = async () => {
+    if (!uploadPath.trim() || !uploadPath.startsWith("/")) {
+      setMsg({ kind: "err", text: "上传路径需以 / 开头，例如 /markio/test.md" });
+      return;
+    }
+    const localFile = await pickFile([{ name: "Any", extensions: ["*"] }]);
+    if (!localFile) return;
+    setBusy("upload");
+    setMsg(null);
+    try {
+      const txt = await api.readText(localFile);
+      const bodyBase64 = btoa(unescape(encodeURIComponent(txt)));
+      await api.dropboxUpload(uploadPath.trim(), bodyBase64);
+      setMsg({ kind: "ok", text: `已上传 ${localFile} → ${uploadPath}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connected = status?.connected;
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        在{" "}
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            void openExternal("https://www.dropbox.com/developers/apps");
+          }}
+        >
+          Dropbox 开发者后台
+        </a>{" "}
+        注册一个 App（Scoped access, App folder 或 Full Dropbox），勾选
+        files.content.write / files.content.read 权限，把 App key 填到下方。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">App key (Client ID)</div>
+        </div>
+        <input
+          type="text"
+          value={clientId}
+          onChange={(e) => setPreference("dropboxClientId", e.target.value)}
+          placeholder="abc123xyz456"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">
+            {connected
+              ? `已连接 · ${status?.display} · 还有 ${Math.max(0, status?.expiresInSecs ?? 0)} 秒过期`
+              : "未连接"}
+          </div>
+        </div>
+        {connected ? (
+          <button
+            className="settings-btn"
+            type="button"
+            disabled={busy !== null}
+            onClick={signout}
+          >
+            注销
+          </button>
+        ) : (
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null || !clientId.trim()}
+            onClick={authorize}
+          >
+            {busy === "auth" ? "授权中…浏览器已打开" : "授权"}
+          </button>
+        )}
+      </div>
+      {connected && (
+        <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">浏览路径</div>
+              <div className="settings-help">空字符串=根目录</div>
+            </div>
+            <input
+              type="text"
+              value={listPath}
+              onChange={(e) => setListPath(e.target.value)}
+              placeholder="/markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={list}
+            >
+              {busy === "list" ? "…" : "列目录"}
+            </button>
+          </div>
+          {entries && entries.length > 0 && (
+            <div
+              className="settings-help"
+              style={{
+                padding: 8,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "var(--bg-pane)",
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+                {entries.map((e) => (
+                  <li
+                    key={e.pathLower || e.name}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      padding: "2px 0",
+                      borderBottom: "1px dashed var(--border)",
+                    }}
+                  >
+                    <span style={{ color: "var(--text-3)", fontSize: 11 }}>
+                      [{e.tag}]
+                    </span>
+                    <span style={{ flex: 1, wordBreak: "break-all" }}>
+                      {e.name}
+                    </span>
+                    {e.tag === "file" && (
+                      <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+                        {formatBytes(e.size)}
+                      </span>
+                    )}
+                    <button
+                      className="settings-btn"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => del(e.pathLower || `/${e.name}`)}
+                      style={{ padding: "2px 8px" }}
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">上传文本文件</div>
+              <div className="settings-help">
+                选一个本地文件，按下方路径上传到 Dropbox
+              </div>
+            </div>
+            <input
+              type="text"
+              value={uploadPath}
+              onChange={(e) => setUploadPath(e.target.value)}
+              placeholder="/markio/test.md"
+              style={{ flex: 1, minWidth: 240 }}
+            />
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={upload}
+            >
+              {busy === "upload" ? "…" : "选文件上传"}
+            </button>
+          </div>
+        </>
+      )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GDriveDriveDrawer() {
+  const clientId = useSettings((s) => s.gdriveClientId);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [status, setStatus] = useState<{
+    connected: boolean;
+    display: string;
+    expiresInSecs: number;
+  } | null>(null);
+  const [busy, setBusy] = useState<
+    "auth" | "list" | "delete" | "upload" | "signout" | null
+  >(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [listQ, setListQ] = useState("");
+  const [files, setFiles] = useState<
+    Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      size: number;
+      modifiedTime: string;
+    }>
+    | null
+  >(null);
+
+  useEffect(() => {
+    api.gdriveStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
+  const authorize = async () => {
+    if (!clientId.trim()) {
+      setMsg({ kind: "err", text: "请先填写 Google OAuth Client ID" });
+      return;
+    }
+    setBusy("auth");
+    setMsg(null);
+    try {
+      const s = await api.gdriveAuthorize(clientId.trim());
+      setStatus(s);
+      setMsg({ kind: "ok", text: `授权成功：${s.display}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const signout = async () => {
+    if (!confirm("注销 Google Drive 授权？token 将从系统钥匙串清除。")) return;
+    setBusy("signout");
+    try {
+      await api.gdriveSignout();
+      setStatus({ connected: false, display: "", expiresInSecs: 0 });
+      setFiles(null);
+      setMsg({ kind: "ok", text: "已注销" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const list = async () => {
+    setBusy("list");
+    setMsg(null);
+    try {
+      const r = await api.gdriveList(listQ.trim());
+      setFiles(r.files);
+      if (r.files.length === 0) setMsg({ kind: "ok", text: "无匹配文件" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+      setFiles(null);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const del = async (file: { id: string; name: string }) => {
+    if (!confirm(`从 Google Drive 删除 ${file.name}？此操作不可撤销。`)) return;
+    setBusy("delete");
+    try {
+      await api.gdriveDelete(file.id);
+      setFiles((cur) => cur?.filter((f) => f.id !== file.id) ?? null);
+      setMsg({ kind: "ok", text: `已删除 ${file.name}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const upload = async () => {
+    const localFile = await pickFile([{ name: "Any", extensions: ["*"] }]);
+    if (!localFile) return;
+    setBusy("upload");
+    setMsg(null);
+    try {
+      const txt = await api.readText(localFile);
+      const bodyBase64 = btoa(unescape(encodeURIComponent(txt)));
+      const name = localFile.split(/[\\/]/).pop() || "untitled";
+      const id = await api.gdriveUpload(name, null, null, bodyBase64, "text/markdown");
+      setMsg({ kind: "ok", text: `已上传 ${name} (id=${id})` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connected = status?.connected;
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        在{" "}
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            void openExternal("https://console.cloud.google.com/apis/credentials");
+          }}
+        >
+          Google Cloud Console
+        </a>{" "}
+        创建一个 OAuth Client ID（Application type: Desktop app），并开启
+        Google Drive API。把 Client ID 填到下方；首次授权会要求你同意
+        drive.file scope（markio 只能访问自己创建/打开的文件）。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">OAuth Client ID</div>
+        </div>
+        <input
+          type="text"
+          value={clientId}
+          onChange={(e) => setPreference("gdriveClientId", e.target.value)}
+          placeholder="123-abc.apps.googleusercontent.com"
+          style={{ flex: 1, minWidth: 320 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">
+            {connected
+              ? `已连接 · ${status?.display} · 还有 ${Math.max(0, status?.expiresInSecs ?? 0)} 秒过期`
+              : "未连接"}
+          </div>
+        </div>
+        {connected ? (
+          <button
+            className="settings-btn"
+            type="button"
+            disabled={busy !== null}
+            onClick={signout}
+          >
+            注销
+          </button>
+        ) : (
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null || !clientId.trim()}
+            onClick={authorize}
+          >
+            {busy === "auth" ? "授权中…浏览器已打开" : "授权"}
+          </button>
+        )}
+      </div>
+      {connected && (
+        <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">查询表达式 q</div>
+              <div className="settings-help">
+                Drive v3 q 语法，空=按 modifiedTime 列出所有可访问文件。例如
+                {` "name contains 'md'"`}
+              </div>
+            </div>
+            <input
+              type="text"
+              value={listQ}
+              onChange={(e) => setListQ(e.target.value)}
+              placeholder="mimeType='text/markdown'"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={list}
+            >
+              {busy === "list" ? "…" : "列文件"}
+            </button>
+          </div>
+          {files && files.length > 0 && (
+            <div
+              className="settings-help"
+              style={{
+                padding: 8,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "var(--bg-pane)",
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+                {files.map((f) => (
+                  <li
+                    key={f.id}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      padding: "2px 0",
+                      borderBottom: "1px dashed var(--border)",
+                    }}
+                  >
+                    <span style={{ flex: 1, wordBreak: "break-all" }}>{f.name}</span>
+                    <span style={{ color: "var(--text-3)", fontSize: 11 }}>
+                      {f.mimeType}
+                    </span>
+                    <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+                      {formatBytes(f.size)}
+                    </span>
+                    <button
+                      className="settings-btn"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => del(f)}
+                      style={{ padding: "2px 8px" }}
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">上传文本文件</div>
+              <div className="settings-help">选一个本地文件，新建到 Drive 根目录</div>
+            </div>
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={upload}
+            >
+              {busy === "upload" ? "…" : "选文件上传"}
+            </button>
+          </div>
+        </>
+      )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 type GitStatusInfo = {
@@ -1317,10 +2439,10 @@ function GitSyncCard() {
 }
 
 const MARKDOWN_EDITOR_SHORTCUTS: { l: string; k: string[] }[] = [
-  { l: "加粗 / 斜体 / 链接", k: ["⌘", "B / I / K"] },
-  { l: "高亮 / 删除线", k: ["⌘", "⇧", "H / X"] },
-  { l: "标题 1–4", k: ["⌘", "⌥", "1–4"] },
-  { l: "双向链接 / 表格 / 代码块 / 公式", k: ["⌘", "⌥", "L / T / C / M"] },
+  { l: "加粗 / 斜体 / 链接", k: [shortcutText("⌘"), "B / I / K"] },
+  { l: "高亮 / 删除线", k: [shortcutText("⌘"), shortcutText("⇧"), "H / X"] },
+  { l: "标题 1–4", k: [shortcutText("⌘"), shortcutText("⌥"), "1–4"] },
+  { l: "双向链接 / 表格 / 代码块 / 公式", k: [shortcutText("⌘"), shortcutText("⌥"), "L / T / C / M"] },
 ];
 
 function Shortcuts() {
@@ -2505,7 +3627,7 @@ function SmartChannelSettings() {
           </p>
           <ol style={{ margin: "8px 0 0 18px", padding: 0 }}>
             <li>
-              命令面板（<code>⌘K</code>）搜索"<b>通过智能通道查询</b>"，把当前问题发给同一引擎。
+              命令面板（<code>{shortcutText("⌘K")}</code>）搜索"<b>通过智能通道查询</b>"，把当前问题发给同一引擎。
             </li>
             <li>
               Raycast / Alfred / 自建脚本通过 markio 的 webhook 触发器（路线图），
@@ -4339,7 +5461,15 @@ function About() {
                 {checking ? t("settings.about.checking") : t("settings.about.checkUpdate")}
               </button>
             )}
-            <button className="settings-btn">{t("settings.about.releaseNotes")}</button>
+            <button
+              className="settings-btn"
+              type="button"
+              onClick={() => {
+                void openExternal("https://github.com/chenqi92/Markio/releases");
+              }}
+            >
+              {t("settings.about.releaseNotes")}
+            </button>
             <button
               className="settings-btn"
               type="button"
@@ -4350,7 +5480,15 @@ function About() {
             >
               {t("settings.about.crashLog")}
             </button>
-            <button className="settings-btn">{t("settings.about.feedback")}</button>
+            <button
+              className="settings-btn"
+              type="button"
+              onClick={() => {
+                void openExternal("https://github.com/chenqi92/Markio/issues/new");
+              }}
+            >
+              {t("settings.about.feedback")}
+            </button>
             {renderStatus()}
           </div>
         </div>

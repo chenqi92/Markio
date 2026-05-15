@@ -1,9 +1,12 @@
 mod ai;
 mod custom_themes;
+mod dropbox_ops;
 mod fs_ops;
+mod gdrive_ops;
 mod git_ops;
 mod import;
 mod markdown;
+mod oauth;
 pub mod rag;
 mod s3_ops;
 mod secrets;
@@ -2303,6 +2306,359 @@ fn s3_has_secret(endpoint: String) -> Result<bool, String> {
     Ok(secrets::has(&account))
 }
 
+#[tauri::command]
+async fn s3_list_objects(
+    cfg: s3_ops::S3Config,
+    prefix: String,
+    continuation_token: Option<String>,
+    max_keys: Option<u32>,
+) -> Result<s3_ops::S3ListResult, String> {
+    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
+    let mut cfg = cfg;
+    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
+    s3_ops::list_objects(
+        &cfg,
+        &prefix,
+        continuation_token.as_deref(),
+        max_keys.unwrap_or(200),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn s3_get_object(cfg: s3_ops::S3Config, key: String) -> Result<String, String> {
+    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
+    validate_remote_rel_path(&key, false)?;
+    let mut cfg = cfg;
+    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
+    let bytes = s3_ops::get_object(&cfg, &key).await?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+async fn s3_delete_object(cfg: s3_ops::S3Config, key: String) -> Result<(), String> {
+    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
+    validate_remote_rel_path(&key, false)?;
+    let mut cfg = cfg;
+    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
+    s3_ops::delete_object(&cfg, &key).await
+}
+
+// ─── iCloud Drive 默认路径侦测 ───────────────────────────────────────
+//
+// iCloud 是 Apple 在桌面上提供的同步：把文件丢进 iCloud Drive 文件夹，
+// 客户端进程会自动镜像到云端 + 其它设备。markio 这里只负责定位这个本地
+// 镜像目录，让用户把工作仓库建在里面（或选其下子目录）。
+
+#[tauri::command]
+fn icloud_default_path() -> Result<String, String> {
+    let p = detect_icloud_path();
+    match p {
+        Some(path) if path.exists() => Ok(path.to_string_lossy().to_string()),
+        _ => Ok(String::new()),
+    }
+}
+
+fn detect_icloud_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").ok()?;
+        return Some(
+            std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Mobile Documents")
+                .join("com~apple~CloudDocs"),
+        );
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let user = std::env::var("USERPROFILE").ok()?;
+        // iCloud for Windows 现代版本一般落在 %USERPROFILE%\iCloudDrive
+        // 旧版可能是 %USERPROFILE%\iCloud Drive
+        let candidates = [
+            std::path::PathBuf::from(&user).join("iCloudDrive"),
+            std::path::PathBuf::from(&user).join("iCloud Drive"),
+        ];
+        for c in candidates {
+            if c.exists() {
+                return Some(c);
+            }
+        }
+        return Some(std::path::PathBuf::from(&user).join("iCloudDrive"));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+// ─── Dropbox / Google Drive OAuth + 文件 API ────────────────────────
+
+const DROPBOX_TOKENS_ACCOUNT: &str = "dropbox:tokens";
+const DROPBOX_CLIENT_ACCOUNT: &str = "dropbox:client_id";
+const GDRIVE_TOKENS_ACCOUNT: &str = "gdrive:tokens";
+const GDRIVE_CLIENT_ACCOUNT: &str = "gdrive:client_id";
+
+fn load_dropbox_tokens() -> Result<dropbox_ops::DropboxTokens, String> {
+    let raw = secrets::get(DROPBOX_TOKENS_ACCOUNT)?
+        .ok_or_else(|| "尚未授权 Dropbox".to_string())?;
+    serde_json::from_str(&raw).map_err(|e| format!("Dropbox token 解析失败：{e}"))
+}
+
+fn save_dropbox_tokens(tokens: &dropbox_ops::DropboxTokens) -> Result<(), String> {
+    let s = serde_json::to_string(tokens).map_err(|e| e.to_string())?;
+    secrets::set(DROPBOX_TOKENS_ACCOUNT, &s)
+}
+
+async fn dropbox_session() -> Result<(dropbox_ops::DropboxTokens, String), String> {
+    let mut tokens = load_dropbox_tokens()?;
+    let client_id =
+        secrets::get(DROPBOX_CLIENT_ACCOUNT)?.ok_or_else(|| "Dropbox client_id 丢失".to_string())?;
+    dropbox_ops::ensure_fresh(&mut tokens, &client_id).await?;
+    save_dropbox_tokens(&tokens)?;
+    Ok((tokens, client_id))
+}
+
+#[tauri::command]
+async fn dropbox_authorize(
+    app: tauri::AppHandle,
+    client_id: String,
+) -> Result<dropbox_ops::DropboxStatus, String> {
+    use tauri_plugin_opener::OpenerExt as _;
+    let client_id = client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err("Dropbox client_id 为空".to_string());
+    }
+    let pkce = oauth::PkcePair::new()?;
+    let state = oauth::random_state()?;
+    let listener = oauth::LoopbackListener::bind().await?;
+    let redirect = listener.redirect_uri();
+    let url = dropbox_ops::build_authorize_url(&client_id, &redirect, &pkce.challenge, &state);
+    app.opener()
+        .open_url(&url, None::<String>)
+        .map_err(|e| format!("打开浏览器失败：{e}"))?;
+    let code = listener
+        .wait_for_code(std::time::Duration::from_secs(300), Some(&state))
+        .await?;
+    let tokens = dropbox_ops::exchange_code(&client_id, &code, &pkce.verifier, &redirect).await?;
+    save_dropbox_tokens(&tokens)?;
+    secrets::set(DROPBOX_CLIENT_ACCOUNT, &client_id)?;
+    Ok(dropbox_ops::DropboxStatus {
+        connected: true,
+        display: tokens.display,
+        account_id: tokens.account_id,
+        expires_in_secs: (tokens.expires_at as i64)
+            - (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)),
+    })
+}
+
+#[tauri::command]
+fn dropbox_status() -> Result<dropbox_ops::DropboxStatus, String> {
+    match load_dropbox_tokens() {
+        Ok(t) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            Ok(dropbox_ops::DropboxStatus {
+                connected: true,
+                display: t.display,
+                account_id: t.account_id,
+                expires_in_secs: t.expires_at as i64 - now,
+            })
+        }
+        Err(_) => Ok(dropbox_ops::DropboxStatus {
+            connected: false,
+            display: String::new(),
+            account_id: String::new(),
+            expires_in_secs: 0,
+        }),
+    }
+}
+
+#[tauri::command]
+fn dropbox_signout() -> Result<(), String> {
+    let _ = secrets::delete(DROPBOX_TOKENS_ACCOUNT);
+    let _ = secrets::delete(DROPBOX_CLIENT_ACCOUNT);
+    Ok(())
+}
+
+#[tauri::command]
+async fn dropbox_list(path: String) -> Result<dropbox_ops::DropboxList, String> {
+    let (tokens, _) = dropbox_session().await?;
+    dropbox_ops::list_folder(&tokens, &path).await
+}
+
+#[tauri::command]
+async fn dropbox_upload(path: String, body_base64: String) -> Result<(), String> {
+    validate_remote_rel_path(&path, false)?;
+    validate_body_size("Dropbox 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
+    let bytes = STANDARD
+        .decode(body_base64)
+        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
+    let (tokens, _) = dropbox_session().await?;
+    dropbox_ops::upload(&tokens, &path, bytes).await
+}
+
+#[tauri::command]
+async fn dropbox_download(path: String) -> Result<String, String> {
+    validate_remote_rel_path(&path, false)?;
+    let (tokens, _) = dropbox_session().await?;
+    let bytes = dropbox_ops::download(&tokens, &path).await?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+async fn dropbox_delete(path: String) -> Result<(), String> {
+    validate_remote_rel_path(&path, false)?;
+    let (tokens, _) = dropbox_session().await?;
+    dropbox_ops::delete(&tokens, &path).await
+}
+
+// ── Google Drive ──
+
+fn load_gdrive_tokens() -> Result<gdrive_ops::GDriveTokens, String> {
+    let raw = secrets::get(GDRIVE_TOKENS_ACCOUNT)?
+        .ok_or_else(|| "尚未授权 Google Drive".to_string())?;
+    serde_json::from_str(&raw).map_err(|e| format!("Drive token 解析失败：{e}"))
+}
+
+fn save_gdrive_tokens(tokens: &gdrive_ops::GDriveTokens) -> Result<(), String> {
+    let s = serde_json::to_string(tokens).map_err(|e| e.to_string())?;
+    secrets::set(GDRIVE_TOKENS_ACCOUNT, &s)
+}
+
+async fn gdrive_session() -> Result<(gdrive_ops::GDriveTokens, String), String> {
+    let mut tokens = load_gdrive_tokens()?;
+    let client_id =
+        secrets::get(GDRIVE_CLIENT_ACCOUNT)?.ok_or_else(|| "Drive client_id 丢失".to_string())?;
+    gdrive_ops::ensure_fresh(&mut tokens, &client_id).await?;
+    save_gdrive_tokens(&tokens)?;
+    Ok((tokens, client_id))
+}
+
+#[tauri::command]
+async fn gdrive_authorize(
+    app: tauri::AppHandle,
+    client_id: String,
+) -> Result<gdrive_ops::GDriveStatus, String> {
+    use tauri_plugin_opener::OpenerExt as _;
+    let client_id = client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err("Google client_id 为空".to_string());
+    }
+    let pkce = oauth::PkcePair::new()?;
+    let state = oauth::random_state()?;
+    let listener = oauth::LoopbackListener::bind().await?;
+    let redirect = listener.redirect_uri();
+    let url = gdrive_ops::build_authorize_url(&client_id, &redirect, &pkce.challenge, &state);
+    app.opener()
+        .open_url(&url, None::<String>)
+        .map_err(|e| format!("打开浏览器失败：{e}"))?;
+    let code = listener
+        .wait_for_code(std::time::Duration::from_secs(300), Some(&state))
+        .await?;
+    let tokens = gdrive_ops::exchange_code(&client_id, &code, &pkce.verifier, &redirect).await?;
+    save_gdrive_tokens(&tokens)?;
+    secrets::set(GDRIVE_CLIENT_ACCOUNT, &client_id)?;
+    Ok(gdrive_ops::GDriveStatus {
+        connected: true,
+        display: tokens.display,
+        expires_in_secs: (tokens.expires_at as i64)
+            - (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)),
+    })
+}
+
+#[tauri::command]
+fn gdrive_status() -> Result<gdrive_ops::GDriveStatus, String> {
+    match load_gdrive_tokens() {
+        Ok(t) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            Ok(gdrive_ops::GDriveStatus {
+                connected: true,
+                display: t.display,
+                expires_in_secs: t.expires_at as i64 - now,
+            })
+        }
+        Err(_) => Ok(gdrive_ops::GDriveStatus {
+            connected: false,
+            display: String::new(),
+            expires_in_secs: 0,
+        }),
+    }
+}
+
+#[tauri::command]
+fn gdrive_signout() -> Result<(), String> {
+    let _ = secrets::delete(GDRIVE_TOKENS_ACCOUNT);
+    let _ = secrets::delete(GDRIVE_CLIENT_ACCOUNT);
+    Ok(())
+}
+
+#[tauri::command]
+async fn gdrive_list(
+    q: String,
+    page_token: Option<String>,
+) -> Result<gdrive_ops::GDriveList, String> {
+    let (tokens, _) = gdrive_session().await?;
+    gdrive_ops::list_files(&tokens, &q, page_token.as_deref()).await
+}
+
+#[tauri::command]
+async fn gdrive_upload(
+    name: String,
+    parent_id: Option<String>,
+    existing_id: Option<String>,
+    body_base64: String,
+    mime_type: String,
+) -> Result<String, String> {
+    if name.contains('/') || name.contains('\\') || name.is_empty() {
+        return Err("Drive 文件名无效".to_string());
+    }
+    validate_body_size("Drive 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
+    let bytes = STANDARD
+        .decode(body_base64)
+        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
+    let (tokens, _) = gdrive_session().await?;
+    gdrive_ops::upload(
+        &tokens,
+        existing_id.as_deref().filter(|s| !s.is_empty()),
+        &name,
+        parent_id.as_deref().filter(|s| !s.is_empty()),
+        bytes,
+        &mime_type,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn gdrive_download(file_id: String) -> Result<String, String> {
+    if file_id.is_empty() {
+        return Err("file_id 为空".to_string());
+    }
+    let (tokens, _) = gdrive_session().await?;
+    let bytes = gdrive_ops::download(&tokens, &file_id).await?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+async fn gdrive_delete(file_id: String) -> Result<(), String> {
+    if file_id.is_empty() {
+        return Err("file_id 为空".to_string());
+    }
+    let (tokens, _) = gdrive_session().await?;
+    gdrive_ops::delete(&tokens, &file_id).await
+}
+
 // ─── 第三方笔记导入 ─────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2793,6 +3149,24 @@ pub fn run() {
             s3_put_object,
             s3_set_secret,
             s3_has_secret,
+            s3_list_objects,
+            s3_get_object,
+            s3_delete_object,
+            icloud_default_path,
+            dropbox_authorize,
+            dropbox_status,
+            dropbox_signout,
+            dropbox_list,
+            dropbox_upload,
+            dropbox_download,
+            dropbox_delete,
+            gdrive_authorize,
+            gdrive_status,
+            gdrive_signout,
+            gdrive_list,
+            gdrive_upload,
+            gdrive_download,
+            gdrive_delete,
             import_run,
             rag_status,
             rag_reindex,

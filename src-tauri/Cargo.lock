@@ -2488,6 +2488,7 @@ dependencies = [
  "encoding_rs",
  "encoding_rs_io",
  "futures-util",
+ "getrandom 0.2.17",
  "hex",
  "hmac",
  "image",
@@ -2514,6 +2515,7 @@ dependencies = [
  "tauri-plugin-updater",
  "thiserror 1.0.69",
  "tokio",
+ "url",
  "zip 2.4.2",
 ]
 

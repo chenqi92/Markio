@@ -48,8 +48,12 @@ reqwest = { version = "0.12", default-features = false, features = [
     "gzip",
     "stream",
 ] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time", "io-util"] }
 futures-util = "0.3"
+# OAuth PKCE 用的随机字节（Dropbox / Google Drive 授权流程）
+getrandom = "0.2"
+# OAuth 回调一次性 HTTP 监听器要解析 query string
+url = "2"
 
 # S3 兼容存储上传：minimal SigV4 签名 + reqwest PUT；不引入 rust-s3 全家桶
 hmac = "0.12"

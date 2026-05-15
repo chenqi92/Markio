@@ -150,7 +150,24 @@
     "sync": {
       "drivesCard": "驱动",
       "driveStatus": {
-        "disconnected": "未连接"
+        "disconnected": "未连接",
+        "connected": "已连接 · {{folder}}",
+        "paused": "已配置 · 暂停中"
+      },
+      "drive": {
+        "configure": "配置",
+        "collapse": "收起",
+        "pickFolder": "选择同步目录",
+        "folderHint": "选一个本地目录，markio 将把这里作为 {{name}} 的同步根",
+        "noFolder": "未选择目录",
+        "enable": "启用自动同步",
+        "disconnect": "解除连接",
+        "save": "保存",
+        "testUpload": "测试上传",
+        "testOk": "测试成功",
+        "testFailed": "测试失败：{{msg}}",
+        "openExisting": "下方查看现有 {{name}} 卡片",
+        "comingSoon": "OAuth 接入仍在开发中；当前可先选择本地目录作为同步根"
       },
       "policyCard": "同步策略",
       "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push。",

@@ -150,7 +150,24 @@
     "sync": {
       "drivesCard": "Providers",
       "driveStatus": {
-        "disconnected": "Not connected"
+        "disconnected": "Not connected",
+        "connected": "Connected · {{folder}}",
+        "paused": "Configured · paused"
+      },
+      "drive": {
+        "configure": "Configure",
+        "collapse": "Collapse",
+        "pickFolder": "Pick sync folder",
+        "folderHint": "Choose a local folder; markio will treat it as the {{name}} sync root",
+        "noFolder": "No folder picked",
+        "enable": "Enable auto-sync",
+        "disconnect": "Disconnect",
+        "save": "Save",
+        "testUpload": "Test upload",
+        "testOk": "Test succeeded",
+        "testFailed": "Test failed: {{msg}}",
+        "openExisting": "See the {{name}} card above",
+        "comingSoon": "OAuth integration coming; for now pick a local folder as the sync root"
       },
       "policyCard": "Sync policy",
       "policyTip": "Auto-sync runs add / commit / pull / push on the active Git workspace at the chosen frequency.",

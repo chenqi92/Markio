@@ -91,7 +91,21 @@ type PreferenceKey =
   | "s3PathStyle"
   | "uploadProvider"
   | "autoSyncEnabled"
+  | "driveConfigs"
+  | "dropboxClientId"
+  | "gdriveClientId"
   | "customThemeId";
+
+export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
+
+export interface DriveConfig {
+  /** 用户选择的本地同步目录绝对路径；空串表示未配置 */
+  folder: string;
+  /** 是否启用 */
+  enabled: boolean;
+  /** ISO 时间戳，最近一次成功同步 */
+  lastSyncAt?: string;
+}
 
 interface SettingsState {
   /** 界面语言 */
@@ -220,6 +234,12 @@ interface SettingsState {
   uploadProvider: "picgo" | "s3" | "none";
   /** 启用按 syncFrequency 自动 commit + push */
   autoSyncEnabled: boolean;
+  /** 各第三方网盘的轻量配置（folder + enabled），GitHub/WebDAV 走自己专用卡片不存这里 */
+  driveConfigs: Partial<Record<DriveId, DriveConfig>>;
+  /** Dropbox App key（client_id），在开发者后台注册后填入 */
+  dropboxClientId: string;
+  /** Google Cloud OAuth Client ID（Desktop application 类型） */
+  gdriveClientId: string;
   /** 已应用的自定义 CSS 主题 id（null 表示未应用） */
   customThemeId: string | null;
   /** 全局快捷键的用户覆盖：commandId → binding 字符串。空串表示用户显式取消绑定。 */
@@ -339,6 +359,9 @@ export const useSettings = create<SettingsState>()(
       s3PathStyle: false,
       uploadProvider: "picgo",
       autoSyncEnabled: false,
+      driveConfigs: {},
+      dropboxClientId: "",
+      gdriveClientId: "",
       customThemeId: null,
       shortcutOverrides: {},
       setShortcut: (id, binding) =>

@@ -6,10 +6,11 @@ import en from "./en.json";
 export type Locale = "zh-CN" | "en";
 
 function pickDefault(): Locale {
-  const stored = (typeof localStorage !== "undefined"
-    ? localStorage.getItem("markio.locale")
-    : null) as Locale | null;
-  if (stored === "zh-CN" || stored === "en") return stored;
+  // 仅作为 i18next 初始化时的临时默认；rehydrate 完成后 main.tsx 会从 settings store 同步真实值
+  if (typeof localStorage !== "undefined") {
+    const stored = localStorage.getItem("markio.locale");
+    if (stored === "zh-CN" || stored === "en") return stored;
+  }
   if (typeof navigator !== "undefined") {
     const lang = navigator.language || "";
     if (lang.toLowerCase().startsWith("zh")) return "zh-CN";
@@ -27,8 +28,8 @@ void i18next.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+/** 切换 i18next 当前语言；持久化由 settings store 负责（不再写 localStorage）。 */
 export function setLocale(loc: Locale) {
-  localStorage.setItem("markio.locale", loc);
   void i18next.changeLanguage(loc);
 }
 

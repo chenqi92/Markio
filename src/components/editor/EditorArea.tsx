@@ -10,8 +10,9 @@ import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
 import { getEditor, replaceRange } from "@/lib/editor-bridge";
-import { detectTable } from "./table-edit";
+import { detectTable, type TableSelectionRect } from "./table-edit";
 import { TableToolbar } from "../popovers/TableToolbar";
+import { TableContextMenu } from "../popovers/TableContextMenu";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
@@ -100,6 +101,15 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     col: number;
     rows: number;
     cols: number;
+  } | null>(null);
+  const [tableMenu, setTableMenu] = useState<{
+    x: number;
+    y: number;
+    row: number;
+    col: number;
+    rows: number;
+    cols: number;
+    rect: TableSelectionRect | null;
   } | null>(null);
   const [ac, setAc] = useState<{
     kind: AcKind;
@@ -437,6 +447,19 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
                 : null
             }
             onPasteImages={handlePasteImages}
+            onTableContextMenu={(info) => {
+              setBubble(null);
+              setSlash(null);
+              setTableMenu({
+                x: info.coords.x,
+                y: info.coords.y,
+                row: info.row,
+                col: info.col,
+                rows: info.rows,
+                cols: info.cols,
+                rect: info.rect,
+              });
+            }}
             onSelectionChange={(info) => {
               if (!allowBubble) {
                 setBubble(null);
@@ -527,6 +550,18 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           col={tableTb.col}
           rows={tableTb.rows}
           cols={tableTb.cols}
+        />
+      )}
+      {tableMenu && (
+        <TableContextMenu
+          x={tableMenu.x}
+          y={tableMenu.y}
+          row={tableMenu.row}
+          col={tableMenu.col}
+          rows={tableMenu.rows}
+          cols={tableMenu.cols}
+          rect={tableMenu.rect}
+          onClose={() => setTableMenu(null)}
         />
       )}
       {slash && (

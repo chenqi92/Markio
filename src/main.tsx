@@ -17,6 +17,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { api, isDesktop } from "./lib/api";
 import { preloadTauriStorage } from "./lib/tauriStorage";
 import { installDigestScheduler } from "./lib/digestScheduler";
+import { setLocale as setI18nLocale } from "./i18n";
+import { applyFonts } from "./lib/fonts";
 import "./i18n";
 
 async function bootstrap() {
@@ -35,7 +37,14 @@ async function bootstrap() {
     useFileIcons.persist.rehydrate(),
   ]);
 
-  applyTheme(useSettings.getState().theme);
+  const s = useSettings.getState();
+  applyTheme(s.theme);
+  applyFonts({
+    uiFontFamily: s.uiFontFamily,
+    bodyFontFamily: s.bodyFontFamily,
+    monoFontFamily: s.monoFontFamily,
+  });
+  setI18nLocale(s.locale);
   injectSyntaxTheme();
 
   // 把持久化的"显示在菜单栏"应用到原生托盘

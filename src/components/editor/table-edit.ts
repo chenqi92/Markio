@@ -9,7 +9,7 @@
 // 工具栏按钮调用 `withTable` 拿到 mutated content 再 dispatch。
 
 import type { EditorView } from "@codemirror/view";
-import { EditorSelection } from "@codemirror/state";
+import { EditorSelection, type SelectionRange } from "@codemirror/state";
 
 export interface TableInfo {
   /** 表格在 doc 中的 [from, to) 字符范围（含分隔行 + 数据行，含尾部换行） */
@@ -31,6 +31,14 @@ export interface TableInfo {
 
 export type TableClipboardMode = "cell" | "row" | "col" | "table";
 export type TableMoveDirection = "next" | "prev" | "down" | "up";
+export type TableCellCoord = { row: number; col: number };
+export type TableSelectionRect = {
+  tableFrom: number;
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+};
 
 function isSeparatorRow(line: string): boolean {
   // |:----|----:| 之类；至少要有 ---
@@ -154,6 +162,28 @@ function rowLineNumber(info: TableInfo, row: number): number {
   return info.topLine + (row === 0 ? 0 : row + 1);
 }
 
+function clampRect(info: TableInfo, rect: TableSelectionRect): TableSelectionRect {
+  const maxRow = Math.max(0, info.cells.length - 1);
+  const maxCol = Math.max(0, (info.cells[0]?.length ?? 1) - 1);
+  return {
+    tableFrom: info.from,
+    startRow: Math.max(0, Math.min(maxRow, rect.startRow)),
+    endRow: Math.max(0, Math.min(maxRow, rect.endRow)),
+    startCol: Math.max(0, Math.min(maxCol, rect.startCol)),
+    endCol: Math.max(0, Math.min(maxCol, rect.endCol)),
+  };
+}
+
+function normalizeRect(info: TableInfo, anchor: TableCellCoord, head: TableCellCoord): TableSelectionRect {
+  return clampRect(info, {
+    tableFrom: info.from,
+    startRow: Math.min(anchor.row, head.row),
+    endRow: Math.max(anchor.row, head.row),
+    startCol: Math.min(anchor.col, head.col),
+    endCol: Math.max(anchor.col, head.col),
+  });
+}
+
 function normalizeCursor(info: TableInfo) {
   const row =
     info.cursorRow < 0
@@ -206,7 +236,7 @@ export function tableClipboardText(view: EditorView, mode: TableClipboardMode): 
   return info.cells.map((r) => r.join("\t")).join("\n");
 }
 
-export function pasteTableText(view: EditorView, text: string): boolean {
+export function pasteTableText(view: EditorView, text: string, start?: TableCellCoord): boolean {
   const data = parseTabularText(text);
   if (!data || data.length === 0) return false;
   const info = detectTable(view);
@@ -214,7 +244,9 @@ export function pasteTableText(view: EditorView, text: string): boolean {
 
   const cells = info.cells.map((r) => r.slice());
   const aligns = info.aligns.slice();
-  const { row: startRow, col: startCol } = normalizeCursor(info);
+  const cursor = normalizeCursor(info);
+  const startRow = Math.max(0, Math.min(cells.length - 1, start?.row ?? cursor.row));
+  const startCol = Math.max(0, Math.min(aligns.length - 1, start?.col ?? cursor.col));
   const requiredRows = startRow + data.length;
   const requiredCols = startCol + Math.max(...data.map((r) => r.length));
 
@@ -285,9 +317,8 @@ export function moveTableCell(view: EditorView, direction: TableMoveDirection): 
   return true;
 }
 
-export function detectTable(view: EditorView): TableInfo | null {
+function detectTableAtPosition(view: EditorView, head: number): TableInfo | null {
   const doc = view.state.doc;
-  const head = view.state.selection.main.head;
   const curLine = doc.lineAt(head);
 
   // 当前行必须以 `|` 开头（去掉 leading space 后）才考虑
@@ -358,6 +389,83 @@ export function detectTable(view: EditorView): TableInfo | null {
     cursorCol,
     topLine,
   };
+}
+
+export function detectTable(view: EditorView): TableInfo | null {
+  return detectTableAtPosition(view, view.state.selection.main.head);
+}
+
+export function tableCellAtPosition(
+  view: EditorView,
+  pos: number,
+): (TableCellCoord & { info: TableInfo }) | null {
+  const info = detectTableAtPosition(view, pos);
+  if (!info) return null;
+  const { row, col } = normalizeCursor(info);
+  return { info, row, col };
+}
+
+export function tableCellFromCoords(
+  view: EditorView,
+  coords: { x: number; y: number },
+): (TableCellCoord & { info: TableInfo }) | null {
+  const pos = view.posAtCoords(coords);
+  if (pos == null) return null;
+  return tableCellAtPosition(view, pos);
+}
+
+export function selectTableRect(
+  view: EditorView,
+  info: TableInfo,
+  anchor: TableCellCoord,
+  head: TableCellCoord,
+): TableSelectionRect | null {
+  const rect = normalizeRect(info, anchor, head);
+  if (rect.tableFrom !== info.from) return null;
+
+  const ranges: SelectionRange[] = [];
+  for (let row = rect.startRow; row <= rect.endRow; row++) {
+    const line = view.state.doc.line(rowLineNumber(info, row));
+    for (let col = rect.startCol; col <= rect.endCol; col++) {
+      const range = cellRangeInLine(line.text, line.from, col);
+      ranges.push(EditorSelection.range(range.from, range.to));
+    }
+  }
+  if (ranges.length === 0) return null;
+  view.dispatch({
+    selection: EditorSelection.create(ranges, 0),
+    scrollIntoView: true,
+  });
+  return rect;
+}
+
+export function tableRectClipboardText(view: EditorView, rect: TableSelectionRect): string | null {
+  const info = detectTableAtPosition(view, Math.min(rect.tableFrom, view.state.doc.length));
+  if (!info || info.from !== rect.tableFrom) return null;
+  const current = clampRect(info, rect);
+  const rows: string[][] = [];
+  for (let row = current.startRow; row <= current.endRow; row++) {
+    const out: string[] = [];
+    for (let col = current.startCol; col <= current.endCol; col++) {
+      out.push(info.cells[row]?.[col] ?? "");
+    }
+    rows.push(out);
+  }
+  return rows.map((row) => row.join("\t")).join("\n");
+}
+
+export function clearTableRect(view: EditorView, rect: TableSelectionRect): boolean {
+  const info = detectTableAtPosition(view, Math.min(rect.tableFrom, view.state.doc.length));
+  if (!info || info.from !== rect.tableFrom) return false;
+  const current = clampRect(info, rect);
+  const cells = info.cells.map((row) => row.slice());
+  for (let row = current.startRow; row <= current.endRow; row++) {
+    for (let col = current.startCol; col <= current.endCol; col++) {
+      cells[row][col] = "";
+    }
+  }
+  replaceTable(view, info, cells, info.aligns.slice(), current.startRow, current.startCol);
+  return true;
 }
 
 export type TableAction =

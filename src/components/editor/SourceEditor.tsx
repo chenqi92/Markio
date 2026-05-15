@@ -9,8 +9,18 @@ import { languages } from "@codemirror/language-data";
 import { EditorView as CMView, keymap } from "@codemirror/view";
 import { useSettings } from "@/stores/settings";
 import { registerEditor } from "@/lib/editor-bridge";
+import { writeText } from "@/lib/clipboard";
 import { markdownCommands } from "@/lib/markdown-commands";
-import { moveTableCell, pasteTableText } from "./table-edit";
+import {
+  clearTableRect,
+  moveTableCell,
+  pasteTableText,
+  selectTableRect,
+  tableCellFromCoords,
+  tableRectClipboardText,
+  type TableCellCoord,
+  type TableSelectionRect,
+} from "./table-edit";
 import { wysiwygMarkdown } from "./wysiwyg";
 
 interface Props {
@@ -32,6 +42,14 @@ interface Props {
   onSelectionChange?: (info: {
     hasSelection: boolean;
     coords: { x: number; y: number } | null;
+  }) => void;
+  onTableContextMenu?: (info: {
+    coords: { x: number; y: number };
+    row: number;
+    col: number;
+    rows: number;
+    cols: number;
+    rect: TableSelectionRect | null;
   }) => void;
   onSlashTrigger?: (coords: { x: number; y: number }) => void;
   onAutocompleteUpdate?: (
@@ -55,6 +73,7 @@ export function SourceEditor({
   scrollTarget,
   onPasteImages,
   onSelectionChange,
+  onTableContextMenu,
   onSlashTrigger,
   onAutocompleteUpdate,
   wysiwyg = false,
@@ -62,6 +81,11 @@ export function SourceEditor({
   const fontSize = useSettings((s) => s.fontSize);
   const ref = useRef<ReactCodeMirrorRef>(null);
   const suppressScrollRef = useRef(false);
+  const tableSelectionRectRef = useRef<TableSelectionRect | null>(null);
+  const tableDragRef = useRef<{
+    tableFrom: number;
+    anchor: TableCellCoord;
+  } | null>(null);
 
   const applyScrollTarget = useCallback(() => {
     const view = ref.current?.view;
@@ -88,6 +112,7 @@ export function SourceEditor({
       smartQuotesHandler,
       mathInputHandler,
       EditorView.updateListener.of((u) => {
+        if (u.docChanged) tableSelectionRectRef.current = null;
         if (u.selectionSet && onSelectionChange) {
           const sel = u.state.selection.main;
           const has = !sel.empty;
@@ -185,7 +210,7 @@ export function SourceEditor({
   useEffect(() => {
     const view = ref.current?.view;
     if (!view) return;
-    const handler = (e: ClipboardEvent) => {
+    const pasteHandler = (e: ClipboardEvent) => {
       const data = e.clipboardData;
       if (!data) return;
       const fromItems = Array.from(data.items ?? [])
@@ -204,14 +229,149 @@ export function SourceEditor({
         return;
       }
       const text = data.getData("text/plain");
-      if (text && pasteTableText(view, text)) {
+      const rect = tableSelectionRectRef.current;
+      const start = rect ? { row: rect.startRow, col: rect.startCol } : undefined;
+      if (text && pasteTableText(view, text, start)) {
         e.preventDefault();
         e.stopPropagation();
       }
     };
-    view.contentDOM.addEventListener("paste", handler);
-    return () => view.contentDOM.removeEventListener("paste", handler);
+    const copyHandler = (e: ClipboardEvent) => {
+      const rect = tableSelectionRectRef.current;
+      if (!rect) return;
+      const text = tableRectClipboardText(view, rect);
+      if (text == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.clipboardData?.setData("text/plain", text);
+      void writeText(text).catch(() => undefined);
+    };
+    const cutHandler = (e: ClipboardEvent) => {
+      const rect = tableSelectionRectRef.current;
+      if (!rect) return;
+      const text = tableRectClipboardText(view, rect);
+      if (text == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.clipboardData?.setData("text/plain", text);
+      void writeText(text).catch(() => undefined);
+      clearTableRect(view, rect);
+      tableSelectionRectRef.current = null;
+    };
+    view.contentDOM.addEventListener("paste", pasteHandler);
+    view.contentDOM.addEventListener("copy", copyHandler);
+    view.contentDOM.addEventListener("cut", cutHandler);
+    return () => {
+      view.contentDOM.removeEventListener("paste", pasteHandler);
+      view.contentDOM.removeEventListener("copy", copyHandler);
+      view.contentDOM.removeEventListener("cut", cutHandler);
+    };
   }, [onPasteImages]);
+
+  useEffect(() => {
+    const view = ref.current?.view;
+    if (!view) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const rect = tableSelectionRectRef.current;
+      if (!rect) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearTableRect(view, rect);
+      tableSelectionRectRef.current = null;
+      view.focus();
+    };
+    view.contentDOM.addEventListener("keydown", handler, true);
+    return () => view.contentDOM.removeEventListener("keydown", handler, true);
+  }, []);
+
+  useEffect(() => {
+    const view = ref.current?.view;
+    if (!view) return;
+
+    const clearDragListeners = (move: (e: MouseEvent) => void, up: () => void) => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".cm-gutters")) return;
+      const hit = tableCellFromCoords(view, { x: e.clientX, y: e.clientY });
+      if (!hit) {
+        tableSelectionRectRef.current = null;
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const anchor = { row: hit.row, col: hit.col };
+      tableDragRef.current = { tableFrom: hit.info.from, anchor };
+      tableSelectionRectRef.current = selectTableRect(view, hit.info, anchor, anchor);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const active = tableDragRef.current;
+        if (!active) return;
+        const next = tableCellFromCoords(view, { x: moveEvent.clientX, y: moveEvent.clientY });
+        if (!next || next.info.from !== active.tableFrom) return;
+        moveEvent.preventDefault();
+        tableSelectionRectRef.current = selectTableRect(view, next.info, active.anchor, {
+          row: next.row,
+          col: next.col,
+        });
+      };
+
+      const handleMouseUp = () => {
+        tableDragRef.current = null;
+        clearDragListeners(handleMouseMove, handleMouseUp);
+      };
+
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!onTableContextMenu) return;
+      const hit = tableCellFromCoords(view, { x: e.clientX, y: e.clientY });
+      if (!hit) {
+        tableSelectionRectRef.current = null;
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+
+      const current = tableSelectionRectRef.current;
+      const insideCurrent =
+        current &&
+        current.tableFrom === hit.info.from &&
+        hit.row >= current.startRow &&
+        hit.row <= current.endRow &&
+        hit.col >= current.startCol &&
+        hit.col <= current.endCol;
+      const rect =
+        insideCurrent
+          ? current
+          : selectTableRect(view, hit.info, { row: hit.row, col: hit.col }, { row: hit.row, col: hit.col });
+      tableSelectionRectRef.current = rect;
+      onTableContextMenu?.({
+        coords: { x: e.clientX, y: e.clientY },
+        row: hit.row,
+        col: hit.col,
+        rows: hit.info.cells.length,
+        cols: hit.info.aligns.length,
+        rect,
+      });
+    };
+
+    view.contentDOM.addEventListener("mousedown", handleMouseDown, true);
+    view.contentDOM.addEventListener("contextmenu", handleContextMenu, true);
+    return () => {
+      view.contentDOM.removeEventListener("mousedown", handleMouseDown, true);
+      view.contentDOM.removeEventListener("contextmenu", handleContextMenu, true);
+    };
+  }, [onTableContextMenu]);
 
   // 监听 `/` 触发斜杠菜单
   useEffect(() => {

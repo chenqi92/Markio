@@ -110,7 +110,15 @@
   border-bottom: 0.5px solid var(--border);
 }
 .settings-row:last-child { border-bottom: 0; }
-.settings-row-l { flex: 1; min-width: 0; }
+/* 固定左列宽度让所有 row 的值列对齐 */
+.settings-row-l {
+  flex: 0 0 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-row-l + * { margin-left: auto; }
 .settings-label {
   font-size: var(--settings-label-size);
   line-height: 1.35;

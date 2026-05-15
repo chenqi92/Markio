@@ -9,7 +9,19 @@
     "close": "Close",
     "create": "New",
     "search": "Search",
-    "loading": "Loading"
+    "loading": "Loading",
+    "apply": "Apply",
+    "applied": "Applied",
+    "refresh": "Refresh",
+    "import": "Import",
+    "remove": "Remove",
+    "configure": "Configure",
+    "test": "Test",
+    "edit": "Edit",
+    "reset": "Reset",
+    "clear": "Clear",
+    "record": "Record",
+    "custom": "Custom…"
   },
   "settings": {
     "title": "Settings",
@@ -17,18 +29,236 @@
       "appear": "Appearance",
       "general": "General",
       "editor": "Editor",
-      "sync": "Sync",
       "shortcuts": "Shortcuts",
+      "sync": "Sync",
       "picgo": "Image upload",
-      "wechat": "WeChat",
       "ai": "AI Assistant",
       "rag": "Knowledge base",
+      "wechat": "WeChat",
+      "wxAssistant": "WeChat Assistant",
+      "smartChannel": "Smart Channel",
       "export": "Import / Export",
       "about": "About"
     },
+    "headers": {
+      "appear": { "h": "Appearance", "sub": "Language, theme, size and fonts." },
+      "general": { "h": "General", "sub": "Startup behavior and basic preferences." },
+      "editor": { "h": "Editor", "sub": "Input habits and default view mode." },
+      "shortcuts": {
+        "h": "Shortcuts",
+        "sub": "Click \"Record\" then press the new key combo. Press Esc to cancel. Conflicts are highlighted in red."
+      },
+      "sync": { "h": "Sync", "sub": "Each provider is configured and authenticated independently." },
+      "picgo": {
+        "h": "Image upload",
+        "sub": "Auto-upload pasted or dropped images and insert the remote URL."
+      },
+      "ai": { "h": "AI Assistant", "sub": "Model, API and system prompt." },
+      "rag": { "h": "Knowledge base", "sub": "Build a local vector index for the current workspace." },
+      "wechat": {
+        "h": "WeChat Official Account",
+        "sub": "Bind your account, configure publish style and default author. Credentials are stored in the OS keychain."
+      },
+      "wxAssistant": {
+        "h": "WeChat Assistant",
+        "sub": "Push markio notifications via WeCom bot, ServerChan, or a custom webhook."
+      },
+      "smartChannel": {
+        "h": "Smart Channel",
+        "sub": "Expose markio's knowledge base as an AI query channel for other apps."
+      },
+      "export": { "h": "Import / Export", "sub": "Bring content into markio or export it elsewhere." },
+      "about": { "h": "About", "sub": "" }
+    },
+    "appear": {
+      "languageLabel": "UI language · 界面语言",
+      "languageTip": "Takes effect immediately. Some legacy strings are still being translated.",
+      "themeCard": "Theme",
+      "modeCard": "Theme mode",
+      "followSystem": "Follow system",
+      "followSystemHelp": "Light during the day, dark at night",
+      "fontCard": "Size / Fonts",
+      "fontSize": "Body font size",
+      "uiFont": "UI font",
+      "uiFontHelp": "Sidebar / Settings / Toolbar",
+      "bodyFont": "Body font",
+      "bodyFontHelp": "Markdown preview & WYSIWYG",
+      "monoFont": "Mono font",
+      "monoFontHelp": "Source / code blocks / shortcut chips",
+      "customFontPrompt": "Enter a CSS font-family. Use commas for fallbacks. Leave blank to reset.",
+      "customThemeCard": "Custom CSS theme",
+      "customThemeTip": "Imported .css is injected at :root and can override theme tokens. Max 256 KB per file.",
+      "importCss": "Import .css",
+      "disableCustomTheme": "Disable custom theme",
+      "noCustomThemes": "No custom themes imported.",
+      "confirmRemoveTheme": "Delete theme {{id}}.css?"
+    },
     "general": {
       "language": "UI language",
-      "languageHelp": "Takes effect immediately"
+      "languageHelp": "Takes effect immediately",
+      "startup": "On launch open",
+      "closeLastTab": "When closing last tab",
+      "showInTray": "Show in tray",
+      "showInTrayHelp": "macOS menu bar / Windows tray · click to bring window to front",
+      "startupOptions": {
+        "restoreTabs": "Previously open documents",
+        "lastWorkspace": "Last workspace only",
+        "welcome": "Welcome screen"
+      },
+      "closeLastTabOptions": {
+        "keepWindow": "Keep window",
+        "showWelcome": "Show welcome",
+        "quitApp": "Quit app"
+      }
+    },
+    "editor": {
+      "autosaveCard": "Autosave",
+      "autosaveToggle": "Write to disk 800ms after typing stops",
+      "autosaveToggleHelp": "When off, save manually with ⌘S",
+      "shortcutStyleCard": "Edit shortcuts UI",
+      "shortcutStyle": {
+        "all": "All enabled (recommended)",
+        "bubble": "Floating bubble only",
+        "slash": "Slash command only",
+        "toolbar": "Top toolbar only"
+      },
+      "modeCard": "Default view",
+      "mode": {
+        "source": "Source only",
+        "split": "Split (recommended)",
+        "wysiwyg": "WYSIWYG",
+        "preview": "Preview only"
+      },
+      "inputCard": "Input",
+      "smartQuotes": "Smart quotes",
+      "smartQuotesHelp": "Convert \" ' to “ ” ‘ ’ (skipped inside code blocks)",
+      "autoList": "Auto list continuation",
+      "autoListHelp": "After -, 1., [ ] lines, Enter continues the marker; empty line cancels",
+      "autoSpaceCJK": "Auto-space between CJK and Latin",
+      "autoSpaceCJKHelp": "Applied on save only, to avoid cursor jumps while typing",
+      "saveCard": "Save",
+      "autosaveDelay": "Autosave delay",
+      "snapshotOnSave": "Write history snapshot on each save",
+      "snapshotOnSaveHelp": "Same file within 5 min keeps one snapshot to avoid bloat",
+      "autosaveDelayOptions": {
+        "500": "500 ms · Live",
+        "800": "800 ms · Balanced",
+        "1500": "1.5 s · Quiet",
+        "3000": "3 s · Manual feel"
+      }
+    },
+    "sync": {
+      "drivesCard": "Providers",
+      "driveStatus": {
+        "disconnected": "Not connected"
+      },
+      "policyCard": "Sync policy",
+      "policyTip": "Auto-sync runs add / commit / pull / push on the active Git workspace at the chosen frequency.",
+      "enableAutoSync": "Enable auto-sync",
+      "onConflict": "On conflict",
+      "frequency": "Sync frequency",
+      "conflictOptions": {
+        "ask": "Open compare and let me choose",
+        "newest": "Keep newest",
+        "local": "Prefer local",
+        "remote": "Prefer remote"
+      },
+      "frequencyOptions": {
+        "manual": "Manual",
+        "30s": "Every 30s",
+        "1m": "Every 1 min",
+        "5m": "Every 5 min"
+      }
+    },
+    "shortcuts": {
+      "resetAll": "Reset all to defaults",
+      "pressNewKey": "Press the new key…",
+      "unbound": "Unbound",
+      "conflict": "Conflicts with another command",
+      "conflictWith": "Conflicts with \"{{name}}\" — clear it first",
+      "markdownCard": "In-editor Markdown (read-only here)",
+      "actions": {
+        "record": "Record",
+        "recording": "Recording…",
+        "cancel": "Cancel",
+        "clear": "Clear",
+        "reset": "Default"
+      }
+    },
+    "picgo": {
+      "pipelineCard": "Upload pipeline",
+      "pipelineTip": "S3 uploads directly; PicGo uses a local proxy; when off, images stay in the Assets folder next to the doc.",
+      "provider": "Preferred provider",
+      "providerOptions": {
+        "picgo": "PicGo (local proxy)",
+        "s3": "S3 compatible (direct)",
+        "none": "Off"
+      },
+      "picgoCard": "PicGo local service",
+      "status": "Status",
+      "endpoint": "API endpoint",
+      "rescan": "Re-scan",
+      "rescanning": "Scanning…",
+      "statusIdle": "Not scanned",
+      "statusProbing": "Scanning…",
+      "statusOk": "Connected · {{ms}} ms",
+      "statusFail": "Not connected · {{reason}}",
+      "generalCard": "General",
+      "pasteAutoUpload": "Auto-upload on paste",
+      "pasteAutoUploadTip": "When off, the image is saved to the document's Assets/ folder.",
+      "dragAutoUpload": "Auto-upload on drag",
+      "keepLocalCopy": "Keep local copy",
+      "keepLocalCopyTip": "Local copy saved in Assets/ next to the document.",
+      "compressCard": "Compression",
+      "compressToggle": "Compress before upload",
+      "quality": "Quality",
+      "s3Card": "S3-compatible storage",
+      "s3Tip": "Works with AWS S3, Aliyun OSS, Qiniu, Cloudflare R2, MinIO. Secret Access Key is stored in the OS keychain only.",
+      "s3EndpointTip": "e.g. https://s3.us-east-1.amazonaws.com or https://oss-cn-hangzhou.aliyuncs.com",
+      "s3Secret": "Secret Access Key",
+      "s3SecretTip": "Stored only in the OS keychain; not persisted in settings.",
+      "s3SecretStored": "Stored",
+      "s3SecretMissing": "Not stored",
+      "s3PublicBase": "Public URL prefix (optional)",
+      "s3PublicBaseTip": "Fill when using a CDN; leave blank to derive from endpoint + bucket.",
+      "s3PathStyle": "Path-style URL",
+      "s3PathStyleTip": "Older S3 or MinIO typically need this on; modern AWS uses virtual-hosted.",
+      "s3Probe": "Connection test",
+      "s3ProbeTip": "Upload a 1px placeholder to markio/_probe/ to verify credentials and writability.",
+      "s3Testing": "Testing…",
+      "s3TestBtn": "Test connection"
+    },
+    "export": {
+      "card": "Export defaults",
+      "pdfTheme": "PDF theme",
+      "pdfMargin": "PDF margins",
+      "htmlInline": "Inline images in HTML",
+      "pdfThemeOptions": {
+        "current": "Follow current theme",
+        "light": "Light (print)",
+        "dark": "Dark preview",
+        "print": "Black & white"
+      },
+      "pdfMarginOptions": {
+        "standard": "Standard · 1 in",
+        "narrow": "Narrow · 0.5 in",
+        "wide": "Wide · 1.25 in"
+      }
+    },
+    "about": {
+      "tagline": "A local-first Markdown reader",
+      "checkUpdate": "Check for updates",
+      "checking": "Working…",
+      "restart": "Restart",
+      "releaseNotes": "Release notes",
+      "crashLog": "Crash log",
+      "crashLogTitle": "Reveal markio.log in the file manager",
+      "feedback": "Feedback",
+      "statusChecking": "Checking…",
+      "statusUpToDate": "You're up to date",
+      "statusAvailable": "Found {{version}}, downloading…",
+      "statusDownloading": "Downloading {{version}} · {{pct}}%",
+      "statusReady": "{{version}} ready — restart to apply"
     }
   },
   "toolbar": {

@@ -133,6 +133,15 @@
 .ctx-item.danger { color: #ff453a; }
 .ctx-item.danger:hover { background: #ff453a; color: white; }
 .ctx-sep { height: 0.5px; background: var(--border); margin: 4px 0; }
+.table-context-meta {
+  padding: 5px 9px 7px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
 
 /* find-in-page bar */
 .findbar {

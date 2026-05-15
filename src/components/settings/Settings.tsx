@@ -21,7 +21,8 @@ import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
 import { writeText } from "@/lib/clipboard";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
-import { setLocale, currentLocale, type Locale } from "@/i18n";
+import type { Locale } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import {
   COMMANDS,
   type CommandDef,
@@ -30,57 +31,46 @@ import {
   formatBinding,
   normalizeBinding,
 } from "@/lib/shortcuts";
+import {
+  UI_FONT_PRESETS,
+  BODY_FONT_PRESETS,
+  MONO_FONT_PRESETS,
+} from "@/lib/fonts";
 
 const SECTIONS = [
-  { id: "appear", label: "外观", icon: "palette" },
-  { id: "general", label: "通用", icon: "sliders" },
-  { id: "editor", label: "编辑器", icon: "edit" },
-  { id: "sync", label: "同步", icon: "sync" },
-  { id: "shortcuts", label: "快捷键", icon: "cmd" },
-  { id: "picgo", label: "图片上传", icon: "image" },
-  { id: "wechat", label: "微信公众号", icon: "message" },
-  { id: "wxAssistant", label: "微信助手", icon: "bot" },
-  { id: "smartChannel", label: "智能通道", icon: "flame" },
-  { id: "ai", label: "AI 助手", icon: "sparkle" },
-  { id: "rag", label: "本地知识库", icon: "search" },
-  { id: "export", label: "导入 / 导出", icon: "upload" },
-  { id: "about", label: "关于", icon: "info" },
-] as const satisfies readonly { id: string; label: string; icon: IconName }[];
+  { id: "appear", icon: "palette" },
+  { id: "general", icon: "sliders" },
+  { id: "editor", icon: "edit" },
+  { id: "shortcuts", icon: "cmd" },
+  { id: "sync", icon: "sync" },
+  { id: "picgo", icon: "image" },
+  { id: "ai", icon: "sparkle" },
+  { id: "rag", icon: "search" },
+  { id: "wechat", icon: "message" },
+  { id: "wxAssistant", icon: "bot" },
+  { id: "smartChannel", icon: "flame" },
+  { id: "export", icon: "upload" },
+  { id: "about", icon: "info" },
+] as const satisfies readonly { id: string; icon: IconName }[];
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-const STARTUP_OPTIONS = [
-  { value: "restoreTabs", label: "上次打开的文档" },
-  { value: "lastWorkspace", label: "只恢复上次仓库" },
-  { value: "welcome", label: "显示欢迎页" },
-] as const satisfies readonly SelectOption<"restoreTabs" | "lastWorkspace" | "welcome">[];
+/** 在没有 useTranslation 上下文的工具里偶尔需要，普通组件用 useTranslation(). */
+function sectionLabel(t: (k: string) => string, id: SectionId): string {
+  return t(`settings.sections.${id}`);
+}
 
-const CLOSE_LAST_TAB_OPTIONS = [
-  { value: "keepWindow", label: "保留窗口" },
-  { value: "showWelcome", label: "显示欢迎页" },
-  { value: "quitApp", label: "退出应用" },
-] as const satisfies readonly SelectOption<"keepWindow" | "showWelcome" | "quitApp">[];
-
-const AUTOSAVE_DELAY_OPTIONS = [
-  { value: 500, label: "500 ms · 实时" },
-  { value: 800, label: "800 ms · 平衡" },
-  { value: 1500, label: "1.5 秒 · 安静" },
-  { value: 3000, label: "3 秒 · 手动感" },
-] as const satisfies readonly SelectOption<500 | 800 | 1500 | 3000>[];
-
-const SYNC_CONFLICT_OPTIONS = [
-  { value: "ask", label: "弹出对比窗口让我选择" },
-  { value: "newest", label: "保留最新修改" },
-  { value: "local", label: "优先保留本机版本" },
-  { value: "remote", label: "优先保留远端版本" },
-] as const satisfies readonly SelectOption<"ask" | "newest" | "local" | "remote">[];
-
-const SYNC_FREQUENCY_OPTIONS = [
-  { value: "manual", label: "手动同步" },
-  { value: "30s", label: "每 30 秒" },
-  { value: "1m", label: "每 1 分钟" },
-  { value: "5m", label: "每 5 分钟" },
-] as const satisfies readonly SelectOption<"manual" | "30s" | "1m" | "5m">[];
+function SectionHeader({ id }: { id: SectionId }) {
+  const { t } = useTranslation();
+  const h = t(`settings.headers.${id}.h`);
+  const sub = t(`settings.headers.${id}.sub`);
+  return (
+    <>
+      <h2 className="settings-h">{h}</h2>
+      {sub ? <p className="settings-sub">{sub}</p> : null}
+    </>
+  );
+}
 
 const PICGO_ENDPOINT_OPTIONS = [
   { value: "http://127.0.0.1:36677", label: "http://127.0.0.1:36677" },
@@ -144,27 +134,15 @@ const SMART_CHANNEL_STYLE_OPTIONS = [
   { value: "detailed", label: "详细 · 长答+摘录" },
 ] as const satisfies readonly SelectOption<"concise" | "balanced" | "detailed">[];
 
-const EXPORT_PDF_THEME_OPTIONS = [
-  { value: "current", label: "跟随当前主题" },
-  { value: "light", label: "浅色打印" },
-  { value: "dark", label: "深色预览" },
-  { value: "print", label: "黑白打印" },
-] as const satisfies readonly SelectOption<"current" | "light" | "dark" | "print">[];
-
-const EXPORT_PDF_MARGIN_OPTIONS = [
-  { value: "standard", label: "标准 · 1 英寸" },
-  { value: "narrow", label: "窄边距 · 0.5 英寸" },
-  { value: "wide", label: "宽边距 · 1.25 英寸" },
-] as const satisfies readonly SelectOption<"standard" | "narrow" | "wide">[];
-
 export function Settings({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<SectionId>("appear");
+  const { t } = useTranslation();
   return (
     <div className="scrim" onClick={onClose}>
       <div className="settings-window" onClick={(e) => e.stopPropagation()}>
         <div className="settings-titlebar">
-          <div className="settings-title">设置</div>
-          <button className="icon-btn" onClick={onClose} title="关闭">
+          <div className="settings-title">{t("settings.title")}</div>
+          <button className="icon-btn" onClick={onClose} title={t("common.close")}>
             <Icon name="x" size={14} />
           </button>
         </div>
@@ -182,7 +160,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <span className="ico">
                   <Icon name={s.icon} size={14} />
                 </span>
-                <span>{s.label}</span>
+                <span>{sectionLabel(t, s.id)}</span>
               </button>
             ))}
           </aside>
@@ -208,19 +186,18 @@ export function Settings({ onClose }: { onClose: () => void }) {
 }
 
 function Appearance() {
+  const { t } = useTranslation();
   const theme = useSettings((s) => s.theme);
   const setTheme = useSettings((s) => s.setTheme);
-  const fontSize = useSettings((s) => s.fontSize);
-  const setFontSize = useSettings((s) => s.setFontSize);
   const follow = useSettings((s) => s.followSystemTheme);
   const setFollow = useSettings((s) => s.setFollowSystemTheme);
 
   return (
     <>
-      <h2 className="settings-h">外观</h2>
-      <p className="settings-sub">主题、字号与排版默认值。</p>
+      <SectionHeader id="appear" />
+      <LanguageCard />
       <div className="settings-card">
-        <div className="settings-card-h">主题</div>
+        <div className="settings-card-h">{t("settings.appear.themeCard")}</div>
         <div className="theme-grid">
           {THEMES.map((t) => (
             <button
@@ -242,33 +219,107 @@ function Appearance() {
       </div>
 
       <div className="settings-card">
-        <div className="settings-card-h">主题模式</div>
+        <div className="settings-card-h">{t("settings.appear.modeCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">跟随系统</div>
-            <div className="settings-help">日间使用浅色主题，夜间自动切换到深色</div>
+            <div className="settings-label">{t("settings.appear.followSystem")}</div>
+            <div className="settings-help">{t("settings.appear.followSystemHelp")}</div>
           </div>
           <Toggle on={follow} onChange={setFollow} />
         </div>
       </div>
 
-      <div className="settings-card">
-        <div className="settings-card-h">字号</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">正文字号</div>
-            <div className="settings-help">{fontSize} px</div>
-          </div>
-          <Slider value={fontSize} min={13} max={22} onChange={setFontSize} />
-        </div>
-      </div>
+      <FontCard />
 
       <CustomThemesCard />
     </>
   );
 }
 
+function FontCard() {
+  const { t } = useTranslation();
+  const fontSize = useSettings((s) => s.fontSize);
+  const setFontSize = useSettings((s) => s.setFontSize);
+  const uiFont = useSettings((s) => s.uiFontFamily);
+  const bodyFont = useSettings((s) => s.bodyFontFamily);
+  const monoFont = useSettings((s) => s.monoFontFamily);
+  const setFontFamily = useSettings((s) => s.setFontFamily);
+
+  const renderFontRow = (
+    kind: "ui" | "body" | "mono",
+    label: string,
+    help: string,
+    presets: { value: string; label: string }[],
+    current: string,
+  ) => {
+    const matched = presets.find((p) => p.value === current);
+    const isCustom = !matched && current !== "";
+    return (
+      <div className="settings-row" key={kind}>
+        <div className="settings-row-l">
+          <div className="settings-label">{label}</div>
+          <div className="settings-help">{help}</div>
+        </div>
+        <SelectBtn
+          value={isCustom ? "__custom__" : current}
+          options={[
+            ...presets.map((p) => ({ value: p.value, label: p.label })),
+            { value: "__custom__", label: t("common.custom") },
+          ]}
+          onChange={(v) => {
+            if (v === "__custom__") {
+              const input = window.prompt(
+                t("settings.appear.customFontPrompt"),
+                current || "",
+              );
+              if (input !== null) setFontFamily(kind, input.trim());
+            } else {
+              setFontFamily(kind, v);
+            }
+          }}
+          minMenuWidth={200}
+        />
+      </div>
+    );
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">{t("settings.appear.fontCard")}</div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">{t("settings.appear.fontSize")}</div>
+          <div className="settings-help">{fontSize} px</div>
+        </div>
+        <Slider value={fontSize} min={13} max={22} onChange={setFontSize} />
+      </div>
+      {renderFontRow(
+        "ui",
+        t("settings.appear.uiFont"),
+        t("settings.appear.uiFontHelp"),
+        UI_FONT_PRESETS,
+        uiFont,
+      )}
+      {renderFontRow(
+        "body",
+        t("settings.appear.bodyFont"),
+        t("settings.appear.bodyFontHelp"),
+        BODY_FONT_PRESETS,
+        bodyFont,
+      )}
+      {renderFontRow(
+        "mono",
+        t("settings.appear.monoFont"),
+        t("settings.appear.monoFontHelp"),
+        MONO_FONT_PRESETS,
+        monoFont,
+      )}
+    </div>
+  );
+}
+
 function CustomThemesCard() {
+  const { t } = useTranslation();
   const list = useCustomThemes((s) => s.list);
   const activeId = useCustomThemes((s) => s.activeId);
   const refresh = useCustomThemes((s) => s.refresh);
@@ -311,7 +362,7 @@ function CustomThemesCard() {
   };
 
   const onRemove = async (id: string) => {
-    if (!window.confirm(`删除主题 ${id}.css？`)) return;
+    if (!window.confirm(t("settings.appear.confirmRemoveTheme", { id }))) return;
     setErr(null);
     setBusy(id);
     try {
@@ -326,8 +377,8 @@ function CustomThemesCard() {
 
   return (
     <div className="settings-card">
-      <CardTitle tip="导入 .css 后会作为附加样式注入根节点，可覆盖内置主题变量；单文件不超过 256 KB。">
-        自定义 CSS 主题
+      <CardTitle tip={t("settings.appear.customThemeTip")}>
+        {t("settings.appear.customThemeCard")}
       </CardTitle>
       <div className="settings-action-row">
         <button
@@ -335,14 +386,14 @@ function CustomThemesCard() {
           disabled={busy !== null}
           onClick={onImport}
         >
-          导入 .css
+          {t("settings.appear.importCss")}
         </button>
         <button
           className="settings-btn"
           disabled={busy !== null}
           onClick={() => void refresh()}
         >
-          刷新列表
+          {t("common.refresh")}
         </button>
         {activeId && (
           <button
@@ -350,7 +401,7 @@ function CustomThemesCard() {
             disabled={busy !== null}
             onClick={() => void onApply(null)}
           >
-            关闭自定义主题
+            {t("settings.appear.disableCustomTheme")}
           </button>
         )}
       </div>
@@ -363,12 +414,12 @@ function CustomThemesCard() {
         </div>
       )}
       {list.length === 0 ? (
-        <div className="settings-help">还没有导入任何主题。</div>
+        <div className="settings-help">{t("settings.appear.noCustomThemes")}</div>
       ) : (
         <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-          {list.map((t) => (
+          {list.map((it) => (
             <li
-              key={t.id}
+              key={it.id}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -378,30 +429,30 @@ function CustomThemesCard() {
               }}
             >
               <span style={{ flex: 1 }}>
-                <span style={{ fontWeight: activeId === t.id ? 600 : 400 }}>
-                  {t.name}
+                <span style={{ fontWeight: activeId === it.id ? 600 : 400 }}>
+                  {it.name}
                 </span>
                 <span
                   className="settings-help"
                   style={{ marginLeft: 8, fontSize: 11 }}
                 >
-                  {(t.size / 1024).toFixed(1)} KB
+                  {(it.size / 1024).toFixed(1)} KB
                 </span>
               </span>
               <button
                 className="settings-btn"
-                disabled={busy !== null || activeId === t.id}
-                onClick={() => void onApply(t.id)}
+                disabled={busy !== null || activeId === it.id}
+                onClick={() => void onApply(it.id)}
               >
-                {activeId === t.id ? "已应用" : "应用"}
+                {activeId === it.id ? t("common.applied") : t("common.apply")}
               </button>
               <button
                 className="settings-btn"
                 disabled={busy !== null}
-                onClick={() => void onRemove(t.id)}
+                onClick={() => void onRemove(it.id)}
                 style={{ color: "#ff453a" }}
               >
-                删除
+                {t("common.delete")}
               </button>
             </li>
           ))}
@@ -412,13 +463,15 @@ function CustomThemesCard() {
 }
 
 function LanguageCard() {
-  const [loc, setLoc] = useState<Locale>(currentLocale());
+  const { t } = useTranslation();
+  const loc = useSettings((s) => s.locale);
+  const setLocaleAction = useSettings((s) => s.setLocale);
   return (
     <div className="settings-card">
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="切换后立即生效；少量历史文案会逐步补齐。">
-            界面语言 · UI language
+          <LabelWithTip tip={t("settings.appear.languageTip")}>
+            {t("settings.appear.languageLabel")}
           </LabelWithTip>
         </div>
         <SelectBtn
@@ -427,10 +480,7 @@ function LanguageCard() {
             { value: "zh-CN", label: "简体中文" },
             { value: "en", label: "English" },
           ] as const}
-          onChange={(v) => {
-            setLoc(v as Locale);
-            setLocale(v as Locale);
-          }}
+          onChange={(v) => setLocaleAction(v as Locale)}
         />
       </div>
     </div>
@@ -438,40 +488,59 @@ function LanguageCard() {
 }
 
 function General() {
+  const { t } = useTranslation();
   const startupBehavior = useSettings((s) => s.startupBehavior);
   const closeLastTabBehavior = useSettings((s) => s.closeLastTabBehavior);
   const showInTray = useSettings((s) => s.showInTray);
   const setPreference = useSettings((s) => s.setPreference);
+  const startupOptions = useMemo(
+    () =>
+      (["restoreTabs", "lastWorkspace", "welcome"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.general.startupOptions.${v}`),
+      })),
+    [t],
+  );
+  const closeOptions = useMemo(
+    () =>
+      (["keepWindow", "showWelcome", "quitApp"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.general.closeLastTabOptions.${v}`),
+      })),
+    [t],
+  );
   return (
     <>
-      <h2 className="settings-h">通用</h2>
-      <p className="settings-sub">基础行为与启动选项。</p>
-      <LanguageCard />
+      <SectionHeader id="general" />
       <div className="settings-card">
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">启动时打开</div>
+            <div className="settings-label">{t("settings.general.startup")}</div>
           </div>
           <SelectBtn
             value={startupBehavior}
-            options={STARTUP_OPTIONS}
+            options={startupOptions}
             onChange={(v) => setPreference("startupBehavior", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">关闭最后一个标签时</div>
+            <div className="settings-label">
+              {t("settings.general.closeLastTab")}
+            </div>
           </div>
           <SelectBtn
             value={closeLastTabBehavior}
-            options={CLOSE_LAST_TAB_OPTIONS}
+            options={closeOptions}
             onChange={(v) => setPreference("closeLastTabBehavior", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">显示在菜单栏</div>
-            <div className="settings-help">macOS 顶部菜单栏 / Windows 任务栏托盘 · 点击图标快速唤起窗口</div>
+            <div className="settings-label">{t("settings.general.showInTray")}</div>
+            <div className="settings-help">
+              {t("settings.general.showInTrayHelp")}
+            </div>
           </div>
           <Toggle
             on={showInTray}
@@ -489,6 +558,7 @@ function General() {
 }
 
 function Editor() {
+  const { t } = useTranslation();
   const mode = useSettings((s) => s.defaultMode);
   const setMode = useSettings((s) => s.setDefaultMode);
   const autosave = useSettings((s) => s.autosave);
@@ -501,30 +571,52 @@ function Editor() {
   const autoListContinuation = useSettings((s) => s.autoListContinuation);
   const autoSpaceCJK = useSettings((s) => s.autoSpaceCJK);
   const snapshotOnSave = useSettings((s) => s.snapshotOnSave);
+  const shortcutStyleItems = useMemo(
+    () =>
+      (["all", "bubble", "slash", "toolbar"] as const).map((id) => ({
+        id,
+        label: t(`settings.editor.shortcutStyle.${id}`),
+      })),
+    [t],
+  );
+  const modeItems = useMemo(
+    () =>
+      (["source", "split", "wysiwyg", "preview"] as const).map((id) => ({
+        id,
+        label: t(`settings.editor.mode.${id}`),
+      })),
+    [t],
+  );
+  const autosaveDelayOptions = useMemo(
+    () =>
+      ([500, 800, 1500, 3000] as const).map((v) => ({
+        value: v,
+        label: t(`settings.editor.autosaveDelayOptions.${v}`),
+      })),
+    [t],
+  );
   return (
     <>
-      <h2 className="settings-h">编辑器</h2>
-      <p className="settings-sub">输入习惯与默认视图模式。</p>
+      <SectionHeader id="editor" />
       <div className="settings-card">
-        <div className="settings-card-h">自动保存</div>
+        <div className="settings-card-h">{t("settings.editor.autosaveCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">输入 800ms 后自动写盘</div>
-            <div className="settings-help">关掉则只能 ⌘S 手动保存</div>
+            <div className="settings-label">
+              {t("settings.editor.autosaveToggle")}
+            </div>
+            <div className="settings-help">
+              {t("settings.editor.autosaveToggleHelp")}
+            </div>
           </div>
           <Toggle on={autosave} onChange={setAutosave} />
         </div>
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">编辑快捷菜单</div>
-        {(
-          [
-            { id: "all", label: "全部启用（推荐）" },
-            { id: "bubble", label: "只用浮动气泡" },
-            { id: "slash", label: "只用 / 命令" },
-            { id: "toolbar", label: "只用顶部工具栏" },
-          ] as const
-        ).map((m) => (
+        <div className="settings-card-h">
+          {t("settings.editor.shortcutStyleCard")}
+        </div>
+        {shortcutStyleItems.map((m) => (
           <button
             type="button"
             key={m.id}
@@ -542,15 +634,8 @@ function Editor() {
         ))}
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">默认模式</div>
-        {(
-          [
-            { id: "source", label: "纯源码" },
-            { id: "split", label: "分屏 (推荐)" },
-            { id: "wysiwyg", label: "所见即所得" },
-            { id: "preview", label: "纯预览" },
-          ] as const
-        ).map((m) => (
+        <div className="settings-card-h">{t("settings.editor.modeCard")}</div>
+        {modeItems.map((m) => (
           <button
             type="button"
             key={m.id}
@@ -568,11 +653,13 @@ function Editor() {
         ))}
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">输入</div>
+        <div className="settings-card-h">{t("settings.editor.inputCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">智能引号</div>
-            <div className="settings-help">输入 &quot; &apos; 时自动转 “ ” ‘ ’（已成对/在代码块里跳过）</div>
+            <div className="settings-label">{t("settings.editor.smartQuotes")}</div>
+            <div className="settings-help">
+              {t("settings.editor.smartQuotesHelp")}
+            </div>
           </div>
           <Toggle
             on={smartQuotes}
@@ -581,8 +668,10 @@ function Editor() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">自动列表续行</div>
-            <div className="settings-help">在 - / 1. / [ ] 行末按 Enter 自动续标记，空行则取消</div>
+            <div className="settings-label">{t("settings.editor.autoList")}</div>
+            <div className="settings-help">
+              {t("settings.editor.autoListHelp")}
+            </div>
           </div>
           <Toggle
             on={autoListContinuation}
@@ -591,8 +680,12 @@ function Editor() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">中英文之间自动空格</div>
-            <div className="settings-help">仅在保存时生效，避免输入时频繁跳光标</div>
+            <div className="settings-label">
+              {t("settings.editor.autoSpaceCJK")}
+            </div>
+            <div className="settings-help">
+              {t("settings.editor.autoSpaceCJKHelp")}
+            </div>
           </div>
           <Toggle
             on={autoSpaceCJK}
@@ -601,21 +694,27 @@ function Editor() {
         </div>
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">保存</div>
+        <div className="settings-card-h">{t("settings.editor.saveCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">自动保存间隔</div>
+            <div className="settings-label">
+              {t("settings.editor.autosaveDelay")}
+            </div>
           </div>
           <SelectBtn
             value={autosaveDelayMs}
-            options={AUTOSAVE_DELAY_OPTIONS}
+            options={autosaveDelayOptions}
             onChange={(v) => setPreference("autosaveDelayMs", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">每次保存写入历史快照</div>
-            <div className="settings-help">对编辑过的同一文件 5 分钟内只留一份，避免快照膨胀</div>
+            <div className="settings-label">
+              {t("settings.editor.snapshotOnSave")}
+            </div>
+            <div className="settings-help">
+              {t("settings.editor.snapshotOnSaveHelp")}
+            </div>
           </div>
           <Toggle
             on={snapshotOnSave}
@@ -703,21 +802,37 @@ function LabelWithTip({ children, tip }: { children: ReactNode; tip: string }) {
 }
 
 function Sync() {
+  const { t } = useTranslation();
   const conflict = useSettings((s) => s.syncConflictStrategy);
   const frequency = useSettings((s) => s.syncFrequency);
   const autoSync = useSettings((s) => s.autoSyncEnabled);
   const setPreference = useSettings((s) => s.setPreference);
+  const conflictOptions = useMemo(
+    () =>
+      (["ask", "newest", "local", "remote"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.sync.conflictOptions.${v}`),
+      })),
+    [t],
+  );
+  const frequencyOptions = useMemo(
+    () =>
+      (["manual", "30s", "1m", "5m"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.sync.frequencyOptions.${v}`),
+      })),
+    [t],
+  );
   return (
     <>
-      <h2 className="settings-h">同步</h2>
-      <p className="settings-sub">每个驱动单独鉴权与配置。</p>
+      <SectionHeader id="sync" />
 
       <GitSyncCard />
 
       <WebDavCard />
 
       <div className="settings-card">
-        <div className="settings-card-h">驱动</div>
+        <div className="settings-card-h">{t("settings.sync.drivesCard")}</div>
         {DRIVES.map((d) => (
           <div className="settings-row" key={d.id}>
             <div className="settings-row-l">
@@ -733,20 +848,22 @@ function Sync() {
                 />
                 {d.name}
               </div>
-              <div className="settings-help">{d.status}</div>
+              <div className="settings-help">
+                {t("settings.sync.driveStatus.disconnected")}
+              </div>
             </div>
-            <button className="settings-btn">配置</button>
+            <button className="settings-btn">{t("common.configure")}</button>
           </div>
         ))}
       </div>
 
       <div className="settings-card">
-        <CardTitle tip="自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push。">
-          同步策略
+        <CardTitle tip={t("settings.sync.policyTip")}>
+          {t("settings.sync.policyCard")}
         </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">启用自动同步</div>
+            <div className="settings-label">{t("settings.sync.enableAutoSync")}</div>
           </div>
           <Toggle
             on={autoSync}
@@ -755,22 +872,22 @@ function Sync() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">冲突时</div>
+            <div className="settings-label">{t("settings.sync.onConflict")}</div>
           </div>
           <SelectBtn
             value={conflict}
-            options={SYNC_CONFLICT_OPTIONS}
+            options={conflictOptions}
             onChange={(v) => setPreference("syncConflictStrategy", v)}
             minMenuWidth={220}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">同步频率</div>
+            <div className="settings-label">{t("settings.sync.frequency")}</div>
           </div>
           <SelectBtn
             value={frequency}
-            options={SYNC_FREQUENCY_OPTIONS}
+            options={frequencyOptions}
             onChange={(v) => setPreference("syncFrequency", v)}
           />
         </div>
@@ -1209,6 +1326,7 @@ const MARKDOWN_EDITOR_SHORTCUTS: { l: string; k: string[] }[] = [
 function Shortcuts() {
   const overrides = useSettings((s) => s.shortcutOverrides);
   const setShortcut = useSettings((s) => s.setShortcut);
+  const { t } = useTranslation();
   const resetShortcut = useSettings((s) => s.resetShortcut);
   const resetAllShortcuts = useSettings((s) => s.resetAllShortcuts);
   const [recording, setRecording] = useState<CommandId | null>(null);
@@ -1257,7 +1375,10 @@ function Shortcuts() {
         (c) => c.id !== recording && effective[c.id] === normalized,
       );
       if (taken) {
-        setError({ id: recording, msg: `与「${taken.label}」冲突，请先解除` });
+        setError({
+          id: recording,
+          msg: t("settings.shortcuts.conflictWith", { name: taken.label }),
+        });
         return;
       }
       setShortcut(recording, normalized);
@@ -1269,7 +1390,7 @@ function Shortcuts() {
       window.removeEventListener("keydown", onKey, {
         capture: true,
       } as EventListenerOptions);
-  }, [recording, effective, setShortcut]);
+  }, [recording, effective, setShortcut, t]);
 
   const groups = useMemo(() => {
     const map = new Map<string, CommandDef[]>();
@@ -1285,10 +1406,7 @@ function Shortcuts() {
 
   return (
     <>
-      <h2 className="settings-h">快捷键</h2>
-      <p className="settings-sub">
-        点击「录制」后按下要绑定的键组合；按 Esc 取消录制。冲突项以红色提示。
-      </p>
+      <SectionHeader id="shortcuts" />
       <div className="settings-row" style={{ justifyContent: "flex-end" }}>
         <button
           className="settings-btn"
@@ -1298,7 +1416,7 @@ function Shortcuts() {
             resetAllShortcuts();
           }}
         >
-          全部恢复默认
+          {t("settings.shortcuts.resetAll")}
         </button>
       </div>
       {groups.map(([group, items]) => (
@@ -1320,7 +1438,7 @@ function Shortcuts() {
                     </div>
                   ) : isConflict ? (
                     <div className="settings-help" style={{ color: dangerColor }}>
-                      与其它命令冲突
+                      {t("settings.shortcuts.conflict")}
                     </div>
                   ) : null}
                 </div>
@@ -1330,7 +1448,7 @@ function Shortcuts() {
                       className="kbd"
                       style={{ minWidth: 120, textAlign: "center" }}
                     >
-                      按下新的键…
+                      {t("settings.shortcuts.pressNewKey")}
                     </span>
                   ) : binding ? (
                     chips.map((k, i) => (
@@ -1348,7 +1466,7 @@ function Shortcuts() {
                     ))
                   ) : (
                     <span className="kbd" style={{ opacity: 0.6 }}>
-                      未绑定
+                      {t("settings.shortcuts.unbound")}
                     </span>
                   )}
                 </div>
@@ -1359,7 +1477,9 @@ function Shortcuts() {
                     setRecording(isRecording ? null : cmd.id);
                   }}
                 >
-                  {isRecording ? "取消" : "录制"}
+                  {isRecording
+                    ? t("settings.shortcuts.actions.cancel")
+                    : t("settings.shortcuts.actions.record")}
                 </button>
                 <button
                   className="settings-btn"
@@ -1368,9 +1488,9 @@ function Shortcuts() {
                     setShortcut(cmd.id, "");
                   }}
                   disabled={!binding}
-                  title="设为未绑定"
+                  title={t("settings.shortcuts.unbound")}
                 >
-                  清除
+                  {t("settings.shortcuts.actions.clear")}
                 </button>
                 <button
                   className="settings-btn"
@@ -1379,9 +1499,9 @@ function Shortcuts() {
                     resetShortcut(cmd.id);
                   }}
                   disabled={!hasOverride}
-                  title="恢复默认"
+                  title={t("common.reset")}
                 >
-                  默认
+                  {t("settings.shortcuts.actions.reset")}
                 </button>
               </div>
             );
@@ -1389,7 +1509,9 @@ function Shortcuts() {
         </div>
       ))}
       <div className="settings-card">
-        <div className="settings-card-h">Markdown 编辑器内（暂不可改）</div>
+        <div className="settings-card-h">
+          {t("settings.shortcuts.markdownCard")}
+        </div>
         {MARKDOWN_EDITOR_SHORTCUTS.map((it) => (
           <div className="settings-row" key={it.l}>
             <div className="settings-row-l">
@@ -1416,6 +1538,7 @@ type PicgoPingState =
   | { stage: "fail"; message: string };
 
 function Picgo() {
+  const { t } = useTranslation();
   const endpoint = useSettings((s) => s.picgoEndpoint);
   const pasteUpload = useSettings((s) => s.picgoPasteUpload);
   const dragUpload = useSettings((s) => s.picgoDragUpload);
@@ -1465,35 +1588,34 @@ function Picgo() {
   const statusText = (() => {
     switch (ping.stage) {
       case "idle":
-        return "未检测";
+        return t("settings.picgo.statusIdle");
       case "probing":
-        return "检测中…";
+        return t("settings.picgo.statusProbing");
       case "ok":
-        return `已连接 · ${ping.latencyMs} ms`;
+        return t("settings.picgo.statusOk", { ms: ping.latencyMs });
       case "fail":
-        return `未连接 · ${ping.message}`;
+        return t("settings.picgo.statusFail", { reason: ping.message });
     }
   })();
   return (
     <>
-      <h2 className="settings-h">图片上传</h2>
-      <p className="settings-sub">把粘贴的图片自动上传到图床，并在笔记中插入外链。</p>
+      <SectionHeader id="picgo" />
 
       <div className="settings-card">
-        <CardTitle tip="S3 为直传，PicGo 为本地代理，关闭时只保存在文档旁 Assets 目录。">
-          上传管线
+        <CardTitle tip={t("settings.picgo.pipelineTip")}>
+          {t("settings.picgo.pipelineCard")}
         </CardTitle>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">优先 provider</div>
+            <div className="settings-label">{t("settings.picgo.provider")}</div>
           </div>
           <SelectBtn
             value={uploadProvider}
             options={[
-              { value: "picgo", label: "PicGo（本地代理）" },
-              { value: "s3", label: "S3 兼容（直传）" },
-              { value: "none", label: "关闭" },
-            ] as const}
+              { value: "picgo", label: t("settings.picgo.providerOptions.picgo") },
+              { value: "s3", label: t("settings.picgo.providerOptions.s3") },
+              { value: "none", label: t("settings.picgo.providerOptions.none") },
+            ]}
             onChange={(v) => setPreference("uploadProvider", v)}
           />
         </div>
@@ -1502,10 +1624,10 @@ function Picgo() {
       <S3Card />
 
       <div className="settings-card">
-        <div className="settings-card-h">PicGo 本地服务</div>
+        <div className="settings-card-h">{t("settings.picgo.picgoCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">状态</div>
+            <div className="settings-label">{t("settings.picgo.status")}</div>
             <div
               className="settings-help"
               style={{
@@ -1525,12 +1647,14 @@ function Picgo() {
             onClick={() => probe(endpoint)}
             disabled={!endpoint || ping.stage === "probing"}
           >
-            {ping.stage === "probing" ? "检测中…" : "重新检测"}
+            {ping.stage === "probing"
+              ? t("settings.picgo.rescanning")
+              : t("settings.picgo.rescan")}
           </button>
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">API 端点</div>
+            <div className="settings-label">{t("settings.picgo.endpoint")}</div>
           </div>
           <SelectBtn
             value={endpoint}
@@ -1541,11 +1665,11 @@ function Picgo() {
         </div>
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">通用</div>
+        <div className="settings-card-h">{t("settings.picgo.generalCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip="关闭后会保存到当前文档旁的 Assets/ 目录。">
-              粘贴图片自动上传
+            <LabelWithTip tip={t("settings.picgo.pasteAutoUploadTip")}>
+              {t("settings.picgo.pasteAutoUpload")}
             </LabelWithTip>
           </div>
           <Toggle
@@ -1555,7 +1679,7 @@ function Picgo() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">拖入图片自动上传</div>
+            <div className="settings-label">{t("settings.picgo.dragAutoUpload")}</div>
           </div>
           <Toggle
             on={dragUpload}
@@ -1564,8 +1688,8 @@ function Picgo() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip="副本保存在当前文档旁的 Assets/ 子目录。">
-              本地保留副本
+            <LabelWithTip tip={t("settings.picgo.keepLocalCopyTip")}>
+              {t("settings.picgo.keepLocalCopy")}
             </LabelWithTip>
           </div>
           <Toggle
@@ -1575,10 +1699,10 @@ function Picgo() {
         </div>
       </div>
       <div className="settings-card">
-        <div className="settings-card-h">压缩</div>
+        <div className="settings-card-h">{t("settings.picgo.compressCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">上传前压缩</div>
+            <div className="settings-label">{t("settings.picgo.compressToggle")}</div>
           </div>
           <Toggle
             on={compressBeforeUpload}
@@ -1587,7 +1711,7 @@ function Picgo() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">质量</div>
+            <div className="settings-label">{t("settings.picgo.quality")}</div>
             <div className="settings-help">{quality}%</div>
           </div>
           <Slider
@@ -1695,10 +1819,7 @@ function WeChat() {
 
   return (
     <>
-      <h2 className="settings-h">微信公众号</h2>
-      <p className="settings-sub">
-        绑定公众号、配置发布样式与默认作者署名。凭据保存在系统钥匙串。
-      </p>
+      <SectionHeader id="wechat" />
 
       <div className="settings-card">
         <div className="settings-card-h">绑定的公众号</div>
@@ -1932,10 +2053,7 @@ function WxAssistant() {
 
   return (
     <>
-      <h2 className="settings-h">微信助手</h2>
-      <p className="settings-sub">
-        通过企业微信机器人 / Server 酱 / 自建 webhook，把 markio 的操作通知推到你的微信。
-      </p>
+      <SectionHeader id="wxAssistant" />
 
       <div className="settings-card">
         <div className="settings-card-h">总开关</div>
@@ -2162,11 +2280,7 @@ function SmartChannelSettings() {
 
   return (
     <>
-      <h2 className="settings-h">智能通道</h2>
-      <p className="settings-sub">
-        把 markio 文档库做成一个可被外部应用调用的 AI 查询通道：在其他工具里提问，
-        会自动检索当前仓库 + 走 AI 模型给出答案。
-      </p>
+      <SectionHeader id="smartChannel" />
 
       <div className="settings-card">
         <div className="settings-card-h">总开关</div>
@@ -2498,8 +2612,7 @@ function AI() {
 
   return (
     <>
-      <h2 className="settings-h">AI 助手</h2>
-      <p className="settings-sub">配置模型、API 与提示词。</p>
+      <SectionHeader id="ai" />
 
       <div className="settings-card">
         <CardTitle tip="这些开关会决定发送给 AI 的上下文范围。">
@@ -2782,6 +2895,7 @@ const S3_PROBE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 function S3Card() {
+  const { t } = useTranslation();
   const endpoint = useSettings((s) => s.s3Endpoint);
   const region = useSettings((s) => s.s3Region);
   const bucket = useSettings((s) => s.s3Bucket);
@@ -2850,14 +2964,12 @@ function S3Card() {
 
   return (
     <div className="settings-card">
-      <CardTitle tip="支持 AWS S3、阿里 OSS、七牛、Cloudflare R2 和 MinIO；Secret Access Key 只保存到系统钥匙串。">
-        S3 兼容存储
+      <CardTitle tip={t("settings.picgo.s3Tip")}>
+        {t("settings.picgo.s3Card")}
       </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="例如 https://s3.us-east-1.amazonaws.com 或 https://oss-cn-hangzhou.aliyuncs.com">
-            Endpoint
-          </LabelWithTip>
+          <LabelWithTip tip={t("settings.picgo.s3EndpointTip")}>Endpoint</LabelWithTip>
         </div>
         <input
           type="text"
@@ -2904,11 +3016,13 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="只保存到系统钥匙串，不写入持久化设置。">
-            Secret Access Key
+          <LabelWithTip tip={t("settings.picgo.s3SecretTip")}>
+            {t("settings.picgo.s3Secret")}
           </LabelWithTip>
           <div className="settings-help">
-            {stored ? "已存储" : "未存储"}
+            {stored
+              ? t("settings.picgo.s3SecretStored")
+              : t("settings.picgo.s3SecretMissing")}
           </div>
         </div>
         <input
@@ -2918,13 +3032,13 @@ function S3Card() {
           style={{ flex: 1, minWidth: 220 }}
         />
         <button className="settings-btn" onClick={save} disabled={!endpoint}>
-          保存
+          {t("common.save")}
         </button>
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="使用 CDN 时填写；留空会按 endpoint 和 bucket 推导。">
-            公开 URL 前缀（可选）
+          <LabelWithTip tip={t("settings.picgo.s3PublicBaseTip")}>
+            {t("settings.picgo.s3PublicBase")}
           </LabelWithTip>
         </div>
         <input
@@ -2937,8 +3051,8 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="老版 S3 或 MinIO 通常需要开启；新版 AWS 通常使用 virtual-hosted。">
-            Path-style URL
+          <LabelWithTip tip={t("settings.picgo.s3PathStyleTip")}>
+            {t("settings.picgo.s3PathStyle")}
           </LabelWithTip>
         </div>
         <Toggle
@@ -2948,8 +3062,8 @@ function S3Card() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="上传一张 1px 占位图到 markio/_probe/ 验证凭据与桶可写。">
-            连接测试
+          <LabelWithTip tip={t("settings.picgo.s3ProbeTip")}>
+            {t("settings.picgo.s3Probe")}
           </LabelWithTip>
         </div>
         <button
@@ -2957,7 +3071,7 @@ function S3Card() {
           onClick={testConnection}
           disabled={testing || !endpoint || !bucket || !accessKeyId}
         >
-          {testing ? "测试中…" : "测试连接"}
+          {testing ? t("settings.picgo.s3Testing") : t("settings.picgo.s3TestBtn")}
         </button>
       </div>
       {msg && (
@@ -3420,10 +3534,7 @@ function RagSettings() {
 
   return (
     <>
-      <h2 className="settings-h">本地知识库</h2>
-      <p className="settings-sub">
-        为当前仓库建立本地向量索引。
-      </p>
+      <SectionHeader id="rag" />
 
       <div className="settings-card">
         <CardTitle tip="索引存放在当前仓库的 .markio/rag.db；查询在本地完成。">
@@ -3903,10 +4014,27 @@ function providerNeedsDir(p: ImportProvider): boolean {
 }
 
 function ImportExport() {
+  const { t } = useTranslation();
   const pdfTheme = useSettings((s) => s.exportPdfTheme);
   const pdfMargin = useSettings((s) => s.exportPdfMargin);
   const inlineImages = useSettings((s) => s.htmlExportInlineImages);
   const setPreference = useSettings((s) => s.setPreference);
+  const pdfThemeOptions = useMemo(
+    () =>
+      (["current", "light", "dark", "print"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.export.pdfThemeOptions.${v}`),
+      })),
+    [t],
+  );
+  const pdfMarginOptions = useMemo(
+    () =>
+      (["standard", "narrow", "wide"] as const).map((v) => ({
+        value: v,
+        label: t(`settings.export.pdfMarginOptions.${v}`),
+      })),
+    [t],
+  );
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
   const refreshTree = useWorkspaceStore((s) => s.refreshTree);
   const [importBusy, setImportBusy] = useState<ImportProvider | null>(null);
@@ -3946,33 +4074,32 @@ function ImportExport() {
 
   return (
     <>
-      <h2 className="settings-h">导入 / 导出</h2>
-      <p className="settings-sub">把内容带进 markio，或导出到别处。</p>
+      <SectionHeader id="export" />
       <div className="settings-card">
-        <div className="settings-card-h">导出默认</div>
+        <div className="settings-card-h">{t("settings.export.card")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">PDF 主题</div>
+            <div className="settings-label">{t("settings.export.pdfTheme")}</div>
           </div>
           <SelectBtn
             value={pdfTheme}
-            options={EXPORT_PDF_THEME_OPTIONS}
+            options={pdfThemeOptions}
             onChange={(v) => setPreference("exportPdfTheme", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">PDF 页边距</div>
+            <div className="settings-label">{t("settings.export.pdfMargin")}</div>
           </div>
           <SelectBtn
             value={pdfMargin}
-            options={EXPORT_PDF_MARGIN_OPTIONS}
+            options={pdfMarginOptions}
             onChange={(v) => setPreference("exportPdfMargin", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">HTML 内嵌图片</div>
+            <div className="settings-label">{t("settings.export.htmlInline")}</div>
             <div className="settings-help">把远端图片下载并以 base64 嵌入 HTML，离线可看（单张 ≤10MB）</div>
           </div>
           <Toggle
@@ -4072,6 +4199,7 @@ type UpdateState =
   | { kind: "error"; message: string };
 
 function About() {
+  const { t } = useTranslation();
   const [version, setVersion] = useState<string>("");
   const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
   const theme = useSettings((s) => s.theme);
@@ -4129,13 +4257,21 @@ function About() {
   const renderStatus = () => {
     switch (update.kind) {
       case "checking":
-        return <span style={{ color: "var(--text-3)" }}>正在检查…</span>;
+        return (
+          <span style={{ color: "var(--text-3)" }}>
+            {t("settings.about.statusChecking")}
+          </span>
+        );
       case "uptodate":
-        return <span style={{ color: "var(--text-3)" }}>已是最新版本</span>;
+        return (
+          <span style={{ color: "var(--text-3)" }}>
+            {t("settings.about.statusUpToDate")}
+          </span>
+        );
       case "available":
         return (
           <span style={{ color: "var(--accent)" }}>
-            发现新版本 {update.version}，正在下载…
+            {t("settings.about.statusAvailable", { version: update.version })}
           </span>
         );
       case "downloading": {
@@ -4145,14 +4281,17 @@ function About() {
             : 0;
         return (
           <span style={{ color: "var(--accent)" }}>
-            下载中 {update.version} · {pct}%
+            {t("settings.about.statusDownloading", {
+              version: update.version,
+              pct,
+            })}
           </span>
         );
       }
       case "ready":
         return (
           <span style={{ color: "var(--accent)" }}>
-            {update.version} 已就绪，重启生效
+            {t("settings.about.statusReady", { version: update.version })}
           </span>
         );
       case "error":
@@ -4166,7 +4305,7 @@ function About() {
 
   return (
     <>
-      <h2 className="settings-h">关于</h2>
+      <SectionHeader id="about" />
       <div
         style={{
           display: "flex",
@@ -4184,12 +4323,12 @@ function About() {
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>markio</div>
           <div style={{ color: "var(--text-3)", marginTop: 2 }}>
-            {version || "0.1.0"} · 一款本地优先的 Markdown 阅读器
+            {version || "0.1.0"} · {t("settings.about.tagline")}
           </div>
           <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {update.kind === "ready" ? (
               <button className="settings-btn primary" onClick={restartNow}>
-                重启应用
+                {t("settings.about.restart")}
               </button>
             ) : (
               <button
@@ -4197,21 +4336,21 @@ function About() {
                 disabled={checking}
                 onClick={checkForUpdates}
               >
-                {checking ? "处理中…" : "检查更新"}
+                {checking ? t("settings.about.checking") : t("settings.about.checkUpdate")}
               </button>
             )}
-            <button className="settings-btn">发布日志</button>
+            <button className="settings-btn">{t("settings.about.releaseNotes")}</button>
             <button
               className="settings-btn"
               type="button"
               onClick={() => {
                 void api.crashOpenDir().catch(() => undefined);
               }}
-              title="在文件管理器中显示 markio.log 所在目录"
+              title={t("settings.about.crashLogTitle")}
             >
-              错误日志
+              {t("settings.about.crashLog")}
             </button>
-            <button className="settings-btn">反馈</button>
+            <button className="settings-btn">{t("settings.about.feedback")}</button>
             {renderStatus()}
           </div>
         </div>

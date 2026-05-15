@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyTableAction,
+  clearTableRect,
   moveTableCell,
   parseTabularText,
   pasteTableText,
+  tableRectClipboardText,
 } from "./table-edit";
 
 class FakeDoc {
@@ -77,6 +79,26 @@ describe("table editing", () => {
     expect(change.insert).toContain("| A | B |   |");
     expect(change.insert).toContain("| 1 | x | y |");
     expect(change.insert).toContain("|   | z | w |");
+  });
+
+  it("copies and clears a rectangular table selection", () => {
+    const view = fakeView(table, table.indexOf("A"));
+    const rect = { tableFrom: 0, startRow: 0, endRow: 1, startCol: 0, endCol: 1 };
+
+    expect(tableRectClipboardText(view, rect)).toBe("A\tB\n1\t2");
+    expect(clearTableRect(view, rect)).toBe(true);
+
+    const change = view.dispatch.mock.calls[0][0].changes;
+    expect(change.insert).toContain("|   |   |");
+  });
+
+  it("pastes TSV from an explicit table cell coordinate", () => {
+    const view = fakeView(table, table.indexOf("A"));
+
+    expect(pasteTableText(view, "x\ty", { row: 1, col: 0 })).toBe(true);
+
+    const change = view.dispatch.mock.calls[0][0].changes;
+    expect(change.insert).toContain("| x | y |");
   });
 
   it("tabbing past the last cell appends a new row", () => {

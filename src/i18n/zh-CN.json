@@ -9,7 +9,19 @@
     "close": "关闭",
     "create": "新建",
     "search": "搜索",
-    "loading": "加载中"
+    "loading": "加载中",
+    "apply": "应用",
+    "applied": "已应用",
+    "refresh": "刷新",
+    "import": "导入",
+    "remove": "删除",
+    "configure": "配置",
+    "test": "测试",
+    "edit": "编辑",
+    "reset": "恢复默认",
+    "clear": "清除",
+    "record": "录制",
+    "custom": "自定义…"
   },
   "settings": {
     "title": "设置",
@@ -17,18 +29,236 @@
       "appear": "外观",
       "general": "通用",
       "editor": "编辑器",
-      "sync": "同步",
       "shortcuts": "快捷键",
+      "sync": "同步",
       "picgo": "图片上传",
-      "wechat": "微信公众号",
       "ai": "AI 助手",
-      "rag": "本地知识库",
-      "export": "导入 / 导出",
+      "rag": "知识库",
+      "wechat": "微信公众号",
+      "wxAssistant": "微信助手",
+      "smartChannel": "智能通道",
+      "export": "导入导出",
       "about": "关于"
+    },
+    "headers": {
+      "appear": { "h": "外观", "sub": "界面语言、主题、字号与字体。" },
+      "general": { "h": "通用", "sub": "基础行为与启动选项。" },
+      "editor": { "h": "编辑器", "sub": "输入习惯与默认视图模式。" },
+      "shortcuts": {
+        "h": "快捷键",
+        "sub": "点击「录制」后按下要绑定的键组合；按 Esc 取消录制。冲突项以红色提示。"
+      },
+      "sync": { "h": "同步", "sub": "每个驱动单独鉴权与配置。" },
+      "picgo": {
+        "h": "图片上传",
+        "sub": "把粘贴或拖入的图片自动上传到图床，并在笔记中插入外链。"
+      },
+      "ai": { "h": "AI 助手", "sub": "配置模型、API 与提示词。" },
+      "rag": { "h": "知识库", "sub": "为当前仓库建立本地向量索引。" },
+      "wechat": {
+        "h": "微信公众号",
+        "sub": "绑定公众号、配置发布样式与默认作者署名。凭据保存在系统钥匙串。"
+      },
+      "wxAssistant": {
+        "h": "微信助手",
+        "sub": "通过企业微信机器人 / Server 酱 / 自建 webhook，把 markio 的操作通知推到你的微信。"
+      },
+      "smartChannel": {
+        "h": "智能通道",
+        "sub": "把 markio 文档库做成一个可被外部应用调用的 AI 查询通道。"
+      },
+      "export": { "h": "导入导出", "sub": "把内容带进 markio，或导出到别处。" },
+      "about": { "h": "关于", "sub": "" }
+    },
+    "appear": {
+      "languageLabel": "界面语言 · UI language",
+      "languageTip": "切换后立即生效；少量历史文案会逐步补齐。",
+      "themeCard": "主题",
+      "modeCard": "主题模式",
+      "followSystem": "跟随系统",
+      "followSystemHelp": "日间使用浅色主题，夜间自动切换到深色",
+      "fontCard": "字号 / 字体",
+      "fontSize": "正文字号",
+      "uiFont": "界面字体",
+      "uiFontHelp": "侧栏 / 设置 / 工具栏",
+      "bodyFont": "正文字体",
+      "bodyFontHelp": "Markdown 预览与所见即所得",
+      "monoFont": "等宽字体",
+      "monoFontHelp": "源码 / 代码块 / 快捷键 chip",
+      "customFontPrompt": "输入 CSS font-family，多个字体用逗号分隔。留空恢复系统默认。",
+      "customThemeCard": "自定义 CSS 主题",
+      "customThemeTip": "导入 .css 后会作为附加样式注入根节点，可覆盖内置主题变量；单文件不超过 256 KB。",
+      "importCss": "导入 .css",
+      "disableCustomTheme": "关闭自定义主题",
+      "noCustomThemes": "还没有导入任何主题。",
+      "confirmRemoveTheme": "删除主题 {{id}}.css？"
     },
     "general": {
       "language": "界面语言",
-      "languageHelp": "切换后立即生效"
+      "languageHelp": "切换后立即生效",
+      "startup": "启动时打开",
+      "closeLastTab": "关闭最后一个标签时",
+      "showInTray": "显示在菜单栏",
+      "showInTrayHelp": "macOS 顶部菜单栏 / Windows 任务栏托盘 · 点击图标快速唤起窗口",
+      "startupOptions": {
+        "restoreTabs": "上次打开的文档",
+        "lastWorkspace": "只恢复上次仓库",
+        "welcome": "显示欢迎页"
+      },
+      "closeLastTabOptions": {
+        "keepWindow": "保留窗口",
+        "showWelcome": "显示欢迎页",
+        "quitApp": "退出应用"
+      }
+    },
+    "editor": {
+      "autosaveCard": "自动保存",
+      "autosaveToggle": "输入 800ms 后自动写盘",
+      "autosaveToggleHelp": "关掉则只能 ⌘S 手动保存",
+      "shortcutStyleCard": "编辑快捷菜单",
+      "shortcutStyle": {
+        "all": "全部启用（推荐）",
+        "bubble": "只用浮动气泡",
+        "slash": "只用 / 命令",
+        "toolbar": "只用顶部工具栏"
+      },
+      "modeCard": "默认模式",
+      "mode": {
+        "source": "纯源码",
+        "split": "分屏（推荐）",
+        "wysiwyg": "所见即所得",
+        "preview": "纯预览"
+      },
+      "inputCard": "输入",
+      "smartQuotes": "智能引号",
+      "smartQuotesHelp": "输入 \" ' 时自动转 “ ” ‘ ’（已成对/在代码块里跳过）",
+      "autoList": "自动列表续行",
+      "autoListHelp": "在 - / 1. / [ ] 行末按 Enter 自动续标记，空行则取消",
+      "autoSpaceCJK": "中英文之间自动空格",
+      "autoSpaceCJKHelp": "仅在保存时生效，避免输入时频繁跳光标",
+      "saveCard": "保存",
+      "autosaveDelay": "自动保存间隔",
+      "snapshotOnSave": "每次保存写入历史快照",
+      "snapshotOnSaveHelp": "对编辑过的同一文件 5 分钟内只留一份，避免快照膨胀",
+      "autosaveDelayOptions": {
+        "500": "500 ms · 实时",
+        "800": "800 ms · 平衡",
+        "1500": "1.5 秒 · 安静",
+        "3000": "3 秒 · 手动感"
+      }
+    },
+    "sync": {
+      "drivesCard": "驱动",
+      "driveStatus": {
+        "disconnected": "未连接"
+      },
+      "policyCard": "同步策略",
+      "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push。",
+      "enableAutoSync": "启用自动同步",
+      "onConflict": "冲突时",
+      "frequency": "同步频率",
+      "conflictOptions": {
+        "ask": "弹出对比窗口让我选择",
+        "newest": "保留最新修改",
+        "local": "优先保留本机版本",
+        "remote": "优先保留远端版本"
+      },
+      "frequencyOptions": {
+        "manual": "手动同步",
+        "30s": "每 30 秒",
+        "1m": "每 1 分钟",
+        "5m": "每 5 分钟"
+      }
+    },
+    "shortcuts": {
+      "resetAll": "全部恢复默认",
+      "pressNewKey": "按下新的键…",
+      "unbound": "未绑定",
+      "conflict": "与其它命令冲突",
+      "conflictWith": "与「{{name}}」冲突，请先解除",
+      "markdownCard": "Markdown 编辑器内（暂不可改）",
+      "actions": {
+        "record": "录制",
+        "recording": "检测中…",
+        "cancel": "取消",
+        "clear": "清除",
+        "reset": "默认"
+      }
+    },
+    "picgo": {
+      "pipelineCard": "上传管线",
+      "pipelineTip": "S3 为直传，PicGo 为本地代理，关闭时只保存在文档旁 Assets 目录。",
+      "provider": "优先 provider",
+      "providerOptions": {
+        "picgo": "PicGo（本地代理）",
+        "s3": "S3 兼容（直传）",
+        "none": "关闭"
+      },
+      "picgoCard": "PicGo 本地服务",
+      "status": "状态",
+      "endpoint": "API 端点",
+      "rescan": "重新检测",
+      "rescanning": "检测中…",
+      "statusIdle": "未检测",
+      "statusProbing": "检测中…",
+      "statusOk": "已连接 · {{ms}} ms",
+      "statusFail": "未连接 · {{reason}}",
+      "generalCard": "通用",
+      "pasteAutoUpload": "粘贴图片自动上传",
+      "pasteAutoUploadTip": "关闭后会保存到当前文档旁的 Assets/ 目录。",
+      "dragAutoUpload": "拖入图片自动上传",
+      "keepLocalCopy": "本地保留副本",
+      "keepLocalCopyTip": "副本保存在当前文档旁的 Assets/ 子目录。",
+      "compressCard": "压缩",
+      "compressToggle": "上传前压缩",
+      "quality": "质量",
+      "s3Card": "S3 兼容存储",
+      "s3Tip": "支持 AWS S3、阿里 OSS、七牛、Cloudflare R2 和 MinIO；Secret Access Key 只保存到系统钥匙串。",
+      "s3EndpointTip": "例如 https://s3.us-east-1.amazonaws.com 或 https://oss-cn-hangzhou.aliyuncs.com",
+      "s3Secret": "Secret Access Key",
+      "s3SecretTip": "只保存到系统钥匙串，不写入持久化设置。",
+      "s3SecretStored": "已存储",
+      "s3SecretMissing": "未存储",
+      "s3PublicBase": "公开 URL 前缀（可选）",
+      "s3PublicBaseTip": "使用 CDN 时填写；留空会按 endpoint 和 bucket 推导。",
+      "s3PathStyle": "Path-style URL",
+      "s3PathStyleTip": "老版 S3 或 MinIO 通常需要开启；新版 AWS 通常使用 virtual-hosted。",
+      "s3Probe": "连接测试",
+      "s3ProbeTip": "上传一张 1px 占位图到 markio/_probe/ 验证凭据与桶可写。",
+      "s3Testing": "测试中…",
+      "s3TestBtn": "测试连接"
+    },
+    "export": {
+      "card": "导出默认",
+      "pdfTheme": "PDF 主题",
+      "pdfMargin": "PDF 页边距",
+      "htmlInline": "HTML 内嵌图片",
+      "pdfThemeOptions": {
+        "current": "跟随当前主题",
+        "light": "浅色打印",
+        "dark": "深色预览",
+        "print": "黑白打印"
+      },
+      "pdfMarginOptions": {
+        "standard": "标准 · 1 英寸",
+        "narrow": "窄边距 · 0.5 英寸",
+        "wide": "宽边距 · 1.25 英寸"
+      }
+    },
+    "about": {
+      "tagline": "一款本地优先的 Markdown 阅读器",
+      "checkUpdate": "检查更新",
+      "checking": "处理中…",
+      "restart": "重启应用",
+      "releaseNotes": "发布日志",
+      "crashLog": "错误日志",
+      "crashLogTitle": "在文件管理器中显示 markio.log 所在目录",
+      "feedback": "反馈",
+      "statusChecking": "正在检查…",
+      "statusUpToDate": "已是最新版本",
+      "statusAvailable": "发现新版本 {{version}}，正在下载…",
+      "statusDownloading": "下载中 {{version}} · {{pct}}%",
+      "statusReady": "{{version}} 已就绪，重启生效"
     }
   },
   "toolbar": {

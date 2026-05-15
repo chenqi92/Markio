@@ -4,6 +4,20 @@ import { applyTheme } from "@/themes";
 import type { ViewMode } from "@/types";
 import type { CommandId } from "@/lib/shortcuts";
 import { tauriStorage } from "@/lib/tauriStorage";
+import type { Locale } from "@/i18n";
+import { applyFonts } from "@/lib/fonts";
+
+function defaultLocale(): Locale {
+  if (typeof localStorage !== "undefined") {
+    const stored = localStorage.getItem("markio.locale");
+    if (stored === "zh-CN" || stored === "en") return stored;
+  }
+  if (typeof navigator !== "undefined") {
+    const lang = navigator.language || "";
+    if (lang.toLowerCase().startsWith("zh")) return "zh-CN";
+  }
+  return "en";
+}
 
 export function generateChannelId(): string {
   const t = Date.now().toString(36);
@@ -80,8 +94,16 @@ type PreferenceKey =
   | "customThemeId";
 
 interface SettingsState {
+  /** 界面语言 */
+  locale: Locale;
   theme: string;
   fontSize: number;
+  /** 界面字体（覆盖 --font-sans）；空串=用主题默认 */
+  uiFontFamily: string;
+  /** 正文字体（覆盖 --font-serif）；空串=用主题默认 */
+  bodyFontFamily: string;
+  /** 等宽字体（覆盖 --font-mono）；空串=用主题默认 */
+  monoFontFamily: string;
   defaultMode: ViewMode;
   startupBehavior: "restoreTabs" | "welcome" | "lastWorkspace";
   closeLastTabBehavior: "keepWindow" | "showWelcome" | "quitApp";
@@ -205,8 +227,10 @@ interface SettingsState {
   setShortcut: (id: CommandId, binding: string) => void;
   resetShortcut: (id: CommandId) => void;
   resetAllShortcuts: () => void;
+  setLocale: (loc: Locale) => void;
   setTheme: (theme: string) => void;
   setFontSize: (n: number) => void;
+  setFontFamily: (kind: "ui" | "body" | "mono", value: string) => void;
   setDefaultMode: (m: ViewMode) => void;
   setShortcutStyle: (s: SettingsState["shortcutStyle"]) => void;
   setFollowSystemTheme: (v: boolean) => void;
@@ -230,8 +254,12 @@ interface SettingsState {
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
+      locale: defaultLocale(),
       theme: "light",
       fontSize: 16,
+      uiFontFamily: "",
+      bodyFontFamily: "",
+      monoFontFamily: "",
       defaultMode: "split",
       startupBehavior: "restoreTabs",
       closeLastTabBehavior: "keepWindow",
@@ -324,11 +352,35 @@ export const useSettings = create<SettingsState>()(
           return { shortcutOverrides: next };
         }),
       resetAllShortcuts: () => set({ shortcutOverrides: {} }),
+      setLocale: (locale) => {
+        set({ locale });
+        // i18n 模块在 main.tsx 启动后挂上 hook，这里调用同步切换 i18next
+        void import("@/i18n").then((m) => m.setLocale(locale));
+      },
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });
       },
       setFontSize: (fontSize) => set({ fontSize }),
+      setFontFamily: (kind, value) =>
+        set((s) => {
+          const next =
+            kind === "ui"
+              ? { ...s, uiFontFamily: value }
+              : kind === "body"
+                ? { ...s, bodyFontFamily: value }
+                : { ...s, monoFontFamily: value };
+          applyFonts({
+            uiFontFamily: next.uiFontFamily,
+            bodyFontFamily: next.bodyFontFamily,
+            monoFontFamily: next.monoFontFamily,
+          });
+          return {
+            uiFontFamily: next.uiFontFamily,
+            bodyFontFamily: next.bodyFontFamily,
+            monoFontFamily: next.monoFontFamily,
+          };
+        }),
       setDefaultMode: (defaultMode) => set({ defaultMode }),
       setShortcutStyle: (shortcutStyle) => set({ shortcutStyle }),
       setFollowSystemTheme: (followSystemTheme) => set({ followSystemTheme }),

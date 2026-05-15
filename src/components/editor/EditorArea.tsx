@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { SourceEditor } from "./SourceEditor";
 import { Preview } from "../preview/Preview";
 import { BubbleMenu } from "../popovers/BubbleMenu";
@@ -31,6 +40,7 @@ const MODE_CLASS: Record<ViewMode, string> = {
 
 const MAX_PASTE_IMAGES = 8;
 const MAX_PASTE_IMAGE_BYTES = 25 * 1024 * 1024;
+const SPLIT_WIDTH_KEY = "markio.split.sourcePercent";
 
 function scrollRatio(info: { top: number; height: number; clientHeight: number }) {
   const max = Math.max(0, info.height - info.clientHeight);
@@ -81,6 +91,15 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     [tab, workspaces],
   );
   const syncNonce = useRef(0);
+  const scrollSyncFrame = useRef<number | null>(null);
+  const scrollSyncLock = useRef<"source" | "preview" | null>(null);
+  const scrollSyncLockTimer = useRef<number | null>(null);
+  const splitRootRef = useRef<HTMLDivElement>(null);
+  const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
+    if (typeof window === "undefined") return 50;
+    const saved = Number(window.localStorage.getItem(SPLIT_WIDTH_KEY));
+    return Number.isFinite(saved) ? Math.max(25, Math.min(75, saved)) : 50;
+  });
   const [scrollSync, setScrollSync] = useState<{
     target: "source" | "preview";
     ratio: number;
@@ -133,28 +152,129 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     if (renderMode !== "split") setScrollSync(null);
   }, [renderMode]);
 
-  const handleSourceScroll = useCallback(
-    (info: { top: number; height: number; clientHeight: number }) => {
+  const setSplitPercent = useCallback((next: number) => {
+    const clamped = Math.max(25, Math.min(75, next));
+    setSplitSourcePercent(clamped);
+    window.localStorage.setItem(SPLIT_WIDTH_KEY, String(Math.round(clamped * 10) / 10));
+  }, []);
+
+  const scheduleScrollSync = useCallback(
+    (
+      origin: "source" | "preview",
+      target: "source" | "preview",
+      info: { top: number; height: number; clientHeight: number },
+    ) => {
       if (renderMode !== "split") return;
-      setScrollSync({
-        target: "preview",
-        ratio: scrollRatio(info),
-        nonce: ++syncNonce.current,
+      if (scrollSyncLock.current === origin) return;
+      const ratio = scrollRatio(info);
+      if (scrollSyncFrame.current != null) {
+        window.cancelAnimationFrame(scrollSyncFrame.current);
+      }
+      scrollSyncFrame.current = window.requestAnimationFrame(() => {
+        scrollSyncFrame.current = null;
+        scrollSyncLock.current = target;
+        if (scrollSyncLockTimer.current != null) {
+          window.clearTimeout(scrollSyncLockTimer.current);
+        }
+        scrollSyncLockTimer.current = window.setTimeout(() => {
+          scrollSyncLock.current = null;
+          scrollSyncLockTimer.current = null;
+        }, 140);
+        setScrollSync({
+          target,
+          ratio,
+          nonce: ++syncNonce.current,
+        });
       });
     },
     [renderMode],
   );
 
+  useEffect(
+    () => () => {
+      if (scrollSyncFrame.current != null) window.cancelAnimationFrame(scrollSyncFrame.current);
+      if (scrollSyncLockTimer.current != null) window.clearTimeout(scrollSyncLockTimer.current);
+    },
+    [],
+  );
+
+  const handleSourceScroll = useCallback(
+    (info: { top: number; height: number; clientHeight: number }) => {
+      scheduleScrollSync("source", "preview", info);
+    },
+    [scheduleScrollSync],
+  );
+
   const handlePreviewScroll = useCallback(
     (info: { top: number; height: number; clientHeight: number }) => {
-      if (renderMode !== "split") return;
-      setScrollSync({
-        target: "source",
-        ratio: scrollRatio(info),
-        nonce: ++syncNonce.current,
-      });
+      scheduleScrollSync("preview", "source", info);
     },
-    [renderMode],
+    [scheduleScrollSync],
+  );
+
+  const handleSplitPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (renderMode !== "split") return;
+      const root = splitRootRef.current;
+      if (!root) return;
+      e.preventDefault();
+      const rect = root.getBoundingClientRect();
+      const prevCursor = document.body.style.cursor;
+      const prevUserSelect = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const update = (clientX: number) => {
+        if (rect.width <= 0) return;
+        setSplitPercent(((clientX - rect.left) / rect.width) * 100);
+      };
+      update(e.clientX);
+
+      const onMove = (event: PointerEvent) => update(event.clientX);
+      const onUp = () => {
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevUserSelect;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [renderMode, setSplitPercent],
+  );
+
+  const handleSplitKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (renderMode !== "split") return;
+      const step = e.shiftKey ? 8 : 2;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setSplitPercent(splitSourcePercent - step);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setSplitPercent(splitSourcePercent + step);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        setSplitPercent(25);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        setSplitPercent(75);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setSplitPercent(50);
+      }
+    },
+    [renderMode, setSplitPercent, splitSourcePercent],
+  );
+
+  const splitStyle = useMemo(
+    () =>
+      renderMode === "split"
+        ? ({ "--split-source": `${splitSourcePercent}%` } as CSSProperties)
+        : undefined,
+    [renderMode, splitSourcePercent],
   );
 
   const handlePasteImages = useCallback(
@@ -423,7 +543,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const allowSlash = shortcutStyle === "all" || shortcutStyle === "slash";
 
   return (
-    <div className={classNames("editor-split", MODE_CLASS[mode])}>
+    <div
+      ref={splitRootRef}
+      className={classNames("editor-split", MODE_CLASS[mode])}
+      style={splitStyle}
+    >
       {showSource && (
         <div
           className="editor-pane"
@@ -510,6 +634,22 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             }}
           />
         </div>
+      )}
+      {showSource && showPreview && (
+        <div
+          className="split-resizer"
+          role="separator"
+          aria-label="调整源码和预览分栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={25}
+          aria-valuemax={75}
+          aria-valuenow={Math.round(splitSourcePercent)}
+          tabIndex={0}
+          title="拖动调整分栏宽度，双击恢复 50/50"
+          onPointerDown={handleSplitPointerDown}
+          onDoubleClick={() => setSplitPercent(50)}
+          onKeyDown={handleSplitKeyDown}
+        />
       )}
       {showPreview && (
         <Preview

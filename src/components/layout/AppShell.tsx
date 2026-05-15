@@ -16,6 +16,7 @@ import { AIPanel } from "../popovers/AIPanel";
 import { WeChatSheet } from "../popovers/WeChatSheet";
 import { QuickCapture } from "../popovers/QuickCapture";
 import { ExportSheet } from "../popovers/ExportSheet";
+import { MultiCopySheet } from "../popovers/MultiCopySheet";
 import { PinnedPlanBar } from "../popovers/PinnedPlanBar";
 import { Settings } from "../settings/Settings";
 import { ToastHost } from "../popovers/Toast";
@@ -38,6 +39,8 @@ export function AppShell() {
   const openQuickCapture = useUI((s) => s.openQuickCapture);
   const exportSheetOpen = useUI((s) => s.exportSheetOpen);
   const openExportSheet = useUI((s) => s.openExportSheet);
+  const multiCopyOpen = useUI((s) => s.multiCopyOpen);
+  const openMultiCopy = useUI((s) => s.openMultiCopy);
   const openCommand = useUI((s) => s.openCommand);
   const openGlobalSearch = useUI((s) => s.openGlobalSearch);
   const openSettings = useUI((s) => s.openSettings);
@@ -78,10 +81,7 @@ export function AppShell() {
               {tab ? (
                 <>
                   <TabStrip />
-                  <Toolbar
-                    onAi={() => openAi(true)}
-                    onWechat={() => openWechat(true)}
-                  />
+                  <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
                   <EditorArea
                     onMeta={(m) => setMeta(m)}
@@ -111,6 +111,7 @@ export function AppShell() {
       {exportSheetOpen && (
         <ExportSheet onClose={() => openExportSheet(false)} />
       )}
+      {multiCopyOpen && <MultiCopySheet onClose={() => openMultiCopy(false)} />}
       <PinnedPlanBar />
       <ToastHost />
     </div>

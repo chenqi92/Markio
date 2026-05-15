@@ -21,6 +21,7 @@ interface UIState {
   globalSearchOpen: boolean;
   quickCaptureOpen: boolean;
   exportSheetOpen: boolean;
+  multiCopyOpen: boolean;
 
   setMode: (m: ViewMode) => void;
   toggleSidebar: () => void;
@@ -38,6 +39,7 @@ interface UIState {
   openGlobalSearch: (v: boolean) => void;
   openQuickCapture: (v: boolean) => void;
   openExportSheet: (v: boolean) => void;
+  openMultiCopy: (v: boolean) => void;
   setToast: (t: UIState["toast"]) => void;
 }
 
@@ -60,6 +62,7 @@ export const useUI = create<UIState>()(
       globalSearchOpen: false,
       quickCaptureOpen: false,
       exportSheetOpen: false,
+      multiCopyOpen: false,
       toast: null,
       setMode: (mode) => set({ mode }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -78,6 +81,7 @@ export const useUI = create<UIState>()(
       openGlobalSearch: (globalSearchOpen) => set({ globalSearchOpen }),
       openQuickCapture: (quickCaptureOpen) => set({ quickCaptureOpen }),
       openExportSheet: (exportSheetOpen) => set({ exportSheetOpen }),
+      openMultiCopy: (multiCopyOpen) => set({ multiCopyOpen }),
       setToast: (toast) => set({ toast }),
     }),
     {

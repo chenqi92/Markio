@@ -14,7 +14,7 @@ const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "spar
   { id: "preview", label: "阅读 ⌘4", icon: "eye" },
 ];
 
-export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => void }) {
+export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
   const mode = useUI((s) => s.mode);
   const setMode = useUI((s) => s.setMode);
   const sidebarOpen = useUI((s) => s.sidebarOpen);
@@ -140,28 +140,6 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
 
         <div className="tb-sep" />
 
-        <button
-          type="button"
-          className="tb-quick-cap"
-          title="快速捕获 ⌥Space"
-          onClick={() => useUI.getState().openQuickCapture(true)}
-        >
-          <span className="bolt" aria-hidden>⚡</span>
-          <span>捕获</span>
-        </button>
-
-        <button
-          type="button"
-          className="tb-ai-top"
-          title="AI 助手 ⌘J"
-          onClick={onAi}
-        >
-          <span className="orb" aria-hidden>✦</span>
-          <span>AI</span>
-        </button>
-
-        <div className="tb-divider" aria-hidden />
-
         <div className="tb-pill" onClick={() => openCommand(true)}>
           <Icon name="cmd" size={11} />
           <span>⌘K</span>
@@ -169,10 +147,10 @@ export function Toolbar({ onAi, onWechat }: { onAi: () => void; onWechat: () => 
 
         <button
           className="tb-btn tb-wechat"
-          title="复制为微信公众号"
-          onClick={onWechat}
+          title="复制为…"
+          onClick={onCopyAs}
         >
-          微
+          <span style={{ fontSize: 11, fontWeight: 700 }}>复</span>
         </button>
 
         <button

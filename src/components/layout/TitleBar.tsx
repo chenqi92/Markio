@@ -18,6 +18,8 @@ export function TitleBar() {
   const lightVariant = useSettings((s) => s.lightVariant);
   const darkVariant = useSettings((s) => s.darkVariant);
   const openSettings = useUI((s) => s.openSettings);
+  const openQuickCapture = useUI((s) => s.openQuickCapture);
+  const openAi = useUI((s) => s.openAi);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspace((s) => s.activeWorkspace());
   const tab = useTabs((s) => s.activeTab());
@@ -98,6 +100,25 @@ export function TitleBar() {
         )}
       </div>
       <div className="title-actions" data-no-drag>
+        <button
+          type="button"
+          className="tb-quick-cap"
+          title="快速捕获 ⌥Space"
+          onClick={() => openQuickCapture(true)}
+        >
+          <span className="bolt" aria-hidden>⚡</span>
+          <span>捕获</span>
+        </button>
+        <button
+          type="button"
+          className="tb-ai-top"
+          title="AI 助手 ⌘J"
+          onClick={() => openAi(true)}
+        >
+          <span className="orb" aria-hidden>✦</span>
+          <span>AI</span>
+        </button>
+        <div className="tb-divider" aria-hidden />
         <button className="icon-btn" title="同步" onClick={onSyncClick}>
           <Icon name="sync" size={15} />
         </button>

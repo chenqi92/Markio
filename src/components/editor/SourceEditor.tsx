@@ -22,6 +22,7 @@ import {
   type TableSelectionRect,
 } from "./table-edit";
 import { wysiwygMarkdown } from "./wysiwyg";
+import { getMathContext, type MathContext } from "@/lib/math-context";
 
 interface Props {
   value: string;
@@ -62,6 +63,8 @@ interface Props {
         }
       | null,
   ) => void;
+  /** 光标进入 / 离开 $...$ / $$...$$ 公式块；用于 KaTeX 实时预览 */
+  onMathContext?: (ctx: MathContext | null) => void;
   /** 是否启用 WYSIWYG 装饰（隐藏 markdown 标记 + 行级样式） */
   wysiwyg?: boolean;
 }
@@ -76,6 +79,7 @@ export const SourceEditor = memo(function SourceEditor({
   onTableContextMenu,
   onSlashTrigger,
   onAutocompleteUpdate,
+  onMathContext,
   wysiwyg = false,
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
@@ -171,6 +175,9 @@ export const SourceEditor = memo(function SourceEditor({
           }
           onAutocompleteUpdate(null);
         }
+        if ((u.docChanged || u.selectionSet) && onMathContext) {
+          onMathContext(getMathContext(u.view));
+        }
       }),
       CMView.theme(
         {
@@ -189,7 +196,7 @@ export const SourceEditor = memo(function SourceEditor({
         { dark: false },
       ),
     ],
-    [fontSize, onSelectionChange, onAutocompleteUpdate, wysiwyg],
+    [fontSize, onSelectionChange, onAutocompleteUpdate, onMathContext, wysiwyg],
   );
 
   useEffect(() => {

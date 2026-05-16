@@ -29,6 +29,8 @@ import {
 import { EditorSelection } from "@codemirror/state";
 import { TableToolbar } from "../popovers/TableToolbar";
 import { TableContextMenu } from "../popovers/TableContextMenu";
+import { MathPreview } from "../popovers/MathPreview";
+import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
@@ -145,6 +147,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     x: number;
     y: number;
   } | null>(null);
+  const [mathCtx, setMathCtx] = useState<MathContext | null>(null);
 
   const onMetaInternal = useCallback(
     (m: { outline: OutlineItem[]; words: number; readingMinutes: number }) => {
@@ -778,6 +781,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               allowSlash ? handleSlashTrigger : undefined
             }
             onAutocompleteUpdate={handleAutocompleteUpdate}
+            onMathContext={setMathCtx}
           />
         </div>
       )}
@@ -870,6 +874,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           x={ac.x}
           y={ac.y}
           onClose={() => setAc(null)}
+        />
+      )}
+      {mathCtx && !bubble && !slash && !ac && (
+        <MathPreview
+          formula={mathCtx.formula}
+          display={mathCtx.display}
+          x={mathCtx.coords.x}
+          y={mathCtx.coords.y}
         />
       )}
     </div>

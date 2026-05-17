@@ -19,6 +19,7 @@ import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import * as aiCache from "@/lib/aiCache";
 import { openExternal } from "@/lib/opener";
 import { writeText } from "@/lib/clipboard";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
@@ -4008,7 +4009,44 @@ function AI() {
           />
         </div>
       </div>
+      <AICacheCard />
     </>
+  );
+}
+
+function AICacheCard() {
+  const enabled = useSettings((s) => s.aiCacheEnabled);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [cleared, setCleared] = useState(false);
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">响应缓存</div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">启用缓存（仅本次会话）</div>
+          <div className="settings-help">
+            完全相同的 prompt + 模型 + RAG 上下文不重发请求，秒回上次结果。改一字即重发。
+            重启清空。默认关，避免破坏"重新生成"语义。
+          </div>
+        </div>
+        <Toggle on={enabled} onChange={(v) => setPreference("aiCacheEnabled", v)} />
+      </div>
+      <div className="settings-row" style={{ justifyContent: "flex-end", gap: 8 }}>
+        <span className="settings-help">
+          {cleared ? "已清空" : `当前缓存：${aiCache.size()} 条`}
+        </span>
+        <button
+          className="settings-btn"
+          onClick={() => {
+            aiCache.clear();
+            setCleared(true);
+            window.setTimeout(() => setCleared(false), 1500);
+          }}
+        >
+          清空缓存
+        </button>
+      </div>
+    </div>
   );
 }
 

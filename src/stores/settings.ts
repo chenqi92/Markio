@@ -93,6 +93,7 @@ type PreferenceKey =
   | "autoSyncEnabled"
   | "autoCheckUpdates"
   | "crashWebhookUrl"
+  | "aiCacheEnabled"
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
@@ -240,6 +241,9 @@ interface SettingsState {
   autoCheckUpdates: boolean;
   /** 用户自托管的崩溃日志接收 webhook URL；为空则不上报。POST application/json。 */
   crashWebhookUrl: string;
+  /** 启用 AI 响应缓存（本次会话期间，相同 prompt+model+context 不重发请求）。
+   *  仅命中"完全相同"才返回缓存；用户改一个字都会重发。默认关。 */
+  aiCacheEnabled: boolean;
   /** 各第三方网盘的轻量配置（folder + enabled），GitHub/WebDAV 走自己专用卡片不存这里 */
   driveConfigs: Partial<Record<DriveId, DriveConfig>>;
   /** Dropbox App key（client_id），在开发者后台注册后填入 */
@@ -367,6 +371,7 @@ export const useSettings = create<SettingsState>()(
       autoSyncEnabled: false,
       autoCheckUpdates: true,
       crashWebhookUrl: "",
+      aiCacheEnabled: false,
       driveConfigs: {},
       dropboxClientId: "",
       gdriveClientId: "",

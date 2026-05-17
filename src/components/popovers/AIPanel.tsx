@@ -8,6 +8,7 @@ import { useAISessions, type AIMsgRecord, type AIMsgRef } from "@/stores/aiSessi
 import { useRag } from "@/stores/rag";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { api } from "@/lib/api";
+import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
@@ -386,6 +387,29 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       setBusy(false);
     };
 
+    const chatMessages = msgs.map((m) => ({ role: m.role, content: m.text }));
+
+    // AI 缓存：完全相同的 (provider, model, system, messages) 直接回放上次响应。
+    // 默认关；用户在设置开启后才走，避免改变默认"重新生成"语义。
+    const cacheEnabled = useSettings.getState().aiCacheEnabled;
+    if (cacheEnabled) {
+      try {
+        const key = await aiCache.makeKey(provider, model, system, chatMessages);
+        const hit = aiCache.lookup(key);
+        if (hit && !isStale()) {
+          // 直接补齐 assistant 占位，不发起 API 请求
+          patchMessage(sessionId, assistantId, {
+            text: hit.text,
+            refs: (hit.refs as typeof collectedRefs | null) ?? undefined,
+          });
+          finalize();
+          return;
+        }
+      } catch {
+        // SHA-256 / crypto.subtle 失败时静默回落到正常 API 调用
+      }
+    }
+
     try {
       const { cancel } = await api.aiChatStream(
         {
@@ -395,7 +419,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
           maxTokens,
           temperature,
           system,
-          messages: msgs.map((m) => ({ role: m.role, content: m.text })),
+          messages: chatMessages,
         },
         {
           onChunk: (delta) => {
@@ -407,6 +431,23 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             if (isStale()) return;
             if (!receivedAny) {
               patchMessage(sessionId, assistantId, { text: "（空响应）" });
+            } else if (cacheEnabled) {
+              // 写入缓存——读 store 拿当前累积的完整 text
+              void aiCache
+                .makeKey(provider, model, system, chatMessages)
+                .then((key) => {
+                  const cur = useAISessions
+                    .getState()
+                    .sessions.find((s) => s.id === sessionId)
+                    ?.messages.find((m) => m.id === assistantId);
+                  if (cur?.text) {
+                    aiCache.remember(key, {
+                      text: cur.text,
+                      refs: collectedRefs.length > 0 ? collectedRefs : null,
+                    });
+                  }
+                })
+                .catch(() => undefined);
             }
             finalize();
           },

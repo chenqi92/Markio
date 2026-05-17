@@ -3,49 +3,16 @@ name: ci
 on:
   push:
     branches: [main]
-    paths: [package.json]
   pull_request:
     branches: [main]
-    paths: [package.json]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  detect-version:
-    name: detect version bump
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.check.outputs.changed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - id: check
-        name: compare package.json version with previous commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          CURRENT=$(jq -r .version package.json)
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREVIOUS=$(git show HEAD^:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "")
-          else
-            PREVIOUS=""
-          fi
-          echo "current=$CURRENT"
-          echo "previous=$PREVIOUS"
-          if [ -n "$CURRENT" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
   frontend:
     name: frontend (tsc + vite build)
-    needs: detect-version
-    if: needs.detect-version.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,8 +38,6 @@ jobs:
 
   rust:
     name: rust (fmt + check)
-    needs: detect-version
-    if: needs.detect-version.outputs.changed == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -111,4 +76,3 @@ jobs:
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
-        continue-on-error: true

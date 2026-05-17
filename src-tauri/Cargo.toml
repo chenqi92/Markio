@@ -94,6 +94,7 @@ thiserror = "1"
 rusqlite = { version = "0.32", features = ["bundled-full", "blob"] }
 sqlite-vec = "0.1"
 tauri-plugin-deep-link = "2"
+tauri-plugin-global-shortcut = "2"
 
 [profile.release]
 panic = "abort"

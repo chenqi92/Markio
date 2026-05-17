@@ -15,6 +15,7 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "opener:allow-open-url",
-    "deep-link:default"
+    "deep-link:default",
+    "global-shortcut:default"
   ]
 }

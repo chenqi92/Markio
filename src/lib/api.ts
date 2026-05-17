@@ -295,6 +295,9 @@ export const api = {
    *  失败时保留 pending 等下次再试，不抛错给 UI。 */
   crashFlushToWebhook: (url: string) =>
     invoke<boolean>("crash_flush_to_webhook", { url }),
+  /** 注册 / 替换全局快捷键。binding 用 "Mod+Shift+Space" 风格，空串 = 注销全部。 */
+  setGlobalShortcut: (binding: string) =>
+    invoke<void>("set_global_shortcut", { binding }),
 
   textFindRanges: (
     text: string,

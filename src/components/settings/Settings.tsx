@@ -2650,7 +2650,93 @@ function Shortcuts() {
           </div>
         ))}
       </div>
+      <GlobalShortcutCard />
     </>
+  );
+}
+
+function GlobalShortcutCard() {
+  const binding = useSettings((s) => s.globalShortcutShow);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [recording, setRecording] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const b = eventToBinding(e);
+      if (!b) return;
+      const normalized = normalizeBinding(b);
+      // 必须含修饰键，否则会和正常打字冲突
+      if (!/^(Mod|Ctrl|Alt|Shift)\+/.test(normalized)) {
+        setErr("全局快捷键必须包含修饰键（⌘ / Ctrl / Alt / Shift）");
+        return;
+      }
+      setErr(null);
+      setPreference("globalShortcutShow", normalized);
+      setRecording(false);
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, {
+        capture: true,
+      } as EventListenerOptions);
+  }, [recording, setPreference]);
+
+  const chips = formatBinding(binding);
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">全局快捷键</div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">唤起 markio（应用未聚焦时也生效）</div>
+          <div className="settings-help">
+            按下后把 markio 主窗口拉到前台。系统级注册，可能与其他应用冲突；冲突时下次启动会注册失败。
+            {err && <span style={{ color: "var(--danger, #c1432f)", marginLeft: 8 }}>{err}</span>}
+          </div>
+        </div>
+        <div className="kbd-group">
+          {recording ? (
+            <span className="kbd" style={{ minWidth: 120, textAlign: "center" }}>
+              按下新按键…
+            </span>
+          ) : binding ? (
+            chips.map((k, i) => (
+              <span key={i} className="kbd">
+                {k}
+              </span>
+            ))
+          ) : (
+            <span className="kbd" style={{ opacity: 0.6 }}>未绑定</span>
+          )}
+        </div>
+        <button
+          className="settings-btn"
+          onClick={() => {
+            setErr(null);
+            setRecording((v) => !v);
+          }}
+        >
+          {recording ? "取消" : "录制"}
+        </button>
+        <button
+          className="settings-btn"
+          onClick={() => {
+            setErr(null);
+            setPreference("globalShortcutShow", "");
+          }}
+          disabled={!binding}
+        >
+          清除
+        </button>
+      </div>
+    </div>
   );
 }
 

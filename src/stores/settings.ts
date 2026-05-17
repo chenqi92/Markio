@@ -94,6 +94,7 @@ type PreferenceKey =
   | "autoCheckUpdates"
   | "crashWebhookUrl"
   | "aiCacheEnabled"
+  | "globalShortcutShow"
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
@@ -244,6 +245,9 @@ interface SettingsState {
   /** 启用 AI 响应缓存（本次会话期间，相同 prompt+model+context 不重发请求）。
    *  仅命中"完全相同"才返回缓存；用户改一个字都会重发。默认关。 */
   aiCacheEnabled: boolean;
+  /** 系统级唤起 markio 的全局快捷键（应用未聚焦时也生效）。空 = 未绑定。
+   *  binding 格式与 shortcuts.ts 一致："Mod+Shift+Space"。 */
+  globalShortcutShow: string;
   /** 各第三方网盘的轻量配置（folder + enabled），GitHub/WebDAV 走自己专用卡片不存这里 */
   driveConfigs: Partial<Record<DriveId, DriveConfig>>;
   /** Dropbox App key（client_id），在开发者后台注册后填入 */
@@ -372,6 +376,7 @@ export const useSettings = create<SettingsState>()(
       autoCheckUpdates: true,
       crashWebhookUrl: "",
       aiCacheEnabled: false,
+      globalShortcutShow: "",
       driveConfigs: {},
       dropboxClientId: "",
       gdriveClientId: "",

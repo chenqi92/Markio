@@ -104,6 +104,21 @@ export default function App() {
   // 系统网络状态监听：online/offline 事件 → useNetwork.online
   useEffect(() => installNetworkListeners(), []);
 
+  // 全局快捷键：根据 settings.globalShortcutShow 在 Rust 端注册 / 替换；
+  // 改变设置后自动重新注册。空字符串注销。
+  useEffect(() => {
+    const apply = (binding: string) => {
+      void api.setGlobalShortcut(binding).catch(() => undefined);
+    };
+    apply(useSettings.getState().globalShortcutShow);
+    const unsub = useSettings.subscribe((state, prev) => {
+      if (state.globalShortcutShow !== prev.globalShortcutShow) {
+        apply(state.globalShortcutShow);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // 自定义 CSS 主题：加载列表并应用记住的那一套
   useEffect(() => {
     void (async () => {

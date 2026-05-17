@@ -1420,6 +1420,22 @@ fn install_panic_hook() {
     }));
 }
 
+/// 注册 / 替换全局快捷键。空字符串 = 注销全部。binding 格式与 shortcuts.ts 一致
+/// （"Mod+Shift+Space"），由前端转换；这里直接传 accelerator 字符串给 plugin。
+#[tauri::command]
+fn set_global_shortcut(app: tauri::AppHandle, binding: String) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    if binding.trim().is_empty() {
+        return Ok(());
+    }
+    // 把 "Mod+" 翻成 plugin 接受的 "CommandOrControl+"
+    let normalized = binding.replace("Mod+", "CommandOrControl+");
+    gs.register(normalized.as_str())
+        .map_err(|e| format!("注册全局快捷键失败：{e}"))
+}
+
 /// 由前端在启动后调用：若 pending 文件存在且 webhook URL 非空，
 /// 异步 POST 给用户配置的接收端。成功才删除 pending，失败保留下次重试。
 /// 不强制等待结果——前端 fire-and-forget。
@@ -3141,6 +3157,28 @@ pub fn run() {
     dev_log::install_panic_hook();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(
+                    |app: &tauri::AppHandle,
+                     _shortcut: &tauri_plugin_global_shortcut::Shortcut,
+                     event: tauri_plugin_global_shortcut::ShortcutEvent| {
+                        use tauri::Manager;
+                        use tauri_plugin_global_shortcut::ShortcutState;
+                        if event.state() != ShortcutState::Pressed {
+                            return;
+                        }
+                        // 默认行为：把主窗口拉到前台 + emit 事件给前端
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.unminimize();
+                            let _ = win.set_focus();
+                        }
+                        let _ = app.emit("global-shortcut", ());
+                    },
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -3179,6 +3217,7 @@ pub fn run() {
             text_find_ranges,
             crash_append,
             crash_flush_to_webhook,
+            set_global_shortcut,
             crash_open_dir,
             crash_read_latest,
             dev_log::dev_log_append,

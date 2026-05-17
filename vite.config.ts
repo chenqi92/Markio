@@ -29,8 +29,42 @@ export default defineConfig(async () => ({
       output: {
         manualChunks(id: string) {
           if (!id.includes("node_modules")) return undefined;
-          if (id.includes("@tauri-apps")) return "tauri";
-          if (id.includes("react") || id.includes("scheduler")) return "react";
+          const normalized = id.split(path.sep).join("/");
+          if (normalized.includes("@tauri-apps")) return "tauri";
+          if (
+            normalized.includes("/node_modules/react/") ||
+            normalized.includes("/node_modules/react-dom/") ||
+            normalized.includes("/node_modules/scheduler/")
+          ) {
+            return "react";
+          }
+          if (
+            normalized.includes("@codemirror/state") ||
+            normalized.includes("@codemirror/view") ||
+            normalized.includes("@codemirror/commands") ||
+            normalized.includes("@codemirror/search") ||
+            normalized.includes("@codemirror/language/") ||
+            normalized.includes("@codemirror/lang-markdown") ||
+            normalized.includes("@lezer/common") ||
+            normalized.includes("@lezer/highlight") ||
+            normalized.includes("@lezer/lr") ||
+            normalized.includes("@lezer/markdown") ||
+            normalized.includes("@uiw/codemirror-themes")
+          ) {
+            return "codemirror-core";
+          }
+          if (normalized.includes("/katex/")) return "katex";
+          if (normalized.includes("/cytoscape/")) return "graph-engine";
+          if (
+            normalized.includes("/markdown-it") ||
+            normalized.includes("/highlight.js") ||
+            normalized.includes("/dompurify/")
+          ) {
+            return "markdown-tools";
+          }
+          if (normalized.includes("/cmdk/")) return "command-ui";
+          if (normalized.includes("@tanstack/react-virtual")) return "virtual";
+          if (normalized.includes("/zustand/")) return "state";
           return undefined;
         },
       },

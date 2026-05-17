@@ -395,8 +395,6 @@ export const useSettings = create<SettingsState>()(
       resetAllShortcuts: () => set({ shortcutOverrides: {} }),
       setLocale: (locale) => {
         set({ locale });
-        // i18n 模块在 main.tsx 启动后挂上 hook，这里调用同步切换 i18next
-        void import("@/i18n").then((m) => m.setLocale(locale));
       },
       setTheme: (theme) => {
         applyTheme(theme);

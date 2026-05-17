@@ -72,6 +72,9 @@ async function bootstrap() {
     monoFontFamily: s.monoFontFamily,
   });
   setI18nLocale(s.locale);
+  useSettings.subscribe((next, prev) => {
+    if (next.locale !== prev.locale) setI18nLocale(next.locale);
+  });
   injectSyntaxTheme();
 
   // 把持久化的"显示在菜单栏"应用到原生托盘

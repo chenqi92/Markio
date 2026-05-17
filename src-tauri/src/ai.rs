@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,65 @@ use tauri::{AppHandle, Emitter};
 const STREAM_TOTAL_TIMEOUT_SECS: u64 = 600;
 const STREAM_READ_TIMEOUT_SECS: u64 = 90;
 const MAX_SSE_BUFFER_BYTES: usize = 1024 * 1024;
+/// 每个 provider 60 秒内最多放 30 个请求过；超出的请求 sleep 到窗口空出再走。
+/// 桌面端用户快速连点发送 / 手抖快捷键时不至于秒爆 API 配额。
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+const RATE_MAX_PER_WINDOW: usize = 30;
+
+/// 简易滑动窗口限流器：记录每次请求时间戳，drain 超出窗口的旧时间。
+struct RateBucket {
+    times: VecDeque<Instant>,
+}
+
+impl RateBucket {
+    fn new() -> Self {
+        Self {
+            times: VecDeque::new(),
+        }
+    }
+
+    /// 返回需要等待的时长；0 表示可以立即通过，>0 则 sleep 之后再试。
+    fn check(&mut self) -> Duration {
+        let now = Instant::now();
+        while let Some(t) = self.times.front() {
+            if now.duration_since(*t) >= RATE_WINDOW {
+                self.times.pop_front();
+            } else {
+                break;
+            }
+        }
+        if self.times.len() < RATE_MAX_PER_WINDOW {
+            self.times.push_back(now);
+            return Duration::ZERO;
+        }
+        // 最老的时间戳什么时候出窗口
+        let oldest = *self.times.front().unwrap();
+        RATE_WINDOW.saturating_sub(now.duration_since(oldest))
+    }
+}
+
+fn rate_buckets() -> &'static Mutex<HashMap<String, RateBucket>> {
+    static CELL: OnceLock<Mutex<HashMap<String, RateBucket>>> = OnceLock::new();
+    CELL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn await_rate_limit(provider: &str) {
+    loop {
+        let wait = {
+            let mut map = rate_buckets().lock().expect("rate bucket lock");
+            let bucket = map
+                .entry(provider.to_string())
+                .or_insert_with(RateBucket::new);
+            bucket.check()
+        };
+        if wait.is_zero() {
+            return;
+        }
+        // 注意：用 max 100ms 步长唤醒，避免极端 sleep 把整体延迟堆得很高
+        let step = wait.min(Duration::from_millis(500));
+        tokio::time::sleep(step).await;
+    }
+}
 
 /// 桌面应用长跑：全局共享两个 reqwest::Client（非流式 60s / 流式 600s），
 /// 复用 HTTP keep-alive 连接池，避免每次聊天都重新 TLS 握手。
@@ -72,6 +131,7 @@ pub struct ChatResponse {
 }
 
 pub async fn chat(req: ChatRequest) -> Result<ChatResponse, String> {
+    await_rate_limit(&req.provider).await;
     match req.provider.as_str() {
         "anthropic" => call_anthropic(req).await,
         "google" => call_google(req).await,
@@ -443,6 +503,7 @@ fn emit(app: &AppHandle, id: &str, evt: StreamEvent) {
 }
 
 pub async fn chat_stream(app: AppHandle, stream_id: String, req: ChatRequest) {
+    await_rate_limit(&req.provider).await;
     let guard = register_stream(&stream_id);
     let cancel = guard.flag();
     let result = match req.provider.as_str() {

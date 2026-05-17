@@ -275,7 +275,13 @@
       "statusUpToDate": "已是最新版本",
       "statusAvailable": "发现新版本 {{version}}，正在下载…",
       "statusDownloading": "下载中 {{version}} · {{pct}}%",
-      "statusReady": "{{version}} 已就绪，重启生效"
+      "statusReady": "{{version}} 已就绪，重启生效",
+      "updatesCard": "自动更新",
+      "autoCheckLabel": "启动时检查新版本",
+      "autoCheckHelp": "应用启动一段时间后静默检查发布渠道；发现新版本会提醒，但不自动下载。",
+      "toastTitle": "发现新版本 {{version}}",
+      "toastBody": "在「设置 → 关于」中查看并安装。",
+      "toastAction": "查看"
     }
   },
   "toolbar": {

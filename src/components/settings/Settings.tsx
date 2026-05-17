@@ -5329,6 +5329,8 @@ function About() {
   const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
   const theme = useSettings((s) => s.theme);
   const isDarkTheme = THEMES.find((t) => t.id === theme)?.isDark ?? false;
+  const autoCheck = useSettings((s) => s.autoCheckUpdates);
+  const setPreference = useSettings((s) => s.setPreference);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("?"));
@@ -5494,6 +5496,19 @@ function About() {
             </button>
             {renderStatus()}
           </div>
+        </div>
+      </div>
+      <div className="settings-card">
+        <div className="settings-card-h">{t("settings.about.updatesCard")}</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">{t("settings.about.autoCheckLabel")}</div>
+            <div className="settings-help">{t("settings.about.autoCheckHelp")}</div>
+          </div>
+          <Toggle
+            on={autoCheck}
+            onChange={(v) => setPreference("autoCheckUpdates", v)}
+          />
         </div>
       </div>
     </>

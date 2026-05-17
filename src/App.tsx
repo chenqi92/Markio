@@ -108,6 +108,37 @@ export default function App() {
     })();
   }, []);
 
+  // 应用更新：启动 20s 后静默检查一次（避开首屏 / 仓库 hydrate 高峰）。
+  // 检查到新版本仅弹 toast 提示，不自动下载、不打断用户。
+  useEffect(() => {
+    if (!useSettings.getState().autoCheckUpdates) return;
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        const { check } = await import("@tauri-apps/plugin-updater");
+        const u = await check();
+        if (!u || cancelled) return;
+        useUI.getState().setToast({
+          stage: "done",
+          message: `发现新版本 ${u.version} · 设置 → 关于 中安装`,
+        });
+        window.setTimeout(() => {
+          const cur = useUI.getState().toast;
+          if (cur && cur.message.includes(u.version)) {
+            useUI.getState().setToast(null);
+          }
+        }, 8000);
+      } catch {
+        // 离线 / 校验失败：保持静默，下次启动再试
+      }
+    }, 20_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, []);
+
   // App 启动时把 localStorage 里的仓库列表 / AI 配置状态同步到 Rust
   useEffect(() => {
     hydrate();

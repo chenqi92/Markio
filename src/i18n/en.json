@@ -275,7 +275,13 @@
       "statusUpToDate": "You're up to date",
       "statusAvailable": "Found {{version}}, downloading…",
       "statusDownloading": "Downloading {{version}} · {{pct}}%",
-      "statusReady": "{{version}} ready — restart to apply"
+      "statusReady": "{{version}} ready — restart to apply",
+      "updatesCard": "Automatic updates",
+      "autoCheckLabel": "Check for updates on launch",
+      "autoCheckHelp": "Quietly probes the release channel a moment after startup; surfaces a notice but never auto-downloads.",
+      "toastTitle": "New version {{version}}",
+      "toastBody": "Open Settings → About to review and install.",
+      "toastAction": "Open"
     }
   },
   "toolbar": {

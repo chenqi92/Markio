@@ -91,6 +91,7 @@ type PreferenceKey =
   | "s3PathStyle"
   | "uploadProvider"
   | "autoSyncEnabled"
+  | "autoCheckUpdates"
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
@@ -234,6 +235,8 @@ interface SettingsState {
   uploadProvider: "picgo" | "s3" | "none";
   /** 启用按 syncFrequency 自动 commit + push */
   autoSyncEnabled: boolean;
+  /** 启动后台检查新版本（不强迫，不自动下载，只通知） */
+  autoCheckUpdates: boolean;
   /** 各第三方网盘的轻量配置（folder + enabled），GitHub/WebDAV 走自己专用卡片不存这里 */
   driveConfigs: Partial<Record<DriveId, DriveConfig>>;
   /** Dropbox App key（client_id），在开发者后台注册后填入 */
@@ -359,6 +362,7 @@ export const useSettings = create<SettingsState>()(
       s3PathStyle: false,
       uploadProvider: "picgo",
       autoSyncEnabled: false,
+      autoCheckUpdates: true,
       driveConfigs: {},
       dropboxClientId: "",
       gdriveClientId: "",

@@ -69,6 +69,8 @@ interface Props {
   wysiwyg?: boolean;
 }
 
+const CODE_FENCE_SCAN_LIMIT_LINES = 800;
+
 export const SourceEditor = memo(function SourceEditor({
   value,
   onChange,
@@ -456,7 +458,8 @@ function isInsideCodeOrUrl(view: EditorView, pos: number): boolean {
   if (inInline) return true;
   // 围栏代码块：从文档头扫到此行，统计 ``` / ~~~ 切换
   let inFence = false;
-  for (let n = 1; n < line.number; n++) {
+  const firstLine = Math.max(1, line.number - CODE_FENCE_SCAN_LIMIT_LINES);
+  for (let n = firstLine; n < line.number; n++) {
     const t = doc.line(n).text;
     if (/^\s*(```|~~~)/.test(t)) inFence = !inFence;
   }

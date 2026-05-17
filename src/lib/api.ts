@@ -312,6 +312,16 @@ export const api = {
       maxMatches?: number;
     },
   ) => invoke<Array<[number, number]>>("text_find_ranges", { text, pattern, options }),
+  textFindCount: (
+    text: string,
+    pattern: string,
+    options?: {
+      caseInsensitive?: boolean;
+      wholeWord?: boolean;
+      regex?: boolean;
+      maxMatches?: number;
+    },
+  ) => invoke<number>("text_find_count", { text, pattern, options }),
 
   pasteImage: (req: {
     workspace: string;

@@ -26,6 +26,8 @@ const EMOJIS: Item[] = [
   { ico: "❓", l1: ":question:", l2: "疑问", insert: "❓ " },
 ];
 
+const FALLBACK_TOKEN_SCAN_LIMIT = 100_000;
+
 const TRIGGER_LABEL: Record<AcKind, { badge: string; title: string }> = {
   wiki: { badge: "[[", title: "链接到笔记" },
   mention: { badge: "@", title: "提及人员或仓库" },
@@ -101,7 +103,7 @@ export function Autocomplete({
   onClose: () => void;
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
-  const indexedText = useTabs((s) => s.tabs.map((t) => t.content).join("\n"));
+  const activeText = useTabs((s) => s.activeTab()?.content ?? "");
   const ensureIndex = useVaultIndex((s) => s.ensure);
   const vaultIndex = useVaultIndex((s) =>
     ws ? s.index[ws.path] : undefined,
@@ -115,13 +117,15 @@ export function Autocomplete({
   const base: Item[] = useMemo(() => {
     if (kind === "mention") {
       const fromVault = vaultIndex ? tokensToItems(vaultIndex.mentions, "@") : [];
-      const fromTabs = fallbackTokens(indexedText, "@");
-      return mergeUnique(fromVault, fromTabs);
+      const fromActive =
+        activeText.length <= FALLBACK_TOKEN_SCAN_LIMIT ? fallbackTokens(activeText, "@") : [];
+      return mergeUnique(fromVault, fromActive);
     }
     if (kind === "tag") {
       const fromVault = vaultIndex ? tokensToItems(vaultIndex.tags, "#") : [];
-      const fromTabs = fallbackTokens(indexedText, "#");
-      return mergeUnique(fromVault, fromTabs);
+      const fromActive =
+        activeText.length <= FALLBACK_TOKEN_SCAN_LIMIT ? fallbackTokens(activeText, "#") : [];
+      return mergeUnique(fromVault, fromActive);
     }
     if (kind === "emoji") return EMOJIS;
     // wiki: 全 vault 文件名（来自 vault index 的 stem）
@@ -144,7 +148,7 @@ export function Autocomplete({
       return out;
     }
     return [];
-  }, [kind, indexedText, vaultIndex]);
+  }, [kind, activeText, vaultIndex]);
 
   const items = useMemo(() => {
     if (!query) return base.slice(0, 20);

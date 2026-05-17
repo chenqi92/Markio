@@ -7,7 +7,7 @@ import { useSettings } from "./stores/settings";
 import { useRag } from "./stores/rag";
 import { useVaultIndex } from "./stores/vaultIndex";
 import { isDarkTheme } from "./themes";
-import { api, parseError, pickDirectory, pickFile } from "./lib/api";
+import { api, isDesktop, parseError, pickDirectory, pickFile } from "./lib/api";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
@@ -240,6 +240,7 @@ export default function App() {
   // 或 macOS Dock 拖入文件 → Rust 端 emit "open-from-os"，前端 openPath 打开。
   // 等到 hydrate 完成（workspaces 已注册）后再处理，否则 openPath 会失败。
   useEffect(() => {
+    if (!isDesktop()) return;
     const queue: string[] = [];
     let ready = false;
     let unlisten: (() => void) | null = null;
@@ -275,6 +276,7 @@ export default function App() {
 
   // 全局订阅 rag-status：把后端推送的进度 / 索引快照写入 useRag.status
   useEffect(() => {
+    if (!isDesktop()) return;
     let unlisten: (() => void) | null = null;
     (async () => {
       try {
@@ -320,6 +322,7 @@ export default function App() {
 
   // Rust watcher 触发的文件系统变动 → 节流刷新文件树
   useEffect(() => {
+    if (!isDesktop()) return;
     let unlisten: (() => void) | null = null;
     const pendingRefresh: Map<string, ReturnType<typeof setTimeout>> = new Map();
     (async () => {
@@ -388,6 +391,7 @@ export default function App() {
 
   // 把 .md 文件 / 文件夹拖到窗口上时自动打开
   useEffect(() => {
+    if (!isDesktop()) return;
     let dispose: (() => void) | undefined;
     (async () => {
       try {

@@ -6,6 +6,8 @@ export interface MathContext {
   coords: { x: number; y: number };
 }
 
+const DISPLAY_MATH_SCAN_LIMIT_LINES = 250;
+
 /**
  * 探测光标当前是否处于行内 $...$ 或 块级 $$...$$ 公式内。
  * 返回公式文本 + 显示模式 + 屏幕坐标（光标行底部偏 4px）；不在公式内返回 null。
@@ -52,7 +54,8 @@ function detectDisplayBlock(
 ): { start: number; end: number } | null {
   const doc = view.state.doc;
   let start = -1;
-  for (let n = cursorLineNumber - 1; n >= 1; n--) {
+  const firstLine = Math.max(1, cursorLineNumber - DISPLAY_MATH_SCAN_LIMIT_LINES);
+  for (let n = cursorLineNumber - 1; n >= firstLine; n--) {
     if (/^\s*\$\$\s*$/.test(doc.line(n).text)) {
       start = n;
       break;
@@ -60,7 +63,8 @@ function detectDisplayBlock(
   }
   if (start < 0) return null;
   let end = -1;
-  for (let n = cursorLineNumber + 1; n <= doc.lines; n++) {
+  const lastLine = Math.min(doc.lines, cursorLineNumber + DISPLAY_MATH_SCAN_LIMIT_LINES);
+  for (let n = cursorLineNumber + 1; n <= lastLine; n++) {
     if (/^\s*\$\$\s*$/.test(doc.line(n).text)) {
       end = n;
       break;

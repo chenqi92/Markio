@@ -1562,14 +1562,17 @@ pub struct TextFindOptions {
     pub max_matches: Option<usize>,
 }
 
-#[tauri::command]
-fn text_find_ranges(
-    text: String,
-    pattern: String,
+fn text_find_scan<F>(
+    text: &str,
+    pattern: &str,
     options: Option<TextFindOptions>,
-) -> Result<Vec<(usize, usize)>, String> {
+    mut on_match: F,
+) -> Result<usize, String>
+where
+    F: FnMut(usize, usize),
+{
     if pattern.is_empty() {
-        return Ok(Vec::new());
+        return Ok(0);
     }
     let opts = options.unwrap_or(TextFindOptions {
         case_insensitive: Some(true),
@@ -1584,7 +1587,7 @@ fn text_find_ranges(
     let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
     let bytes = text.as_bytes();
 
-    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut count = 0usize;
 
     if opts.regex.unwrap_or(false) {
         // 简单正则：不引入 regex crate；只支持 . * + ? \d \w \s 等基础 — 走 String::matches
@@ -1612,12 +1615,14 @@ fn text_find_ranges(
                     .map(|b| is_word_char(b as char))
                     .unwrap_or(false);
                 if !prev && !next {
-                    out.push((from, to));
+                    on_match(from, to);
+                    count += 1;
                 }
             } else {
-                out.push((from, to));
+                on_match(from, to);
+                count += 1;
             }
-            if out.len() >= cap {
+            if count >= cap {
                 break;
             }
             start = to.max(from + 1);
@@ -1640,19 +1645,41 @@ fn text_find_ranges(
                     .map(|b| is_word_char(b as char))
                     .unwrap_or(false);
                 if !prev && !next {
-                    out.push((from, to));
+                    on_match(from, to);
+                    count += 1;
                 }
             } else {
-                out.push((from, to));
+                on_match(from, to);
+                count += 1;
             }
-            if out.len() >= cap {
+            if count >= cap {
                 break;
             }
             start = to.max(from + 1);
         }
     }
 
+    Ok(count)
+}
+
+#[tauri::command]
+fn text_find_ranges(
+    text: String,
+    pattern: String,
+    options: Option<TextFindOptions>,
+) -> Result<Vec<(usize, usize)>, String> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    text_find_scan(&text, &pattern, options, |from, to| out.push((from, to)))?;
     Ok(out)
+}
+
+#[tauri::command]
+fn text_find_count(
+    text: String,
+    pattern: String,
+    options: Option<TextFindOptions>,
+) -> Result<usize, String> {
+    text_find_scan(&text, &pattern, options, |_from, _to| {})
 }
 
 // ─── pandoc 导出（EPUB / DOCX） ────────────────────────────────────
@@ -3308,6 +3335,7 @@ pub fn run() {
             export_write_file,
             fetch_image_as_data_url,
             text_find_ranges,
+            text_find_count,
             crash_append,
             crash_flush_to_webhook,
             set_global_shortcut,

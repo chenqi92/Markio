@@ -99,6 +99,28 @@ export function Preview({
     }
   }, [activeWorkspace?.path]);
 
+  const findIndexRef = useRef(findIndex);
+  const findCurrentRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    findIndexRef.current = findIndex;
+  }, [findIndex]);
+
+  const applyFindCurrent = useCallback((nextIndex: number) => {
+    const root = contentRef.current;
+    if (!root) return;
+    const previous = findCurrentRef.current;
+    if (previous?.isConnected) previous.classList.remove("current");
+    const hits = root.querySelectorAll<HTMLElement>("mark.find-hit");
+    if (hits.length === 0) {
+      findCurrentRef.current = null;
+      return;
+    }
+    const safeIdx = Math.max(0, Math.min(hits.length - 1, nextIndex));
+    const current = hits[safeIdx];
+    current.classList.add("current");
+    findCurrentRef.current = current;
+  }, []);
+
   const applyScrollTarget = useCallback(() => {
     const el = containerRef.current;
     if (!el || !scrollTarget) return;
@@ -339,7 +361,8 @@ export function Preview({
     };
   }, [html, theme, applyScrollTarget, vaultFiles]);
 
-  // Find 高亮：扫描文字节点，包 <mark class="find-hit"> + 当前项加 .current
+  // Find 高亮：扫描文字节点，包 <mark class="find-hit">。
+  // 当前命中项单独切换，避免“下一处”时重扫整篇预览。
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
@@ -350,6 +373,7 @@ export function Preview({
     for (const m of oldHits) {
       m.replaceWith(document.createTextNode(m.textContent ?? ""));
     }
+    findCurrentRef.current = null;
     if (!findQuery) return;
     const needle = findQuery.toLowerCase();
     let count = 0;
@@ -392,12 +416,12 @@ export function Preview({
       parent.insertBefore(frag, t);
       parent.removeChild(t);
     }
-    // 当前 idx 加 .current
-    const hits = root.querySelectorAll<HTMLElement>("mark.find-hit");
-    if (hits.length === 0) return;
-    const safeIdx = Math.max(0, Math.min(hits.length - 1, findIndex));
-    hits.forEach((h, i) => h.classList.toggle("current", i === safeIdx));
-  }, [html, findQuery, findIndex]);
+    applyFindCurrent(findIndexRef.current);
+  }, [html, findQuery, applyFindCurrent]);
+
+  useEffect(() => {
+    applyFindCurrent(findIndex);
+  }, [findIndex, applyFindCurrent]);
 
   // 稳定 debounce：timer 在整个组件生命周期内只有一个；source 变化时
   // reset timer，先前的渲染如果还没发就直接被替换。

@@ -49,16 +49,17 @@ async function runBuild(workspace: string) {
   } catch (e) {
     console.warn("[vaultIndex] build failed", workspace, e);
   } finally {
+    let needsQueuedRun = false;
     useVaultIndex.setState((s) => {
       const stillBuilding = new Set(s.building);
       stillBuilding.delete(workspace);
       const queued = new Set(s.rebuildQueued);
-      const needs = queued.delete(workspace);
-      return needs
+      needsQueuedRun = queued.delete(workspace);
+      return needsQueuedRun
         ? { building: stillBuilding, rebuildQueued: queued }
         : { building: stillBuilding };
     });
-    if (useVaultIndex.getState().rebuildQueued.has(workspace)) {
+    if (needsQueuedRun) {
       void runBuild(workspace);
     }
   }

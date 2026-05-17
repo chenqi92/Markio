@@ -168,14 +168,30 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     if (renderMode !== "split") setScrollSync(null);
   }, [renderMode]);
 
+  // 持久化写入按 250ms 节流：拖分栏时 pointermove 可能每像素触发，
+  // 立即写 localStorage 会冗余几十次并阻塞渲染线程。
+  const splitPersistTimer = useRef<number | null>(null);
   const setSplitPercent = useCallback((next: number) => {
     const clamped = Math.max(25, Math.min(75, next));
     setSplitSourcePercent(clamped);
-    try {
-      window.localStorage.setItem(SPLIT_WIDTH_KEY, String(Math.round(clamped * 10) / 10));
-    } catch {
-      // QuotaExceededError / SecurityError 时记忆失败不影响本次会话
+    if (splitPersistTimer.current !== null) {
+      window.clearTimeout(splitPersistTimer.current);
     }
+    splitPersistTimer.current = window.setTimeout(() => {
+      splitPersistTimer.current = null;
+      try {
+        window.localStorage.setItem(SPLIT_WIDTH_KEY, String(Math.round(clamped * 10) / 10));
+      } catch {
+        // QuotaExceededError / SecurityError 时记忆失败不影响本次会话
+      }
+    }, 250);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (splitPersistTimer.current !== null) {
+        window.clearTimeout(splitPersistTimer.current);
+      }
+    };
   }, []);
 
   const scheduleScrollSync = useCallback(

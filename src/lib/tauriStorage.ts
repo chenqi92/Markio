@@ -101,10 +101,54 @@ const testSafeStorage: StateStorage = {
   },
 };
 
+/**
+ * 浏览器 dev 模式 fallback：在 localStorage 之上包一层 250ms 写入合并。
+ * 桌面打包不走这里（走 tauriBackedStorage 的 plugin-store autoSave），
+ * 但 vite dev 时多 store 频繁 persist 会让主线程跳变，包一层一致更好。
+ */
+function debouncedLocalStorage(): StateStorage {
+  const pending = new Map<string, string>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    for (const [k, v] of pending) {
+      try {
+        localStorage.setItem(k, v);
+      } catch {
+        // 配额超限 / SecurityError 静默；下一轮还会再尝试
+      }
+    }
+    pending.clear();
+    timer = null;
+  };
+  return {
+    getItem(name) {
+      if (pending.has(name)) return pending.get(name)!;
+      try {
+        return localStorage.getItem(name);
+      } catch {
+        return null;
+      }
+    },
+    setItem(name, value) {
+      pending.set(name, value);
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(flush, 250);
+    },
+    removeItem(name) {
+      pending.delete(name);
+      try {
+        localStorage.removeItem(name);
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
 function browserStorage(): StateStorage {
   return typeof localStorage === "undefined"
     ? testSafeStorage
-    : (localStorage as unknown as StateStorage);
+    : debouncedLocalStorage();
 }
 
 /** zustand 的 createJSONStorage 接收这个对象作为底层存储。 */

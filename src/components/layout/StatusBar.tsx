@@ -4,7 +4,7 @@ import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { formatBytes } from "@/lib/utils";
-import { api, isDesktop } from "@/lib/api";
+import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
 import { PomodoroChip } from "../popovers/PomodoroChip";
 import { WritingGoalChip } from "../popovers/WritingGoalChip";
@@ -58,6 +58,38 @@ export function StatusBar({
     behind: number;
     files: number;
   } | null>(null);
+  const [watcher, setWatcher] = useState<WatcherHealthDto | null>(null);
+
+  // 文件监听健康度：每 60s 拉一次。仅在异常（未运行 / 有 backend 错误）时显示，
+  // 避免占用 StatusBar 视觉空间；正常运行用户感知不到。
+  useEffect(() => {
+    if (!isDesktop() || !ws) {
+      setWatcher(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.hidden) return;
+      try {
+        const all = await api.watcherHealth();
+        if (cancelled) return;
+        const wsNorm = ws.path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        const mine = all.find(
+          (h) =>
+            h.workspace.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() === wsNorm,
+        );
+        setWatcher(mine ?? null);
+      } catch {
+        if (!cancelled) setWatcher(null);
+      }
+    };
+    void tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [ws?.path]);
 
   // git status 轮询：用 setTimeout 链而非 setInterval，避免大仓库 / 网络挂载盘
   // 导致请求堆积。失败时指数退避（30s → 60s → 120s → 封顶 5min），
@@ -159,6 +191,31 @@ export function StatusBar({
             <span className="item">阅读约 {readingMinutes} 分钟</span>
           )}
         </>
+      )}
+      {watcher && (!watcher.running || watcher.backendErrors > 0) && (
+        <span
+          className="item"
+          title={
+            !watcher.running
+              ? "文件监听已停止，仓库变动可能不会被自动索引。重新打开仓库可重启监听。"
+              : `文件监听有 ${watcher.backendErrors} 次错误${
+                  watcher.lastError ? `：${watcher.lastError}` : ""
+                }。RAG 索引可能与磁盘脱节，建议在「设置 → 本地知识库」重建索引。`
+          }
+          style={{ color: !watcher.running ? "#ff453a" : "#ff9500" }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: !watcher.running ? "#ff453a" : "#ff9500",
+              display: "inline-block",
+              marginRight: 4,
+            }}
+          />
+          {!watcher.running ? "监听已停止" : `监听 ${watcher.backendErrors} 错误`}
+        </span>
       )}
       {git && git.branch && (
         <span

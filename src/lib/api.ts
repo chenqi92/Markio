@@ -58,6 +58,16 @@ export interface FileSig {
   hash: string;
 }
 
+export interface WatcherHealthDto {
+  workspace: string;
+  running: boolean;
+  eventsTotal: number;
+  emitFailures: number;
+  backendErrors: number;
+  lastError: string | null;
+  lastEventAt: number | null;
+}
+
 export interface OpenedFile {
   path: string;
   content: string;
@@ -230,6 +240,9 @@ export const api = {
     invoke<string>("workspace_register", { path }),
   workspaceUnregister: (path: string) =>
     invoke<string>("workspace_unregister", { path }),
+  /** 文件监听器健康度快照：每仓库的 events / errors / 最近事件时间。
+   *  RAG 自动增量索引依赖此监听，长跑场景偶尔卡死时让前端能感知。 */
+  watcherHealth: () => invoke<WatcherHealthDto[]>("watcher_health"),
 
   readTree: (path: string) => invoke<FileEntry>("fs_read_tree", { path }),
   readDir: (path: string) => invoke<FileEntry>("fs_read_dir", { path }),

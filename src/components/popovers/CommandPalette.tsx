@@ -258,9 +258,14 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", k);
   }, [visible, sel, onClose]);
 
-  const grouped: Record<string, Cmd[]> = {};
-  visible.forEach((c) => {
-    (grouped[c.group] = grouped[c.group] || []).push(c);
+  // 预先把全局 index 绑到每条，避免在渲染时对每个 item 调用 visible.indexOf(it)（O(N²)）
+  const visibleWithIdx = useMemo(
+    () => visible.map((it, idx) => ({ item: it, idx })),
+    [visible],
+  );
+  const grouped: Record<string, Array<{ item: Cmd; idx: number }>> = {};
+  visibleWithIdx.forEach((entry) => {
+    (grouped[entry.item.group] = grouped[entry.item.group] || []).push(entry);
   });
 
   return (
@@ -283,36 +288,33 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             Object.entries(grouped).map(([g, items]) => (
               <div key={g}>
                 <div className="cmdk-group-h">{g}</div>
-                {items.map((it) => {
-                  const idx = visible.indexOf(it);
-                  return (
-                    <button
-                      type="button"
-                      key={it.id}
-                      className={"cmdk-item" + (idx === sel ? " sel" : "")}
-                      onClick={() => {
-                        it.run();
-                        onClose();
-                      }}
-                      onMouseEnter={() => setSel(idx)}
-                    >
-                      <div className="ico">
-                        <Icon name={it.ico} size={14} />
+                {items.map(({ item: it, idx }) => (
+                  <button
+                    type="button"
+                    key={it.id}
+                    className={"cmdk-item" + (idx === sel ? " sel" : "")}
+                    onClick={() => {
+                      it.run();
+                      onClose();
+                    }}
+                    onMouseEnter={() => setSel(idx)}
+                  >
+                    <div className="ico">
+                      <Icon name={it.ico} size={14} />
+                    </div>
+                    <div className="lbl">
+                      <div className="l1">{it.l1}</div>
+                      <div className="l2">{it.l2}</div>
+                    </div>
+                    {it.kbd && (
+                      <div className="kbd">
+                        {it.kbd.map((k, i) => (
+                          <span key={i}>{k}</span>
+                        ))}
                       </div>
-                      <div className="lbl">
-                        <div className="l1">{it.l1}</div>
-                        <div className="l2">{it.l2}</div>
-                      </div>
-                      {it.kbd && (
-                        <div className="kbd">
-                          {it.kbd.map((k, i) => (
-                            <span key={i}>{k}</span>
-                          ))}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+                    )}
+                  </button>
+                ))}
               </div>
             ))
           )}

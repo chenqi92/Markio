@@ -5321,6 +5321,32 @@ function ImportExport() {
     }
   };
 
+  const runAppleNotesImport = async () => {
+    if (!activeWorkspace) {
+      setImportMsg({ kind: "err", text: "请先打开一个仓库" });
+      return;
+    }
+    setImportBusy("apple-notes" as ImportProvider);
+    setImportMsg({
+      kind: "info",
+      text: "正在通过 osascript 读取 Notes.app…（首次会弹系统授权对话框）",
+    });
+    try {
+      const report = await api.importAppleNotes(activeWorkspace.path);
+      setImportMsg({
+        kind: "ok",
+        text: `Apple Notes 导入完成：${report.files} 篇 → ${report.dest}${
+          report.warnings.length > 0 ? `（${report.warnings.join("；")}）` : ""
+        }`,
+      });
+      await refreshTree(activeWorkspace.id).catch(() => undefined);
+    } catch (e) {
+      setImportMsg({ kind: "err", text: `导入失败：${String(e)}` });
+    } finally {
+      setImportBusy(null);
+    }
+  };
+
   return (
     <>
       <SectionHeader id="export" />
@@ -5417,6 +5443,64 @@ function ImportExport() {
             );
           })}
         </div>
+        {typeof navigator !== "undefined" && navigator.platform.startsWith("Mac") && (
+          <div style={{ padding: "0 16px 12px" }}>
+            <button
+              type="button"
+              disabled={importBusy !== null || !activeWorkspace}
+              onClick={() => void runAppleNotesImport()}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "9px 12px",
+                background: "var(--bg-pane-2)",
+                border: "0.5px solid var(--border)",
+                borderRadius: 8,
+                fontSize: 12.5,
+                color:
+                  importBusy !== null || !activeWorkspace
+                    ? "var(--text-3)"
+                    : "var(--text)",
+                cursor:
+                  importBusy !== null || !activeWorkspace ? "not-allowed" : "pointer",
+                opacity: importBusy !== null || !activeWorkspace ? 0.55 : 1,
+                width: "100%",
+                textAlign: "left",
+              }}
+              title={
+                !activeWorkspace
+                  ? "请先打开仓库"
+                  : "通过 osascript 调系统 Notes.app；首次需授权"
+              }
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: "#fed7aa",
+                  color: "#9a3412",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 700,
+                  fontSize: 14,
+                }}
+              >
+                N
+              </div>
+              <div>
+                Apple Notes（macOS）
+                <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>
+                  {importBusy === ("apple-notes" as ImportProvider)
+                    ? "导入中…"
+                    : "首次会弹系统授权对话框"}
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
         {importMsg && (
           <div
             style={{

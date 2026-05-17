@@ -774,6 +774,15 @@ export const api = {
       warnings: string[];
     }>("import_run", { provider, source, workspace }),
 
+  /** macOS Apple Notes 导入：不需要 source，调系统 Notes.app。首次会弹系统权限对话框。 */
+  importAppleNotes: (workspace: string) =>
+    invoke<{
+      provider: string;
+      dest: string;
+      files: number;
+      warnings: string[];
+    }>("import_apple_notes", { workspace }),
+
   // RAG 向量索引 / 混合检索
   ragStatus: (workspace: string) =>
     invoke<RagStatus>("rag_status", { workspace }),

@@ -2775,6 +2775,19 @@ async fn import_run(
     .map_err(|e| e.to_string())?
 }
 
+/// Apple Notes 导入（macOS 专属）：不需要 source 路径，直接调系统 Notes.app。
+/// 首次会弹「markio 想要访问 Notes 数据」系统对话框。
+#[tauri::command]
+async fn import_apple_notes(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<import::ImportReport, String> {
+    let ws = validate_path(&state, &workspace)?;
+    tauri::async_runtime::spawn_blocking(move || import::import_apple_notes(&ws))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 // ─── RAG 向量索引 / 混合检索 ────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3288,6 +3301,7 @@ pub fn run() {
             gdrive_download,
             gdrive_delete,
             import_run,
+            import_apple_notes,
             rag_status,
             rag_reindex,
             rag_reindex_file,

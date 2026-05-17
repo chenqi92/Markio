@@ -86,12 +86,18 @@ export const SourceEditor = memo(function SourceEditor({
   const ref = useRef<ReactCodeMirrorRef>(null);
   const [view, setView] = useState<EditorView | null>(null);
   const suppressScrollRef = useRef(false);
-  // 把最新的 onScroll 锁进 ref，给 CodeMirror 扩展里注册的 listener 用
-  // —— 否则 listener 闭包会捕获最初的 onScroll，无法响应后续 callback 身份变化
+  // 所有 callback prop 都锁进 ref，extensions useMemo 不依赖它们的身份。
+  // 父组件 rerender / callback 重建不再触发 CodeMirror reconfigure（重建解析器 + 装饰链很贵）。
   const onScrollRef = useRef(onScroll);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const onAutocompleteUpdateRef = useRef(onAutocompleteUpdate);
+  const onMathContextRef = useRef(onMathContext);
   useEffect(() => {
     onScrollRef.current = onScroll;
-  }, [onScroll]);
+    onSelectionChangeRef.current = onSelectionChange;
+    onAutocompleteUpdateRef.current = onAutocompleteUpdate;
+    onMathContextRef.current = onMathContext;
+  }, [onScroll, onSelectionChange, onAutocompleteUpdate, onMathContext]);
   const tableSelectionRectRef = useRef<TableSelectionRect | null>(null);
   const tableDragRef = useRef<{
     tableFrom: number;
@@ -126,7 +132,8 @@ export const SourceEditor = memo(function SourceEditor({
       }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) tableSelectionRectRef.current = null;
-        if (u.selectionSet && onSelectionChange) {
+        const onSel = onSelectionChangeRef.current;
+        if (u.selectionSet && onSel) {
           const sel = u.state.selection.main;
           const has = !sel.empty;
           let coords: { x: number; y: number } | null = null;
@@ -134,12 +141,13 @@ export const SourceEditor = memo(function SourceEditor({
             const r = u.view.coordsAtPos(sel.from);
             if (r) coords = { x: r.left, y: r.top };
           }
-          onSelectionChange({ hasSelection: has, coords });
+          onSel({ hasSelection: has, coords });
         }
-        if ((u.docChanged || u.selectionSet) && onAutocompleteUpdate) {
+        const onAc = onAutocompleteUpdateRef.current;
+        if ((u.docChanged || u.selectionSet) && onAc) {
           const sel = u.state.selection.main;
           if (!sel.empty) {
-            onAutocompleteUpdate(null);
+            onAc(null);
             return;
           }
           const line = u.state.doc.lineAt(sel.head);
@@ -161,10 +169,10 @@ export const SourceEditor = memo(function SourceEditor({
               const query = (m[2] ?? m[1] ?? "") as string;
               const r = u.view.coordsAtPos(sel.head);
               if (!r) {
-                onAutocompleteUpdate(null);
+                onAc(null);
                 return;
               }
-              onAutocompleteUpdate({
+              onAc({
                 kind: t.kind,
                 query,
                 triggerLen: t.triggerLen,
@@ -173,10 +181,11 @@ export const SourceEditor = memo(function SourceEditor({
               return;
             }
           }
-          onAutocompleteUpdate(null);
+          onAc(null);
         }
-        if ((u.docChanged || u.selectionSet) && onMathContext) {
-          onMathContext(getMathContext(u.view));
+        const onMath = onMathContextRef.current;
+        if ((u.docChanged || u.selectionSet) && onMath) {
+          onMath(getMathContext(u.view));
         }
       }),
       CMView.theme(
@@ -196,7 +205,9 @@ export const SourceEditor = memo(function SourceEditor({
         { dark: false },
       ),
     ],
-    [fontSize, onSelectionChange, onAutocompleteUpdate, onMathContext, wysiwyg],
+    // 仅在真正影响 CodeMirror 配置的字段变化时重建（fontSize 影响 theme、wysiwyg 切扩展集合）
+    // callbacks 走 ref，不进依赖——光标移动 / 父组件 rerender 不再触发 reconfigure
+    [fontSize, wysiwyg],
   );
 
   useEffect(() => {

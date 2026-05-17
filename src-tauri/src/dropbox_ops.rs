@@ -163,17 +163,12 @@ async fn refresh_tokens(tokens: &mut DropboxTokens, client_id: &str) -> Result<(
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(format!("{API_HOST}/oauth2/token"))
-        .form(&form)
-        .send()
-        .await
-        .map_err(|e| format!("Dropbox refresh 失败：{e}"))?;
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!("Dropbox refresh HTTP {status}: {text}"));
-    }
+    // 桌面端弱网常见：酒店 WiFi 抖一下、DNS 暂时无解。网络错误 / 5xx 用指数退避重试，
+    // 4xx（多半是 invalid_grant：refresh_token 真的失效）直接失败让用户重 OAuth。
+    let url = format!("{API_HOST}/oauth2/token");
+    let text =
+        crate::oauth::http_post_form_with_retry(&client, &url, form.as_slice(), "Dropbox refresh")
+            .await?;
     #[derive(Deserialize)]
     struct R {
         access_token: String,

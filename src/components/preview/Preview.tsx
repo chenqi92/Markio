@@ -146,9 +146,15 @@ export function Preview({
       if (table.parentElement?.classList.contains("md-table-host")) {
         host = table.parentElement as HTMLDivElement;
       } else {
+        const parent = table.parentElement;
+        if (!parent) {
+          // table 已脱离 DOM（异步 setHtml 重渲染并发 race），跳过装饰避免
+          // 把 table 移进未挂载的 host 里——会让用户看不到这个表格。
+          return;
+        }
         host = document.createElement("div");
         host.className = "md-table-host";
-        table.parentElement?.insertBefore(host, table);
+        parent.insertBefore(host, table);
         host.appendChild(table);
       }
       host.dataset.mdTableIndex = String(index);

@@ -2097,7 +2097,7 @@ function GitSyncCard() {
     }
   };
 
-  const refreshBranches = async () => {
+  const refreshBranches = useCallback(async () => {
     if (!workspacePath) return;
     try {
       const b = await api.gitListBranches(workspacePath);
@@ -2105,12 +2105,11 @@ function GitSyncCard() {
     } catch {
       setBranches(null);
     }
-  };
+  }, [workspacePath]);
 
   useEffect(() => {
     void refreshBranches();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspacePath]);
+  }, [refreshBranches]);
 
   const savePat = async () => {
     if (!remoteUrl) {

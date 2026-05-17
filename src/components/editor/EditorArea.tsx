@@ -107,8 +107,13 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
     if (typeof window === "undefined") return 50;
-    const saved = Number(window.localStorage.getItem(SPLIT_WIDTH_KEY));
-    return Number.isFinite(saved) ? Math.max(25, Math.min(75, saved)) : 50;
+    try {
+      const saved = Number(window.localStorage.getItem(SPLIT_WIDTH_KEY));
+      return Number.isFinite(saved) ? Math.max(25, Math.min(75, saved)) : 50;
+    } catch {
+      // 桌面 WebView 在隐身/磁盘满/Storage 被禁用时 getItem 也会抛
+      return 50;
+    }
   });
   const [scrollSync, setScrollSync] = useState<{
     target: "source" | "preview";
@@ -166,7 +171,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const setSplitPercent = useCallback((next: number) => {
     const clamped = Math.max(25, Math.min(75, next));
     setSplitSourcePercent(clamped);
-    window.localStorage.setItem(SPLIT_WIDTH_KEY, String(Math.round(clamped * 10) / 10));
+    try {
+      window.localStorage.setItem(SPLIT_WIDTH_KEY, String(Math.round(clamped * 10) / 10));
+    } catch {
+      // QuotaExceededError / SecurityError 时记忆失败不影响本次会话
+    }
   }, []);
 
   const scheduleScrollSync = useCallback(
@@ -304,11 +313,17 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       const skipped = files.length - acceptedFiles.length;
       const triggerLabel = trigger === "drop" ? "拖入" : "剪贴板";
       setToast({ stage: "uploading", message: `正在处理${triggerLabel}图片...` });
+      const initialTabId = tab.id;
       try {
         const markdown: string[] = [];
         const warnings: string[] =
           skipped > 0 ? [`一次最多插入 ${MAX_PASTE_IMAGES} 张图片，已跳过 ${skipped} 张`] : [];
         for (const file of acceptedFiles) {
+          // 用户切走当前 tab：不再为旧 tab 继续走 Rust pasteImage / S3 上传，
+          // 避免浪费 Assets/ 空间和云带宽（IPC 已发出的那一张兜底还是会跑完）
+          if (useTabs.getState().activeId !== initialTabId) {
+            return;
+          }
           const dataBase64 = await fileToBase64(file);
           // 第一步：始终走 Rust image_paste 写到本地 Assets/（带可选压缩）；
           // upload=false 时不调 PicGo，由前端决定是否再走 S3 直传

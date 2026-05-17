@@ -2,21 +2,29 @@ import { useSettings } from "@/stores/settings";
 import { isDarkTheme } from "@/themes";
 import DOMPurify from "dompurify";
 
-let initialized = false;
-let lastTheme: string | null = null;
+type MermaidModule = typeof import("mermaid")["default"];
+
+// 桌面应用长跑：mermaid 实例只 load 一次，主题切换时复用同一实例改配置。
+// Vite 的 dynamic import 本身有缓存，但显式持有避免每次都走 micro-task。
+let mermaidPromise: Promise<MermaidModule> | null = null;
+let initializedTheme: string | null = null;
 let counter = 0;
 
-async function init(themeId: string) {
-  const mermaid = (await import("mermaid")).default;
-  const dark = isDarkTheme(themeId);
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: dark ? "dark" : "default",
-    fontFamily: "var(--font-sans), system-ui, sans-serif",
-  });
-  initialized = true;
-  lastTheme = themeId;
+async function getMermaid(themeId: string): Promise<MermaidModule> {
+  if (!mermaidPromise) {
+    mermaidPromise = import("mermaid").then((m) => m.default);
+  }
+  const mermaid = await mermaidPromise;
+  if (initializedTheme !== themeId) {
+    const dark = isDarkTheme(themeId);
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: dark ? "dark" : "default",
+      fontFamily: "var(--font-sans), system-ui, sans-serif",
+    });
+    initializedTheme = themeId;
+  }
   return mermaid;
 }
 
@@ -26,12 +34,7 @@ export async function renderMermaidIn(root: HTMLElement) {
   if (blocks.length === 0) return;
 
   const themeId = useSettings.getState().theme;
-  let mermaid;
-  if (!initialized || lastTheme !== themeId) {
-    mermaid = await init(themeId);
-  } else {
-    mermaid = (await import("mermaid")).default;
-  }
+  const mermaid = await getMermaid(themeId);
 
   for (const block of Array.from(blocks)) {
     const encoded = block.getAttribute("data-mermaid") ?? "";

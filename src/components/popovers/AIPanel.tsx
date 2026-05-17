@@ -157,6 +157,11 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const patchMessage = useAISessions((s) => s.patchMessage);
   const scope = useAISessions((s) => s.scope);
   const streamCancelRef = useRef<(() => Promise<void>) | null>(null);
+  // 每次 send / cancel 都 bump 这个 token。onChunk/onDone/onError 回调里
+  // 用闭包记下入口时的 token，不一致则视为 stale 丢弃——避免：
+  //   1) cancel 后 backend 已停 emit，但 in-flight 的 chunk 还要写一行
+  //   2) 极端情况下旧请求 finalize 把新请求的 busy 标志清掉
+  const streamTokenRef = useRef(0);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId),
@@ -372,8 +377,11 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       refs: collectedRefs.length > 0 ? collectedRefs : undefined,
     });
 
+    const myToken = ++streamTokenRef.current;
+    const isStale = () => streamTokenRef.current !== myToken;
     let receivedAny = false;
     const finalize = () => {
+      if (isStale()) return;
       streamCancelRef.current = null;
       setBusy(false);
     };
@@ -391,16 +399,19 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         },
         {
           onChunk: (delta) => {
+            if (isStale()) return;
             receivedAny = true;
             appendChunk(sessionId, assistantId, delta);
           },
           onDone: () => {
+            if (isStale()) return;
             if (!receivedAny) {
               patchMessage(sessionId, assistantId, { text: "（空响应）" });
             }
             finalize();
           },
           onError: (message) => {
+            if (isStale()) return;
             patchMessage(sessionId, assistantId, {
               text: `请求失败：${message}`,
             });
@@ -408,21 +419,30 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
           },
         },
       );
-      streamCancelRef.current = cancel;
+      if (!isStale()) {
+        streamCancelRef.current = cancel;
+      } else {
+        // 入口被 cancel 抢跑了，立刻关掉这个新启动的 stream
+        void cancel();
+      }
     } catch (e) {
-      patchMessage(sessionId, assistantId, {
-        text: `请求失败：${(e as Error).message}`,
-      });
-      finalize();
+      if (!isStale()) {
+        patchMessage(sessionId, assistantId, {
+          text: `请求失败：${(e as Error).message}`,
+        });
+        finalize();
+      }
     }
   };
 
   const cancelStream = async () => {
+    // bump 在 await 之前——in-flight 的 chunk 立刻被视为 stale，
+    // 不会再写入 message（避免"取消后还在长字"的视觉 bug）
+    streamTokenRef.current++;
     const fn = streamCancelRef.current;
-    if (!fn) return;
-    await fn();
     streamCancelRef.current = null;
     setBusy(false);
+    if (fn) await fn();
   };
 
   return (

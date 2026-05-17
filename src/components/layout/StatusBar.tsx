@@ -59,14 +59,25 @@ export function StatusBar({
     files: number;
   } | null>(null);
 
-  // 每 30s 轮询一次 git status（仅当存在 .git 目录时才显示）
+  // git status 轮询：用 setTimeout 链而非 setInterval，避免大仓库 / 网络挂载盘
+  // 导致请求堆积。失败时指数退避（30s → 60s → 120s → 封顶 5min），
+  // 窗口隐藏时延后一次以省电。桌面长跑场景这两点都比"固定 30s 间隔"重要。
   useEffect(() => {
     if (!isDesktop() || !ws) {
       setGit(null);
       return;
     }
     let cancelled = false;
+    let timer: number | null = null;
+    let failureBackoff = 0;
+    const BASE_INTERVAL = 30_000;
+    const MAX_INTERVAL = 300_000;
     const tick = async () => {
+      if (cancelled) return;
+      if (document.hidden) {
+        timer = window.setTimeout(tick, BASE_INTERVAL);
+        return;
+      }
       try {
         const s = await api.gitStatus(ws.path);
         if (cancelled) return;
@@ -76,15 +87,20 @@ export function StatusBar({
           behind: s.behind,
           files: s.files.length,
         });
+        failureBackoff = 0;
       } catch {
-        if (!cancelled) setGit(null);
+        if (cancelled) return;
+        setGit(null);
+        failureBackoff = Math.min(failureBackoff === 0 ? 1 : failureBackoff + 1, 4);
       }
+      if (cancelled) return;
+      const next = Math.min(BASE_INTERVAL * 2 ** failureBackoff, MAX_INTERVAL);
+      timer = window.setTimeout(tick, next);
     };
     void tick();
-    const handle = window.setInterval(tick, 30_000);
     return () => {
       cancelled = true;
-      window.clearInterval(handle);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, [ws?.path]);
 

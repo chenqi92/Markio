@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,30 @@ use tauri::{AppHandle, Emitter};
 const STREAM_TOTAL_TIMEOUT_SECS: u64 = 600;
 const STREAM_READ_TIMEOUT_SECS: u64 = 90;
 const MAX_SSE_BUFFER_BYTES: usize = 1024 * 1024;
+
+/// 桌面应用长跑：全局共享两个 reqwest::Client（非流式 60s / 流式 600s），
+/// 复用 HTTP keep-alive 连接池，避免每次聊天都重新 TLS 握手。
+/// 注意：reqwest::Client 内部用 Arc，clone 是零成本，但这里走静态引用更明确。
+fn http_chat_client() -> &'static reqwest::Client {
+    static CELL: OnceLock<reqwest::Client> = OnceLock::new();
+    CELL.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()
+            .expect("build chat http client")
+    })
+}
+
+fn http_stream_client() -> &'static reqwest::Client {
+    static CELL: OnceLock<reqwest::Client> = OnceLock::new();
+    CELL.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(STREAM_TOTAL_TIMEOUT_SECS))
+            .read_timeout(Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
+            .build()
+            .expect("build stream http client")
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -104,10 +129,7 @@ async fn call_google(req: ChatRequest) -> Result<ChatResponse, String> {
         payload["systemInstruction"] = serde_json::json!({ "parts": [{ "text": sys }] });
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_chat_client();
     let resp = client
         .post(&url)
         .header("content-type", "application/json")
@@ -203,10 +225,7 @@ async fn call_anthropic(req: ChatRequest) -> Result<ChatResponse, String> {
         payload["temperature"] = serde_json::json!(t);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_chat_client();
     let resp = client
         .post(&url)
         .header("x-api-key", key)
@@ -295,10 +314,7 @@ async fn call_openai_compat(req: ChatRequest) -> Result<ChatResponse, String> {
         payload["temperature"] = serde_json::json!(t);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_chat_client();
     let mut builder = client.post(&url).header("content-type", "application/json");
     if let Some(k) = req.api_key.as_ref() {
         if !k.is_empty() {
@@ -382,17 +398,35 @@ fn cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
     CELL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn register_stream(id: &str) -> Arc<AtomicBool> {
+/// RAII：拿在手里就是注册状态，drop 时（panic / 正常返回 / await 被丢弃）自动注销，
+/// 避免 cancels HashMap 在长跑桌面进程里累积野指针。
+struct StreamCancelGuard {
+    id: String,
+    flag: Arc<AtomicBool>,
+}
+
+impl StreamCancelGuard {
+    fn flag(&self) -> Arc<AtomicBool> {
+        self.flag.clone()
+    }
+}
+
+impl Drop for StreamCancelGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = cancels().lock() {
+            map.remove(&self.id);
+        }
+    }
+}
+
+fn register_stream(id: &str) -> StreamCancelGuard {
     let flag = Arc::new(AtomicBool::new(false));
     if let Ok(mut map) = cancels().lock() {
         map.insert(id.to_string(), flag.clone());
     }
-    flag
-}
-
-fn unregister_stream(id: &str) {
-    if let Ok(mut map) = cancels().lock() {
-        map.remove(id);
+    StreamCancelGuard {
+        id: id.to_string(),
+        flag,
     }
 }
 
@@ -409,7 +443,8 @@ fn emit(app: &AppHandle, id: &str, evt: StreamEvent) {
 }
 
 pub async fn chat_stream(app: AppHandle, stream_id: String, req: ChatRequest) {
-    let cancel = register_stream(&stream_id);
+    let guard = register_stream(&stream_id);
+    let cancel = guard.flag();
     let result = match req.provider.as_str() {
         "anthropic" => stream_anthropic(&app, &stream_id, req, cancel.clone()).await,
         "google" => stream_google(&app, &stream_id, req, cancel.clone()).await,
@@ -420,7 +455,7 @@ pub async fn chat_stream(app: AppHandle, stream_id: String, req: ChatRequest) {
             emit(&app, &stream_id, StreamEvent::Error { message: msg });
         }
     }
-    unregister_stream(&stream_id);
+    drop(guard);
 }
 
 /// 按 SSE 协议从字节流中切出 `data: ...` 负载。
@@ -512,11 +547,7 @@ async fn stream_openai_compat(
         payload["temperature"] = serde_json::json!(t);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(STREAM_TOTAL_TIMEOUT_SECS))
-        .read_timeout(std::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_stream_client();
     let mut builder = client
         .post(&url)
         .header("content-type", "application/json")
@@ -649,11 +680,7 @@ async fn stream_anthropic(
         payload["temperature"] = serde_json::json!(t);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(STREAM_TOTAL_TIMEOUT_SECS))
-        .read_timeout(std::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_stream_client();
     let resp = client
         .post(&url)
         .header("x-api-key", key)
@@ -814,11 +841,7 @@ async fn stream_google(
         payload["systemInstruction"] = serde_json::json!({ "parts": [{ "text": sys }] });
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(STREAM_TOTAL_TIMEOUT_SECS))
-        .read_timeout(std::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_stream_client();
     let resp = client
         .post(&url)
         .header("content-type", "application/json")

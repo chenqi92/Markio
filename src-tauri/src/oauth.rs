@@ -169,3 +169,47 @@ pub fn random_state() -> Result<String, String> {
     getrandom::getrandom(&mut buf).map_err(|e| e.to_string())?;
     Ok(URL_SAFE_NO_PAD.encode(buf))
 }
+
+/// 桌面端常见弱网场景（DNS 抖动、酒店 WiFi、VPN 切换）下的 token 刷新重试。
+/// 网络错误 / HTTP 5xx：指数退避重试（最多 3 次：0、0.6s、1.5s）。
+/// HTTP 4xx：业务错误（invalid_grant 等），不重试，直接返回错误让用户重新授权。
+pub async fn http_post_form_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    form: &[(&str, &str)],
+    label: &str,
+) -> Result<String, String> {
+    let delays = [
+        Duration::from_millis(0),
+        Duration::from_millis(600),
+        Duration::from_millis(1500),
+    ];
+    let mut last_err = String::new();
+    for delay in delays.iter() {
+        if !delay.is_zero() {
+            tokio::time::sleep(*delay).await;
+        }
+        let send_res = client.post(url).form(form).send().await;
+        match send_res {
+            Err(e) => {
+                last_err = format!("{label} 网络错误：{e}");
+                // reqwest::Error 没暴露稳定的 connect/timeout 区分，全部当作可重试
+                continue;
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                if status.is_success() {
+                    return Ok(text);
+                }
+                // 5xx 重试，其他错误（4xx 含 invalid_grant）立刻失败
+                if status.is_server_error() {
+                    last_err = format!("{label} HTTP {status}: {text}");
+                    continue;
+                }
+                return Err(format!("{label} HTTP {status}: {text}"));
+            }
+        }
+    }
+    Err(last_err)
+}

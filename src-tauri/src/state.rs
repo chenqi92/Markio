@@ -32,6 +32,8 @@ impl AppState {
         Ok(canon)
     }
 
+    /// 注销仓库。注销时仓库目录可能已被用户删除，因此 canonicalize 失败时
+    /// 退而求其次按原路径匹配（前端通常会传上次 register 返回的 canon path）。
     pub fn unregister_workspace(&self, path: &Path) -> Result<PathBuf, String> {
         let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
@@ -39,24 +41,23 @@ impl AppState {
         Ok(canon)
     }
 
+    /// 调用方需保证 `path` 已经过 `ensure_in_workspaces` 校验（即已 canon）。
+    /// 内部不再二次 canonicalize，避免 race（刚校验完文件被外部移除）下 key 退化。
     pub fn record_open(&self, path: &Path, sig: FileSig) -> Result<(), String> {
-        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
-        inner.opened.insert(canon, sig);
+        inner.opened.insert(path.to_path_buf(), sig);
         Ok(())
     }
 
     pub fn record_close(&self, path: &Path) -> Result<(), String> {
-        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
-        inner.opened.remove(&canon);
+        inner.opened.remove(path);
         Ok(())
     }
 
     pub fn last_sig(&self, path: &Path) -> Option<FileSig> {
-        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let inner = self.inner.lock().ok()?;
-        inner.opened.get(&canon).copied()
+        inner.opened.get(path).copied()
     }
 }
 

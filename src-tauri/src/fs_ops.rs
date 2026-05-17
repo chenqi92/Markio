@@ -1007,9 +1007,21 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
         }
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
-            Err(_) => return,
+            Err(e) => {
+                // 桌面端常见：用户把 ~/Downloads 加成仓库后子目录没有读权限。
+                // 之前静默跳过会让人误以为"索引建好了"——这里至少留 trace。
+                eprintln!("[vault-index] 跳过目录 {}：{e}", dir.display());
+                return;
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[vault-index] 跳过 entry @ {}：{e}", dir.display());
+                    continue;
+                }
+            };
             if files.len() >= VAULT_INDEX_MAX_FILES {
                 return;
             }
@@ -1020,7 +1032,10 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
             let path = entry.path();
             let ft = match entry.file_type() {
                 Ok(t) => t,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("[vault-index] file_type 失败 {}：{e}", path.display());
+                    continue;
+                }
             };
             if ft.is_symlink() {
                 continue;
@@ -1369,9 +1384,19 @@ pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
         }
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!("[list-attachments] 跳过目录 {}：{e}", dir.display());
+                return;
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[list-attachments] 跳过 entry @ {}：{e}", dir.display());
+                    continue;
+                }
+            };
             if out.len() >= max {
                 break;
             }
@@ -1382,7 +1407,10 @@ pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
             let path = entry.path();
             let ft = match entry.file_type() {
                 Ok(t) => t,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("[list-attachments] file_type 失败 {}：{e}", path.display());
+                    continue;
+                }
             };
             if ft.is_symlink() {
                 continue;

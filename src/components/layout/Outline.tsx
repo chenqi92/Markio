@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import type { Backlink, OutlineItem } from "@/types";
@@ -258,11 +258,137 @@ export function Outline({
   );
 }
 
+/** 把 text 按 query (case-insensitive) 切片，命中段用 <mark> 包裹。 */
+function highlightText(text: string, queryNorm: string): React.ReactNode {
+  if (!queryNorm) return text;
+  const lower = text.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const idx = lower.indexOf(queryNorm, cursor);
+    if (idx === -1) {
+      out.push(text.slice(cursor));
+      break;
+    }
+    if (idx > cursor) out.push(text.slice(cursor, idx));
+    const end = idx + queryNorm.length;
+    out.push(
+      <mark key={`m-${idx}`} className="outline-hit">
+        {text.slice(idx, end)}
+      </mark>,
+    );
+    cursor = end;
+  }
+  return out;
+}
+
 function OutlinePanel({ items }: { items: OutlineItem[] }) {
   const fileId = useTabs((s) => s.activeId);
   const updateContent = useTabs((s) => s.updateContent);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  // 折叠状态按 item index 存储。新文档默认全展开。
+  const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // 大纲 items 变更时重置折叠态——避免旧索引指向新文档的不同节点
+  useEffect(() => {
+    setCollapsed(new Set());
+  }, [items]);
+
+  // 每个 item 的直接父节点 index（无父则 null）；用栈按 level 推断
+  const parentOf = useMemo(() => {
+    const parents: Array<number | null> = new Array(items.length).fill(null);
+    const stack: number[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const lv = items[i].level;
+      while (stack.length > 0 && items[stack[stack.length - 1]].level >= lv) {
+        stack.pop();
+      }
+      parents[i] = stack.length > 0 ? stack[stack.length - 1] : null;
+      stack.push(i);
+    }
+    return parents;
+  }, [items]);
+
+  const hasChildren = useMemo(() => {
+    const flags = new Array<boolean>(items.length).fill(false);
+    for (const p of parentOf) {
+      if (p !== null) flags[p] = true;
+    }
+    return flags;
+  }, [items.length, parentOf]);
+
+  const queryNorm = query.trim().toLowerCase();
+
+  // 命中集合（仅搜索时计算）
+  const matchedSet = useMemo(() => {
+    if (!queryNorm) return null;
+    const set = new Set<number>();
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].text.toLowerCase().includes(queryNorm)) set.add(i);
+    }
+    return set;
+  }, [items, queryNorm]);
+
+  // 可见集合：
+  //   搜索：命中项 ∪ 所有祖先链（保留层级上下文）
+  //   非搜索：剔除被 collapsed 祖先遮住的
+  const visibleSet = useMemo(() => {
+    const set = new Set<number>();
+    if (matchedSet) {
+      for (const idx of matchedSet) {
+        set.add(idx);
+        let p = parentOf[idx];
+        while (p !== null) {
+          set.add(p);
+          p = parentOf[p];
+        }
+      }
+      return set;
+    }
+    for (let i = 0; i < items.length; i++) {
+      let hidden = false;
+      let p = parentOf[i];
+      while (p !== null) {
+        if (collapsed.has(p)) {
+          hidden = true;
+          break;
+        }
+        p = parentOf[p];
+      }
+      if (!hidden) set.add(i);
+    }
+    return set;
+  }, [items.length, parentOf, matchedSet, collapsed]);
+
+  const isExpanded = (idx: number) => {
+    // 搜索期强制展开（让用户看到祖先链）
+    if (matchedSet) return true;
+    return !collapsed.has(idx);
+  };
+
+  const toggleCollapse = (idx: number) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const collapseAll = () => {
+    const all = new Set<number>();
+    for (let i = 0; i < items.length; i++) {
+      if (hasChildren[i]) all.add(i);
+    }
+    setCollapsed(all);
+  };
+
+  const expandAll = () => setCollapsed(new Set());
+
+  const allExpanded = collapsed.size === 0;
 
   const reorder = (sourceIdx: number, targetIdx: number) => {
     if (!fileId) return;
@@ -288,55 +414,139 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
     );
   }
 
+  // 搜索状态下禁用 drag：可见集合是稀疏的，拖到祖先 vs 拖到命中项之间的语义不直观
+  const dragEnabled = !matchedSet;
+
   return (
     <div className="scroll" style={{ flex: 1 }}>
-      <div className="outline-h">章节 · 拖拽可重排</div>
+      <div className="outline-toolbar">
+        <div className="outline-search">
+          <span className="outline-search-ico">
+            <Icon name="search" size={11} />
+          </span>
+          <input
+            ref={searchRef}
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query) {
+                e.preventDefault();
+                e.stopPropagation();
+                setQuery("");
+              }
+            }}
+            placeholder="过滤章节…"
+            spellCheck={false}
+          />
+          {query && (
+            <button
+              type="button"
+              className="outline-search-clear"
+              onClick={() => {
+                setQuery("");
+                searchRef.current?.focus();
+              }}
+              title="清空"
+            >
+              <Icon name="x" size={10} />
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          className="outline-toolbar-btn"
+          onClick={() => (allExpanded ? collapseAll() : expandAll())}
+          title={allExpanded ? "全部折叠" : "全部展开"}
+          disabled={!!matchedSet}
+        >
+          <Icon name={allExpanded ? "chevron" : "chevdown"} size={12} />
+        </button>
+      </div>
+      <div className="outline-h">
+        {matchedSet
+          ? `命中 ${matchedSet.size} 处`
+          : dragEnabled
+            ? "章节 · 拖拽可重排"
+            : "章节"}
+      </div>
       <div className="outline-list">
-        {items.map((it, ix) => (
-          <a
-            key={ix}
-            href={`#${it.anchor}`}
-            draggable
-            className={
-              "outline-item lvl-" +
-              Math.min(it.level, 4) +
-              (overIdx === ix && dragIdx !== ix ? " drop-over" : "") +
-              (dragIdx === ix ? " dragging" : "")
-            }
-            onClick={(e) => {
-              e.preventDefault();
-              const target = document.getElementById(it.anchor);
-              if (target)
-                target.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            onDragStart={(e) => {
-              setDragIdx(ix);
-              e.dataTransfer.effectAllowed = "move";
-            }}
-            onDragOver={(e) => {
-              if (dragIdx === null) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (overIdx !== ix) setOverIdx(ix);
-            }}
-            onDragLeave={() => {
-              if (overIdx === ix) setOverIdx(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (dragIdx !== null) reorder(dragIdx, ix);
-              setDragIdx(null);
-              setOverIdx(null);
-            }}
-            onDragEnd={() => {
-              setDragIdx(null);
-              setOverIdx(null);
-            }}
-          >
-            <span className="num">{ix + 1}</span>
-            <span className="text">{it.text}</span>
-          </a>
-        ))}
+        {items.map((it, ix) => {
+          if (!visibleSet.has(ix)) return null;
+          const hasChild = hasChildren[ix];
+          const expanded = isExpanded(ix);
+          const isMatch = matchedSet?.has(ix) ?? false;
+          return (
+            <a
+              key={ix}
+              href={`#${it.anchor}`}
+              draggable={dragEnabled}
+              className={
+                "outline-item lvl-" +
+                Math.min(it.level, 4) +
+                (overIdx === ix && dragIdx !== ix ? " drop-over" : "") +
+                (dragIdx === ix ? " dragging" : "") +
+                (isMatch ? " matched" : "") +
+                (matchedSet && !isMatch ? " ancestor" : "")
+              }
+              onClick={(e) => {
+                e.preventDefault();
+                const target = document.getElementById(it.anchor);
+                if (target)
+                  target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              onDragStart={(e) => {
+                if (!dragEnabled) {
+                  e.preventDefault();
+                  return;
+                }
+                setDragIdx(ix);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => {
+                if (dragIdx === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (overIdx !== ix) setOverIdx(ix);
+              }}
+              onDragLeave={() => {
+                if (overIdx === ix) setOverIdx(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIdx !== null) reorder(dragIdx, ix);
+                setDragIdx(null);
+                setOverIdx(null);
+              }}
+              onDragEnd={() => {
+                setDragIdx(null);
+                setOverIdx(null);
+              }}
+            >
+              {hasChild ? (
+                <button
+                  type="button"
+                  className="outline-twist"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleCollapse(ix);
+                  }}
+                  disabled={!!matchedSet}
+                  aria-label={expanded ? "折叠" : "展开"}
+                >
+                  <Icon name={expanded ? "chevdown" : "chevron"} size={10} />
+                </button>
+              ) : (
+                <span className="outline-twist-spacer" />
+              )}
+              <span className="num">{ix + 1}</span>
+              <span className="text">
+                {queryNorm ? highlightText(it.text, queryNorm) : it.text}
+              </span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );

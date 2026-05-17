@@ -40,6 +40,19 @@ fn md_stream_cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
     MD_STREAM_CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// RAII：drop 时（含 spawn_blocking 内 panic）自动从注册表移除，避免长跑累积。
+struct MdStreamCancelGuard {
+    id: String,
+}
+
+impl Drop for MdStreamCancelGuard {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = md_stream_cancels().lock() {
+            guard.remove(&self.id);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SigDto {
@@ -298,12 +311,8 @@ async fn md_render_stream(
         .map_err(|e| format!("stream cancel lock: {e}"))?
         .insert(stream_id, cancel.clone());
     tauri::async_runtime::spawn_blocking(move || {
+        let _guard = MdStreamCancelGuard { id: id.clone() };
         let channel = format!("md-stream-{id}");
-        let remove_cancel = || {
-            if let Ok(mut guard) = md_stream_cancels().lock() {
-                guard.remove(&id);
-            }
-        };
         // 按 H1 切片：以行首 `# ` 起一段；首段（导言）可能无标题
         let mut sections: Vec<String> = Vec::new();
         let mut current = String::new();
@@ -321,12 +330,10 @@ async fn md_render_stream(
         }
         for (idx, sec) in sections.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
-                remove_cancel();
                 return;
             }
             let r = markdown::render(sec, base.as_deref(), &roots);
             if cancel.load(Ordering::Relaxed) {
-                remove_cancel();
                 return;
             }
             let _ = app2.emit(
@@ -339,7 +346,6 @@ async fn md_render_stream(
             );
         }
         if cancel.load(Ordering::Relaxed) {
-            remove_cancel();
             return;
         }
         // 统计信息只解析标题和字数，避免流式渲染后又完整高亮 / 清洗一遍全文。
@@ -353,7 +359,6 @@ async fn md_render_stream(
                 "readingMinutes": reading_minutes,
             }),
         );
-        remove_cancel();
     });
     Ok(())
 }
@@ -391,6 +396,14 @@ fn workspace_unregister(state: tauri::State<'_, AppState>, path: String) -> Resu
     let canon = state.unregister_workspace(Path::new(&path))?;
     watcher::unwatch(&canon);
     Ok(canon.to_string_lossy().to_string())
+}
+
+/// 返回各 workspace 的文件监听健康度。前端可定期（例如 30s）拉取，
+/// 若 backend_errors 持续上升或 last_event_at 与本地编辑明显脱节，
+/// 提示用户重启或重建 RAG 索引（FSEvents 在系统休眠 / iCloud 重新挂载等场景会哑）。
+#[tauri::command]
+fn watcher_health() -> Vec<watcher::WatcherHealthDto> {
+    watcher::health_snapshot()
 }
 
 // ─── 树 & 文件 ──────────────────────────────────────────────────────
@@ -432,8 +445,14 @@ fn fs_open(state: tauri::State<'_, AppState>, path: String) -> Result<OpenedFile
 
 #[tauri::command]
 fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    state.record_close(p)
+    // 文件可能已被外部删除（用户在 Finder 删了再点 close），validate_path 走的
+    // ensure_in_workspaces 已支持"文件不存在但父目录在 workspace"。
+    // 极端情况（父目录都没了）直接静默返回——opened 表里那条残留 entry 不影响功能，
+    // 强行 unwrap 到 raw path 反而会污染表（破坏"key 全是 canon"不变量）。
+    let Ok(canon) = validate_path(&state, &path) else {
+        return Ok(());
+    };
+    state.record_close(&canon)
 }
 
 /// 原子保存 + 冲突检测。
@@ -3081,6 +3100,7 @@ pub fn run() {
             md_outline,
             workspace_register,
             workspace_unregister,
+            watcher_health,
             fs_read_tree,
             fs_read_dir,
             fs_open,

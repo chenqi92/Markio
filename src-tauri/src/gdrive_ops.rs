@@ -159,17 +159,14 @@ async fn refresh_tokens(tokens: &mut GDriveTokens, client_id: &str) -> Result<()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(format!("{TOKEN_HOST}/token"))
-        .form(&form)
-        .send()
-        .await
-        .map_err(|e| format!("Google refresh 失败：{e}"))?;
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!("Google refresh HTTP {status}: {text}"));
-    }
+    let url = format!("{TOKEN_HOST}/token");
+    let text = crate::oauth::http_post_form_with_retry(
+        &client,
+        &url,
+        form.as_slice(),
+        "Google refresh",
+    )
+    .await?;
     #[derive(Deserialize)]
     struct R {
         access_token: String,

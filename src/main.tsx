@@ -19,23 +19,48 @@ import { preloadTauriStorage } from "./lib/tauriStorage";
 import { installDigestScheduler } from "./lib/digestScheduler";
 import { setLocale as setI18nLocale } from "./i18n";
 import { applyFonts } from "./lib/fonts";
+import { devLog, installDevLogger } from "./lib/devLogger";
 import "./i18n";
 
 async function bootstrap() {
+  // dev 模式：第一时间挂日志，确保后续 bootstrap / 渲染异常都能落盘
+  if (import.meta.env.DEV) {
+    installDevLogger();
+  }
+
+  const trace = async <T,>(name: string, fn: () => Promise<T>): Promise<T> => {
+    if (!import.meta.env.DEV) return fn();
+    const t0 = performance.now();
+    try {
+      const r = await fn();
+      devLog("debug", `boot.${name}`, { ms: Math.round(performance.now() - t0) });
+      return r;
+    } catch (e) {
+      devLog("error", `boot.${name} failed`, {
+        ms: Math.round(performance.now() - t0),
+        error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      });
+      throw e;
+    }
+  };
+
   // 先把 store.bin 全量加载进内存（含 localStorage → plugin-store 迁移），
   // 再同步水合每个 zustand persist store，最后才 render，避免主题闪烁。
-  await preloadTauriStorage();
-  await Promise.all([
-    useSettings.persist.rehydrate(),
-    useWorkspace.persist.rehydrate(),
-    useUI.persist.rehydrate(),
-    useAISessions.persist.rehydrate(),
-    usePomodoro.persist.rehydrate(),
-    useStreak.persist.rehydrate(),
-    useRecents.persist.rehydrate(),
-    usePinnedPlan.persist.rehydrate(),
-    useFileIcons.persist.rehydrate(),
-  ]);
+  await trace("preloadTauriStorage", () => preloadTauriStorage());
+  await trace("rehydrateAll", () =>
+    Promise.all([
+      useSettings.persist.rehydrate(),
+      useWorkspace.persist.rehydrate(),
+      useUI.persist.rehydrate(),
+      useAISessions.persist.rehydrate(),
+      usePomodoro.persist.rehydrate(),
+      useStreak.persist.rehydrate(),
+      useRecents.persist.rehydrate(),
+      usePinnedPlan.persist.rehydrate(),
+      useFileIcons.persist.rehydrate(),
+    ]),
+  );
 
   const s = useSettings.getState();
   applyTheme(s.theme);

@@ -1,5 +1,6 @@
 mod ai;
 mod custom_themes;
+mod dev_log;
 mod dropbox_ops;
 mod fs_ops;
 mod gdrive_ops;
@@ -3062,6 +3063,8 @@ async fn rag_clear(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_panic_hook();
+    // dev 模式下再追加一层 hook（写到项目 dev-logs/），release 是 no-op
+    dev_log::install_panic_hook();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -3101,6 +3104,7 @@ pub fn run() {
             crash_append,
             crash_open_dir,
             crash_read_latest,
+            dev_log::dev_log_append,
             history_save,
             history_list,
             history_read,

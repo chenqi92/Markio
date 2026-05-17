@@ -17,6 +17,7 @@ import type {
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { wrapInvoke } from "./devLogger";
 
 const isTauri = () =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -26,6 +27,10 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     throw new Error(
       `Tauri 命令 \`${cmd}\` 仅在桌面端可用。请通过 \`pnpm tauri:dev\` 启动。`,
     );
+  }
+  // dev 模式给每次 invoke 打耗时 / 失败点；release 直接透传。
+  if (import.meta.env.DEV) {
+    return wrapInvoke(cmd, () => tauriInvoke<T>(cmd, args));
   }
   return tauriInvoke<T>(cmd, args);
 }
@@ -788,4 +793,18 @@ export const api = {
     invoke<OpenedFile>("fs_open", { path }).then((o) => o.content),
   writeText: (path: string, content: string) =>
     invoke<FileSig>("fs_save", { path, content }).then(() => undefined),
+
+  // dev 期日志投递（release 端 Rust 侧是 no-op）
+  devLogAppend: (
+    level: string,
+    src: string,
+    msg: string,
+    fields?: Record<string, unknown> | null,
+  ) =>
+    invoke<void>("dev_log_append", {
+      level,
+      src,
+      msg,
+      fields: fields ?? null,
+    }),
 };

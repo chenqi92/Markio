@@ -1380,6 +1380,28 @@ fn theme_dir_path() -> Result<String, String> {
     custom_themes::dir_path()
 }
 
+fn crash_pending_path() -> PathBuf {
+    crash_log_dir().join("crash-pending.json")
+}
+
+/// 用户配置 webhook 时，把崩溃摘要原子写到 pending 文件——
+/// panic 上下文不能跑异步 IO，下一次启动专门做上报 + 清理。
+fn write_crash_pending(payload: &str) {
+    let dir = crash_log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = crash_pending_path();
+    let summary = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "platform": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "ts": chrono::Utc::now().to_rfc3339(),
+        "payload": payload,
+    });
+    if let Ok(s) = serde_json::to_string(&summary) {
+        let _ = std::fs::write(path, s);
+    }
+}
+
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let location = info
@@ -1393,8 +1415,40 @@ fn install_panic_hook() {
             info,
         );
         let _ = crash_write(&payload);
+        write_crash_pending(&payload);
         eprintln!("{payload}");
     }));
+}
+
+/// 由前端在启动后调用：若 pending 文件存在且 webhook URL 非空，
+/// 异步 POST 给用户配置的接收端。成功才删除 pending，失败保留下次重试。
+/// 不强制等待结果——前端 fire-and-forget。
+#[tauri::command]
+async fn crash_flush_to_webhook(url: String) -> Result<bool, String> {
+    if url.trim().is_empty() {
+        return Ok(false);
+    }
+    let path = crash_pending_path();
+    if !path.exists() {
+        return Ok(false);
+    }
+    let body = std::fs::read_to_string(&path).map_err(|e| format!("读取 pending 失败：{e}"))?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(url)
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("上报失败：{e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("上报失败：HTTP {}", resp.status()));
+    }
+    let _ = std::fs::remove_file(&path);
+    Ok(true)
 }
 
 // ─── 文档内查找（Rust 端，> 10 万字时取代 JS walkNodes） ───────────
@@ -3124,6 +3178,7 @@ pub fn run() {
             fetch_image_as_data_url,
             text_find_ranges,
             crash_append,
+            crash_flush_to_webhook,
             crash_open_dir,
             crash_read_latest,
             dev_log::dev_log_append,

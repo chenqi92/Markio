@@ -281,7 +281,14 @@
       "autoCheckHelp": "Quietly probes the release channel a moment after startup; surfaces a notice but never auto-downloads.",
       "toastTitle": "New version {{version}}",
       "toastBody": "Open Settings → About to review and install.",
-      "toastAction": "Open"
+      "toastAction": "Open",
+      "crashWebhookCard": "Crash reporting (optional)",
+      "crashWebhookLabel": "Webhook receiver URL",
+      "crashWebhookHelp": "Posts the pending crash summary (version / platform / panic info) here when the previous run crashed. Opt-in only — leave empty to disable.",
+      "crashWebhookTest": "Send now",
+      "crashWebhookSending": "Sending…",
+      "crashWebhookOk": "Sent",
+      "crashWebhookEmpty": "No pending crash to send"
     }
   },
   "toolbar": {

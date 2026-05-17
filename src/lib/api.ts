@@ -290,6 +290,11 @@ export const api = {
   crashAppend: (payload: string) => invoke<void>("crash_append", { payload }),
   crashOpenDir: () => invoke<void>("crash_open_dir"),
   crashReadLatest: () => invoke<string>("crash_read_latest"),
+  /** 把上一次 panic 留下的 pending 摘要 POST 给用户配置的 webhook。
+   *  返回 true 表示有 pending 且发送成功；false 表示无 pending。
+   *  失败时保留 pending 等下次再试，不抛错给 UI。 */
+  crashFlushToWebhook: (url: string) =>
+    invoke<boolean>("crash_flush_to_webhook", { url }),
 
   textFindRanges: (
     text: string,

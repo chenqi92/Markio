@@ -108,6 +108,17 @@ export default function App() {
     })();
   }, []);
 
+  // 崩溃上报：启动 5s 后 flush 上次 panic 留下的 pending 摘要到用户 webhook。
+  // URL 为空（未配置）则后端直接 no-op；失败时保留 pending 等下次再试。
+  useEffect(() => {
+    const url = useSettings.getState().crashWebhookUrl;
+    if (!url) return;
+    const t = window.setTimeout(() => {
+      void api.crashFlushToWebhook(url).catch(() => undefined);
+    }, 5_000);
+    return () => window.clearTimeout(t);
+  }, []);
+
   // 应用更新：启动 20s 后静默检查一次（避开首屏 / 仓库 hydrate 高峰）。
   // 检查到新版本仅弹 toast 提示，不自动下载、不打断用户。
   useEffect(() => {

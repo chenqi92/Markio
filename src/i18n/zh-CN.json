@@ -281,7 +281,14 @@
       "autoCheckHelp": "应用启动一段时间后静默检查发布渠道；发现新版本会提醒，但不自动下载。",
       "toastTitle": "发现新版本 {{version}}",
       "toastBody": "在「设置 → 关于」中查看并安装。",
-      "toastAction": "查看"
+      "toastAction": "查看",
+      "crashWebhookCard": "崩溃日志上报（可选）",
+      "crashWebhookLabel": "Webhook 接收端 URL",
+      "crashWebhookHelp": "上一次崩溃发生时如果有 pending 摘要会 POST 到这个地址（含版本号 / 平台 / panic 信息）。仅在你自己愿意时启用；为空 = 关闭。",
+      "crashWebhookTest": "立即发送",
+      "crashWebhookSending": "发送中…",
+      "crashWebhookOk": "已发送",
+      "crashWebhookEmpty": "没有待发送的崩溃记录"
     }
   },
   "toolbar": {

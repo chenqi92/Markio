@@ -5511,6 +5511,74 @@ function About() {
           />
         </div>
       </div>
+      <CrashWebhookCard />
     </>
+  );
+}
+
+function CrashWebhookCard() {
+  const { t } = useTranslation();
+  const url = useSettings((s) => s.crashWebhookUrl);
+  const setPreference = useSettings((s) => s.setPreference);
+  const [draft, setDraft] = useState(url);
+  const [flushState, setFlushState] = useState<
+    | { kind: "idle" }
+    | { kind: "sending" }
+    | { kind: "ok"; sent: boolean }
+    | { kind: "fail"; message: string }
+  >({ kind: "idle" });
+  useEffect(() => setDraft(url), [url]);
+
+  const sendNow = async () => {
+    setFlushState({ kind: "sending" });
+    try {
+      const sent = await api.crashFlushToWebhook(draft);
+      setFlushState({ kind: "ok", sent });
+    } catch (e) {
+      setFlushState({ kind: "fail", message: String(e) });
+    }
+  };
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-h">{t("settings.about.crashWebhookCard")}</div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">{t("settings.about.crashWebhookLabel")}</div>
+          <div className="settings-help">{t("settings.about.crashWebhookHelp")}</div>
+        </div>
+        <input
+          type="url"
+          placeholder="https://example.com/markio-crash"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const trimmed = draft.trim();
+            if (trimmed !== url) setPreference("crashWebhookUrl", trimmed);
+          }}
+          style={{ flex: 1, minWidth: 260 }}
+        />
+      </div>
+      <div className="settings-row" style={{ justifyContent: "flex-end", gap: 8 }}>
+        <span className="settings-help">
+          {flushState.kind === "sending"
+            ? t("settings.about.crashWebhookSending")
+            : flushState.kind === "ok"
+              ? flushState.sent
+                ? t("settings.about.crashWebhookOk")
+                : t("settings.about.crashWebhookEmpty")
+              : flushState.kind === "fail"
+                ? flushState.message
+                : ""}
+        </span>
+        <button
+          className="settings-btn"
+          onClick={sendNow}
+          disabled={!draft.trim() || flushState.kind === "sending"}
+        >
+          {t("settings.about.crashWebhookTest")}
+        </button>
+      </div>
+    </div>
   );
 }

@@ -92,6 +92,7 @@ type PreferenceKey =
   | "uploadProvider"
   | "autoSyncEnabled"
   | "autoCheckUpdates"
+  | "crashWebhookUrl"
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
@@ -237,6 +238,8 @@ interface SettingsState {
   autoSyncEnabled: boolean;
   /** 启动后台检查新版本（不强迫，不自动下载，只通知） */
   autoCheckUpdates: boolean;
+  /** 用户自托管的崩溃日志接收 webhook URL；为空则不上报。POST application/json。 */
+  crashWebhookUrl: string;
   /** 各第三方网盘的轻量配置（folder + enabled），GitHub/WebDAV 走自己专用卡片不存这里 */
   driveConfigs: Partial<Record<DriveId, DriveConfig>>;
   /** Dropbox App key（client_id），在开发者后台注册后填入 */
@@ -363,6 +366,7 @@ export const useSettings = create<SettingsState>()(
       uploadProvider: "picgo",
       autoSyncEnabled: false,
       autoCheckUpdates: true,
+      crashWebhookUrl: "",
       driveConfigs: {},
       dropboxClientId: "",
       gdriveClientId: "",

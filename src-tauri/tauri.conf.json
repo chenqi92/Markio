@@ -42,6 +42,12 @@
       "endpoints": [
         "https://github.com/chenqi92/Markio/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "mobile": [],
+      "desktop": {
+        "schemes": ["markio"]
+      }
     }
   },
   "bundle": {

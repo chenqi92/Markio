@@ -3086,6 +3086,7 @@ pub fn run() {
     // dev 模式下再追加一层 hook（写到项目 dev-logs/），release 是 no-op
     dev_log::install_panic_hook();
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -3210,6 +3211,18 @@ pub fn run() {
             window_state::apply_on_startup(&app.handle());
             // 启动时如果是双击文件触发的，URL 已经在 CLI args 里（macOS 例外，走下面 Opened 事件）
             forward_cli_open_files(&app.handle());
+            // markio://open?path=... 深链接：注册回调，把 path 当作 open-from-os 同一事件转发
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if let Some(path) = extract_path_from_deep_link(&url) {
+                            let _ = handle.emit("open-from-os", path);
+                        }
+                    }
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -3234,6 +3247,38 @@ pub fn run() {
             }
         }
     });
+}
+
+/// 解析 markio://open?path=/abs/path/to/note.md
+/// 支持的形式：
+///   markio://open?path=...
+///   markio:///abs/path（不带 host，path 作为 URL.path）
+/// 校验：必须是绝对路径，否则丢弃（避免 markio://open?path=evil.md 这种相对 / 跨平台坑）。
+fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
+    if url.scheme() != "markio" {
+        return None;
+    }
+    // 形式 1: markio://open?path=...
+    if url.host_str() == Some("open") || url.path().is_empty() {
+        for (k, v) in url.query_pairs() {
+            if k == "path" {
+                let p = v.into_owned();
+                let path = std::path::Path::new(&p);
+                if path.is_absolute() && path.exists() && path.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    // 形式 2: markio:///abs/path.md
+    let path_str = url.path();
+    if !path_str.is_empty() && path_str != "/" {
+        let path = std::path::Path::new(path_str);
+        if path.is_absolute() && path.exists() && path.is_file() {
+            return Some(path_str.to_string());
+        }
+    }
+    None
 }
 
 /// Windows / Linux 上文件关联是通过命令行参数传递的；macOS 走 RunEvent::Opened。

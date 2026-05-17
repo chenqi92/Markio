@@ -298,17 +298,44 @@ export function Preview({
       });
     const root = contentRef.current;
     let cancelled = false;
+    const handles: number[] = [];
+
+    // 影响布局的（callouts 改 ::before、span 包裹）必须立刻——否则用户首屏看到的样式会跳
     enhanceCallouts(root);
-    renderChartsIn(root);
-    enhanceCodeBlocks(root);
-    enhanceWikiLinks(root, vaultFiles);
+
+    // 其余 enhance 在浏览器空闲帧执行，把首屏渲染让给主线程。
+    // requestIdleCallback 在 WebView 上偶尔不可用，setTimeout(16) 兜底（一帧后）。
+    const idle = (cb: () => void) => {
+      const fn = () => {
+        if (!cancelled) cb();
+      };
+      const h =
+        typeof window.requestIdleCallback === "function"
+          ? window.requestIdleCallback(fn, { timeout: 500 })
+          : (window.setTimeout(fn, 16) as unknown as number);
+      handles.push(h);
+    };
+    idle(() => enhanceCodeBlocks(root));
+    idle(() => enhanceWikiLinks(root, vaultFiles));
+    // chart / 重活儿放更后一帧，避免首屏阻塞
+    idle(() => renderChartsIn(root));
+
+    // 重 IO（math 编译 / mermaid svg / graphviz）已经是异步，保持并发
     Promise.all([renderMathIn(root), renderMermaidIn(root), renderDiagramsIn(root)])
       .then(() => {
         if (!cancelled) applyScrollTarget();
       })
       .catch(() => undefined);
+
     return () => {
       cancelled = true;
+      for (const h of handles) {
+        if (typeof window.cancelIdleCallback === "function") {
+          window.cancelIdleCallback(h);
+        } else {
+          window.clearTimeout(h);
+        }
+      }
     };
   }, [html, theme, applyScrollTarget, vaultFiles]);
 

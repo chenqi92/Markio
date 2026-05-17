@@ -1420,6 +1420,86 @@ fn install_panic_hook() {
     }));
 }
 
+// ─── macOS 系统分享（通过 osascript 走原生 app）──────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacShareInput {
+    /// "mail" | "reminders"
+    pub target: String,
+    pub title: Option<String>,
+    pub body: String,
+}
+
+/// AppleScript 字符串字面量需要转义反斜杠和双引号；换行换成 `\n`
+/// 让 osascript 按字面量插入。
+fn applescript_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => {}
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+#[tauri::command]
+async fn macos_share(input: MacShareInput) -> Result<(), String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = input;
+        return Err("系统分享仅在 macOS 可用".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let subject = input.title.clone().unwrap_or_default();
+        let body = input.body.clone();
+        let script = match input.target.as_str() {
+            "mail" => format!(
+                "tell application \"Mail\"\n\
+                   set newMsg to make new outgoing message with properties {{subject:{subj}, content:{bod}, visible:true}}\n\
+                   activate\n\
+                 end tell",
+                subj = applescript_quote(&subject),
+                bod = applescript_quote(&body),
+            ),
+            "reminders" => format!(
+                "tell application \"Reminders\"\n\
+                   tell default list\n\
+                     make new reminder with properties {{name:{name}, body:{bod}}}\n\
+                   end tell\n\
+                   activate\n\
+                 end tell",
+                name = applescript_quote(
+                    if subject.is_empty() {
+                        "markio note"
+                    } else {
+                        subject.as_str()
+                    }
+                ),
+                bod = applescript_quote(&body),
+            ),
+            other => return Err(format!("未知分享目标：{other}")),
+        };
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|e| format!("osascript 调用失败：{e}"))?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).into_owned();
+            return Err(format!("系统分享失败：{}", err.trim()));
+        }
+        Ok(())
+    }
+}
+
 /// 注册 / 替换全局快捷键。空字符串 = 注销全部。binding 格式与 shortcuts.ts 一致
 /// （"Mod+Shift+Space"），由前端转换；这里直接传 accelerator 字符串给 plugin。
 #[tauri::command]
@@ -3231,6 +3311,7 @@ pub fn run() {
             crash_append,
             crash_flush_to_webhook,
             set_global_shortcut,
+            macos_share,
             crash_open_dir,
             crash_read_latest,
             dev_log::dev_log_append,

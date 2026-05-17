@@ -298,6 +298,9 @@ export const api = {
   /** 注册 / 替换全局快捷键。binding 用 "Mod+Shift+Space" 风格，空串 = 注销全部。 */
   setGlobalShortcut: (binding: string) =>
     invoke<void>("set_global_shortcut", { binding }),
+  /** macOS 系统分享：通过 osascript 调原生 Mail / Reminders 等 app。 */
+  macosShare: (input: { target: "mail" | "reminders"; title?: string; body: string }) =>
+    invoke<void>("macos_share", { input }),
 
   textFindRanges: (
     text: string,

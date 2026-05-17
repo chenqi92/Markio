@@ -8,8 +8,12 @@ import {
   exportHtml,
   exportPdf,
 } from "@/lib/export";
+import { api } from "@/lib/api";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
+
+const IS_MAC =
+  typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
 
 type FormatId = "pdf" | "docx" | "html" | "epub" | "md" | "copy-html";
 
@@ -134,6 +138,68 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
               <div className="ex-hint">
                 导出 PDF 会调起系统打印对话框；DOCX / EPUB 需要本地装好 <code>pandoc</code>。
               </div>
+              {IS_MAC && (
+                <>
+                  <div className="ex-section-h" style={{ marginTop: 12 }}>
+                    分享到系统应用
+                  </div>
+                  <div className="ex-formats">
+                    <button
+                      type="button"
+                      className="ex-fmt"
+                      onClick={async () => {
+                        try {
+                          await api.macosShare({
+                            target: "mail",
+                            title: tab.title,
+                            body: tab.content,
+                          });
+                          setToast({ stage: "done", message: "已在 Mail.app 创建新邮件" });
+                          setTimeout(() => setToast(null), 1500);
+                          onClose();
+                        } catch (e) {
+                          setToast({ stage: "error", message: `Mail 分享失败：${String(e)}` });
+                          setTimeout(() => setToast(null), 2500);
+                        }
+                      }}
+                    >
+                      <div className="ex-fmt-ico" style={{ background: "#0a84ff" }}>✉︎</div>
+                      <div className="ex-fmt-meta">
+                        <div className="t">Mail</div>
+                        <div className="s">把笔记装进新邮件草稿</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="ex-fmt"
+                      onClick={async () => {
+                        try {
+                          await api.macosShare({
+                            target: "reminders",
+                            title: tab.title,
+                            body: tab.content,
+                          });
+                          setToast({ stage: "done", message: "已添加到 Reminders 默认列表" });
+                          setTimeout(() => setToast(null), 1500);
+                          onClose();
+                        } catch (e) {
+                          setToast({ stage: "error", message: `Reminders 分享失败：${String(e)}` });
+                          setTimeout(() => setToast(null), 2500);
+                        }
+                      }}
+                    >
+                      <div className="ex-fmt-ico" style={{ background: "#ff9500" }}>✓</div>
+                      <div className="ex-fmt-meta">
+                        <div className="t">Reminders</div>
+                        <div className="s">把标题做事项 · 正文进备注</div>
+                      </div>
+                    </button>
+                  </div>
+                  <div className="ex-hint">
+                    首次会弹「markio 想控制 Mail / 提醒事项」系统对话框，授权后保留。
+                  </div>
+                </>
+              )}
             </div>
             <div className="ex-foot">
               <div className="ex-foot-meta">

@@ -6,7 +6,6 @@ import { TabStrip } from "./TabStrip";
 import { Toolbar } from "./Toolbar";
 import { Crumb } from "./Crumb";
 import { StatusBar } from "./StatusBar";
-import { EditorArea } from "../editor/EditorArea";
 import { Welcome } from "../Welcome";
 import { ToastHost } from "../popovers/Toast";
 import { useUI } from "@/stores/ui";
@@ -18,6 +17,9 @@ import { classNames } from "@/lib/utils";
 
 const CommandPalette = lazy(() =>
   import("../popovers/CommandPalette").then((m) => ({ default: m.CommandPalette })),
+);
+const EditorArea = lazy(() =>
+  import("../editor/EditorArea").then((m) => ({ default: m.EditorArea })),
 );
 const GlobalSearch = lazy(() =>
   import("../popovers/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -112,10 +114,12 @@ export function AppShell() {
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
-                  <EditorArea
-                    onMeta={(m) => setMeta(m)}
-                    onAskAi={() => openAi(true)}
-                  />
+                  <Suspense fallback={null}>
+                    <EditorArea
+                      onMeta={(m) => setMeta(m)}
+                      onAskAi={() => openAi(true)}
+                    />
+                  </Suspense>
                 </>
               ) : (
                 <Welcome />

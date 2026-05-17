@@ -15,6 +15,12 @@ let unsubscribeSettings: (() => void) | null = null;
 async function runOnce(workspace: string): Promise<void> {
   const sync = useSync.getState();
   if (sync.isInflight(workspace)) return;
+  // 显然离线时跳过：触发 git push 只会徒增超时，让 statusbar 显示离线
+  // 而不是后续的"同步失败"误导用户。online 转 true 时设置变化会重新拉一次定时器。
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    sync.setStatus("idle");
+    return;
+  }
   sync.setInflight(workspace, true);
   sync.setStatus("syncing");
   try {

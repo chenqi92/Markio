@@ -12,6 +12,7 @@ import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
 import { useSession } from "./stores/session";
+import { installNetworkListeners } from "./stores/network";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -99,6 +100,9 @@ export default function App() {
     startSyncScheduler(activeWorkspacePath);
     return () => stopSyncScheduler();
   }, [activeWorkspacePath]);
+
+  // 系统网络状态监听：online/offline 事件 → useNetwork.online
+  useEffect(() => installNetworkListeners(), []);
 
   // 自定义 CSS 主题：加载列表并应用记住的那一套
   useEffect(() => {

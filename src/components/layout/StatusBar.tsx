@@ -3,6 +3,7 @@ import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
+import { useNetwork } from "@/stores/network";
 import { formatBytes } from "@/lib/utils";
 import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
@@ -47,6 +48,7 @@ export function StatusBar({
   const syncStatus = useSync((s) => s.status);
   const lastSyncAt = useSync((s) => s.lastSyncAt);
   const lastSyncError = useSync((s) => s.lastError);
+  const online = useNetwork((s) => s.online);
   const [, force] = useState(0);
   useEffect(() => {
     const handle = window.setInterval(() => force((n) => n + 1), 30_000);
@@ -191,6 +193,25 @@ export function StatusBar({
             <span className="item">阅读约 {readingMinutes} 分钟</span>
           )}
         </>
+      )}
+      {!online && (
+        <span
+          className="item"
+          title="系统报告无网络。同步 / AI 调用会失败，磁盘上的笔记照常读写。"
+          style={{ color: "#ff9500" }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "#ff9500",
+              display: "inline-block",
+              marginRight: 4,
+            }}
+          />
+          离线
+        </span>
       )}
       {watcher && (!watcher.running || watcher.backendErrors > 0) && (
         <span

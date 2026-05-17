@@ -394,6 +394,7 @@ pub fn import_evernote(src_enex: &Path, workspace: &Path) -> Result<ImportReport
 /// 优点：
 ///   - 不直接读 ~/Library/Containers 里的 protobuf+zlib 加密格式（脆且违反沙盒）
 ///   - 由 Notes.app 自己解密 / 渲染，加密笔记会被自然跳过（用户不会被静默漏掉解密笔记）
+///
 /// 缺点：
 ///   - 首次调用会弹系统对话框「markio 想访问 Notes 数据」，要用户批准
 ///   - 大量笔记（>1000）osascript 耗时可能十几秒，由前端给 spinner

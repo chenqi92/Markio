@@ -646,8 +646,7 @@ fn fts_grep_on_workspace(workspace: &Path, query: &str, max: usize) -> Option<Ve
         let safe_start = body
             .char_indices()
             .map(|(i, _)| i)
-            .filter(|&i| i <= start)
-            .next_back()
+            .rfind(|&i| i <= start)
             .unwrap_or(0);
         let snippet: String = body[safe_start..safe_end].to_string();
         let name = std::path::Path::new(&path)
@@ -929,8 +928,7 @@ async fn export_write_file(path: String, content: String) -> Result<(), String> 
     }
     if let Some(parent) = std::path::Path::new(&path).parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建目录失败：{e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
         }
     }
     std::fs::write(&path, content).map_err(|e| format!("写入失败：{e}"))
@@ -955,8 +953,7 @@ async fn image_paste_from_disk(
     req: ImagePasteFromDiskRequest,
 ) -> Result<ImagePasteResult, String> {
     use base64::Engine;
-    let bytes = std::fs::read(&req.src_path)
-        .map_err(|e| format!("读取拖入文件失败：{e}"))?;
+    let bytes = std::fs::read(&req.src_path).map_err(|e| format!("读取拖入文件失败：{e}"))?;
     if bytes.len() > 25 * 1024 * 1024 {
         return Err("拖入图片过大（>25MB）".to_string());
     }
@@ -1630,7 +1627,7 @@ where
     } else {
         let pat_len = pattern.len();
         let mut start = 0;
-        while let Some(rel) = text[start..].find(&pattern) {
+        while let Some(rel) = text[start..].find(pattern) {
             let from = start + rel;
             let to = from + pat_len;
             if ww {
@@ -2561,12 +2558,12 @@ fn detect_icloud_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").ok()?;
-        return Some(
+        Some(
             std::path::PathBuf::from(home)
                 .join("Library")
                 .join("Mobile Documents")
                 .join("com~apple~CloudDocs"),
-        );
+        )
     }
     #[cfg(target_os = "windows")]
     {
@@ -2582,7 +2579,7 @@ fn detect_icloud_path() -> Option<std::path::PathBuf> {
                 return Some(c);
             }
         }
-        return Some(std::path::PathBuf::from(&user).join("iCloudDrive"));
+        Some(std::path::PathBuf::from(&user).join("iCloudDrive"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -2598,8 +2595,8 @@ const GDRIVE_TOKENS_ACCOUNT: &str = "gdrive:tokens";
 const GDRIVE_CLIENT_ACCOUNT: &str = "gdrive:client_id";
 
 fn load_dropbox_tokens() -> Result<dropbox_ops::DropboxTokens, String> {
-    let raw = secrets::get(DROPBOX_TOKENS_ACCOUNT)?
-        .ok_or_else(|| "尚未授权 Dropbox".to_string())?;
+    let raw =
+        secrets::get(DROPBOX_TOKENS_ACCOUNT)?.ok_or_else(|| "尚未授权 Dropbox".to_string())?;
     serde_json::from_str(&raw).map_err(|e| format!("Dropbox token 解析失败：{e}"))
 }
 
@@ -2610,8 +2607,8 @@ fn save_dropbox_tokens(tokens: &dropbox_ops::DropboxTokens) -> Result<(), String
 
 async fn dropbox_session() -> Result<(dropbox_ops::DropboxTokens, String), String> {
     let mut tokens = load_dropbox_tokens()?;
-    let client_id =
-        secrets::get(DROPBOX_CLIENT_ACCOUNT)?.ok_or_else(|| "Dropbox client_id 丢失".to_string())?;
+    let client_id = secrets::get(DROPBOX_CLIENT_ACCOUNT)?
+        .ok_or_else(|| "Dropbox client_id 丢失".to_string())?;
     dropbox_ops::ensure_fresh(&mut tokens, &client_id).await?;
     save_dropbox_tokens(&tokens)?;
     Ok((tokens, client_id))
@@ -2719,8 +2716,8 @@ async fn dropbox_delete(path: String) -> Result<(), String> {
 // ── Google Drive ──
 
 fn load_gdrive_tokens() -> Result<gdrive_ops::GDriveTokens, String> {
-    let raw = secrets::get(GDRIVE_TOKENS_ACCOUNT)?
-        .ok_or_else(|| "尚未授权 Google Drive".to_string())?;
+    let raw =
+        secrets::get(GDRIVE_TOKENS_ACCOUNT)?.ok_or_else(|| "尚未授权 Google Drive".to_string())?;
     serde_json::from_str(&raw).map_err(|e| format!("Drive token 解析失败：{e}"))
 }
 
@@ -3056,10 +3053,9 @@ fn has_rag_full_scan(workspace: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    let Ok(conn) = rusqlite::Connection::open_with_flags(
-        &path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ) else {
+    let Ok(conn) =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
         return false;
     };
     conn.query_row(
@@ -3421,13 +3417,13 @@ pub fn run() {
             tray_set_visible,
         ])
         .setup(|app| {
-            if let Err(e) = install_tray(&app.handle()) {
+            if let Err(e) = install_tray(app.handle()) {
                 eprintln!("install_tray failed: {e}");
             }
-            window_state::install(&app.handle());
-            window_state::apply_on_startup(&app.handle());
+            window_state::install(app.handle());
+            window_state::apply_on_startup(app.handle());
             // 启动时如果是双击文件触发的，URL 已经在 CLI args 里（macOS 例外，走下面 Opened 事件）
-            forward_cli_open_files(&app.handle());
+            forward_cli_open_files(app.handle());
             // markio://open?path=... 深链接：注册回调，把 path 当作 open-from-os 同一事件转发
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -3501,8 +3497,7 @@ fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
 /// Windows / Linux 上文件关联是通过命令行参数传递的；macOS 走 RunEvent::Opened。
 /// 第一个非 flag 参数若是已存在的 .md / .markdown 等文件，启动后转发给前端。
 fn forward_cli_open_files(app: &tauri::AppHandle) {
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
+    for arg in std::env::args().skip(1) {
         if arg.starts_with('-') {
             continue;
         }

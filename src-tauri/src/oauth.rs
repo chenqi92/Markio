@@ -87,11 +87,7 @@ impl LoopbackListener {
             // 读到第一个 \r\n\r\n 为止（OAuth 回调只发一行 GET + headers，体积很小）
             let mut buf = Vec::with_capacity(4096);
             let mut tmp = [0u8; 1024];
-            loop {
-                let n = match stream.read(&mut tmp).await {
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
+            while let Ok(n) = stream.read(&mut tmp).await {
                 if n == 0 {
                     break;
                 }
@@ -106,15 +102,21 @@ impl LoopbackListener {
             let path = request_line.split_whitespace().nth(1).unwrap_or("");
             let url = format!("http://127.0.0.1{path}");
             let parsed = url::Url::parse(&url).ok();
-            let code = parsed
-                .as_ref()
-                .and_then(|u| u.query_pairs().find(|(k, _)| k == "code").map(|(_, v)| v.to_string()));
-            let state = parsed
-                .as_ref()
-                .and_then(|u| u.query_pairs().find(|(k, _)| k == "state").map(|(_, v)| v.to_string()));
-            let error = parsed
-                .as_ref()
-                .and_then(|u| u.query_pairs().find(|(k, _)| k == "error").map(|(_, v)| v.to_string()));
+            let code = parsed.as_ref().and_then(|u| {
+                u.query_pairs()
+                    .find(|(k, _)| k == "code")
+                    .map(|(_, v)| v.to_string())
+            });
+            let state = parsed.as_ref().and_then(|u| {
+                u.query_pairs()
+                    .find(|(k, _)| k == "state")
+                    .map(|(_, v)| v.to_string())
+            });
+            let error = parsed.as_ref().and_then(|u| {
+                u.query_pairs()
+                    .find(|(k, _)| k == "error")
+                    .map(|(_, v)| v.to_string())
+            });
 
             // 回浏览器一个友好页面
             let (status, html) = if let Some(err) = &error {
@@ -130,12 +132,13 @@ impl LoopbackListener {
             } else {
                 (
                     "400 Bad Request",
-                    "<html><body><h2>未收到 code</h2><p>回调缺少 code 参数。</p></body></html>".to_string(),
+                    "<html><body><h2>未收到 code</h2><p>回调缺少 code 参数。</p></body></html>"
+                        .to_string(),
                 )
             };
             let resp = format!(
                 "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                html.as_bytes().len(),
+                html.len(),
                 html
             );
             let _ = stream.write_all(resp.as_bytes()).await;

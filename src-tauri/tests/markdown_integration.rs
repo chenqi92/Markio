@@ -22,7 +22,11 @@ content for B
 ";
     let chunks = rag::chunk::split(src);
     assert!(!chunks.is_empty(), "should produce at least one chunk");
-    let joined: String = chunks.iter().map(|c| c.body.clone()).collect::<Vec<_>>().join("\n");
+    let joined: String = chunks
+        .iter()
+        .map(|c| c.body.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(joined.contains("content for A"));
     assert!(joined.contains("content for B"));
     // 每个 chunk 都应该有有限大小

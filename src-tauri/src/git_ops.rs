@@ -367,10 +367,7 @@ fn unmerged_files(path: &Path) -> Vec<String> {
                 return None;
             }
             let xy = &line[..2];
-            let is_unmerged = matches!(
-                xy,
-                "DD" | "AU" | "UD" | "UA" | "DU" | "AA" | "UU"
-            );
+            let is_unmerged = matches!(xy, "DD" | "AU" | "UD" | "UA" | "DU" | "AA" | "UU");
             if is_unmerged {
                 Some(line[3..].trim().to_string())
             } else {
@@ -463,7 +460,9 @@ fn validate_ref_name(name: &str) -> Result<(), String> {
     if name.starts_with('-') {
         return Err("分支名不能以 - 开头".to_string());
     }
-    for bad in [' ', '\t', '\n', '\r', '~', '^', ':', '?', '*', '[', '\\', '\0'] {
+    for bad in [
+        ' ', '\t', '\n', '\r', '~', '^', ':', '?', '*', '[', '\\', '\0',
+    ] {
         if name.contains(bad) {
             return Err(format!("分支名包含非法字符：{bad:?}"));
         }
@@ -526,7 +525,11 @@ pub fn resolve_conflict(path: &Path, strategy: &str, files: &[String]) -> Result
             if files.is_empty() {
                 return Err("resolve_conflict 需要文件列表".to_string());
             }
-            let flag = if strategy == "ours" { "--ours" } else { "--theirs" };
+            let flag = if strategy == "ours" {
+                "--ours"
+            } else {
+                "--theirs"
+            };
             for f in files {
                 validate_rel_path(f)?;
                 run_git(path, &["checkout", flag, "--", f])?;

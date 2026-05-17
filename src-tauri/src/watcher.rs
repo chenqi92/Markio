@@ -77,12 +77,9 @@ pub fn health_snapshot() -> Vec<WatcherHealthDto> {
         .ok()
         .map(|g| g.keys().cloned().collect())
         .unwrap_or_default();
-    let stats_map: HashMap<PathBuf, WatcherStats> = stats()
-        .lock()
-        .ok()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-    let mut keys: Vec<PathBuf> = running_set.iter().cloned().collect();
+    let stats_map: HashMap<PathBuf, WatcherStats> =
+        stats().lock().ok().map(|g| g.clone()).unwrap_or_default();
+    let mut keys: Vec<PathBuf> = running_set.to_vec();
     for k in stats_map.keys() {
         if !keys.contains(k) {
             keys.push(k.clone());

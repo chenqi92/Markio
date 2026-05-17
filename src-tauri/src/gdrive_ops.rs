@@ -17,7 +17,8 @@ const TOKEN_HOST: &str = "https://oauth2.googleapis.com";
 const API_HOST: &str = "https://www.googleapis.com";
 
 /// 申请的 scope：drive.file 只能访问 markio 创建/打开的文件，最小化权限
-const SCOPE: &str = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
+const SCOPE: &str =
+    "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GDriveTokens {
@@ -131,10 +132,11 @@ pub async fn exchange_code(
         refresh_token: Option<String>,
         expires_in: u64,
     }
-    let parsed: TokenResp = serde_json::from_str(&text)
-        .map_err(|e| format!("Google token 响应解析失败：{e}"))?;
+    let parsed: TokenResp =
+        serde_json::from_str(&text).map_err(|e| format!("Google token 响应解析失败：{e}"))?;
     let refresh = parsed.refresh_token.ok_or_else(|| {
-        "Google 未返回 refresh_token：请确保 access_type=offline 且首次授权（必要时撤销后重授）".to_string()
+        "Google 未返回 refresh_token：请确保 access_type=offline 且首次授权（必要时撤销后重授）"
+            .to_string()
     })?;
     let expires_at = now_epoch() + parsed.expires_in;
     let mut tokens = GDriveTokens {
@@ -160,20 +162,16 @@ async fn refresh_tokens(tokens: &mut GDriveTokens, client_id: &str) -> Result<()
         .build()
         .map_err(|e| e.to_string())?;
     let url = format!("{TOKEN_HOST}/token");
-    let text = crate::oauth::http_post_form_with_retry(
-        &client,
-        &url,
-        form.as_slice(),
-        "Google refresh",
-    )
-    .await?;
+    let text =
+        crate::oauth::http_post_form_with_retry(&client, &url, form.as_slice(), "Google refresh")
+            .await?;
     #[derive(Deserialize)]
     struct R {
         access_token: String,
         expires_in: u64,
     }
-    let parsed: R = serde_json::from_str(&text)
-        .map_err(|e| format!("Google refresh 解析失败：{e}"))?;
+    let parsed: R =
+        serde_json::from_str(&text).map_err(|e| format!("Google refresh 解析失败：{e}"))?;
     tokens.access_token = parsed.access_token;
     tokens.expires_at = now_epoch() + parsed.expires_in;
     Ok(())
@@ -306,7 +304,10 @@ pub async fn upload(
         ));
     }
     let mut meta = serde_json::Map::new();
-    meta.insert("name".to_string(), serde_json::Value::String(name.to_string()));
+    meta.insert(
+        "name".to_string(),
+        serde_json::Value::String(name.to_string()),
+    );
     if existing_id.is_none() {
         if let Some(pid) = parent_id {
             if !pid.is_empty() {
@@ -344,7 +345,11 @@ pub async fn upload(
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let req = if is_update { client.patch(&url) } else { client.post(&url) };
+    let req = if is_update {
+        client.patch(&url)
+    } else {
+        client.post(&url)
+    };
     let resp = req
         .bearer_auth(&tokens.access_token)
         .header(
@@ -364,7 +369,8 @@ pub async fn upload(
     struct R {
         id: String,
     }
-    let parsed: R = serde_json::from_str(&text).map_err(|e| format!("Drive upload 解析失败：{e}"))?;
+    let parsed: R =
+        serde_json::from_str(&text).map_err(|e| format!("Drive upload 解析失败：{e}"))?;
     Ok(parsed.id)
 }
 

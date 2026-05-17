@@ -77,7 +77,9 @@ pub fn list() -> Result<Vec<CustomTheme>, String> {
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        let Some(id) = sanitize_id(stem) else { continue };
+        let Some(id) = sanitize_id(stem) else {
+            continue;
+        };
         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
         if size > MAX_THEME_BYTES {
             continue;
@@ -100,10 +102,7 @@ pub fn import(source_path: &str) -> Result<CustomTheme, String> {
     }
     let meta = std::fs::metadata(src).map_err(|e| format!("读取主题元数据失败：{e}"))?;
     if meta.len() > MAX_THEME_BYTES {
-        return Err(format!(
-            "主题文件超过 {} KB",
-            MAX_THEME_BYTES / 1024
-        ));
+        return Err(format!("主题文件超过 {} KB", MAX_THEME_BYTES / 1024));
     }
     if src.extension().and_then(|s| s.to_str()) != Some("css") {
         return Err("只支持 .css 文件".to_string());

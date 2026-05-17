@@ -56,8 +56,7 @@ fn write_line(line: &str) -> std::io::Result<()> {
 
 #[cfg(debug_assertions)]
 fn now_iso() -> String {
-    chrono::Utc::now()
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 /// 前端走 invoke 把一条日志投递过来；release 下空实现。

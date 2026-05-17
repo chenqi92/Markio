@@ -59,8 +59,8 @@ fn is_loopback_host(host: &str) -> bool {
 /// 校验 WebDAV base URL：scheme 仅 http(s)，host 必须存在，禁止 url 内嵌凭据 /
 /// query / fragment；非本机 http 一律拒绝。
 fn validate_base(base_url: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(base_url.trim())
-        .map_err(|e| format!("WebDAV base URL 无效：{e}"))?;
+    let url =
+        reqwest::Url::parse(base_url.trim()).map_err(|e| format!("WebDAV base URL 无效：{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("WebDAV 仅支持 http/https".to_string());
     }
@@ -83,9 +83,7 @@ fn validate_auth(auth: &WebDavAuth) -> Result<(), String> {
     if auth.username.len() > MAX_WEBDAV_AUTH_LEN || auth.password.len() > MAX_WEBDAV_AUTH_LEN {
         return Err("WebDAV 凭据过长".to_string());
     }
-    if auth.username.contains(['\r', '\n', '\0'])
-        || auth.password.contains(['\r', '\n', '\0'])
-    {
+    if auth.username.contains(['\r', '\n', '\0']) || auth.password.contains(['\r', '\n', '\0']) {
         return Err("WebDAV 凭据包含非法控制字符".to_string());
     }
     Ok(())

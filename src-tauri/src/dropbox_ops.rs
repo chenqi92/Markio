@@ -133,9 +133,9 @@ pub async fn exchange_code(
     }
     let parsed: TokenResp = serde_json::from_str(&text)
         .map_err(|e| format!("Dropbox token 响应解析失败：{e}; body={text}"))?;
-    let refresh = parsed
-        .refresh_token
-        .ok_or_else(|| "Dropbox 未返回 refresh_token，请确认 token_access_type=offline".to_string())?;
+    let refresh = parsed.refresh_token.ok_or_else(|| {
+        "Dropbox 未返回 refresh_token，请确认 token_access_type=offline".to_string()
+    })?;
     let expires_at = now_epoch() + parsed.expires_in;
     let account_id = parsed.account_id.unwrap_or_default();
 
@@ -174,8 +174,8 @@ async fn refresh_tokens(tokens: &mut DropboxTokens, client_id: &str) -> Result<(
         access_token: String,
         expires_in: u64,
     }
-    let parsed: R = serde_json::from_str(&text)
-        .map_err(|e| format!("Dropbox refresh 响应解析失败：{e}"))?;
+    let parsed: R =
+        serde_json::from_str(&text).map_err(|e| format!("Dropbox refresh 响应解析失败：{e}"))?;
     tokens.access_token = parsed.access_token;
     tokens.expires_at = now_epoch() + parsed.expires_in;
     Ok(())
@@ -212,8 +212,8 @@ pub async fn get_current_account(tokens: &DropboxTokens) -> Result<String, Strin
         name: AcctName,
         email: String,
     }
-    let parsed: Acct = serde_json::from_str(&text)
-        .map_err(|e| format!("Dropbox account 解析失败：{e}"))?;
+    let parsed: Acct =
+        serde_json::from_str(&text).map_err(|e| format!("Dropbox account 解析失败：{e}"))?;
     Ok(format!("{} ({})", parsed.name.display_name, parsed.email))
 }
 
@@ -260,8 +260,8 @@ pub async fn list_folder(tokens: &DropboxTokens, path: &str) -> Result<DropboxLi
         has_more: bool,
         cursor: String,
     }
-    let parsed: R = serde_json::from_str(&text)
-        .map_err(|e| format!("Dropbox list 响应解析失败：{e}"))?;
+    let parsed: R =
+        serde_json::from_str(&text).map_err(|e| format!("Dropbox list 响应解析失败：{e}"))?;
     Ok(DropboxList {
         entries: parsed
             .entries

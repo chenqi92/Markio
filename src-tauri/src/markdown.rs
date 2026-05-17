@@ -663,11 +663,14 @@ mod tests {
 
     #[test]
     fn render_outputs_plantuml_blocks_with_optional_server() {
-        let src = "```plantuml server=\"https://example.test/plantuml\"\n@startuml\nA -> B\n@enduml\n```";
+        let src =
+            "```plantuml server=\"https://example.test/plantuml\"\n@startuml\nA -> B\n@enduml\n```";
         let res = render(src, None, &[]);
         assert!(res.html.contains("class=\"plantuml-block\""));
         assert!(res.html.contains("data-plantuml="));
-        assert!(res.html.contains("data-plantuml-server=\"https://example.test/plantuml\""));
+        assert!(res
+            .html
+            .contains("data-plantuml-server=\"https://example.test/plantuml\""));
         assert!(!res.html.contains("data-lang=\"plantuml\""));
     }
 }

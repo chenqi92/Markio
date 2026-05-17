@@ -645,7 +645,7 @@ fn is_word_char(c: char) -> bool {
 /// 排除已经被 `[[...]]` 包围的位置。
 /// 对 ASCII needle 强制词边界；CJK needle 不强制（中文无分词空格）。
 fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
-    let ascii_needle = needle.chars().all(|c| c.is_ascii());
+    let ascii_needle = needle.is_ascii();
     let bytes = line_lower.as_bytes();
     let nlen = needle.len();
     let mut start = 0;
@@ -1115,10 +1115,7 @@ fn extract_file_tokens(path: &Path, size: u64) -> (Vec<String>, Vec<String>) {
     let mut tags: BTreeSet<String> = BTreeSet::new();
     let mut mentions: BTreeSet<String> = BTreeSet::new();
     extract_tokens_into(&content, &mut tags, &mut mentions);
-    (
-        tags.into_iter().collect(),
-        mentions.into_iter().collect(),
-    )
+    (tags.into_iter().collect(), mentions.into_iter().collect())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1313,7 +1310,7 @@ pub fn reveal_in_os(path: &str) -> Result<(), String> {
             .args(["-R", path])
             .status()
             .map_err(|e| e.to_string())?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "windows")]
     {

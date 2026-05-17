@@ -16,7 +16,9 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition, WindowEvent};
+use tauri::{
+    AppHandle, Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition, WindowEvent,
+};
 
 const FILENAME: &str = "window_state.json";
 
@@ -130,15 +132,13 @@ pub fn install(app: &AppHandle) {
     };
     let handle = app.clone();
     let win_for_event = win.clone();
-    win.on_window_event(move |event| {
-        match event {
-            WindowEvent::Resized(_) | WindowEvent::Moved(_) | WindowEvent::CloseRequested { .. } => {
-                if let Some(g) = current_geom(&win_for_event) {
-                    schedule_save(handle.clone(), g);
-                }
+    win.on_window_event(move |event| match event {
+        WindowEvent::Resized(_) | WindowEvent::Moved(_) | WindowEvent::CloseRequested { .. } => {
+            if let Some(g) = current_geom(&win_for_event) {
+                schedule_save(handle.clone(), g);
             }
-            _ => {}
         }
+        _ => {}
     });
     // 应用窗口创建完成的事件（用 listen_any 比较省事）
     let handle2 = app.clone();

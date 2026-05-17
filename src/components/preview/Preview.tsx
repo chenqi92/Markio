@@ -343,14 +343,13 @@ export function Preview({
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
-    // 先撤销旧高亮
-    root.querySelectorAll("mark.find-hit").forEach((m) => {
-      const parent = m.parentNode;
-      if (!parent) return;
-      while (m.firstChild) parent.insertBefore(m.firstChild, m);
-      parent.removeChild(m);
-      parent.normalize();
-    });
+    // 撤销旧高亮——直接用 replaceWith(textNode) 原地替换；不调 parent.normalize()，
+    // 大结果集（500+ 处）逐个 normalize 累计 300ms+ 阻塞，且仅是合并冗余文本节点，
+    // 不影响显示也不影响下次 walker 的 SHOW_TEXT 遍历。
+    const oldHits = root.querySelectorAll("mark.find-hit");
+    for (const m of oldHits) {
+      m.replaceWith(document.createTextNode(m.textContent ?? ""));
+    }
     if (!findQuery) return;
     const needle = findQuery.toLowerCase();
     let count = 0;
@@ -376,20 +375,21 @@ export function Preview({
       let last = 0;
       const parent = t.parentNode;
       if (!parent) continue;
-      const fragments: Node[] = [];
+      // 一次 insertBefore DocumentFragment 比 N 次 insertBefore 单节点便宜
+      const frag = document.createDocumentFragment();
       let from = 0;
       while ((from = lower.indexOf(needle, last)) !== -1) {
-        if (from > last) fragments.push(document.createTextNode(v.slice(last, from)));
+        if (from > last) frag.appendChild(document.createTextNode(v.slice(last, from)));
         const mark = document.createElement("mark");
         mark.className = "find-hit";
         mark.dataset.idx = String(count);
         mark.textContent = v.slice(from, from + needle.length);
-        fragments.push(mark);
+        frag.appendChild(mark);
         last = from + needle.length;
         count++;
       }
-      if (last < v.length) fragments.push(document.createTextNode(v.slice(last)));
-      for (const f of fragments) parent.insertBefore(f, t);
+      if (last < v.length) frag.appendChild(document.createTextNode(v.slice(last)));
+      parent.insertBefore(frag, t);
       parent.removeChild(t);
     }
     // 当前 idx 加 .current

@@ -14,6 +14,7 @@ mod secrets;
 mod state;
 mod watcher;
 mod webdav_ops;
+mod window_state;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -3205,6 +3206,8 @@ pub fn run() {
             if let Err(e) = install_tray(&app.handle()) {
                 eprintln!("install_tray failed: {e}");
             }
+            window_state::install(&app.handle());
+            window_state::apply_on_startup(&app.handle());
             Ok(())
         })
         .run(tauri::generate_context!());

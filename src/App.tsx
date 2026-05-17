@@ -11,6 +11,7 @@ import { api, parseError, pickDirectory, pickFile } from "./lib/api";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
+import { useSession } from "./stores/session";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -163,6 +164,58 @@ export default function App() {
       }
     })();
   }, [hydrate, setAi]);
+
+  // 会话恢复：hydrate 后等 workspace 注册到 Rust，逐个 openPath 上次打开的文件。
+  // 同时订阅 tabs 变化，写回 session（节流 500ms）。崩溃 / 强退后下次启动恢复现场。
+  useEffect(() => {
+    let cancelled = false;
+    const restoreTimer = window.setTimeout(async () => {
+      if (cancelled) return;
+      const { openTabs, activePath } = useSession.getState();
+      if (openTabs.length === 0) return;
+      const known = new Set(
+        useWorkspace.getState().workspaces.map((w) => w.id),
+      );
+      // 先恢复非激活的，再恢复激活的（让激活的成为最后一个 setActive 的对象）
+      const ordered = [...openTabs].sort((a, b) =>
+        a.path === activePath ? 1 : b.path === activePath ? -1 : 0,
+      );
+      for (const t of ordered) {
+        if (cancelled) return;
+        if (!known.has(t.workspaceId)) continue;
+        try {
+          await useTabs.getState().openPath(t.path);
+        } catch {
+          // 文件可能已被外部删除：跳过即可
+        }
+      }
+    }, 600);
+
+    // 订阅 tabs 变化把元信息写回 session
+    let saveTimer: number | null = null;
+    const unsubTabs = useTabs.subscribe((state) => {
+      if (cancelled) return;
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
+        const tabs = state.tabs.map((t) => ({
+          workspaceId: t.workspaceId,
+          path: t.path,
+          pinned: t.pinned,
+        }));
+        const active = state.activeId
+          ? state.tabs.find((t) => t.id === state.activeId)?.path ?? null
+          : null;
+        useSession.getState().remember(tabs, active);
+      }, 500);
+    });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(restoreTimer);
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      unsubTabs();
+    };
+  }, []);
 
   // 系统级"用 markio 打开"：双击 Finder / 文件管理器中的 .md，
   // 或 macOS Dock 拖入文件 → Rust 端 emit "open-from-os"，前端 openPath 打开。

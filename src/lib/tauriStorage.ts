@@ -29,6 +29,7 @@ const PERSISTED_KEYS = [
   "markio.recents.v1",
   "markio.pinned-plan.v1",
   "markio.fileIcons.v1",
+  "markio.session.v1",
 ] as const;
 
 let store: Store | null = null;

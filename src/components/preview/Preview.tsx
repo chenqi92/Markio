@@ -112,14 +112,81 @@ export function Preview({
     });
   }, [scrollTarget?.nonce, scrollTarget?.ratio]);
 
-  // 给渲染后的每个 <table> 绑定 hover 上报 + 右键上下文菜单 + 快捷"加号"按钮
+  // 表格装饰 = 两层：
+  //   (A) DOM 层：html 变化时把每个 <table> 包到 .md-table-host，挂 + 行 / + 列 按钮（无监听）
+  //   (B) 事件层：root 上一次性事件委托。新增的 table 自动覆盖，不随表格数量增长。
+  // 之前是「每个 table 都 addEventListener 4 次」，50 表 * 多次 rerender 累积可观。
+  const tableHandlersRef = useRef({ onTableHover, onTableCellContext, onTableQuickAdd });
+  useEffect(() => {
+    tableHandlersRef.current = { onTableHover, onTableCellContext, onTableQuickAdd };
+  });
+
+  // (A) DOM 装饰：仅 html 变化时跑
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
     const tables = Array.from(root.querySelectorAll<HTMLTableElement>("table"));
     const cleanups: Array<() => void> = [];
 
-    /** 计算被点 cell 在 table 中的 (row, col)。row 0 = thead；body 行从 1 起 */
+    tables.forEach((table, index) => {
+      table.dataset.mdTableIndex = String(index);
+
+      // 包一层 div 作为定位容器：直接把 <button> 挂到 <table> 是非法 HTML，
+      // 浏览器会自动把按钮丢到 <table> 外面，绝对定位就乱掉
+      let host: HTMLDivElement;
+      if (table.parentElement?.classList.contains("md-table-host")) {
+        host = table.parentElement as HTMLDivElement;
+      } else {
+        const parent = table.parentElement;
+        if (!parent) {
+          return;
+        }
+        host = document.createElement("div");
+        host.className = "md-table-host";
+        parent.insertBefore(host, table);
+        host.appendChild(table);
+      }
+      host.dataset.mdTableIndex = String(index);
+      cleanups.push(() => {
+        if (host.isConnected && host.parentElement) {
+          host.parentElement.insertBefore(table, host);
+          host.remove();
+        }
+      });
+
+      // 快捷加号按钮（DOM only，事件走 root 委托）
+      if (!host.querySelector(".md-table-add-row")) {
+        const addRowBtn = document.createElement("button");
+        addRowBtn.type = "button";
+        addRowBtn.className = "md-table-add md-table-add-row";
+        addRowBtn.title = "在末尾插入一行";
+        addRowBtn.textContent = "+ 行";
+        host.appendChild(addRowBtn);
+
+        const addColBtn = document.createElement("button");
+        addColBtn.type = "button";
+        addColBtn.className = "md-table-add md-table-add-col";
+        addColBtn.title = "在末尾插入一列";
+        addColBtn.textContent = "+ 列";
+        host.appendChild(addColBtn);
+
+        cleanups.push(() => {
+          addRowBtn.remove();
+          addColBtn.remove();
+        });
+      }
+    });
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+    };
+  }, [html]);
+
+  // (B) 事件委托：根上一次性绑定，根据 target.closest 路由到 table / cell / button
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+
     const cellRowCol = (
       table: HTMLTableElement,
       cell: HTMLTableCellElement,
@@ -137,112 +204,89 @@ export function Preview({
       return { row: 1 + bodyRowIdx, col };
     };
 
-    tables.forEach((table, index) => {
-      table.dataset.mdTableIndex = String(index);
-
-      // 包一层 div 作为定位容器：直接把 <button> 挂到 <table> 是非法 HTML，
-      // 浏览器会自动把按钮丢到 <table> 外面，绝对定位就乱掉
-      let host: HTMLDivElement;
-      if (table.parentElement?.classList.contains("md-table-host")) {
-        host = table.parentElement as HTMLDivElement;
-      } else {
-        const parent = table.parentElement;
-        if (!parent) {
-          // table 已脱离 DOM（异步 setHtml 重渲染并发 race），跳过装饰避免
-          // 把 table 移进未挂载的 host 里——会让用户看不到这个表格。
-          return;
-        }
-        host = document.createElement("div");
-        host.className = "md-table-host";
-        parent.insertBefore(host, table);
-        host.appendChild(table);
-      }
-      host.dataset.mdTableIndex = String(index);
-      cleanups.push(() => {
-        if (host.isConnected && host.parentElement) {
-          host.parentElement.insertBefore(table, host);
-          host.remove();
-        }
-      });
-
-      // hover：浮动 toolbar 用
-      if (onTableHover) {
-        const onEnter = () => {
-          onTableHover({ index, rect: table.getBoundingClientRect() });
-        };
-        const onLeave = () => onTableHover(null);
-        table.addEventListener("mouseenter", onEnter);
-        table.addEventListener("mouseleave", onLeave);
-        cleanups.push(() => {
-          table.removeEventListener("mouseenter", onEnter);
-          table.removeEventListener("mouseleave", onLeave);
-        });
-      }
-
-      // 右键单元格 → 上报，由 EditorArea 把 cursor 移到对应源码 cell + 弹 TableContextMenu
-      if (onTableCellContext) {
-        const onCtx = (e: MouseEvent) => {
-          const target = e.target as HTMLElement;
-          const cell = target.closest("th, td") as HTMLTableCellElement | null;
-          if (!cell || !table.contains(cell)) return;
-          const rc = cellRowCol(table, cell);
-          if (!rc) return;
-          e.preventDefault();
-          onTableCellContext({
-            tableIndex: index,
-            row: rc.row,
-            col: rc.col,
-            x: e.clientX,
-            y: e.clientY,
-          });
-        };
-        table.addEventListener("contextmenu", onCtx);
-        cleanups.push(() => table.removeEventListener("contextmenu", onCtx));
-      }
-
-      // 快捷"+ 行" / "+ 列"：CSS 浮在 table 右边 / 下边，hover 才出现
-      if (onTableQuickAdd) {
-        const tbody = table.querySelector("tbody");
-        const lastBodyRow = tbody?.lastElementChild as HTMLTableRowElement | null;
-        const headRow = table.querySelector("thead tr") as HTMLTableRowElement | null;
-        const colCount = headRow?.children.length ?? lastBodyRow?.children.length ?? 0;
-        const bodyRowCount = tbody?.children.length ?? 0;
-
-        const addRowBtn = document.createElement("button");
-        addRowBtn.type = "button";
-        addRowBtn.className = "md-table-add md-table-add-row";
-        addRowBtn.title = "在末尾插入一行";
-        addRowBtn.textContent = "+ 行";
-        addRowBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onTableQuickAdd({ tableIndex: index, kind: "row", after: bodyRowCount });
-        });
-
-        const addColBtn = document.createElement("button");
-        addColBtn.type = "button";
-        addColBtn.className = "md-table-add md-table-add-col";
-        addColBtn.title = "在末尾插入一列";
-        addColBtn.textContent = "+ 列";
-        addColBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onTableQuickAdd({ tableIndex: index, kind: "col", after: colCount - 1 });
-        });
-
-        host.appendChild(addRowBtn);
-        host.appendChild(addColBtn);
-        cleanups.push(() => {
-          addRowBtn.remove();
-          addColBtn.remove();
-        });
-      }
-    });
-
-    return () => {
-      cleanups.forEach((fn) => fn());
+    const tableIndex = (t: HTMLTableElement): number => {
+      const raw = t.dataset.mdTableIndex;
+      const n = raw ? Number(raw) : NaN;
+      return Number.isFinite(n) ? n : -1;
     };
-  }, [html, onTableHover, onTableCellContext, onTableQuickAdd]);
+
+    let hovered: HTMLTableElement | null = null;
+    const onMouseOver = (e: MouseEvent) => {
+      const h = tableHandlersRef.current.onTableHover;
+      if (!h) return;
+      const t = (e.target as HTMLElement | null)?.closest("table") as HTMLTableElement | null;
+      if (t === hovered) return;
+      hovered = t;
+      if (t) {
+        h({ index: tableIndex(t), rect: t.getBoundingClientRect() });
+      } else {
+        h(null);
+      }
+    };
+    const onMouseLeaveRoot = (e: MouseEvent) => {
+      if (root.contains(e.relatedTarget as Node)) return;
+      const h = tableHandlersRef.current.onTableHover;
+      if (h && hovered) h(null);
+      hovered = null;
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      const h = tableHandlersRef.current.onTableCellContext;
+      if (!h) return;
+      const cell = (e.target as HTMLElement | null)?.closest(
+        "th, td",
+      ) as HTMLTableCellElement | null;
+      if (!cell) return;
+      const table = cell.closest("table") as HTMLTableElement | null;
+      if (!table || !root.contains(table)) return;
+      const rc = cellRowCol(table, cell);
+      if (!rc) return;
+      e.preventDefault();
+      h({
+        tableIndex: tableIndex(table),
+        row: rc.row,
+        col: rc.col,
+        x: e.clientX,
+        y: e.clientY,
+      });
+    };
+    const onClick = (e: MouseEvent) => {
+      const h = tableHandlersRef.current.onTableQuickAdd;
+      if (!h) return;
+      const btn = (e.target as HTMLElement | null)?.closest(
+        ".md-table-add",
+      ) as HTMLButtonElement | null;
+      if (!btn) return;
+      const host = btn.closest(".md-table-host") as HTMLElement | null;
+      if (!host) return;
+      const idxRaw = host.dataset.mdTableIndex;
+      const idx = idxRaw ? Number(idxRaw) : -1;
+      if (!Number.isFinite(idx)) return;
+      const table = host.querySelector("table") as HTMLTableElement | null;
+      if (!table) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.classList.contains("md-table-add-row")) {
+        const bodyRowCount = table.querySelector("tbody")?.children.length ?? 0;
+        h({ tableIndex: idx, kind: "row", after: bodyRowCount });
+      } else if (btn.classList.contains("md-table-add-col")) {
+        const headRow = table.querySelector("thead tr") as HTMLTableRowElement | null;
+        const lastBody = table.querySelector("tbody")?.lastElementChild as HTMLTableRowElement | null;
+        const colCount = headRow?.children.length ?? lastBody?.children.length ?? 0;
+        h({ tableIndex: idx, kind: "col", after: colCount - 1 });
+      }
+    };
+
+    root.addEventListener("mouseover", onMouseOver);
+    root.addEventListener("mouseleave", onMouseLeaveRoot);
+    root.addEventListener("contextmenu", onContextMenu);
+    root.addEventListener("click", onClick);
+    return () => {
+      root.removeEventListener("mouseover", onMouseOver);
+      root.removeEventListener("mouseleave", onMouseLeaveRoot);
+      root.removeEventListener("contextmenu", onContextMenu);
+      root.removeEventListener("click", onClick);
+    };
+  }, []);
 
   useEffect(() => {
     if (!contentRef.current) return;

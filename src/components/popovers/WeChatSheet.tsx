@@ -35,7 +35,7 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
 
   const copy = async () => {
     if (!html) return;
-    const inlined = inlineForWeChat(html, style.accent);
+    const inlined = await inlineForWeChat(html, style.accent);
     const wrapped = `<section style="font-family: -apple-system, 'PingFang SC', sans-serif; line-height: 1.75; color: #333;">${inlined.html}</section>`;
     try {
       await writeText(wrapped);
@@ -57,18 +57,48 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
     }
   };
 
-  /** 公众号编辑器对 class 不友好，需要把代码高亮转成内联 style；
-   *  同时统计 http(s) 图片数量提示用户手动上传。 */
-  const inlineForWeChat = (
+  /** 1x1 透明灰 PNG，作为外链图片占位 */
+  const PLACEHOLDER_IMG =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#f2f2f2"/><text x="160" y="92" font-size="14" fill="#999" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif">请在公众号编辑器中手动上传图片</text></svg>`,
+    );
+
+  /** 公众号编辑器对 class 不友好：
+   *  - 代码高亮转成内联 style
+   *  - .math/.math-inline/.math-display 用 KaTeX 渲染成内联 MathML+HTML
+   *  - http(s) 外链图替换为占位 SVG（公众号不接受外链） */
+  const inlineForWeChat = async (
     html: string,
     accent: string,
-  ): { html: string; externalImages: number } => {
+  ): Promise<{ html: string; externalImages: number }> => {
     const doc = new DOMParser().parseFromString(
       `<div>${html}</div>`,
       "text/html",
     );
     const wrap = doc.body.firstElementChild as HTMLElement;
     let externalImages = 0;
+
+    // 公式：拷贝走 Preview 同款渲染，避免编辑器丢公式
+    const mathNodes = wrap.querySelectorAll<HTMLElement>(".math");
+    if (mathNodes.length > 0) {
+      const katex = await import("katex");
+      for (const node of Array.from(mathNodes)) {
+        const tex = node.textContent ?? "";
+        const displayMode = node.classList.contains("math-display");
+        try {
+          node.innerHTML = katex.renderToString(tex, {
+            displayMode,
+            throwOnError: false,
+            strict: "ignore",
+            output: "htmlAndMathml",
+          });
+        } catch {
+          node.textContent = displayMode ? `$$${tex}$$` : `$${tex}$`;
+        }
+      }
+    }
+
     // 代码高亮：复制计算好的颜色到 style，公众号才能保留
     wrap.querySelectorAll<HTMLElement>("pre code .hljs, pre, code").forEach((el) => {
       const cs = (typeof window !== "undefined"
@@ -88,11 +118,24 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
         }
       }
     });
-    // 图片：http/https 外链统计
+
+    // 图片：http(s) 外链替换为占位 SVG，本地图保留
     wrap.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
       const src = img.getAttribute("src") || "";
-      if (/^https?:\/\//.test(src)) externalImages += 1;
+      if (/^https?:\/\//.test(src)) {
+        externalImages += 1;
+        img.setAttribute("data-original-src", src);
+        img.setAttribute("src", PLACEHOLDER_IMG);
+        const existingStyle = img.getAttribute("style") || "";
+        img.setAttribute(
+          "style",
+          [existingStyle, "max-width: 100%", "border: 1px dashed #ccc"]
+            .filter(Boolean)
+            .join("; "),
+        );
+      }
     });
+
     // 替换主色 token
     let out = wrap.innerHTML;
     out = out.replace(/var\(--accent\)/g, accent);

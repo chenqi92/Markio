@@ -63,6 +63,9 @@ pnpm tauri build --bundles appimage,deb
 
 Windows Store（MSIX）：
 
+> 已确认（tauri-cli 2.11.1）：`tauri build -b` 的 `[possible values]` 只有 `msi, nsis`，
+> 没有 `msix`。下面流程是「先出 MSI → 转 MSIX」的官方推荐路径，不依赖 CLI 原生支持。
+
 Tauri 2.x bundler 目前仍主推 MSI/NSIS；MSIX 需要在 MSI 基础上再用官方工具
 `MSIX Packaging Tool`（Windows 10+ 自带）或 `msi-to-msix` 转换。流程：
 

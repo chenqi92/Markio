@@ -24,6 +24,7 @@ import { writeText } from "@/lib/clipboard";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
 import type { Locale } from "@/i18n";
 import { useTranslation } from "react-i18next";
+import { RagGraphMini } from "./RagGraphMini";
 import {
   COMMANDS,
   type CommandDef,
@@ -4436,6 +4437,9 @@ function RepoGraphCard() {
         <div style={{ color: "#dc2626", fontSize: 12, padding: "4px 16px" }}>
           {error}
         </div>
+      )}
+      {graph && graph.nodes.length > 0 && (
+        <RagGraphMini nodes={graph.nodes} edges={graph.edges} />
       )}
       {graph && hubs.length > 0 && (
         <div style={{ padding: "0 16px 8px" }}>

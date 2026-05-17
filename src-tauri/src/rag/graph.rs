@@ -270,3 +270,59 @@ pub fn backlinks(db: &Db, path: &str) -> Vec<i64> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn empty_stems() -> HashMap<String, Vec<PathBuf>> {
+        HashMap::new()
+    }
+
+    #[test]
+    fn extract_wiki_link_with_label() {
+        let src = "see [[Alpha]] and [[Beta|友好别名]]";
+        let links = extract_links(src, Path::new("/ws/a.md"), Path::new("/ws"), &empty_stems());
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].kind, LinkKind::Wiki);
+        assert_eq!(links[0].target_label, "Alpha");
+        assert_eq!(links[1].target_label, "Beta");
+    }
+
+    #[test]
+    fn wiki_resolves_via_stem_map() {
+        let mut stems = HashMap::new();
+        stems.insert("alpha".to_string(), vec![PathBuf::from("/ws/Alpha.md")]);
+        let src = "see [[Alpha]]";
+        let links = extract_links(src, Path::new("/ws/a.md"), Path::new("/ws"), &stems);
+        assert_eq!(links[0].target_path.as_deref(), Some("/ws/Alpha.md"));
+    }
+
+    #[test]
+    fn extract_md_link_local_only() {
+        let src = "[doc](./other.md) and [web](https://x.com) and [anchor](#sec)";
+        let links = extract_links(src, Path::new("/ws/a.md"), Path::new("/ws"), &empty_stems());
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].kind, LinkKind::Md);
+        assert_eq!(links[0].target_label, "doc");
+    }
+
+    #[test]
+    fn fenced_code_block_is_skipped() {
+        let src = "```\n[[InCodeFence]]\n[real](./x.md)\n```\nafter [[Outside]]";
+        let links = extract_links(src, Path::new("/ws/a.md"), Path::new("/ws"), &empty_stems());
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target_label, "Outside");
+    }
+
+    #[test]
+    fn is_local_md_recognizes_extensions() {
+        assert!(is_local_md("foo.md"));
+        assert!(is_local_md("foo.markdown"));
+        assert!(is_local_md("a/b/c.mdown?x=1"));
+        assert!(!is_local_md("https://x.md"));
+        assert!(!is_local_md("#sec"));
+        assert!(!is_local_md(""));
+    }
+}

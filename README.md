@@ -47,7 +47,8 @@
 | | 复制为 HTML / Markdown 片段 | ✅ |
 | | 微信公众号样式预览 + 复制 | ✅ |
 | **AI** | Anthropic / OpenAI / Gemini / DeepSeek / Ollama / 自定义 | ✅ |
-| | API Key 进 OS 钥匙串（不进 localStorage） | ✅ |
+| | 流式响应 + 取消生成 | ✅ |
+| | API Key 进 OS 钥匙串（不进 Tauri Store / localStorage） | ✅ |
 | | 把当前笔记前 6000 字作 system prompt | ✅ |
 | **本地知识库** | sqlite-vec 向量索引（每仓库一份 `.markio/rag.db`） | ✅ |
 | | 嵌入模型：本地 Ollama / OpenAI 兼容（用户在设置里切换） | ✅ |
@@ -180,7 +181,7 @@ md-view/
 
 ## 路线图
 
-后续功能与近期规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。简版：流式 AI / Git 同步 / 应用更新 / Mac App Store 上架 → RAG Reranker / 文件监听增量 / 导入 Notion·Obsidian → Windows MSIX / 性能优化 / i18n。
+后续功能与近期规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。简版：先守住 CI / fmt / clippy / 测试门禁，再补数据安全、同步闭环、导入报告、功能入口分层和大模块拆分。
 
 ## 数据怎么存
 
@@ -194,9 +195,9 @@ md-view/
         └── rag.db                # sqlite-vec 向量索引 + FTS5 关键词索引 + 引用图谱
 
 ~/Library/Application Support/markio/   # macOS（Windows 在 %APPDATA%）
-└── （目前只有 keyring 入口；不写实际文件）
+└── store.bin                           # Tauri Store：设置、仓库列表、UI 状态等
 
-localStorage                     # 浏览器存储，跨重启
+localStorage                     # 浏览器开发模式 fallback；正式桌面端优先走 Tauri Store
 ├── markio.settings.v1           # 主题 / 字号 / AI 配置（不含 API Key）
 ├── markio.workspaces.v1         # 仓库列表
 ├── markio.ui.v1                 # 侧栏 / 大纲 / 模式
@@ -219,14 +220,14 @@ OS Keychain（com.welape.mdview）  # 真正的密钥
 4. **原子写**：写入临时文件 → fsync → rename，避免半文件
 5. **冲突检测**：保存前对比 mtime，跟前端记录不符就返回 `CONFLICT:<mtime>:<hash>`，前端弹窗让用户决定
 6. **创建不覆盖**：新建笔记走 `OpenOptions::create_new(true)`，存在时返回 `ALREADY_EXISTS:<path>`
-7. **API Key 入钥匙串**：前端只看 "已配置 / 未配置" 布尔，明文 key 永不进 localStorage / store.bin
+7. **API Key 入钥匙串**：前端只看 "已配置 / 未配置" 布尔，聊天与嵌入 key 不进 localStorage / store.bin
 
 ## 已知 trade-off
 
 - **小仓库的文件名搜索**仍在前端走（命令面板内嵌缓存树）。> 1 万节点的仓库建议改 Rust grep
 - **WYSIWYG 边界情况**：嵌套列表、表格内的行内标记现在不会精细装饰，光标在该行时全部显形
 - **iOS / Android** 还没接 Tauri 2 mobile entry point；桌面优先
-- **真同步**（iCloud / GitHub / WebDAV）只是设置面板的 UI 壳，没接 API；要么手动 Git push，要么把仓库放 iCloud Drive 让系统同步
+- **同步能力分层**：Git 命令和自动同步雏形已接入，但冲突状态机还需加固；WebDAV / S3 / Dropbox / Google Drive 目前是云存储工具集，不是完整双向同步引擎
 
 ## License
 

@@ -26,7 +26,7 @@
 | [`state.rs`](../src-tauri/src/state.rs) | `AppState` = 已注册的 workspace 集合 + 已打开文件的指纹表；`ensure_in_workspaces()` 闸门 |
 | [`fs_ops.rs`](../src-tauri/src/fs_ops.rs) | 递归 walker（带 hard-skip 列表）/ 原子写 / 创建不覆盖 / grep / 反链 / 回收站 / 快照 / Finder reveal |
 | [`markdown.rs`](../src-tauri/src/markdown.rs) | pulldown-cmark 渲染 + syntect 高亮 + ammonia 清洗 + 大纲抽取 |
-| [`ai.rs`](../src-tauri/src/ai.rs) | reqwest 代理调 Anthropic Messages API / OpenAI Chat Completions / Google Gemini |
+| [`ai.rs`](../src-tauri/src/ai.rs) | reqwest 代理调 Anthropic / OpenAI 兼容 / Google Gemini，支持流式响应与取消 |
 | [`secrets.rs`](../src-tauri/src/secrets.rs) | `keyring` 包装：macOS Security framework / Windows Credential Manager / Linux Secret Service |
 
 ## 关键命令
@@ -48,6 +48,7 @@
 | `history_save/list/read` | workspace, file | varies | allowlist；最多保留 30 份/文件 |
 | `secret_set/get/has/delete` | account, value? | bool/string/() | 直通 keyring |
 | `ai_chat` | `{ provider, endpoint?, model, messages, ... }` | `{ text, model, usage }` | 无 apiKey 时从 keychain 自动拉 |
+| `ai_chat_stream` / `ai_chat_cancel` | stream id + chat request | Tauri event chunk/done/error | 流式响应；取消状态在 Rust 端清理 |
 
 ## 安全边界
 
@@ -98,7 +99,7 @@ pub fn ensure_in_workspaces(workspaces: &HashSet<PathBuf>, target: &Path)
 
 所有 `fs_*`、`history_*`、`fs_trash_*`、`fs_reveal` 命令调用前都进这道闸。**不在已注册仓库的路径直接返回 "拒绝访问"。**
 
-启动时 `App.tsx` 调 `workspace.hydrate()`，把 localStorage 里持久化的仓库列表再注册一遍，否则刚启动时所有命令都会被拒。
+启动时 `App.tsx` 调 `workspace.hydrate()`，把 Tauri Store（浏览器开发模式为 localStorage fallback）里持久化的仓库列表再注册一遍，否则刚启动时所有命令都会被拒。
 
 ### Layer 4 — 写入原子化 & 冲突检测
 
@@ -181,7 +182,7 @@ fs_save(path, content, expected_mtime?, force?):
 ## 持久化
 
 - **磁盘**：你打开的 .md 文件，加上仓库根的 `.markio/history/` 与 `.markio/trash/`
-- **localStorage**：见 README "数据怎么存"
+- **Tauri Store / localStorage fallback**：见 README "数据怎么存"
 - **OS 钥匙串**：API Key
 
 ## 跨平台兼容
@@ -264,13 +265,13 @@ IPC 命令（见 `lib.rs`）：
 - sqlite-vec 通过 `rusqlite`（`bundled-full`）静态链接，不依赖外部 .dylib，无需 entitlement 例外
 - `.markio/rag.db` 落在 workspace 内，用户已通过 NSOpenPanel 授予路径权限，沙盒兼容
 - Ollama 路径走 `http://127.0.0.1:11434`，需要 `com.apple.security.network.client` entitlement（默认已有）
-- OpenAI Embedding 走 `connect-src` CSP 允许的 `https:` 域；API Key 落 Keychain
+- OpenAI Embedding 走 Rust `reqwest` 代理；API Key 落 Keychain，WebView 不直接连外部模型服务
 
 ## 已知 trade-off
 
 - **小仓库的文件名搜索** 仍在前端走（树是已扫好的，filter 是 JS）。> 1 万节点要 Rust 索引
-- **当前文档查找** 是 React 在 preview DOM 上 walkNodes，>10万字会卡
+- **当前文档查找** 在 preview DOM 上 walkNodes 做高亮，>10 万字仍可能卡；后端已有 ranges 命令，但 regex 语义和前端接入还需补齐
 - **AI 仓库分析** 已经接 sqlite-vec 混合检索 + 引用图谱（见上面「AI · 上下文检索」）。后续可加 reranker（如本地 BGE-reranker）进一步提精度
-- **真同步** 还是 UI 壳
+- **同步能力分层**：Git 命令已接入，自动同步还需要状态机和冲突恢复；WebDAV / S3 / Dropbox / Google Drive 是云存储工具集，不是完整同步引擎
 - **iOS / Android** 没接 Tauri mobile entry
-- **流式 AI** 没接；目前是同步等完整响应
+- **Smart Channel** 仍是实验桥，正式化前不能作为稳定外部接口

@@ -1,276 +1,163 @@
-# markio · 后续功能与路线图
+# markio · 长期落地计划
 
-> 本文按"价值密度 × 工程量"排序，每条都标注当前状态、计划做到哪、技术路线。
-> 已落地的能力见 [README](../README.md) 与 [ARCHITECTURE](./ARCHITECTURE.md)。
-> 日期格式 `YYYY-MM-DD`，时区 Asia/Shanghai。
+> 更新时间：2026-05-18，时区 Asia/Shanghai。
+> 本文只记录真实状态、临时处理、未闭环能力和后续落地顺序。用户可见入口必须和真实能力一致。
 
 ---
 
-## 0 · 现状速览
+## 0 · 状态标记
 
-| 模块 | 状态 |
+| 标记 | 含义 |
 | --- | --- |
-| 编辑 / 预览 / WYSIWYG / 阅读四模式 | ✅ |
-| 文件树 + 最近 + 附件 + 回收站 | ✅ |
-| 历史快照（每文件最多 30 份） | ✅ |
-| 原子写 + mtime/hash 冲突检测 | ✅ |
-| 全局 Rust grep + 命令面板 | ✅ |
-| AI 工作区（10 模式 + 多 provider + 任务侧栏 + 引用预览） | ✅ |
-| **本地知识库**：sqlite-vec + Ollama/OpenAI + 混合检索 + 引用图谱 | ✅ |
-| 笔记图片：粘贴 / 拖拽 / 本地 Assets / PicGo 上传 / 渲染期 asset:// 重写 | ✅ |
-| 源 ↔ 预览双向滚动同步 | ✅ |
-| 导出 PDF / HTML / 微信公众号样式复制 | ✅ |
-| OS Keychain 存 API Key（AI + 嵌入两套） | ✅ |
-| macOS / Windows / Linux Tauri 打包脚本 | ✅ |
-
-下面列的是**已知缺口**与**预期演进**。
+| ✅ 正式 | 已实现、已接入主流程，有基础测试或人工验证 |
+| 🟡 可用但需加固 | 用户可以使用，但仍有数据安全、错误提示、边界场景或测试缺口 |
+| 🧪 实验 / 工具 | 有入口或底层命令，但不是完整产品闭环 |
+| ❌ 未做 | 没有可交付实现，不能包装成正式功能 |
 
 ---
 
-## 1 · AI / 知识库
+## 1 · 当前真实状态
 
-### 1.1 流式 AI 响应（高优）
-
-- **现状**：`ai::chat` 是阻塞 reqwest，整段拿到再 return；UI 一次性显示
-- **目标**：边出边显，体验和官方客户端一致
-- **路线**：
-  1. Rust 侧把 `chat` 拆成 `chat_stream`，开 SSE / NDJSON 读取
-  2. 用 Tauri `Emitter` 向前端 `emit("ai-chunk", { sessionId, delta })`
-  3. 前端 `AIPanel.send()` 改成订阅 channel，逐 token 追加到 message.text
-- **影响面**：`ai.rs`、`lib.rs`（新增 `ai_chat_stream` 与 `ai_chat_cancel`）、`AIPanel.tsx`
-- **难点**：取消 / 失败回退 / token 计数；Anthropic / OpenAI / Gemini 的流式协议各家不同
-
-### 1.2 RAG Reranker（中优）
-
-- **现状**：混合检索仅靠向量 + BM25 + RRF 融合，对长 query 精度有限
-- **目标**：top-20 → reranker → top-K，精度提升 10–20pp
-- **路线**：
-  - 本地：复用 Ollama 跑 `bge-reranker-v2-m3`（pull 后通过 `/api/generate` 或 cross-encoder API）
-  - 云端：Voyage / Cohere rerank（用户在设置切换）
-  - 后端：`rag/search.rs` 在融合后增加 rerank 步骤，并加 `rerankProvider` 配置
-- **设置项**：`本地知识库` 面板新增「启用 Reranker」+ provider 选择
-
-### 1.3 真实文件监听 → 实时增量索引（中优）
-
-- **现状**：增量索引靠保存钩子 + 删除回调；外部程序改文件不会自动重建
-- **目标**：第三方编辑器 / git pull / 拖拽改文件后，索引自动刷新
-- **路线**：
-  - Rust 引入 `notify` crate，每个已注册仓库一个 watcher
-  - 事件 debounce 500 ms → 走 `rag::reindex_file` / `remove_file`
-  - 同时刷新前端 fileTree
-- **风险**：macOS FSEvents 在 Sandbox 内行为差异；要测试 iCloud 目录
-
-### 1.4 索引面板可视化（中优）
-
-- **现状**：设置里只有进度条 + 文档数
-- **目标**：用图谱 / Treemap 展示哪些目录命中频次高、哪些文档孤立
-- **路线**：前端用 Cytoscape（已在依赖里）展示链接图；点击节点跳笔记
-
-### 1.5 RAG 评估集（低优 / 工程）
-
-- 内置一组「问题 → 期望命中文档」的 JSON fixture，提供 CLI 跑 recall@K / MRR
-- 给后续替换 embedding 模型 / 改分块策略时有参考
+| 模块 | 状态 | 说明 |
+| --- | --- | --- |
+| 编辑 / 预览 / WYSIWYG / 阅读 | ✅ 正式 | CodeMirror、markdown 渲染、同步滚动、Mermaid/KaTeX/代码高亮已可用 |
+| 文件保存 / 历史 / 单文件回收站 | 🟡 可用但需加固 | 原子写、mtime/hash 冲突检测、历史快照可用；目录回收站未闭环，写文件入口需统一审计 |
+| 文件树 / 快速打开 / 全文搜索 | 🟡 可用但需加固 | 文件树已有虚拟列表；仍有深度、数量、隐藏文件、只显示 markdown 等硬限制 |
+| 文档内查找 | 🟡 可用但需加固 | 预览查找仍在 DOM text node 上做高亮；Rust ranges 命令存在，但 regex 语义还未完整实现 |
+| AI 聊天 | ✅ 正式 | 多 provider、流式响应、取消、任务侧栏和引用预览已接入 |
+| 本地知识库 RAG | 🟡 可用但需加固 | sqlite-vec + FTS5 + 引用图谱 + RRF 已可用；rerank key 存储、重建取消、失败恢复还需补 |
+| 文件监听 / 增量索引 | 🟡 可用但需加固 | watcher 已有；需要更细事件类型、错误恢复和外部批量变更后的重建策略 |
+| Git 同步 | 🟡 可用但需加固 | git init/clone/status/fetch/commit/pull/push 等命令已接；自动同步策略仍过粗 |
+| WebDAV / S3 / Dropbox / Google Drive | 🧪 实验 / 工具 | 有连接、列表、上传、下载、删除等基础能力；不是统一双向同步引擎 |
+| iCloud | 🧪 实验 / 工具 | 主要依赖系统文件夹同步；应用内未掌握云端冲突、同步进度和错误 |
+| 导入 Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 可用但需加固 | 已有导入命令；格式转换、资源路径、进度报告和丢失项报告需要产品化 |
+| Roam / Logseq 导入 | ❌ 未做 | 不应展示成正式导入能力 |
+| PDF / HTML / 多格式复制 | ✅ 正式 | 主流程可用 |
+| 微信公众号样式复制 | 🟡 可用但需加固 | 预览和复制可用；直接推送草稿、图片素材上传和代码块内联化未闭环 |
+| Smart Channel | 🧪 实验 / 工具 | 目前是 `window.__markioSmartChannel` 临时桥；正式化前需改 Tauri command、权限和配额模型 |
+| 更新 / i18n / 打包脚本 | ✅ 正式 | Tauri updater、中文/英文资源、桌面打包脚本已存在；仍需发布链路验证 |
+| CI / Rust 门禁 | ✅ 正式 | 2026-05-18 已改为源码变更触发 CI，并强制 fmt / clippy |
+| 前端 lint / E2E / visual regression | ❌ 未做 | 目前只有 TypeScript build 和 Vitest 单测 |
 
 ---
 
-## 2 · 同步 / 多端
+## 2 · 必须清掉的临时处理
 
-### 2.1 Git 同步（高优）
+1. **Smart Channel 临时全局入口**
+   - 现状：浏览器全局对象 + localStorage 配额。
+   - 落地标准：Tauri command、显式权限、配置持久化、错误可见。
 
-- **现状**：设置里有「同步」面板（WebDAV / iCloud / 自定义）但都是 UI 壳
-- **目标**：Git 优先，因为 markdown 仓库天然 fit
-- **路线**：
-  - Rust 引入 `git2` 或 `gix`（gitoxide，纯 Rust，沙盒友好）
-  - 命令：`git_status` / `git_pull` / `git_commit` / `git_push`
-  - 设置：远端 URL + auth（SSH key 走 Keychain / PAT 走 Keychain）
-  - 冲突策略：复用现有 `syncConflictStrategy`（ask / newest / local / remote）
-  - StatusBar 显示 「未推送 N · 未拉取 M」
-- **App Store**：纯 Rust gix 不依赖 libgit2 二进制，沙盒下用 HTTPS + PAT 流程最稳
+2. **半闭环同步能力**
+   - 现状：Git 有命令和自动同步雏形；云盘服务是工具集，不是同步系统。
+   - 落地标准：统一 sync engine、双向 diff、删除语义、冲突策略、重试、审计日志。
 
-### 2.2 WebDAV / iCloud 同步（中优）
+3. **后台错误静默降级**
+   - 现状：RAG、历史、同步、索引、若干后台任务会吞掉错误或只写 console。
+   - 落地标准：状态栏 / toast / 设置页诊断都能看到最近失败原因，并支持重试。
 
-- WebDAV：reqwest + propfind / put / delete；坚果云、TeraCloud 兼容
-- iCloud：直接读 `~/Library/Mobile Documents/com~apple~CloudDocs/`，用 NSMetadataQuery 监听同步状态
-- 跨设备冲突需要走 mtime + hash 的现有签名机制
+4. **大模块继续膨胀**
+   - 现状：`Settings.tsx`、`src-tauri/src/lib.rs`、`AIPanel.tsx` 已经过大。
+   - 落地标准：按设置域、Tauri command 域、AI 会话域拆分，新增功能不得继续堆进同一个文件。
 
-### 2.3 iOS / Android（低优 / 大）
-
-- Tauri 2 已支持 mobile entry，但需要重写 TitleBar / 文件选择 / Keychain 部分
-- 优先级低于桌面端打磨；建议等 1.0 后再启动
-- 预计要 3–4 周
+5. **用户入口和真实能力不一致**
+   - 现状：微信公众号、云同步、导入、Smart Channel 的用户预期容易被 UI 放大。
+   - 落地标准：正式功能、实验功能、未实现功能在 UI 和文档里明确分层。
 
 ---
 
-## 3 · 编辑器深化
+## 3 · P0：质量地基
 
-### 3.1 真协作（CRDT）（低优 / 实验）
+目标：任何源码变更都不能绕过基础质量检查。
 
-- 当前 `showLiveCursors` 是演示效果
-- 真协作需要 Yjs 或 Automerge 作 CRDT 文档；Tauri 端跑 y-websocket 不现实，更适合走 cloudflare durable object
-- 建议作为「跨设备同一仓库」的补充，先把 Git 同步做扎实再看
+已落地：
+- CI 不再只监听 `package.json`。
+- `cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、前端 build/test 会在 CI 主流程执行。
+- 本地 Rust fmt / clippy 已清零。
 
-### 3.2 表格编辑器（中优）
-
-- 现在表格只能手敲 markdown
-- 目标：选中表格区域时浮出表格工具栏（增删行列 / 对齐 / CSV 粘贴）
-- 实现：CodeMirror 6 plugin，识别 GFM 表格 block，浮出 widget
-
-### 3.3 数学公式 / 化学式输入辅助（低优）
-
-- KaTeX 渲染已通
-- 目标：`$` 自动配对 / `\frac{|}{}` 占位补全 / 公式预览悬浮
-- 与现有 Bubble Menu 复用 UI
-
-### 3.4 Outline 双向同步（中优）
-
-- 当前大纲只读
-- 目标：拖拽大纲项重排原文（heading 段落跟着移）
-- 实现：CM 文档操作 + 大纲组件 dnd-kit
+继续补：
+- 增加前端 lint：ESLint + React hooks 规则 + import 边界规则。
+- 增加最小 E2E：启动、打开文件夹、打开文件、编辑保存、冲突提示、搜索、导入报告。
+- 增加发布前 checklist：build、测试、updater manifest、签名/公证、回滚包。
 
 ---
 
-## 4 · 图片管线
+## 4 · P1：数据安全闭环
 
-### 4.1 上传前压缩（中优）
+目标：任何写入、删除、同步都不能让用户在不知情时丢数据。
 
-- 设置已有「上传前压缩」+ 质量滑块，但 Rust 侧未接
-- 实现：Rust 引入 `image` crate，PNG → 走 `oxipng`、JPEG → `mozjpeg`，按设置质量执行
-- 流程：粘贴 → 压缩 → 写 Assets → 可选 PicGo
+任务：
+- 统一文件写入 API，所有保存路径必须经过 expected mtime/hash 或明确 force。
+- 清理旧兼容写入入口，避免绕过冲突检测。
+- 实现目录回收站：目录 move、manifest、restore、purge 全链路。
+- Git 自动同步改为状态机：preflight → snapshot → commit preview → pull/fetch → conflict → push → result。
+- `syncConflictStrategy` 真正接入 Git 和云同步，不再只是设置项。
+- 后台任务失败统一进入诊断中心。
 
-### 4.2 OSS / S3 / 七牛等内置上传器（低优）
-
-- 现在只有 PicGo（用户跑本地服务）这一条路径
-- 目标：设置里挂常见 OSS（阿里 / 腾讯 / 七牛 / S3 兼容）的原生上传
-- 风险：密钥要走 Keychain，UI 流程要做好
-
-### 4.3 拖拽到任意位置插入图片（已部分）
-
-- 当前只支持粘贴；拖拽走的是 Tauri 文件拖入流程，需要补：
-  - 编辑器内 onDrop → 走 image_paste 相同管线
-  - 多文件批量
+验收：
+- 外部编辑同一文件时，保存不会静默覆盖。
+- 删除目录可以恢复。
+- Git pull 冲突时不会自动覆盖本地工作区。
 
 ---
 
-## 5 · 导出 / 第三方集成
+## 5 · P2：正式功能和实验功能分层
 
-### 5.1 微信公众号导出（高优 · 已有壳）
+目标：用户看到的每个入口都准确表达真实能力。
 
-- 现状：`WeChatSheet` 已有 4 套样式预览 + 一键复制 HTML
-- 缺：
-  - **图片自动上传**：公众号不接受外链图片，需要走素材接口或要求用户先上传
-  - **代码块样式**：公众号不支持 `<code>` 自定义类，需要内联 style 化
-- 风险：公众号官方 API 需要绑定 appid，自动上传需要 OAuth，暂建议保留「手动复制 + 提示」
+任务：
+- 微信公众号：要么补完素材上传 + draft push，要么重命名为“公众号排版复制”。
+- WebDAV / S3 / Dropbox / Google Drive：先标为“云存储工具”，再规划统一同步引擎。
+- Smart Channel：默认隐藏到实验设置；正式化前不作为主功能宣传。
+- 导入器：输出转换报告，列出成功、跳过、资源丢失、格式降级。
+- Roam / Logseq：未实现前不放正式按钮。
 
-### 5.2 腾讯龙虾（低优 / 待定位）
-
-- 当前是 UI 壳，没有任何实际逻辑
-- 建议**移除或重新定位**，避免给用户错觉。如要做"AI 起标题/摘要/封面"，重命名为「AI 辅助发布」更合适
-
-### 5.3 导入：Notion / Bear / Obsidian / 印象笔记（中优）
-
-- 当前是按钮 + 图标，未实现
-- 路线：每家用各自导出格式
-  - Notion：导出 zip → unzip + 解析 markdown + 重写 wiki link
-  - Bear：导出 bear-archive，提取 .md
-  - Obsidian：基本是 markdown 仓库，主要是把 `[[]]` 链接保留
-  - 印象笔记：.enex XML → markdown
-- 实现在 Rust 端的 `import.rs`，前端只是 file picker + 进度
-
-### 5.4 导出 EPUB / DOCX（低优）
-
-- 目前只支持 PDF / HTML
-- DOCX 走 `pandoc`（用户系统装好）调用；EPUB 也是 pandoc
+验收：
+- 设置页不会让用户误以为已经有完整云同步。
+- 每次导入都有可追踪报告。
+- 公众号入口不会承诺尚未实现的“直接发布”。
 
 ---
 
-## 6 · 性能 / 大仓库
+## 6 · P3：架构拆分
 
-### 6.1 Rust 全文搜索索引（中优）
+目标：继续做长期软件时，核心文件不再成为协作和回归风险。
 
-- 当前 `fs_grep` 每次都遍历仓库；> 1 万文档时慢
-- 目标：复用现有 FTS5 表（已经为 RAG 建好），把 `fs_grep` 改成 FTS5 查询
-- 工程：`fs_grep` 优先查 `chunks_fts`，找不到再回退暴力扫；UI 不变
+任务：
+- 拆 `Settings.tsx`：Appearance、Editor、AI、RAG、Sync、Import、Publish、About。
+- 拆 `lib.rs` command：filesystem、markdown、ai、rag、sync、cloud、import、window。
+- 拆 `AIPanel.tsx`：session state、stream control、mode picker、message list、citation preview。
+- 为 sync/import/rag 建独立领域测试 fixture。
 
-### 6.2 文件树虚拟列表（中优）
-
-- 当前一次性渲染整棵树；> 5000 节点 React 卡顿
-- 目标：用 `@tanstack/react-virtual` 把可见区外的 row 折叠
-- 注意保留展开 / 折叠状态
-
-### 6.3 流式 markdown 渲染（低优）
-
-- 当前 `md_render` 是一次性返回完整 HTML；> 10 万字会有 100–200ms 卡顿
-- 目标：把 HTML 按段落 chunk 返回，前端逐段 append（仅 split 视图收益明显）
-
-### 6.4 文档内查找走 Rust（中优）
-
-- 当前 React walkNodes 实现，> 10 万字卡
-- 目标：Rust `fs_find_in_text(text, pattern)` 返回 ranges 列表
-- 前端只接收 ranges 做高亮
+验收：
+- 单个 UI 文件原则上不超过 800 行，Rust command 模块不超过 1000 行。
+- 新增设置项无需修改一个 5000 行组件。
 
 ---
 
-## 7 · 平台与上架
+## 7 · P4：性能与体验深化
 
-### 7.1 Mac App Store 上架（高优）
+目标：大仓库和长文档下持续可用。
 
-- 脚本就绪（见 `scripts/build-mas.sh`、`docs/PACKAGING.md`）
-- 待办：
-  - Apple Developer 账户 + 签名 / 公证（用户操作）
-  - 隐私清单：声明用到了 Keychain、网络客户端、用户选定文件
-  - "AI 调用第三方 API 出网"在审核说明里写清楚
-- 风险：审核人员可能要求"提供测试账号"，AI 部分可以提供 Ollama 离线测试路径
+任务：
+- 全文搜索优先复用 FTS5，暴力 grep 只做 fallback。
+- 预览查找接 Rust ranges，补完整 regex / whole word / case-sensitive 语义。
+- RAG 重建支持取消、暂停、失败恢复、重试。
+- 文件树限制可见化：显示截断原因、支持继续加载或全局搜索。
+- 替换 `window.alert/confirm/prompt` 为统一 Dialog。
 
-### 7.2 Windows MSIX（中优）
-
-- 当前 MSI 脚本已就绪
-- Microsoft Store 上架要 MSIX；用 `tauri-bundler` 的 msix target
-- 签名走 Azure Code Signing
-
-### 7.3 应用更新（高优）
-
-- 目前打出 dmg / msi 后没有自更新通道
-- 路线：Tauri 2 `updater` plugin + 自托管 manifest（GitHub Releases 拉 latest.json）
-- 设置里加「自动检查更新」开关 + 当前版本号
-
-### 7.4 崩溃 / 错误上报（低优 / 可选）
-
-- Rust 端 panic + 前端 ErrorBoundary 落本地日志（`~/Library/Logs/markio/`）
-- 用户可在设置导出最近一次崩溃日志，**不主动上传**（隐私优先）
+验收：
+- 1 万文件仓库不会因树渲染或搜索明显卡顿。
+- 10 万字文档查找和预览不会锁 UI。
+- 关键错误都有用户可见恢复路径。
 
 ---
 
-## 8 · 工程基础设施
+## 8 · 推荐落地顺序
 
-- **CI**：GitHub Actions 跑 `cargo check` / `tsc -b` / `vite build`；目前没接
-- **单元测试**：Rust 端 `markdown.rs` / `rag/chunk.rs` / `rag/graph.rs` 几个纯函数最值得加
-- **集成测试**：录一个仓库 fixture，跑「索引 → 检索 → 命中预期」
-- **快照测试**：UI 组件用 Playwright 跑 visual diff
-- **多语言**：当前 UI 是中文，i18n 用 i18next；中英双语优先
-
----
-
-## 9 · 优先级建议（按月规划，可视为 1.0 → 1.x）
-
-| 月份 | 重点 |
-| --- | --- |
-| **2026-06** | 流式 AI + Git 同步 + 应用更新通道 + Mac App Store 提交 |
-| **2026-07** | RAG Reranker + 文件监听增量 + 表格编辑器 + 导入 Notion/Obsidian |
-| **2026-08** | Windows MSIX + 性能（FTS5 接入 fs_grep + 文件树虚拟列表）+ i18n |
-| **2026-09** | EPUB/DOCX 导出 + 索引可视化 + Outline 双向同步 |
-| **2026-Q4** | iOS / Android 启动 + 真协作 PoC |
-
----
-
-## 10 · 想做但暂不计划的
-
-- **公众号自动上传图片**（绑定 appid 风险高，先保持手动）
-- **完整 CRDT 协作**（团队产品方向，先把单机做扎实）
-- **GUI 插件市场**（社区规模不到，暂用 CSS 主题包替代）
-- **AI Agent / 自动操作笔记仓库**（提示工程未稳定，先稳化 RAG）
-
----
-
-## 反馈
-
-发现疏漏或想抢做某条，开 issue 或 PR 即可；本路线图随版本演进每季度更新一次。
+| 阶段 | 时间 | 目标 |
+| --- | --- | --- |
+| P0 | 已启动 | CI、fmt、clippy、文档真实状态 |
+| P1 | 接下来 3-5 个节点 | 文件写入审计、目录回收站、Git 同步状态机、错误诊断 |
+| P2 | 之后 1-2 周 | 功能入口分层、导入报告、微信公众号定位、云存储定位 |
+| P3 | 之后 2-3 周 | Settings / lib.rs / AIPanel 拆分和测试 fixture |
+| P4 | 持续 | 大仓库搜索、长文档查找、RAG 任务控制、Dialog 统一 |

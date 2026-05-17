@@ -3208,11 +3208,60 @@ pub fn run() {
             }
             window_state::install(&app.handle());
             window_state::apply_on_startup(&app.handle());
+            // 启动时如果是双击文件触发的，URL 已经在 CLI args 里（macOS 例外，走下面 Opened 事件）
+            forward_cli_open_files(&app.handle());
             Ok(())
         })
-        .run(tauri::generate_context!());
-    if let Err(e) = result {
-        eprintln!("error while running tauri application: {e}");
-        std::process::exit(1);
+        .build(tauri::generate_context!());
+    let app = match result {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("error while running tauri application: {e}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Opened { urls } = event {
+            // macOS Finder 双击 / Linux 文件管理器 open with：文件关联触发的事件
+            for url in urls {
+                let path = url
+                    .to_file_path()
+                    .ok()
+                    .and_then(|p| p.to_str().map(|s| s.to_string()));
+                if let Some(p) = path {
+                    let _ = app_handle.emit("open-from-os", p);
+                }
+            }
+        }
+    });
+}
+
+/// Windows / Linux 上文件关联是通过命令行参数传递的；macOS 走 RunEvent::Opened。
+/// 第一个非 flag 参数若是已存在的 .md / .markdown 等文件，启动后转发给前端。
+fn forward_cli_open_files(app: &tauri::AppHandle) {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg.starts_with('-') {
+            continue;
+        }
+        let p = std::path::Path::new(&arg);
+        if !p.exists() || !p.is_file() {
+            continue;
+        }
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase());
+        if !matches!(
+            ext.as_deref(),
+            Some("md" | "markdown" | "mdown" | "mkd" | "txt")
+        ) {
+            continue;
+        }
+        if let Some(s) = p.to_str() {
+            // 用 setTimeout 给前端 hydrate 留时间——这里直接 emit，前端启动后会收到
+            // （Tauri event channel 在 Webview 就绪后会回放最近一次 emit）
+            let _ = app.emit("open-from-os", s.to_string());
+        }
     }
 }

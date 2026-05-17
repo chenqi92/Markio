@@ -153,6 +153,34 @@ export default function App() {
     })();
   }, [hydrate, setAi]);
 
+  // 系统级"用 markio 打开"：双击 Finder / 文件管理器中的 .md，
+  // 或 macOS Dock 拖入文件 → Rust 端 emit "open-from-os"，前端 openPath 打开。
+  // 等到 hydrate 完成（workspaces 已注册）后再处理，否则 openPath 会失败。
+  useEffect(() => {
+    const queue: string[] = [];
+    let ready = false;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      unlisten = await listen<string>("open-from-os", (e) => {
+        if (typeof e.payload !== "string") return;
+        if (!ready) {
+          queue.push(e.payload);
+          return;
+        }
+        void useTabs.getState().openPath(e.payload);
+      });
+      // 给 hydrate 一点时间——workspace 列表注册到 Rust 后 openPath 才能通过 allowlist
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      ready = true;
+      for (const p of queue.splice(0)) {
+        void useTabs.getState().openPath(p);
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // 当前仓库切换后，后台拉起 vault index（先用 disk cache 立刻有数据，再 mtime diff）
   useEffect(() => {
     if (!activeWorkspacePath) return;

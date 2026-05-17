@@ -59,6 +59,22 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdown", "mkd"],
+        "name": "Markdown Document",
+        "description": "Markdown document",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      },
+      {
+        "ext": ["txt"],
+        "name": "Plain Text",
+        "description": "Plain text document",
+        "role": "Viewer",
+        "mimeType": "text/plain"
+      }
+    ],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "entitlements": "entitlements/macos.entitlements",

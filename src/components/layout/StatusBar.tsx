@@ -8,7 +8,6 @@ import { useDiagnostics } from "@/stores/diagnostics";
 import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
 import { PomodoroChip } from "../popovers/PomodoroChip";
-import { WritingGoalChip } from "../popovers/WritingGoalChip";
 
 function relativeTime(ts: number | null): string {
   if (!ts) return "尚未同步";
@@ -320,9 +319,6 @@ export function StatusBar() {
       )}
       <span className="item right">
         <PomodoroChip />
-      </span>
-      <span className="item">
-        <WritingGoalChip />
       </span>
       <span className="item">UTF-8</span>
       <span className="item">Markdown</span>

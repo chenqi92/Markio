@@ -282,8 +282,8 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   50% { opacity: 0.4; }
 }
 
-/* ── Pomodoro / Writing Goal chips（StatusBar） ── */
-.pomo, .wg { position: relative; flex-shrink: 0; }
+/* ── Pomodoro chip（StatusBar） ── */
+.pomo { position: relative; flex-shrink: 0; }
 .pomo-control {
   display: inline-flex;
   align-items: center;
@@ -311,22 +311,9 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   white-space: nowrap;
   cursor: pointer;
 }
-.wg-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px;
-  height: 18px;
-  background: var(--bg-pane);
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
-  font-size: 10.5px;
-  color: var(--text-2);
-  white-space: nowrap;
-  cursor: pointer;
-}
 .pomo-chip:hover, .pomo-menu-toggle:hover { background: var(--bg-hover); color: var(--text); }
 .pomo-control.running .pomo-chip:hover,
 .pomo-control.running .pomo-menu-toggle:hover { color: #ff7f7f; }
-.wg-chip:hover { background: var(--bg-elev); color: var(--text); }
 .pomo-action {
   position: relative;
   width: 15px;
@@ -356,20 +343,7 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   cursor: pointer;
 }
 
-.wg-chip b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
-.wg-bar {
-  width: 30px; height: 3px;
-  background: var(--bg-pane-2);
-  border-radius: 999px;
-  overflow: hidden;
-  display: inline-block;
-}
-.wg-bar > span {
-  display: block; height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-}
-
-.pomo-panel, .wg-panel {
+.pomo-panel {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
@@ -441,40 +415,6 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .pomo-stats > div { text-align: center; }
 .pomo-stats b { display: block; font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
 .pomo-stats span { font-size: 9.5px; color: var(--text-3); }
-
-.wg-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.wg-edit {
-  width: 20px; height: 20px;
-  border-radius: 4px;
-  color: var(--text-3);
-  font-size: 11px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-.wg-edit:hover { background: var(--bg-hover, var(--bg-pane-2)); color: var(--text); }
-.wg-progress-cards { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.wg-pc { padding: 8px 10px; background: var(--bg-pane-2); border-radius: 7px; }
-.wg-pc-l { font-size: 10.5px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.wg-pc-v { font-size: 13.5px; color: var(--text); margin-top: 2px; }
-.wg-pc-v b { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
-.wg-pc-bar {
-  margin-top: 6px;
-  height: 4px; background: var(--bg-pane);
-  border-radius: 999px; overflow: hidden;
-}
-.wg-pc-bar > span {
-  display: block; height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-}
-.wg-streak-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
-  background: linear-gradient(135deg, var(--accent-glow, rgba(10,132,255,0.12)), transparent);
-  border-radius: 7px;
-}
-.wg-flame { font-size: 18px; }
 
 /* ── 顶栏 pill 按钮（捕获 / AI） ── */
 .tb-quick-cap, .tb-ai-top {

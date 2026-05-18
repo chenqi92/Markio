@@ -36,14 +36,14 @@ export function ContextMenu({
     };
   }, [onClose]);
 
-  // 简单 clamp，防止溢出视口
-  const left = Math.min(x, window.innerWidth - 240);
-  const top = Math.min(y, window.innerHeight - items.length * 30);
+  const maxHeight = Math.max(120, Math.min(window.innerHeight - 16, items.length * 30));
+  const left = Math.max(8, Math.min(x, window.innerWidth - 248));
+  const top = Math.max(8, Math.min(y, window.innerHeight - maxHeight - 8));
 
   return (
     <div
       className="ctxmenu"
-      style={{ left, top }}
+      style={{ left, top, maxHeight }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((it, i) =>

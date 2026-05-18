@@ -60,6 +60,7 @@ export function TabStrip() {
   const activeId = useTabs((s) => s.activeId);
   const setActive = useTabs((s) => s.setActive);
   const closeTab = useTabs((s) => s.closeTab);
+  const saveTab = useTabs((s) => s.saveTab);
   const togglePin = useTabs((s) => s.togglePin);
   const reorderTabs = useTabs((s) => s.reorderTabs);
   const setToast = useUI((s) => s.setToast);
@@ -67,95 +68,155 @@ export function TabStrip() {
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
-  const confirmAndClose = (t: TabStripItem) => {
-    if (t.dirty) {
-      const ok = window.confirm(
-        `${t.title} 还有未保存的修改。继续关闭会丢失。`,
-      );
-      if (!ok) return;
-    }
-    closeTab(t.id);
-  };
-
-  const items = (t: TabStripItem): CtxItem[] => [
-    {
-      label: t.pinned ? "取消固定" : "固定到最前",
-      icon: "pin",
-      onClick: () => togglePin(t.id),
-    },
-    { sep: true },
-    {
-      label: "复制路径",
-      icon: "copy",
-      onClick: async () => {
-        try {
-          await writeText(t.path);
-          setToast({ stage: "done", message: "已复制路径" });
-          setTimeout(() => setToast(null), 1500);
-        } catch {
-          /* ignore */
-        }
-      },
-    },
-    {
-      label: "在 Finder 中显示",
-      icon: "folder-open",
-      onClick: async () => {
-        try {
-          await api.reveal(t.path);
-        } catch (e) {
-          setToast({
-            stage: "error",
-            message: `打开失败：${(e as Error).message}`,
-          });
-          setTimeout(() => setToast(null), 2500);
-        }
-      },
-    },
-    { sep: true },
-    {
-      label: "关闭其它标签",
-      icon: "close",
-      onClick: () => {
-        const others = useTabs.getState().tabs.filter((x) => x.id !== t.id && !x.pinned);
-        const dirty = others.find((x) => x.dirty);
-        if (dirty) {
-          const ok = window.confirm(
-            `有未保存的标签（${dirty.title}）。继续关闭会丢失。`,
-          );
-          if (!ok) return;
-        }
-        for (const x of others) closeTab(x.id);
-      },
-    },
-    {
-      label: "关闭所有标签",
-      icon: "trash",
-      danger: true,
-      onClick: () => {
-        const anyDirty = useTabs.getState().tabs.some((x) => x.dirty);
-        if (anyDirty) {
-          const ok = window.confirm("有未保存的标签，继续关闭会丢失。");
-          if (!ok) return;
-        }
-        for (const x of useTabs.getState().tabs) closeTab(x.id);
-      },
-    },
-    { sep: true },
-    {
-      label: "关闭",
-      icon: "x",
-      onClick: () => confirmAndClose(t),
-    },
-  ];
-
-  if (tabs.length === 0) return null;
-
-  // 把 pinned 排前面
+  // 把 pinned 排前面，和 TabStrip 的可视顺序保持一致。
   const ordered = [...tabs].sort((a, b) => {
     if (a.pinned === b.pinned) return 0;
     return a.pinned ? -1 : 1;
   });
+
+  const showToast = (
+    stage: "done" | "error",
+    message: string,
+    timeout = stage === "error" ? 2500 : 1500,
+  ) => {
+    setToast({ stage, message });
+    window.setTimeout(() => setToast(null), timeout);
+  };
+
+  const copyValue = async (value: string, message: string) => {
+    try {
+      await writeText(value);
+      showToast("done", message);
+    } catch (e) {
+      showToast("error", `复制失败：${(e as Error).message}`);
+    }
+  };
+
+  const confirmDirtyTabs = (targets: TabStripItem[], action: string) => {
+    const dirty = targets.filter((x) => x.dirty);
+    if (dirty.length === 0) return true;
+    const suffix = dirty.length > 1 ? ` 等 ${dirty.length} 个标签` : "";
+    return window.confirm(
+      `${action}包含未保存的标签（${dirty[0].title}${suffix}）。继续关闭会丢失修改。`,
+    );
+  };
+
+  const closeTabs = (targets: TabStripItem[], action: string) => {
+    if (targets.length === 0) {
+      showToast("done", "没有可关闭的标签");
+      return;
+    }
+    if (!confirmDirtyTabs(targets, action)) return;
+    for (const x of targets) closeTab(x.id);
+  };
+
+  const confirmAndClose = (t: TabStripItem) => {
+    closeTabs([t], "关闭当前标签");
+  };
+
+  const items = (t: TabStripItem): CtxItem[] => {
+    const index = ordered.findIndex((x) => x.id === t.id);
+    const left = index >= 0 ? ordered.slice(0, index).filter((x) => !x.pinned) : [];
+    const right = index >= 0 ? ordered.slice(index + 1).filter((x) => !x.pinned) : [];
+    const others = ordered.filter((x) => x.id !== t.id && !x.pinned);
+    const saved = ordered.filter((x) => !x.dirty && !x.pinned);
+    const unpinned = ordered.filter((x) => !x.pinned);
+    const menu: CtxItem[] = [
+      {
+        label: "切换到此标签",
+        icon: "file",
+        onClick: () => setActive(t.id),
+      },
+    ];
+
+    if (t.dirty) {
+      menu.push({
+        label: "保存",
+        icon: "save",
+        onClick: async () => {
+          const result = await saveTab(t.id);
+          if (result === "ok") {
+            showToast("done", "已保存");
+          } else if (result === "conflict") {
+            showToast("error", "保存冲突，请先处理磁盘版本");
+          } else {
+            showToast("error", "保存失败");
+          }
+        },
+      });
+    }
+
+    menu.push(
+      {
+        label: t.pinned ? "取消固定" : "固定到最前",
+        icon: "pin",
+        onClick: () => togglePin(t.id),
+      },
+      { sep: true },
+      {
+        label: "复制标题",
+        icon: "copy",
+        onClick: () => copyValue(t.title, "已复制标题"),
+      },
+      {
+        label: "复制路径",
+        icon: "copy",
+        onClick: () => copyValue(t.path, "已复制路径"),
+      },
+      {
+        label: "在 Finder 中显示",
+        icon: "folder-open",
+        onClick: async () => {
+          try {
+            await api.reveal(t.path);
+          } catch (e) {
+            showToast("error", `打开失败：${(e as Error).message}`);
+          }
+        },
+      },
+      { sep: true },
+      {
+        label: "关闭",
+        icon: "x",
+        onClick: () => confirmAndClose(t),
+      },
+      {
+        label: "关闭左侧标签",
+        icon: "close",
+        onClick: () => closeTabs(left, "关闭左侧标签"),
+      },
+      {
+        label: "关闭右侧标签",
+        icon: "close",
+        onClick: () => closeTabs(right, "关闭右侧标签"),
+      },
+      {
+        label: "关闭其它标签",
+        icon: "close",
+        onClick: () => closeTabs(others, "关闭其它标签"),
+      },
+      {
+        label: "关闭已保存标签",
+        icon: "check",
+        onClick: () => closeTabs(saved, "关闭已保存标签"),
+      },
+      {
+        label: "关闭未固定标签",
+        icon: "close",
+        onClick: () => closeTabs(unpinned, "关闭未固定标签"),
+      },
+      {
+        label: "关闭所有标签",
+        icon: "trash",
+        danger: true,
+        onClick: () => closeTabs(ordered, "关闭所有标签"),
+      },
+    );
+
+    return menu;
+  };
+
+  if (tabs.length === 0) return null;
 
   return (
     <>

@@ -9,12 +9,11 @@
  * 光标在某行时，整行的 marker 全部"现形"以便编辑；离开则隐藏。
  */
 import { syntaxTree } from "@codemirror/language";
+import { type EditorState, StateField } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
-  ViewPlugin,
-  type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
@@ -161,18 +160,18 @@ class VisualFenceWidget extends WidgetType {
  * spans both fences; we strip the first line (```lang) and the trailing
  * ``` line. Returns the inner source code (no trailing newline).
  */
-function extractFencedBody(view: EditorView, from: number, to: number): string {
-  const firstLine = view.state.doc.lineAt(from);
-  const bodyStart = Math.min(firstLine.to + 1, view.state.doc.length);
+function extractFencedBody(state: EditorState, from: number, to: number): string {
+  const firstLine = state.doc.lineAt(from);
+  const bodyStart = Math.min(firstLine.to + 1, state.doc.length);
   if (bodyStart >= to) return "";
-  const slice = view.state.doc.sliceString(bodyStart, to);
+  const slice = state.doc.sliceString(bodyStart, to);
   // strip a trailing ``` line if present
   const stripped = slice.replace(/\r?\n?[ \t]*```\s*$/, "");
   return stripped;
 }
 
-function extractFenceLang(view: EditorView, from: number): string {
-  const firstLine = view.state.doc.lineAt(from);
+function extractFenceLang(state: EditorState, from: number): string {
+  const firstLine = state.doc.lineAt(from);
   const m = firstLine.text.match(/^\s*```\s*([\w-]+)/);
   return m ? m[1] : "";
 }
@@ -341,8 +340,8 @@ interface WikilinkInfo {
   path?: string;
 }
 
-function detectWikilinks(view: EditorView): WikilinkInfo[] {
-  const text = view.state.doc.toString();
+function detectWikilinks(state: EditorState): WikilinkInfo[] {
+  const text = state.doc.toString();
   const ws = useWorkspace.getState();
   const activeWs = ws.workspaces.find((w) => w.id === ws.activeId);
   const files = activeWs
@@ -499,10 +498,10 @@ interface BuildResult {
  */
 function rangeHasCursor(
   range: { from: number; to: number },
-  view: EditorView,
+  state: EditorState,
   inclusive: boolean = true,
 ): boolean {
-  for (const sel of view.state.selection.ranges) {
+  for (const sel of state.selection.ranges) {
     const head = sel.head;
     const headInside = inclusive
       ? head >= range.from && head <= range.to
@@ -516,16 +515,16 @@ function rangeHasCursor(
   return false;
 }
 
-function build(view: EditorView): BuildResult {
+function build(state: EditorState): BuildResult {
   const decos: PendingDeco[] = [];
   const atomic: PendingDeco[] = [];
 
   // Math regions: detect once over the full doc (regex-only, no AST since
   // lezer-markdown has no math node by default). Skip the widget when the
   // cursor is inside so the user can edit the source plainly.
-  const mathRanges = detectMathRanges(view.state.doc.toString());
+  const mathRanges = detectMathRanges(state.doc.toString());
   for (const range of mathRanges) {
-    if (rangeHasCursor(range, view)) continue;
+    if (rangeHasCursor(range, state)) continue;
     decos.push({
       from: range.from,
       to: range.to,
@@ -543,9 +542,9 @@ function build(view: EditorView): BuildResult {
 
   // Wikilinks: same regex-based scan; rendered widget shows display text and
   // remembers the resolved vault path so clicks can open the target note.
-  const wikilinkRanges = detectWikilinks(view);
+  const wikilinkRanges = detectWikilinks(state);
   for (const info of wikilinkRanges) {
-    if (rangeHasCursor({ from: info.from, to: info.to }, view, true)) continue;
+    if (rangeHasCursor({ from: info.from, to: info.to }, state, true)) continue;
     decos.push({
       from: info.from,
       to: info.to,
@@ -579,12 +578,12 @@ function build(view: EditorView): BuildResult {
   };
 
   let visibleFrom = 0;
-  let visibleTo = view.state.doc.length;
+  let visibleTo = state.doc.length;
 
   /** 给一行加 class（标题 / 引用整行） */
   const lineMark = (pos: number, cls: string) => {
     if (pos < visibleFrom || pos > visibleTo) return;
-    const line = view.state.doc.lineAt(pos);
+    const line = state.doc.lineAt(pos);
     decos.push({
       from: line.from,
       to: line.from,
@@ -596,10 +595,10 @@ function build(view: EditorView): BuildResult {
     const fromPos = Math.max(from, visibleFrom);
     const toPos = Math.min(to, visibleTo);
     if (fromPos > toPos) return;
-    const startLine = view.state.doc.lineAt(fromPos).number;
-    const endLine = view.state.doc.lineAt(toPos).number;
+    const startLine = state.doc.lineAt(fromPos).number;
+    const endLine = state.doc.lineAt(toPos).number;
     for (let ln = startLine; ln <= endLine; ln++) {
-      const line = view.state.doc.line(ln);
+      const line = state.doc.line(ln);
       decos.push({
         from: line.from,
         to: line.from,
@@ -608,12 +607,10 @@ function build(view: EditorView): BuildResult {
     }
   };
 
-  // 用一个简单的 "active block" 栈，标记当前在哪种节点里，给行内 marker 分类
-  const tree = syntaxTree(view.state);
-  const ranges =
-    view.visibleRanges.length > 0
-      ? view.visibleRanges
-      : [{ from: 0, to: view.state.doc.length }];
+  // 块级 decoration 必须从 StateField 提供 → 没有 view.visibleRanges，
+  // 直接遍历整个 doc。lezer 解析是增量的，全树 iterate 对几千行也只是几 ms。
+  const tree = syntaxTree(state);
+  const ranges = [{ from: 0, to: state.doc.length }];
   for (const range of ranges) {
     visibleFrom = range.from;
     visibleTo = range.to;
@@ -640,7 +637,7 @@ function build(view: EditorView): BuildResult {
 
       // ─── 引用 / Callout ───
       if (n === "Blockquote") {
-        const firstLine = view.state.doc.lineAt(node.from);
+        const firstLine = state.doc.lineAt(node.from);
         // `> [!type][+|-]?` marker on the first line of the quote → callout
         const marker = firstLine.text.match(
           /^(\s*>\s*)\[!([a-zA-Z][\w-]*)\]([+-])?/,
@@ -651,7 +648,7 @@ function build(view: EditorView): BuildResult {
           const tokenStart = firstLine.from + marker[1].length;
           const tokenEnd = firstLine.from + marker[0].length;
           // 把 [!type] 这段隐藏起来，前面塞一个样式化的标签 widget
-          if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, view, true)) {
+          if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, state, true)) {
             decos.push({
               from: tokenStart,
               to: tokenEnd,
@@ -687,7 +684,7 @@ function build(view: EditorView): BuildResult {
       }
       // 列表标记（- / * / 1. ）光标不在本行时隐藏；本行时保留以便编辑
       if (n === "ListMark") {
-        const after = view.state.doc.sliceString(node.to, node.to + 1);
+        const after = state.doc.sliceString(node.to, node.to + 1);
         const to = after === " " ? node.to + 1 : node.to;
         hide(node.from, to);
         return;
@@ -695,8 +692,8 @@ function build(view: EditorView): BuildResult {
 
       // ─── 表格 ───
       if (n === "Table") {
-        if (!rangeHasCursor({ from: node.from, to: node.to }, view, false)) {
-          const source = view.state.doc.sliceString(node.from, node.to);
+        if (!rangeHasCursor({ from: node.from, to: node.to }, state, false)) {
+          const source = state.doc.sliceString(node.from, node.to);
           decos.push({
             from: node.from,
             to: node.to,
@@ -732,7 +729,7 @@ function build(view: EditorView): BuildResult {
 
       // ─── 水平线 ───
       if (n === "HorizontalRule") {
-        const line = view.state.doc.lineAt(node.from);
+        const line = state.doc.lineAt(node.from);
         decos.push({
           from: line.from,
           to: line.from,
@@ -751,13 +748,13 @@ function build(view: EditorView): BuildResult {
       // ─── Marker 隐藏 ───
       if (n === "HeaderMark") {
         // 包括 # 后面那个空格也吃掉
-        const after = view.state.doc.sliceString(node.to, node.to + 1);
+        const after = state.doc.sliceString(node.to, node.to + 1);
         const to = after === " " ? node.to + 1 : node.to;
         hide(node.from, to);
         return;
       }
       if (n === "QuoteMark") {
-        const after = view.state.doc.sliceString(node.to, node.to + 1);
+        const after = state.doc.sliceString(node.to, node.to + 1);
         const to = after === " " ? node.to + 1 : node.to;
         hide(node.from, to);
         return;
@@ -800,8 +797,8 @@ function build(view: EditorView): BuildResult {
       }
       if (n === "Image") {
         // 默认渲染图片；光标在 markdown 范围内时显源码可编辑。
-        if (!rangeHasCursor({ from: node.from, to: node.to }, view, true)) {
-          const text = view.state.doc.sliceString(node.from, node.to);
+        if (!rangeHasCursor({ from: node.from, to: node.to }, state, true)) {
+          const text = state.doc.sliceString(node.from, node.to);
           const parts = parseImageMarkdown(text);
           if (parts && isAbsoluteSafeUrl(parts.url)) {
             decos.push({
@@ -825,7 +822,7 @@ function build(view: EditorView): BuildResult {
 
       // ─── 任务列表 ───
       if (n === "TaskMarker") {
-        const text = view.state.doc.sliceString(node.from, node.to);
+        const text = state.doc.sliceString(node.from, node.to);
         const checked = /x/i.test(text);
         // 始终用 □ / ☑ 替代 [ ] / [x]，点击 widget 切换；保持布局稳定
         decos.push({
@@ -844,13 +841,13 @@ function build(view: EditorView): BuildResult {
       // ─── 代码块 ───
       if (n === "FencedCode") {
         // 视觉语言（mermaid / dot / chart）：光标不在块内时直接渲染成图。
-        const lang = extractFenceLang(view, node.from);
+        const lang = extractFenceLang(state, node.from);
         const visualKind = detectVisualLang(lang);
         if (
           visualKind &&
-          !rangeHasCursor({ from: node.from, to: node.to }, view, false)
+          !rangeHasCursor({ from: node.from, to: node.to }, state, false)
         ) {
-          const source = extractFencedBody(view, node.from, node.to);
+          const source = extractFencedBody(state, node.from, node.to);
           if (source.trim().length > 0) {
             decos.push({
               from: node.from,
@@ -893,34 +890,32 @@ function build(view: EditorView): BuildResult {
   };
 }
 
-class WysiwygPlugin {
-  decorations: DecorationSet;
-  atomic: DecorationSet;
-  constructor(view: EditorView) {
-    const r = build(view);
-    this.decorations = r.decorations;
-    this.atomic = r.atomic;
-  }
-  update(u: ViewUpdate) {
-    // 文档 / 视口变化时全量重建。
-    // selectionSet 时也要重建：math widget 需要根据光标位置切换"渲染 ↔ 源码"。
-    // 普通 marker 仍然保持稳定布局（build 内部对它们不读取 selection）。
-    if (u.docChanged || u.viewportChanged || u.selectionSet) {
-      const r = build(u.view);
-      this.decorations = r.decorations;
-      this.atomic = r.atomic;
+// CodeMirror 禁止 ViewPlugin 提供 block 类型的 Decoration.replace（block: true）。
+// math display / 表格 / mermaid 等都是 block widget —— 必须从 StateField 拿。
+// 这里把整个 wysiwyg deco 集合放进 StateField：
+//   - docChanged / selection 变化时 build()
+//   - decorations 通过 EditorView.decorations.from 提供
+//   - atomicRanges 通过 EditorView.atomicRanges.of 提供
+//   - mousedown 行为独立放进 EditorView.domEventHandlers，不依赖 plugin 上下文
+const wysiwygField = StateField.define<BuildResult>({
+  create(state) {
+    return build(state);
+  },
+  update(prev, tr) {
+    // 文档变了 → 内容变；选区变了 → math/wikilink 等需要切换渲染 / 源码
+    if (tr.docChanged || tr.selection) {
+      return build(tr.state);
     }
-  }
-}
+    return prev;
+  },
+  provide: (f) => [
+    EditorView.decorations.from(f, (v) => v.decorations),
+    EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
+  ],
+});
 
-const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
-  decorations: (v) => v.decorations,
-  provide: (plugin) =>
-    EditorView.atomicRanges.of(
-      (view) => view.plugin(plugin)?.atomic ?? Decoration.none,
-    ),
-  eventHandlers: {
-    mousedown(this, e, view) {
+const wysiwygMousedown = EditorView.domEventHandlers({
+  mousedown(e, view) {
       const target = e.target as HTMLElement;
       // 点击数学公式 widget → 把光标移到公式源码起点，下一次 build 自动还原源码
       const mathHost = target.closest<HTMLElement>(
@@ -1020,6 +1015,6 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
       e.preventDefault();
     },
   },
-});
+);
 
-export const wysiwygMarkdown = wysiwygPlugin;
+export const wysiwygMarkdown = [wysiwygField, wysiwygMousedown];

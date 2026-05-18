@@ -7,6 +7,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useAISessions, type AIMsgRecord, type AIMsgRef } from "@/stores/aiSessions";
 import { useRag } from "@/stores/rag";
 import { useVaultIndex } from "@/stores/vaultIndex";
+import { reportDiagnostic } from "@/stores/diagnostics";
 import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
@@ -323,6 +324,14 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
           }
         } catch (e) {
           console.warn("[ai.send] rag.search failed, fallback to grep", e);
+          retrievalNote = "本地索引检索失败，本次回答暂用关键词检索。";
+          reportDiagnostic({
+            source: "rag",
+            severity: "warning",
+            message: "AI 向量检索失败，已退回关键词检索",
+            detail: e,
+            workspace: ws.path,
+          });
         }
       } else if (ragEnabled && !hasIndex) {
         retrievalNote = indexing
@@ -355,8 +364,17 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
           } else if (retrievalNote) {
             parts.push(retrievalNote);
           }
-        } catch {
-          /* ignore */
+        } catch (e) {
+          reportDiagnostic({
+            source: "ai",
+            severity: "warning",
+            message: "AI 关键词检索失败",
+            detail: e,
+            workspace: ws.path,
+          });
+          if (retrievalNote) {
+            parts.push(`${retrievalNote}\n关键词检索也失败，未附加仓库片段。`);
+          }
         }
       }
     }

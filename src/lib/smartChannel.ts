@@ -18,6 +18,7 @@ import { api, type RagHit, type RagEmbedConfig } from "@/lib/api";
 import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { reportDiagnostic } from "@/stores/diagnostics";
 
 export type SmartChannelScope = "currentFile" | "currentWorkspace" | "allWorkspaces";
 export type SmartChannelModelSource =
@@ -226,8 +227,14 @@ async function retrieve(
           source: "rag",
         }));
       }
-    } catch {
-      // 退化到关键词
+    } catch (e) {
+      reportDiagnostic({
+        source: "smart-channel",
+        severity: "warning",
+        message: "智能通道向量检索失败，已退回关键词检索",
+        detail: e,
+        workspace: ws.path,
+      });
     }
   }
 
@@ -241,7 +248,14 @@ async function retrieve(
       score: 0,
       source: "grep",
     }));
-  } catch {
+  } catch (e) {
+    reportDiagnostic({
+      source: "smart-channel",
+      severity: "warning",
+      message: "智能通道关键词检索失败",
+      detail: e,
+      workspace: ws.path,
+    });
     return [];
   }
 }

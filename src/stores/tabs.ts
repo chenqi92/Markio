@@ -9,6 +9,7 @@ import { useUI } from "./ui";
 import { useSettings } from "./settings";
 import { useRag } from "./rag";
 import { useVaultIndex } from "./vaultIndex";
+import { reportDiagnostic } from "./diagnostics";
 import { spaceCJK } from "@/lib/pangu";
 
 /** 同一文件 5 分钟内只写一次快照，避免自动保存把磁盘塞满 */
@@ -51,6 +52,13 @@ function scheduleRagReindex(workspacePath: string, filePath: string) {
         await useRag.getState().reindexFile(workspacePath, filePath);
       } catch (err) {
         console.warn("[rag.reindexFile] post-save failed", err);
+        reportDiagnostic({
+          source: "rag",
+          severity: "warning",
+          message: "保存后索引更新失败",
+          detail: err,
+          workspace: workspacePath,
+        });
       }
     })();
   }, POST_SAVE_RAG_DELAY_MS);
@@ -204,6 +212,13 @@ export const useTabs = create<TabsState>((set, get) => ({
             lastSnapshotAt.set(tab.path, Date.now());
             api.historySave(ws.path, tab.path, content).catch((e) => {
               console.warn("historySave failed", e);
+              reportDiagnostic({
+                source: "history",
+                severity: "warning",
+                message: "历史快照保存失败",
+                detail: e,
+                workspace: ws.path,
+              });
             });
           }
         }

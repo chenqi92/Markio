@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, isDesktop, type VaultIndex } from "@/lib/api";
+import { reportDiagnostic } from "./diagnostics";
 
 interface VaultIndexState {
   /** workspace path → 内存中的 index */
@@ -48,6 +49,13 @@ async function runBuild(workspace: string) {
     }));
   } catch (e) {
     console.warn("[vaultIndex] build failed", workspace, e);
+    reportDiagnostic({
+      source: "vault-index",
+      severity: "warning",
+      message: "仓库索引构建失败",
+      detail: e,
+      workspace,
+    });
   } finally {
     let needsQueuedRun = false;
     useVaultIndex.setState((s) => {
@@ -88,6 +96,13 @@ export const useVaultIndex = create<VaultIndexState>((set, get) => ({
         }
       } catch (e) {
         console.warn("[vaultIndex] load failed", workspace, e);
+        reportDiagnostic({
+          source: "vault-index",
+          severity: "warning",
+          message: "仓库索引读取失败",
+          detail: e,
+          workspace,
+        });
       }
     }
 

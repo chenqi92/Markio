@@ -1,6 +1,7 @@
 import { api, isDesktop } from "@/lib/api";
 import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
+import { reportDiagnostic } from "@/stores/diagnostics";
 
 const FREQ_MS: Record<string, number> = {
   "30s": 30_000,
@@ -11,6 +12,10 @@ const FREQ_MS: Record<string, number> = {
 let timer: number | null = null;
 let activeWorkspace: string | null = null;
 let unsubscribeSettings: (() => void) | null = null;
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 async function runOnce(workspace: string): Promise<void> {
   const sync = useSync.getState();
@@ -39,15 +44,25 @@ async function runOnce(workspace: string): Promise<void> {
       );
     }
     if (status.upstream) {
-      await api.gitPull(workspace, { rebase: false }).catch(() => undefined);
+      await api.gitPull(workspace, { rebase: false }).catch((e) => {
+        throw new Error(`git pull 失败：${errorMessage(e)}`);
+      });
       await api.gitPush(workspace).catch((e) => {
-        throw new Error(String(e));
+        throw new Error(`git push 失败：${errorMessage(e)}`);
       });
     }
     sync.setLastSync(Date.now());
     sync.setStatus("idle");
   } catch (e) {
-    sync.setStatus("error", String(e));
+    const message = errorMessage(e);
+    sync.setStatus("error", message);
+    reportDiagnostic({
+      source: "sync",
+      severity: "error",
+      message: "Git 同步失败",
+      detail: message,
+      workspace,
+    });
   } finally {
     sync.setInflight(workspace, false);
   }

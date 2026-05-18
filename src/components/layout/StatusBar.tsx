@@ -4,6 +4,7 @@ import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useNetwork } from "@/stores/network";
+import { useDiagnostics } from "@/stores/diagnostics";
 import { formatBytes } from "@/lib/utils";
 import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
@@ -49,6 +50,8 @@ export function StatusBar({
   const lastSyncAt = useSync((s) => s.lastSyncAt);
   const lastSyncError = useSync((s) => s.lastError);
   const online = useNetwork((s) => s.online);
+  const diagnostics = useDiagnostics((s) => s.items);
+  const markDiagnosticsSeen = useDiagnostics((s) => s.markAllSeen);
   const [, force] = useState(0);
   useEffect(() => {
     const handle = window.setInterval(() => force((n) => n + 1), 30_000);
@@ -163,6 +166,24 @@ export function StatusBar({
         : "#ff453a"
       : "var(--text-3)"
     : "var(--text-3)";
+  const unseenDiagnostics = diagnostics.filter((item) => !item.seen);
+  const diagnosticTitle = unseenDiagnostics
+    .slice(0, 5)
+    .map((item) => `${item.message}${item.detail ? `：${item.detail}` : ""}`)
+    .join("\n");
+  const showDiagnostics = () => {
+    if (unseenDiagnostics.length === 0) return;
+    markDiagnosticsSeen();
+    window.alert(
+      unseenDiagnostics
+        .slice(0, 10)
+        .map(
+          (item) =>
+            `【${item.source}】${item.message}${item.detail ? `\n${item.detail}` : ""}`,
+        )
+        .join("\n\n"),
+    );
+  };
 
   return (
     <div className="statusbar">
@@ -237,6 +258,26 @@ export function StatusBar({
           />
           {!watcher.running ? "监听已停止" : `监听 ${watcher.backendErrors} 错误`}
         </span>
+      )}
+      {unseenDiagnostics.length > 0 && (
+        <button
+          type="button"
+          className="item"
+          title={diagnosticTitle}
+          onClick={showDiagnostics}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: unseenDiagnostics.some((item) => item.severity === "error")
+              ? "#ff453a"
+              : "#ff9500",
+            cursor: "pointer",
+            padding: 0,
+            font: "inherit",
+          }}
+        >
+          ⚠ 后台 {unseenDiagnostics.length} 错误
+        </button>
       )}
       {git && git.branch && (
         <span

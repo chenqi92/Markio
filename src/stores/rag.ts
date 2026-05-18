@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, type RagEmbedConfig, type RagHit, type RagStatus } from "@/lib/api";
 import { useSettings } from "./settings";
+import { reportDiagnostic } from "./diagnostics";
 
 interface RagState {
   /** workspace.id → status 缓存 */
@@ -57,6 +58,13 @@ export const useRag = create<RagState>((set, get) => ({
       await api.ragReindexFile(workspacePath, file, cfg);
     } catch (e) {
       console.warn("[rag.reindex_file] failed", e);
+      reportDiagnostic({
+        source: "rag",
+        severity: "warning",
+        message: "RAG 单文件索引失败",
+        detail: e,
+        workspace: workspacePath,
+      });
     }
   },
 
@@ -65,6 +73,13 @@ export const useRag = create<RagState>((set, get) => ({
       await api.ragRemoveFile(workspacePath, file);
     } catch (e) {
       console.warn("[rag.remove_file] failed", e);
+      reportDiagnostic({
+        source: "rag",
+        severity: "warning",
+        message: "RAG 删除索引失败",
+        detail: e,
+        workspace: workspacePath,
+      });
     }
   },
 

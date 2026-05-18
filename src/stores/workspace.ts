@@ -4,6 +4,7 @@ import type { FileEntry, Workspace } from "@/types";
 import { api } from "@/lib/api";
 import { basename, colorForName, initialFor, uid } from "@/lib/utils";
 import { tauriStorage } from "@/lib/tauriStorage";
+import { reportDiagnostic } from "./diagnostics";
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -113,8 +114,20 @@ async function safeRegister(path: string, registered: Set<string>) {
     return await registerWorkspace(path, registered);
   } catch (e) {
     console.error("workspaceRegister failed", path, e);
+    reportDiagnostic({
+      source: "workspace",
+      severity: "error",
+      message: "仓库注册失败",
+      detail: e,
+      workspace: path,
+    });
     return null;
   }
+}
+
+function pathErrorDetail(path: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  return `${path}: ${detail}`;
 }
 
 export const useWorkspace = create<WorkspaceState>()(
@@ -205,6 +218,13 @@ export const useWorkspace = create<WorkspaceState>()(
               }));
             } catch (e) {
               console.error("readDir failed", e);
+              reportDiagnostic({
+                source: "workspace",
+                severity: "error",
+                message: "文件树刷新失败",
+                detail: e,
+                workspace: ws.path,
+              });
             } finally {
               set({ loading: false });
             }
@@ -237,6 +257,13 @@ export const useWorkspace = create<WorkspaceState>()(
           });
         } catch (e) {
           console.error("loadDir failed", path, e);
+          reportDiagnostic({
+            source: "workspace",
+            severity: "warning",
+            message: "目录加载失败",
+            detail: pathErrorDetail(path, e),
+            workspace: ws.path,
+          });
         } finally {
           dirLoadInFlight.delete(key);
         }

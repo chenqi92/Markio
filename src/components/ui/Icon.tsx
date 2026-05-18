@@ -112,6 +112,13 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  play: <polygon points="7 5 19 12 7 19 7 5" />,
+  pause: (
+    <>
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </>
+  ),
   sidebar: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" />

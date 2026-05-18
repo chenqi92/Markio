@@ -284,7 +284,34 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 
 /* ── Pomodoro / Writing Goal chips（StatusBar） ── */
 .pomo, .wg { position: relative; flex-shrink: 0; }
-.pomo-chip, .wg-chip {
+.pomo-control {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  color: var(--text-2);
+}
+.pomo-control.running {
+  background: rgba(255,107,107,0.18);
+  border-color: rgba(255,107,107,0.35);
+  color: #ff6b6b;
+}
+.pomo-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 7px 0 6px;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 10.5px;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wg-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 8px;
   height: 18px;
@@ -296,11 +323,38 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   white-space: nowrap;
   cursor: pointer;
 }
-.pomo-chip:hover, .wg-chip:hover { background: var(--bg-elev); color: var(--text); }
-.pomo-chip.running { background: rgba(255,107,107,0.18); color: #ff6b6b; border-color: rgba(255,107,107,0.35); }
-.pomo-ring { width: 14px; height: 14px; display: inline-flex; }
+.pomo-chip:hover, .pomo-menu-toggle:hover { background: var(--bg-hover); color: var(--text); }
+.pomo-control.running .pomo-chip:hover,
+.pomo-control.running .pomo-menu-toggle:hover { color: #ff7f7f; }
+.wg-chip:hover { background: var(--bg-elev); color: var(--text); }
+.pomo-action {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pomo-action > svg {
+  position: relative;
+  z-index: 1;
+  color: currentColor;
+}
+.pomo-ring { position: absolute; inset: 0; display: inline-flex; }
 .pomo-ring svg { width: 100%; height: 100%; }
+.pomo-label { font-weight: 600; }
 .pomo-t { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pomo-menu-toggle {
+  width: 20px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  border-left: 0.5px solid var(--border);
+  cursor: pointer;
+}
 
 .wg-chip b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .wg-bar {
@@ -374,6 +428,7 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .pomo-ctrl .pomo-play {
   background: #ff6b6b; color: white; border-color: #ff6b6b;
   font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
 }
 .pomo-stats {
   display: grid; grid-template-columns: 1fr 1fr;

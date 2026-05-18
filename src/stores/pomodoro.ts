@@ -10,6 +10,23 @@ const DURATION: Record<PomodoroMode, number> = {
   long: 15 * 60,
 };
 
+function notify(title: string) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(title);
+  } catch {
+    /* ignore */
+  }
+}
+
+function requestNotificationPermission() {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch(() => undefined);
+  }
+}
+
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -43,7 +60,10 @@ export const usePomodoro = create<State>()(
       lastTick: null,
       completedDay: todayKey(),
       completedFocus: 0,
-      start: () => set({ running: true, lastTick: Date.now() }),
+      start: () => {
+        requestNotificationPermission();
+        set({ running: true, lastTick: Date.now() });
+      },
       pause: () => set({ running: false, lastTick: null }),
       reset: (mode) => {
         const m = mode ?? get().mode;
@@ -72,20 +92,20 @@ export const usePomodoro = create<State>()(
             : wasFocus
             ? 1
             : 0;
+        const nextMode: PomodoroMode = wasFocus
+          ? completedFocus > 0 && completedFocus % 4 === 0
+            ? "long"
+            : "short"
+          : "focus";
         set({
           running: false,
           lastTick: null,
-          remaining: DURATION[s.mode],
+          mode: nextMode,
+          remaining: DURATION[nextMode],
           completedDay,
           completedFocus,
         });
-        try {
-          new Notification(
-            wasFocus ? "专注完成 · 休息一下" : "休息结束 · 继续专注",
-          );
-        } catch {
-          /* ignore */
-        }
+        notify(wasFocus ? "专注完成 · 休息一下" : "休息结束 · 继续专注");
       },
     }),
     {

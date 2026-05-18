@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../ui/Icon";
 import { usePomodoro, type PomodoroMode } from "@/stores/pomodoro";
 
 const TOTAL: Record<PomodoroMode, number> = {
@@ -53,43 +54,58 @@ export function PomodoroChip() {
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
   const pct = 1 - remaining / TOTAL[mode];
+  const actionLabel = running ? "暂停" : remaining === TOTAL[mode] ? "开始" : "继续";
 
   return (
     <div className="pomo" ref={wrapRef}>
-      <button
-        type="button"
-        className={"pomo-chip" + (running ? " running" : "")}
-        onClick={() => setOpen((v) => !v)}
-        title={`番茄钟 · ${LABEL[mode]} ${mm}:${ss}`}
-      >
-        <span className="pomo-ring" aria-hidden>
-          <svg viewBox="0 0 18 18">
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
-              fill="none"
-              stroke="var(--border)"
-              strokeWidth="2"
-            />
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
-              fill="none"
-              stroke={COLOR[mode]}
-              strokeWidth="2"
-              strokeDasharray="44"
-              strokeDashoffset={44 * (1 - pct)}
-              strokeLinecap="round"
-              transform="rotate(-90 9 9)"
-            />
-          </svg>
-        </span>
-        <span className="pomo-t">
-          {mm}:{ss}
-        </span>
-      </button>
+      <div className={"pomo-control" + (running ? " running" : "")}>
+        <button
+          type="button"
+          className="pomo-chip"
+          onClick={() => (running ? pause() : start())}
+          title={`${actionLabel}${LABEL[mode]} · ${mm}:${ss}`}
+        >
+          <span className="pomo-action" aria-hidden="true">
+            <span className="pomo-ring">
+              <svg viewBox="0 0 18 18">
+                <circle
+                  cx="9"
+                  cy="9"
+                  r="7"
+                  fill="none"
+                  stroke="var(--border)"
+                  strokeWidth="2"
+                />
+                <circle
+                  cx="9"
+                  cy="9"
+                  r="7"
+                  fill="none"
+                  stroke={COLOR[mode]}
+                  strokeWidth="2"
+                  strokeDasharray="44"
+                  strokeDashoffset={44 * (1 - pct)}
+                  strokeLinecap="round"
+                  transform="rotate(-90 9 9)"
+                />
+              </svg>
+            </span>
+            <Icon name={running ? "pause" : "play"} size={8} strokeWidth={2.5} />
+          </span>
+          <span className="pomo-label">{LABEL[mode]}</span>
+          <span className="pomo-t">
+            {mm}:{ss}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="pomo-menu-toggle"
+          onClick={() => setOpen((v) => !v)}
+          title="番茄钟设置"
+        >
+          <Icon name="chevdown" size={10} />
+        </button>
+      </div>
       {open && (
         <div className="pomo-panel">
           <div className="pomo-panel-h">番茄钟</div>
@@ -101,6 +117,7 @@ export function PomodoroChip() {
               <button
                 key={m}
                 className={mode === m ? "active" : ""}
+                type="button"
                 onClick={() => setMode(m)}
               >
                 {m === "focus" ? "专注 25′" : m === "short" ? "小休 5′" : "长休 15′"}
@@ -109,12 +126,16 @@ export function PomodoroChip() {
           </div>
           <div className="pomo-ctrl">
             <button
+              type="button"
               className="pomo-play"
               onClick={() => (running ? pause() : start())}
             >
+              <Icon name={running ? "pause" : "play"} size={12} />
               {running ? "暂停" : "开始"}
             </button>
-            <button onClick={() => reset()}>重置</button>
+            <button type="button" onClick={() => reset()}>
+              重置
+            </button>
           </div>
           <div className="pomo-stats">
             <div>

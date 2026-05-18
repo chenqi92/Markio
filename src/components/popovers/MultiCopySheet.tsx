@@ -57,33 +57,33 @@ const COPY_TARGETS: Target[] = [
     ico: "即",
     name: "即刻",
     color: "linear-gradient(135deg, #ffe028, #ffb800)",
-    sub: "保留加粗 · 自动换行",
+    sub: "保留 Markdown 强调",
   },
   {
     id: "xhs",
     ico: "📕",
     name: "小红书",
     color: "linear-gradient(135deg, #ff2442, #ee5a52)",
-    sub: "首行标题 · emoji 装饰",
+    sub: "标题正文标签分段",
   },
   {
     id: "feishu",
     ico: "飞",
     name: "飞书富文本",
     color: "linear-gradient(135deg, #00d6b9, #0090e7)",
-    sub: "原生块结构 · 含目录",
+    sub: "Markdown 块结构粘贴",
   },
   {
     id: "notion",
     ico: "N",
     name: "Notion 块",
     color: "#0a0a0c",
-    sub: "代码块 / Callout / Toggle 保留",
+    sub: "保留 Markdown 块语法",
   },
 ];
 
 /** 把 markdown 字符串粗略转成纯文本 */
-function markdownToPlain(src: string): string {
+export function markdownToPlain(src: string): string {
   return src
     .replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?|```/g, ""))
     .replace(/`([^`]+)`/g, "$1")
@@ -102,7 +102,7 @@ function markdownToPlain(src: string): string {
 }
 
 /** 280 字符分串，按行 / 段落优先切 */
-function splitForTwitter(text: string, limit = 280): string {
+export function splitForTwitter(text: string, limit = 280): string {
   const blocks = text.split(/\n{2,}/);
   const parts: string[] = [];
   let buf = "";
@@ -126,6 +126,48 @@ function splitForTwitter(text: string, limit = 280): string {
   return parts
     .map((p, i) => `${i + 1}/${parts.length}\n${p}`)
     .join("\n\n———\n\n");
+}
+
+function firstHeading(source: string, fallback: string): string {
+  const match = source.match(/^#{1,6}\s+(.+)$/m);
+  return (match?.[1] ?? fallback).trim();
+}
+
+function uniqueTags(source: string): string[] {
+  const tags = source.match(/#[\w\u4e00-\u9fa5-]+/g) ?? [];
+  return Array.from(new Set(tags)).slice(0, 8);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function formatForJike(source: string): string {
+  return source
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (_match, label: string, url: string) => `${label} ${url}`,
+    )
+    .replace(/```[\w-]*\n?([\s\S]*?)```/g, (_match, code: string) =>
+      code.trim(),
+    )
+    .replace(/^#{1,6}\s+/gm, "# ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function formatForXhs(source: string, fallbackTitle: string): string {
+  const title = firstHeading(source, fallbackTitle || "无标题");
+  const plain = markdownToPlain(source)
+    .replace(new RegExp(`^${escapeRegExp(title)}\\s*`), "")
+    .trim();
+  const tags = uniqueTags(source).join(" ");
+  return [title, plain, tags].filter(Boolean).join("\n\n");
+}
+
+export function formatForMarkdownPaste(source: string): string {
+  return source.trim();
 }
 
 export function MultiCopySheet({ onClose }: { onClose: () => void }) {
@@ -175,14 +217,20 @@ export function MultiCopySheet({ onClose }: { onClose: () => void }) {
           break;
         }
         case "jike":
+          await writeText(formatForJike(source));
+          flash("done", "已复制为即刻文本");
+          break;
         case "xhs":
+          await writeText(formatForXhs(source, tab.title));
+          flash("done", "已复制为小红书文案");
+          break;
         case "feishu":
+          await writeText(formatForMarkdownPaste(source));
+          flash("done", "已复制为飞书 Markdown");
+          break;
         case "notion": {
-          // 暂未做平台特定排版，先按纯文本兜底
-          await writeText(markdownToPlain(source));
-          flash("done", `已复制为纯文本（${
-            COPY_TARGETS.find((t) => t.id === picked)?.name
-          } 排版适配中）`, 2600);
+          await writeText(formatForMarkdownPaste(source));
+          flash("done", "已复制为 Notion Markdown");
           break;
         }
       }

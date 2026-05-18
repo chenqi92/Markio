@@ -13,6 +13,7 @@ import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
 import { useSession } from "./stores/session";
 import { installNetworkListeners } from "./stores/network";
+import { installLongTaskObserver } from "./lib/longTaskObserver";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -103,6 +104,13 @@ export default function App() {
 
   // 系统网络状态监听：online/offline 事件 → useNetwork.online
   useEffect(() => installNetworkListeners(), []);
+
+  // 本地性能观察器：?perf=1 或 window.__markioPerf=true 时，把长任务 / 慢 measure
+  // 推到诊断面板。数据不出本机。
+  useEffect(() => {
+    const handle = installLongTaskObserver();
+    return () => handle.disconnect();
+  }, []);
 
   // 全局快捷键：根据 settings.globalShortcutShow 在 Rust 端注册 / 替换；
   // 改变设置后自动重新注册。空字符串注销。

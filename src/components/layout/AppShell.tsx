@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { SidebarResizer } from "./SidebarResizer";
@@ -79,10 +79,6 @@ export function AppShell() {
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const fontSize = useSettings((s) => s.fontSize);
-  const [meta, setMeta] = useState<{
-    words: number;
-    readingMinutes: number;
-  }>({ words: 0, readingMinutes: 1 });
 
   useEffect(() => {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
@@ -115,10 +111,7 @@ export function AppShell() {
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
                   <Suspense fallback={null}>
-                    <EditorArea
-                      onMeta={(m) => setMeta(m)}
-                      onAskAi={() => openAi(true)}
-                    />
+                    <EditorArea onAskAi={() => openAi(true)} />
                   </Suspense>
                 </>
               ) : (
@@ -131,7 +124,7 @@ export function AppShell() {
             </div>
           </div>
         )}
-        <StatusBar words={meta.words} readingMinutes={meta.readingMinutes} />
+        <StatusBar />
       </div>
 
       <Suspense fallback={null}>

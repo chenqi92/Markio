@@ -1,11 +1,10 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useNetwork } from "@/stores/network";
 import { useDiagnostics } from "@/stores/diagnostics";
-import { formatBytes } from "@/lib/utils";
 import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
 import { PomodoroChip } from "../popovers/PomodoroChip";
@@ -23,24 +22,7 @@ function relativeTime(ts: number | null): string {
   return `${days} 天前同步`;
 }
 
-const textEncoder = new TextEncoder();
-
-function countLines(content: string): number {
-  if (!content) return 0;
-  let lines = 1;
-  for (let i = 0; i < content.length; i++) {
-    if (content.charCodeAt(i) === 10) lines++;
-  }
-  return lines;
-}
-
-export function StatusBar({
-  words,
-  readingMinutes,
-}: {
-  words?: number;
-  readingMinutes?: number;
-}) {
+export function StatusBar() {
   const tab = useTabs((s) => s.activeTab());
   const ws = useWorkspace((s) => s.activeWorkspace());
   const theme = useSettings((s) => s.theme);
@@ -144,17 +126,6 @@ export function StatusBar({
     };
   }, [ws?.path]);
 
-  const content = tab?.content ?? "";
-  const deferredContent = useDeferredValue(content);
-  const charCount = content.length;
-  const lineCount = useMemo(
-    () => countLines(deferredContent),
-    [deferredContent],
-  );
-  const byteCount = useMemo(
-    () => textEncoder.encode(deferredContent).length,
-    [deferredContent],
-  );
   const saveLabel = tab
     ? tab.dirty
       ? autosave
@@ -245,14 +216,6 @@ export function StatusBar({
             />
             {saveLabel}
           </span>
-          <span className="item">{lineCount} 行 · {charCount} 字符</span>
-          <span className="item">{formatBytes(byteCount)}</span>
-          {words !== undefined && (
-            <span className="item">{words} 字</span>
-          )}
-          {readingMinutes !== undefined && (
-            <span className="item">阅读约 {readingMinutes} 分钟</span>
-          )}
         </>
       )}
       {!online && (

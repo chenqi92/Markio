@@ -255,6 +255,67 @@ class TableWidget extends WidgetType {
   }
 }
 
+// ─── Image widget ─────────────────────────────────────────────────────────
+
+const IMAGE_URL_RE =
+  /^!\[([^\]]*)\]\(([^\s)]+)(?:\s+(?:"([^"]*)"|'([^']*)'))?\s*\)/;
+
+/** Allow only safe URL schemes; relative paths fall back to source. */
+function isAbsoluteSafeUrl(url: string): boolean {
+  return /^(https?:|data:image\/|file:|asset:|tauri:|markio-asset:|markio-resource:)/i.test(
+    url,
+  );
+}
+
+export interface ImageParts {
+  alt: string;
+  url: string;
+  title?: string;
+}
+
+export function parseImageMarkdown(text: string): ImageParts | null {
+  const m = text.match(IMAGE_URL_RE);
+  if (!m) return null;
+  return {
+    alt: m[1],
+    url: m[2],
+    title: m[3] ?? m[4],
+  };
+}
+
+class ImageWidget extends WidgetType {
+  constructor(private readonly parts: ImageParts) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof ImageWidget &&
+      other.parts.alt === this.parts.alt &&
+      other.parts.url === this.parts.url &&
+      other.parts.title === this.parts.title
+    );
+  }
+  toDOM(): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-img-widget";
+    const img = document.createElement("img");
+    img.src = this.parts.url;
+    img.alt = this.parts.alt;
+    if (this.parts.title) img.title = this.parts.title;
+    img.loading = "lazy";
+    img.draggable = false;
+    img.addEventListener("error", () => {
+      wrap.classList.add("cm-md-img-error");
+      wrap.title = `图片加载失败：${this.parts.url}`;
+    });
+    wrap.appendChild(img);
+    return wrap;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
 class TaskCheckbox extends WidgetType {
   constructor(private readonly checked: boolean) {
     super();
@@ -574,6 +635,26 @@ function build(view: EditorView): BuildResult {
         return;
       }
       if (n === "Image") {
+        // 默认渲染图片；光标在 markdown 范围内时显源码可编辑。
+        if (!rangeHasCursor({ from: node.from, to: node.to }, view, true)) {
+          const text = view.state.doc.sliceString(node.from, node.to);
+          const parts = parseImageMarkdown(text);
+          if (parts && isAbsoluteSafeUrl(parts.url)) {
+            decos.push({
+              from: node.from,
+              to: node.to,
+              deco: Decoration.replace({
+                widget: new ImageWidget(parts),
+              }),
+            });
+            atomic.push({
+              from: node.from,
+              to: node.to,
+              deco: Decoration.mark({}),
+            });
+            return;
+          }
+        }
         mark(node.from, node.to, "cm-md-image");
         return;
       }
@@ -685,6 +766,17 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
         const pos = view.posAtDOM(mathHost);
         if (pos != null) {
           view.dispatch({ selection: { anchor: pos + 1 } });
+          view.focus();
+          e.preventDefault();
+        }
+        return;
+      }
+      // 点击图片 widget → 把光标移到 markdown 源码起点（!）
+      const imgHost = target.closest<HTMLElement>(".cm-md-img-widget");
+      if (imgHost) {
+        const pos = view.posAtDOM(imgHost);
+        if (pos != null) {
+          view.dispatch({ selection: { anchor: pos } });
           view.focus();
           e.preventDefault();
         }

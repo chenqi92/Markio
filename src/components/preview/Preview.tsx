@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { enhanceCalloutsLazy, type CalloutEnhanceHandle } from "@/lib/callouts";
+import {
+  buildPreviewAnchors,
+  scrollPosForLine,
+  topLineFromScroll,
+  type LineAnchor,
+} from "@/lib/scrollSync";
 import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
@@ -25,8 +31,8 @@ interface Props {
   source: string;
   basePath?: string;
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
-  onScroll?: (info: { top: number; height: number; clientHeight: number }) => void;
-  scrollTarget?: { ratio: number; nonce: number } | null;
+  onScroll?: (info: import("@/lib/scrollSync").ScrollInfo) => void;
+  scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
   /** kanban 等可写视图回写 source */
   onSourceChange?: (next: string) => void;
   /** 鼠标悬停在渲染后的表格上时上报；index 是 doc 顺序 */
@@ -123,18 +129,27 @@ export function Preview({
     findCurrentRef.current = current;
   }, []);
 
+  const anchorsRef = useRef<LineAnchor[]>([]);
+
   const applyScrollTarget = useCallback(() => {
     const el = containerRef.current;
     if (!el || !scrollTarget) return;
-    const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    const nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    let nextTop: number | null = null;
+    if (typeof scrollTarget.line === "number" && anchorsRef.current.length > 0) {
+      nextTop = scrollPosForLine(anchorsRef.current, scrollTarget.line);
+    }
+    if (nextTop == null && typeof scrollTarget.ratio === "number") {
+      const max = Math.max(0, el.scrollHeight - el.clientHeight);
+      nextTop = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    }
+    if (nextTop == null) return;
     if (Math.abs(el.scrollTop - nextTop) < 1) return;
     suppressScrollRef.current = true;
     el.scrollTop = nextTop;
     requestAnimationFrame(() => {
       suppressScrollRef.current = false;
     });
-  }, [scrollTarget?.nonce, scrollTarget?.ratio]);
+  }, [scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
 
   // 表格装饰 = 两层：
   //   (A) DOM 层：html 变化时把每个 <table> 包到 .md-table-host，挂 + 行 / + 列 按钮（无监听）
@@ -371,10 +386,20 @@ export function Preview({
       if (cancelled) return;
       diagramHandle = renderDiagramsLazy(root);
     });
-    // scroll target now applies after layout settles; visual blocks finish lazily.
+    // Rebuild line→top anchor map after the DOM is in place. Layout may shift
+    // when math/mermaid/diagrams finish loading, so we re-collect a couple
+    // times. Anchors stay correct enough for scroll sync within ~50px.
+    const container = containerRef.current;
+    const rebuildAnchors = () => {
+      if (cancelled || !container) return;
+      anchorsRef.current = buildPreviewAnchors(container);
+    };
     idle(() => {
+      rebuildAnchors();
       if (!cancelled) applyScrollTarget();
     });
+    // second pass once heavy renderers have had a chance to flush
+    const refreshTimer = window.setTimeout(rebuildAnchors, 600);
 
     return () => {
       cancelled = true;
@@ -390,6 +415,7 @@ export function Preview({
       mathHandle?.disconnect();
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
+      window.clearTimeout(refreshTimer);
     };
   }, [html, theme, applyScrollTarget, vaultFiles]);
 
@@ -594,10 +620,16 @@ export function Preview({
     if (!el || !onScroll) return;
     const handler = () => {
       if (suppressScrollRef.current) return;
+      const anchors = anchorsRef.current;
+      const topLine =
+        anchors.length > 0
+          ? topLineFromScroll(anchors, el.scrollTop) ?? undefined
+          : undefined;
       onScroll({
         top: el.scrollTop,
         height: el.scrollHeight,
         clientHeight: el.clientHeight,
+        topLine,
       });
     };
     el.addEventListener("scroll", handler, { passive: true });

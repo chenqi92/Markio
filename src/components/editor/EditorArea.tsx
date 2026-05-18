@@ -34,6 +34,10 @@ import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
+import {
+  scrollRatio as computeRatio,
+  type ScrollInfo,
+} from "@/lib/scrollSync";
 
 interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
@@ -51,10 +55,7 @@ const MAX_PASTE_IMAGES = 8;
 const MAX_PASTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const SPLIT_WIDTH_KEY = "markio.split.sourcePercent";
 
-function scrollRatio(info: { top: number; height: number; clientHeight: number }) {
-  const max = Math.max(0, info.height - info.clientHeight);
-  return max <= 0 ? 0 : Math.max(0, Math.min(1, info.top / max));
-}
+const scrollRatio = computeRatio;
 
 function buildS3Key(notePath: string, fileName?: string): string {
   const stem = (fileName || "image").replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -117,7 +118,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   });
   const [scrollSync, setScrollSync] = useState<{
     target: "source" | "preview";
-    ratio: number;
+    line?: number;
+    ratio?: number;
     nonce: number;
   } | null>(null);
   const [meta, setMeta] = useState<{
@@ -198,11 +200,12 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     (
       origin: "source" | "preview",
       target: "source" | "preview",
-      info: { top: number; height: number; clientHeight: number },
+      info: ScrollInfo,
     ) => {
       if (renderMode !== "split") return;
       if (scrollSyncLock.current === origin) return;
       const ratio = scrollRatio(info);
+      const line = info.topLine;
       if (scrollSyncFrame.current != null) {
         window.cancelAnimationFrame(scrollSyncFrame.current);
       }
@@ -218,6 +221,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         }, 140);
         setScrollSync({
           target,
+          line,
           ratio,
           nonce: ++syncNonce.current,
         });
@@ -235,14 +239,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   const handleSourceScroll = useCallback(
-    (info: { top: number; height: number; clientHeight: number }) => {
+    (info: ScrollInfo) => {
       scheduleScrollSync("source", "preview", info);
     },
     [scheduleScrollSync],
   );
 
   const handlePreviewScroll = useCallback(
-    (info: { top: number; height: number; clientHeight: number }) => {
+    (info: ScrollInfo) => {
       scheduleScrollSync("preview", "source", info);
     },
     [scheduleScrollSync],
@@ -802,7 +806,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             onScroll={handleSourceScroll}
             scrollTarget={
               scrollSync?.target === "source"
-                ? { ratio: scrollSync.ratio, nonce: scrollSync.nonce }
+                ? {
+                    nonce: scrollSync.nonce,
+                    line: scrollSync.line,
+                    ratio: scrollSync.ratio,
+                  }
                 : null
             }
             onPasteImages={handlePasteImages}
@@ -840,7 +848,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           onScroll={handlePreviewScroll}
           scrollTarget={
             scrollSync?.target === "preview"
-              ? { ratio: scrollSync.ratio, nonce: scrollSync.nonce }
+              ? {
+                  nonce: scrollSync.nonce,
+                  line: scrollSync.line,
+                  ratio: scrollSync.ratio,
+                }
               : null
           }
           onSourceChange={handleContentChange}

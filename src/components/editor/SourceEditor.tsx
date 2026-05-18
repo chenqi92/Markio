@@ -27,15 +27,8 @@ import { getMathContext, type MathContext } from "@/lib/math-context";
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onScroll?: (info: {
-    top: number;
-    height: number;
-    clientHeight: number;
-  }) => void;
-  scrollTarget?: {
-    ratio: number;
-    nonce: number;
-  } | null;
+  onScroll?: (info: import("@/lib/scrollSync").ScrollInfo) => void;
+  scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
   onPasteImages?: (
     files: File[],
     range: { from: number; to: number },
@@ -125,10 +118,32 @@ export const SourceEditor = memo(function SourceEditor({
           const fn = onScrollRef.current;
           if (!fn) return;
           const el = v.scrollDOM;
+          // Compute the fractional source line at the viewport top, so the
+          // preview can line-anchor instead of percentage-snap. lineBlockAt
+          // returns the block info for a doc position; we go through a coord
+          // probe so soft-wrapped lines still resolve sensibly.
+          let topLine: number | undefined;
+          try {
+            const docTop = el.getBoundingClientRect().top;
+            const probe = v.posAtCoords({ x: 0, y: docTop + 1 });
+            if (probe != null) {
+              const line = v.state.doc.lineAt(probe);
+              const block = v.lineBlockAt(line.from);
+              const within =
+                block.height > 0
+                  ? Math.max(0, Math.min(1, (el.scrollTop - block.top) / block.height))
+                  : 0;
+              topLine = line.number + within;
+            }
+          } catch {
+            // posAtCoords may throw if view isn't mounted yet; fall back to
+            // percentage-based sync in that case.
+          }
           fn({
             top: el.scrollTop,
             height: el.scrollHeight,
             clientHeight: el.clientHeight,
+            topLine,
           });
         },
       }),
@@ -218,19 +233,33 @@ export const SourceEditor = memo(function SourceEditor({
     return () => registerEditor(null);
   }, [view]);
 
-  // 应用同步对端写过来的目标比例
+  // 应用同步对端写过来的目标位置：优先 line（行锁定，对长代码块/公式更准），
+  // 没有 line 时退化到 ratio（百分比）兜底。
   useEffect(() => {
     if (!view || !scrollTarget) return;
     const el = view.scrollDOM;
-    const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    const next = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    let next: number | null = null;
+    if (typeof scrollTarget.line === "number") {
+      const lineNo = Math.max(
+        1,
+        Math.min(view.state.doc.lines, Math.floor(scrollTarget.line)),
+      );
+      const line = view.state.doc.line(lineNo);
+      const block = view.lineBlockAt(line.from);
+      const frac = scrollTarget.line - lineNo;
+      next = block.top + (frac > 0 ? frac * block.height : 0);
+    } else if (typeof scrollTarget.ratio === "number") {
+      const max = Math.max(0, el.scrollHeight - el.clientHeight);
+      next = max * Math.max(0, Math.min(1, scrollTarget.ratio));
+    }
+    if (next == null) return;
     if (Math.abs(el.scrollTop - next) < 1) return;
     suppressScrollRef.current = true;
     el.scrollTop = next;
     requestAnimationFrame(() => {
       suppressScrollRef.current = false;
     });
-  }, [view, scrollTarget?.nonce, scrollTarget?.ratio]);
+  }, [view, scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
 
   useEffect(() => {
     if (!view) return;

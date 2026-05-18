@@ -375,32 +375,107 @@ fn sanitize(html: &str) -> String {
     b.clean(html).to_string()
 }
 
+/// 把 `data-line="N"` 注入 `piece` 中的第一个开标签。
+/// 用于把 markdown 源码行号挂到对应渲染块上，供前端做行锁定滚动同步。
+fn inject_data_line(piece: &mut String, line: usize) {
+    let bytes = piece.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'<' && bytes[i + 1].is_ascii_alphabetic() {
+            let mut j = i + 1;
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'-' || bytes[j] == b':')
+            {
+                j += 1;
+            }
+            piece.insert_str(j, &format!(" data-line=\"{}\"", line));
+            return;
+        }
+        i += 1;
+    }
+}
+
+/// 仅块级 Tag 计入嵌套深度；行内 Tag（emphasis / strong / link …）排除。
+fn is_block_tag_start(tag: &Tag) -> bool {
+    matches!(
+        tag,
+        Tag::Paragraph
+            | Tag::Heading { .. }
+            | Tag::BlockQuote(_)
+            | Tag::CodeBlock(_)
+            | Tag::HtmlBlock
+            | Tag::List(_)
+            | Tag::Item
+            | Tag::FootnoteDefinition(_)
+            | Tag::Table(_)
+            | Tag::TableHead
+            | Tag::TableRow
+            | Tag::TableCell
+            | Tag::MetadataBlock(_)
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
+    )
+}
+
+fn is_block_tag_end(end: &TagEnd) -> bool {
+    matches!(
+        end,
+        TagEnd::Paragraph
+            | TagEnd::Heading(_)
+            | TagEnd::BlockQuote(_)
+            | TagEnd::CodeBlock
+            | TagEnd::HtmlBlock
+            | TagEnd::List(_)
+            | TagEnd::Item
+            | TagEnd::FootnoteDefinition
+            | TagEnd::Table
+            | TagEnd::TableHead
+            | TagEnd::TableRow
+            | TagEnd::TableCell
+            | TagEnd::MetadataBlock(_)
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
+    )
+}
+
 /// 主渲染入口
 pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf]) -> RenderResult {
-    let parser = Parser::new_ext(source, parser_options());
+    let parser = Parser::new_ext(source, parser_options()).into_offset_iter();
     let mut html = String::new();
     let mut outline: Vec<OutlineItem> = Vec::new();
 
     let mut heading: Option<(u8, String)> = None;
     let mut heading_events: Vec<Event> = Vec::new();
+    let mut heading_line: Option<usize> = None;
 
     let mut code_buf = String::new();
     let mut code_info = CodeInfo::default();
     let mut in_code = false;
+    let mut code_line: Option<usize> = None;
     let mut id_counter: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
     let mut buffer: Vec<Event> = Vec::with_capacity(16);
+    let mut buffer_line: Option<usize> = None;
+    // Depth of *block-level* open Tags only. Inline tags (Emphasis, Strong, ...)
+    // are excluded so that two sibling paragraphs flush at their boundary.
+    let mut block_depth: i32 = 0;
 
-    let flush = |buf: &mut Vec<Event>, html: &mut String| {
+    let flush = |buf: &mut Vec<Event>, html: &mut String, line: Option<usize>| {
         if buf.is_empty() {
             return;
         }
         let mut piece = String::new();
         pulldown_cmark::html::push_html(&mut piece, buf.drain(..));
+        if let Some(ln) = line {
+            inject_data_line(&mut piece, ln);
+        }
         html.push_str(&piece);
     };
 
-    for ev in parser {
+    for (ev, range) in parser {
+        let line = source[..range.start].matches('\n').count() + 1;
         let ev = rewrite_asset_event(ev, base_path, allowed_roots);
         if let Some((_lvl, _)) = heading.as_mut() {
             match &ev {
@@ -423,10 +498,15 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                     });
                     let mut inner = String::new();
                     pulldown_cmark::html::push_html(&mut inner, heading_events.drain(..));
+                    let ln_attr = heading_line
+                        .take()
+                        .map(|ln| format!(" data-line=\"{}\"", ln))
+                        .unwrap_or_default();
                     html.push_str(&format!(
-                        "<h{l} id=\"{a}\">{i}</h{l}>",
+                        "<h{l} id=\"{a}\"{ln}>{i}</h{l}>",
                         l = lvl_u8,
                         a = escape_attr(&anchor),
+                        ln = ln_attr,
                         i = inner
                     ));
                 }
@@ -451,22 +531,29 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                 Event::Text(t) => code_buf.push_str(t),
                 Event::End(TagEnd::CodeBlock) => {
                     in_code = false;
+                    let ln = code_line.take();
+                    let ln_attr = ln
+                        .map(|n| format!(" data-line=\"{}\"", n))
+                        .unwrap_or_default();
                     if code_info.lang == "mermaid" {
                         html.push_str(&format!(
-                            "<div class=\"mermaid-block\" data-mermaid=\"{}\">{}</div>",
+                            "<div class=\"mermaid-block\" data-mermaid=\"{}\"{}>{}</div>",
                             urlencode(&code_buf),
+                            ln_attr,
                             escape_html(&code_buf)
                         ));
                     } else if is_chart_lang(&code_info.lang) {
                         html.push_str(&format!(
-                            "<div class=\"chart-block\" data-chart=\"{}\">{}</div>",
+                            "<div class=\"chart-block\" data-chart=\"{}\"{}>{}</div>",
                             urlencode(&code_buf),
+                            ln_attr,
                             escape_html(&code_buf)
                         ));
                     } else if is_graphviz_lang(&code_info.lang) {
                         html.push_str(&format!(
-                            "<div class=\"graphviz-block\" data-graphviz=\"{}\">{}</div>",
+                            "<div class=\"graphviz-block\" data-graphviz=\"{}\"{}>{}</div>",
                             urlencode(&code_buf),
+                            ln_attr,
                             escape_html(&code_buf)
                         ));
                     } else if is_plantuml_lang(&code_info.lang) {
@@ -478,13 +565,18 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
                             })
                             .unwrap_or_default();
                         html.push_str(&format!(
-                            "<div class=\"plantuml-block\" data-plantuml=\"{}\"{}>{}</div>",
+                            "<div class=\"plantuml-block\" data-plantuml=\"{}\"{}{}>{}</div>",
                             urlencode(&code_buf),
                             server_attr,
+                            ln_attr,
                             escape_html(&code_buf)
                         ));
                     } else {
-                        html.push_str(&highlight_code(&code_buf, &code_info));
+                        let mut piece = highlight_code(&code_buf, &code_info);
+                        if let Some(n) = ln {
+                            inject_data_line(&mut piece, n);
+                        }
+                        html.push_str(&piece);
                     }
                     code_buf.clear();
                     code_info = CodeInfo::default();
@@ -495,23 +587,55 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
         }
         match &ev {
             Event::Start(Tag::Heading { level, .. }) => {
-                flush(&mut buffer, &mut html);
+                flush(&mut buffer, &mut html, buffer_line.take());
                 heading = Some((level_u8(*level), String::new()));
                 heading_events.clear();
+                heading_line = Some(line);
             }
             Event::Start(Tag::CodeBlock(kind)) => {
-                flush(&mut buffer, &mut html);
+                flush(&mut buffer, &mut html, buffer_line.take());
                 in_code = true;
                 code_buf.clear();
                 code_info = CodeInfo::default();
+                code_line = Some(line);
                 if let CodeBlockKind::Fenced(info) = kind {
                     code_info = parse_code_info(info);
                 }
             }
-            _ => buffer.push(ev),
+            Event::Start(tag) => {
+                if block_depth == 0 && is_block_tag_start(tag) {
+                    // top-level block start: flush whatever came before and start a new piece
+                    flush(&mut buffer, &mut html, buffer_line.take());
+                    buffer_line = Some(line);
+                }
+                if is_block_tag_start(tag) {
+                    block_depth += 1;
+                }
+                buffer.push(ev);
+            }
+            Event::End(end) => {
+                if is_block_tag_end(end) {
+                    block_depth = (block_depth - 1).max(0);
+                }
+                buffer.push(ev);
+            }
+            Event::Rule => {
+                // Rule is a standalone block; treat as its own piece.
+                flush(&mut buffer, &mut html, buffer_line.take());
+                buffer_line = Some(line);
+                buffer.push(ev);
+            }
+            _ => {
+                // inline content (Text, Code, SoftBreak, etc.) at top level —
+                // if buffer is empty (rare: bare top-level text), still record line.
+                if buffer.is_empty() && buffer_line.is_none() {
+                    buffer_line = Some(line);
+                }
+                buffer.push(ev);
+            }
         }
     }
-    flush(&mut buffer, &mut html);
+    flush(&mut buffer, &mut html, buffer_line.take());
 
     let words = count_words(source);
     let reading_minutes = ((words as f32 / 220.0).ceil() as u32).max(1);
@@ -632,6 +756,66 @@ mod tests {
         assert!(res.html.contains("Hello"));
         assert_eq!(res.outline.len(), 1);
         assert!(res.words > 0);
+    }
+
+    #[test]
+    fn render_emits_data_line_on_top_level_blocks() {
+        // line 1 heading, line 3 paragraph, line 5 list, line 9 fenced code
+        let src = "# Title\n\nParagraph here.\n\n- item one\n- item two\n- item three\n\n```ts\nconst x = 1;\n```\n";
+        let res = render(src, None, &[]);
+        assert!(
+            res.html.contains("<h1 id=\"title\" data-line=\"1\""),
+            "heading missing data-line: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("<p data-line=\"3\""),
+            "paragraph missing data-line: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("<ul data-line=\"5\""),
+            "list missing data-line: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("<pre"),
+            "code block missing pre: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("data-line=\"9\""),
+            "code block missing data-line=9: {}",
+            res.html
+        );
+    }
+
+    #[test]
+    fn render_emits_data_line_on_special_blocks() {
+        // mermaid / graphviz / plantuml divs also carry data-line
+        let src = "para\n\n```mermaid\ngraph TD; A-->B\n```\n";
+        let res = render(src, None, &[]);
+        assert!(
+            res.html.contains("class=\"mermaid-block\""),
+            "no mermaid: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("data-line=\"3\""),
+            "mermaid missing data-line=3: {}",
+            res.html
+        );
+    }
+
+    #[test]
+    fn inject_data_line_idempotent_and_handles_void_tags() {
+        let mut s = String::from("<p>hi</p>");
+        inject_data_line(&mut s, 7);
+        assert_eq!(s, "<p data-line=\"7\">hi</p>");
+
+        let mut s = String::from("<hr />");
+        inject_data_line(&mut s, 4);
+        assert_eq!(s, "<hr data-line=\"4\" />");
     }
 
     #[test]

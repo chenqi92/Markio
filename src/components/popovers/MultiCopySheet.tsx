@@ -158,7 +158,7 @@ export function formatForJike(source: string): string {
 }
 
 export function formatForXhs(source: string, fallbackTitle: string): string {
-  const title = firstHeading(source, fallbackTitle || "无标题");
+  const title = firstHeading(source, fallbackTitle.trim() || "无标题");
   const plain = markdownToPlain(source)
     .replace(new RegExp(`^${escapeRegExp(title)}\\s*`), "")
     .trim();

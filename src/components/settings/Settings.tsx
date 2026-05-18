@@ -5309,7 +5309,7 @@ const IMPORT_SOURCES = [
   { id: "logseq", name: "Logseq", logo: "/brand/import/logseq.svg", color: "#2563eb" },
 ];
 
-type ImportProvider = "notion" | "obsidian" | "bear" | "evernote";
+type ImportProvider = "notion" | "obsidian" | "bear" | "evernote" | "logseq";
 
 const IMPORT_PROVIDER_MAP: Record<string, ImportProvider | null> = {
   notion: "notion",
@@ -5317,7 +5317,7 @@ const IMPORT_PROVIDER_MAP: Record<string, ImportProvider | null> = {
   bear: "bear",
   evernote: "evernote",
   roam: null,
-  logseq: null,
+  logseq: "logseq",
 };
 
 function extsFor(p: ImportProvider): string[] {
@@ -5329,12 +5329,13 @@ function extsFor(p: ImportProvider): string[] {
     case "evernote":
       return ["enex"];
     case "obsidian":
+    case "logseq":
       return [];
   }
 }
 
 function providerNeedsDir(p: ImportProvider): boolean {
-  return p === "obsidian";
+  return p === "obsidian" || p === "logseq";
 }
 
 function ImportExport() {
@@ -5459,7 +5460,7 @@ function ImportExport() {
         </div>
       </div>
       <div className="settings-card">
-        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion、Bear、印象选归档文件，Obsidian 选 vault 目录。">
+        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion、Bear、印象选归档文件，Obsidian/Logseq 选目录。">
           从其它工具导入
         </CardTitle>
         <div

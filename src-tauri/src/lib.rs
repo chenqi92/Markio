@@ -2902,6 +2902,7 @@ async fn import_run(
         "obsidian" => import::import_obsidian(&src, &ws),
         "bear" => import::import_bear(&src, &ws),
         "evernote" => import::import_evernote(&src, &ws),
+        "logseq" => import::import_logseq(&src, &ws),
         other => Err(format!("未知导入器：{other}")),
     })
     .await

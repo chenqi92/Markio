@@ -3,6 +3,7 @@
 // 支持：
 //   * Notion 导出 zip
 //   * Obsidian vault 目录（递归复制 .md + 保留 [[wiki]]）
+//   * Logseq graph 目录（复制 pages/journals/assets，跳过暂未转换的 .org）
 //   * Bear .bearbook 归档（含 .md）
 //   * 印象 .enex XML
 //
@@ -75,6 +76,14 @@ fn sanitize(name: &str) -> String {
 
 fn ensure_dir(p: &Path) -> Result<(), String> {
     fs::create_dir_all(p).map_err(|e| format!("创建目录失败 {}：{e}", p.display()))
+}
+
+fn push_warning_limited(warnings: &mut Vec<String>, msg: String) {
+    if warnings.len() < 50 {
+        warnings.push(msg);
+    } else if warnings.len() == 50 {
+        warnings.push("后续警告已省略".to_string());
+    }
 }
 
 fn make_dest(workspace: &Path, provider: &str) -> Result<PathBuf, String> {
@@ -217,8 +226,209 @@ pub fn import_obsidian(src_dir: &Path, workspace: &Path) -> Result<ImportReport,
     })
 }
 
+/// Logseq graph：选择 graph 根目录，导入 pages / journals 下的 markdown，
+/// 同时复制 assets。`.org` 需要语法转换，当前明确跳过并给 warning。
+pub fn import_logseq(src_dir: &Path, workspace: &Path) -> Result<ImportReport, String> {
+    if !src_dir.is_dir() {
+        return Err("Logseq 导入需要选择 graph 目录".to_string());
+    }
+    let dest = make_dest(workspace, "logseq")?;
+    let mut count = 0;
+    let mut warnings: Vec<String> = Vec::new();
+
+    let mut known_sections = 0;
+    for section in ["pages", "journals"] {
+        let from = src_dir.join(section);
+        if from.is_dir() {
+            known_sections += 1;
+            copy_logseq_markdown_dir(&from, &dest.join(section), &mut count, &mut warnings, 0)?;
+        }
+    }
+
+    let assets = src_dir.join("assets");
+    if assets.is_dir() {
+        copy_logseq_assets_dir(&assets, &dest.join("assets"), &mut count, &mut warnings, 0)?;
+    }
+
+    for entry in fs::read_dir(src_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        if !ft.is_file() {
+            continue;
+        }
+        let from = entry.path();
+        if is_markdown_path(&from) {
+            copy_import_file(
+                &from,
+                &dest.join(entry.file_name()),
+                &mut count,
+                &mut warnings,
+            )?;
+        } else if is_org_path(&from) {
+            push_warning_limited(
+                &mut warnings,
+                format!("跳过 org-mode 文件：{}", from.display()),
+            );
+        }
+    }
+
+    if known_sections == 0 && count == 0 {
+        push_warning_limited(
+            &mut warnings,
+            "未找到 pages/ 或 journals/，已按普通目录尝试导入 Markdown".to_string(),
+        );
+        copy_logseq_markdown_dir(src_dir, &dest, &mut count, &mut warnings, 0)?;
+    }
+    if count == 0 {
+        push_warning_limited(
+            &mut warnings,
+            "没有导入任何 Markdown 或资源文件".to_string(),
+        );
+    }
+
+    Ok(ImportReport {
+        provider: "logseq".to_string(),
+        dest: dest.to_string_lossy().to_string(),
+        files: count,
+        warnings,
+    })
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path, count: &mut usize) -> Result<(), String> {
     copy_dir_recursive_inner(src, dst, count, 0)
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase()),
+        Some(ext) if ext == "md" || ext == "markdown"
+    )
+}
+
+fn is_org_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase()),
+        Some(ext) if ext == "org"
+    )
+}
+
+fn copy_import_file(
+    from: &Path,
+    to: &Path,
+    count: &mut usize,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if *count >= MAX_IMPORT_ENTRIES {
+        push_warning_limited(
+            warnings,
+            format!("已达到单次导入文件上限 {MAX_IMPORT_ENTRIES}，停止复制"),
+        );
+        return Ok(());
+    }
+    let meta = fs::metadata(from).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_IMPORT_ENTRY_BYTES {
+        push_warning_limited(
+            warnings,
+            format!(
+                "跳过超大文件：{}（超过 {} MB）",
+                from.display(),
+                MAX_IMPORT_ENTRY_BYTES / 1024 / 1024
+            ),
+        );
+        return Ok(());
+    }
+    if let Some(parent) = to.parent() {
+        ensure_dir(parent)?;
+    }
+    fs::copy(from, to).map_err(|e| format!("复制 {} 失败：{e}", from.display()))?;
+    *count += 1;
+    Ok(())
+}
+
+fn copy_logseq_markdown_dir(
+    src: &Path,
+    dst: &Path,
+    count: &mut usize,
+    warnings: &mut Vec<String>,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > MAX_COPY_DEPTH {
+        push_warning_limited(
+            warnings,
+            format!(
+                "跳过过深目录：{}（超过 {MAX_COPY_DEPTH} 层）",
+                src.display()
+            ),
+        );
+        return Ok(());
+    }
+    ensure_dir(dst)?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "logseq" {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if ft.is_symlink() {
+            push_warning_limited(warnings, format!("跳过符号链接：{}", from.display()));
+            continue;
+        }
+        if ft.is_dir() {
+            copy_logseq_markdown_dir(&from, &to, count, warnings, depth + 1)?;
+        } else if ft.is_file() && is_markdown_path(&from) {
+            copy_import_file(&from, &to, count, warnings)?;
+        } else if ft.is_file() && is_org_path(&from) {
+            push_warning_limited(warnings, format!("跳过 org-mode 文件：{}", from.display()));
+        }
+    }
+    Ok(())
+}
+
+fn copy_logseq_assets_dir(
+    src: &Path,
+    dst: &Path,
+    count: &mut usize,
+    warnings: &mut Vec<String>,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > MAX_COPY_DEPTH {
+        push_warning_limited(
+            warnings,
+            format!(
+                "跳过过深资源目录：{}（超过 {MAX_COPY_DEPTH} 层）",
+                src.display()
+            ),
+        );
+        return Ok(());
+    }
+    ensure_dir(dst)?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if ft.is_symlink() {
+            push_warning_limited(warnings, format!("跳过符号链接：{}", from.display()));
+            continue;
+        }
+        if ft.is_dir() {
+            copy_logseq_assets_dir(&from, &to, count, warnings, depth + 1)?;
+        } else if ft.is_file() {
+            copy_import_file(&from, &to, count, warnings)?;
+        }
+    }
+    Ok(())
 }
 
 fn copy_dir_recursive_inner(
@@ -525,4 +735,58 @@ fn enml_to_markdown(html: &str) -> String {
         }
     }
     collapsed.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "markio-import-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn import_logseq_copies_pages_journals_and_assets() {
+        let root = temp_root("logseq");
+        let graph = root.join("graph");
+        let workspace = root.join("workspace");
+        std::fs::create_dir_all(graph.join("pages")).unwrap();
+        std::fs::create_dir_all(graph.join("journals")).unwrap();
+        std::fs::create_dir_all(graph.join("assets")).unwrap();
+        std::fs::create_dir_all(graph.join("logseq")).unwrap();
+
+        std::fs::write(graph.join("pages").join("Project.md"), "- hello").unwrap();
+        std::fs::write(graph.join("journals").join("2026_05_18.md"), "- journal").unwrap();
+        std::fs::write(graph.join("assets").join("image.png"), [1_u8, 2, 3]).unwrap();
+        std::fs::write(graph.join("pages").join("Legacy.org"), "* org").unwrap();
+        std::fs::write(graph.join("logseq").join("config.edn"), "{}").unwrap();
+
+        let report = import_logseq(&graph, &workspace).unwrap();
+        let dest = PathBuf::from(&report.dest);
+
+        assert_eq!(report.provider, "logseq");
+        assert_eq!(report.files, 3);
+        assert!(dest.join("pages").join("Project.md").exists());
+        assert!(dest.join("journals").join("2026_05_18.md").exists());
+        assert!(dest.join("assets").join("image.png").exists());
+        assert!(!dest.join("pages").join("Legacy.org").exists());
+        assert!(!dest.join("logseq").join("config.edn").exists());
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("org-mode")));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

@@ -783,7 +783,7 @@ export const api = {
 
   // 第三方笔记导入
   importRun: (
-    provider: "notion" | "obsidian" | "bear" | "evernote",
+    provider: "notion" | "obsidian" | "bear" | "evernote" | "logseq",
     source: string,
     workspace: string,
   ) =>

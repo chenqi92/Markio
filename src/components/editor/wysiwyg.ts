@@ -19,6 +19,7 @@ import {
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
 import { cursorInsideRange, detectMathRanges, type MathRange } from "@/lib/math-ranges";
+import { tableCellSourcePos } from "./table-edit";
 
 type KatexModule = typeof import("katex");
 let katexPromise: Promise<KatexModule> | null = null;
@@ -169,6 +170,89 @@ function extractFenceLang(view: EditorView, from: number): string {
   const firstLine = view.state.doc.lineAt(from);
   const m = firstLine.text.match(/^\s*```\s*([\w-]+)/);
   return m ? m[1] : "";
+}
+
+// ─── Table widget ───────────────────────────────────────────────────────────
+
+export interface ParsedTable {
+  header: string[];
+  aligns: Array<"left" | "center" | "right" | null>;
+  rows: string[][];
+}
+
+export function parseTableSource(src: string): ParsedTable {
+  const lines = src.split(/\r?\n/).filter((l) => l.trim().startsWith("|"));
+  if (lines.length < 2) return { header: [], aligns: [], rows: [] };
+  const splitRow = (line: string): string[] => {
+    const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return inner.split("|").map((s) => s.trim());
+  };
+  const header = splitRow(lines[0]);
+  const alignRow = splitRow(lines[1]);
+  const aligns = alignRow.map((s) => {
+    const left = s.startsWith(":");
+    const right = s.endsWith(":");
+    if (left && right) return "center" as const;
+    if (left) return "left" as const;
+    if (right) return "right" as const;
+    return null;
+  });
+  const rows = lines.slice(2).map(splitRow);
+  return { header, aligns, rows };
+}
+
+function buildTableDom(parsed: ParsedTable): HTMLElement {
+  const root = document.createElement("div");
+  root.className = "cm-md-table-widget";
+  const tbl = document.createElement("table");
+
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  parsed.header.forEach((cell, col) => {
+    const th = document.createElement("th");
+    th.textContent = cell;
+    th.dataset.row = "0";
+    th.dataset.col = String(col);
+    const align = parsed.aligns[col];
+    if (align) th.style.textAlign = align;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  tbl.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  parsed.rows.forEach((row, rowIdx) => {
+    const tr = document.createElement("tr");
+    row.forEach((cell, col) => {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      td.dataset.row = String(rowIdx + 1);
+      td.dataset.col = String(col);
+      const align = parsed.aligns[col];
+      if (align) td.style.textAlign = align;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+
+  root.appendChild(tbl);
+  return root;
+}
+
+class TableWidget extends WidgetType {
+  constructor(private readonly source: string) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return other instanceof TableWidget && other.source === this.source;
+  }
+  toDOM(): HTMLElement {
+    return buildTableDom(parseTableSource(this.source));
+  }
+  ignoreEvent() {
+    return false;
+  }
 }
 
 class TaskCheckbox extends WidgetType {
@@ -367,6 +451,23 @@ function build(view: EditorView): BuildResult {
 
       // ─── 表格 ───
       if (n === "Table") {
+        if (!rangeHasCursor({ from: node.from, to: node.to }, view)) {
+          const source = view.state.doc.sliceString(node.from, node.to);
+          decos.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.replace({
+              widget: new TableWidget(source),
+              block: true,
+            }),
+          });
+          atomic.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.mark({}),
+          });
+          return;
+        }
         markLines(node.from, node.to, "cm-md-line cm-md-table-line");
         return;
       }
@@ -578,6 +679,27 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
           const firstLine = view.state.doc.lineAt(pos);
           const innerStart = Math.min(firstLine.to + 1, view.state.doc.length);
           view.dispatch({ selection: { anchor: innerStart } });
+          view.focus();
+          e.preventDefault();
+        }
+        return;
+      }
+      // 点击表格 widget 单元格 → 用 tableCellSourcePos 把光标精确落到该 cell 内容起点
+      const tableCell = target.closest<HTMLElement>(
+        ".cm-md-table-widget td[data-row], .cm-md-table-widget th[data-row]",
+      );
+      if (tableCell) {
+        const tableHost = tableCell.closest<HTMLElement>(".cm-md-table-widget");
+        if (!tableHost) return;
+        const widgetPos = view.posAtDOM(tableHost);
+        if (widgetPos == null) return;
+        const tableTopLine = view.state.doc.lineAt(widgetPos).number;
+        const row = Number(tableCell.dataset.row);
+        const col = Number(tableCell.dataset.col);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+        const cellPos = tableCellSourcePos(view, tableTopLine, row, col);
+        if (cellPos != null) {
+          view.dispatch({ selection: { anchor: cellPos } });
           view.focus();
           e.preventDefault();
         }

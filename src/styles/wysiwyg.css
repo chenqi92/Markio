@@ -268,3 +268,36 @@
 .cm-md-fenced-error pre {
   margin: 0;
 }
+
+/* ─── Table widget ─── */
+.cm-md-table-widget {
+  margin: 8px 0;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--bg-soft);
+}
+.cm-md-table-widget table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.cm-md-table-widget th,
+.cm-md-table-widget td {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  vertical-align: top;
+  cursor: text;
+}
+.cm-md-table-widget th {
+  background: var(--bg-hover);
+  font-weight: 600;
+  text-align: left;
+}
+.cm-md-table-widget tbody tr:nth-child(2n) {
+  background: var(--bg-alt, transparent);
+}
+.cm-md-table-widget th:hover,
+.cm-md-table-widget td:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

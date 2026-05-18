@@ -5338,6 +5338,21 @@ function providerNeedsDir(p: ImportProvider): boolean {
   return p === "obsidian" || p === "logseq";
 }
 
+function importProviderName(provider: ImportProvider): string {
+  return (
+    IMPORT_SOURCES.find((source) => IMPORT_PROVIDER_MAP[source.id] === provider)
+      ?.name ?? provider
+  );
+}
+
+function importWarningSuffix(warnings: string[]): string {
+  if (warnings.length === 0) return "";
+  const preview = warnings.slice(0, 3).join("；");
+  const more =
+    warnings.length > 3 ? `；另有 ${warnings.length - 3} 条未显示` : "";
+  return `（警告：${preview}${more}）`;
+}
+
 function ImportExport() {
   const { t } = useTranslation();
   const pdfTheme = useSettings((s) => s.exportPdfTheme);
@@ -5380,14 +5395,15 @@ function ImportExport() {
         ]);
     if (!src) return;
     setImportBusy(provider);
-    setImportMsg({ kind: "info", text: `${provider} 导入中…` });
+    const name = importProviderName(provider);
+    setImportMsg({ kind: "info", text: `${name} 导入中…` });
     try {
       const report = await api.importRun(provider, src, activeWorkspace.path);
       setImportMsg({
         kind: "ok",
-        text: `${provider} 导入完成：${report.files} 个文件 → ${report.dest}${
-          report.warnings.length > 0 ? `（${report.warnings.length} 条警告）` : ""
-        }`,
+        text: `${name} 导入完成：${report.files} 个文件 → ${
+          report.dest
+        }${importWarningSuffix(report.warnings)}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {
@@ -5411,9 +5427,9 @@ function ImportExport() {
       const report = await api.importAppleNotes(activeWorkspace.path);
       setImportMsg({
         kind: "ok",
-        text: `Apple Notes 导入完成：${report.files} 篇 → ${report.dest}${
-          report.warnings.length > 0 ? `（${report.warnings.join("；")}）` : ""
-        }`,
+        text: `Apple Notes 导入完成：${report.files} 篇 → ${
+          report.dest
+        }${importWarningSuffix(report.warnings)}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {

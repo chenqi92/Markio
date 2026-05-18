@@ -140,7 +140,7 @@ export interface RagHit {
 
 /** 把 Rust 返回的错误 string 拆开 */
 export function parseError(e: unknown): {
-  code: "CONFLICT" | "ALREADY_EXISTS" | "DENIED" | "OTHER";
+  code: "CONFLICT" | "ALREADY_EXISTS" | "BASELINE_REQUIRED" | "DENIED" | "OTHER";
   message: string;
   extra?: string;
 } {
@@ -151,6 +151,13 @@ export function parseError(e: unknown): {
   }
   if (msg.startsWith("ALREADY_EXISTS:")) {
     return { code: "ALREADY_EXISTS", message: msg };
+  }
+  if (msg.startsWith("BASELINE_REQUIRED:")) {
+    return {
+      code: "BASELINE_REQUIRED",
+      message: "保存失败：缺少文件基线，请重新打开文件后再保存。",
+      extra: msg.slice("BASELINE_REQUIRED:".length),
+    };
   }
   if (msg.startsWith("拒绝访问")) {
     return { code: "DENIED", message: msg };
@@ -255,8 +262,8 @@ export const api = {
   save: (
     path: string,
     content: string,
-    expectedMtime?: number,
-    force?: boolean,
+    expectedMtime: number | undefined,
+    force = false,
   ) =>
     invoke<FileSig>("fs_save", { path, content, expectedMtime, force }),
   /** 新建：若已存在直接 Err "ALREADY_EXISTS:<path>" */
@@ -831,11 +838,8 @@ export const api = {
       edges: Array<{ from: number; to: number }>;
     }>("rag_repo_graph", { workspace }),
 
-  // 兼容别名：旧代码里直接 readText/writeText 的地方挂上来
-  readText: (path: string) =>
-    invoke<OpenedFile>("fs_open", { path }).then((o) => o.content),
-  writeText: (path: string, content: string) =>
-    invoke<FileSig>("fs_save", { path, content }).then(() => undefined),
+  /** 只读文件内容，不登记保存基线；写入必须走 open/createNew + save。 */
+  readText: (path: string) => invoke<string>("fs_read_text", { path }),
 
   // dev 期日志投递（release 端 Rust 侧是 no-op）
   devLogAppend: (

@@ -444,6 +444,16 @@ fn fs_open(state: tauri::State<'_, AppState>, path: String) -> Result<OpenedFile
     })
 }
 
+/// 只读文件内容，不记录保存基线。
+///
+/// 用于 AI 引用、导入预览等只读场景，避免把这些临时读取误登记成
+/// “用户已打开并准备保存”的文件指纹。
+#[tauri::command]
+fn fs_read_text(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
+    let canon = validate_path(&state, &path)?;
+    fs_ops::read_text_path(&canon)
+}
+
 #[tauri::command]
 fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     // 文件可能已被外部删除（用户在 Finder 删了再点 close），validate_path 走的
@@ -487,7 +497,7 @@ fn fs_save(
             } else if let Some(base) = baseline_mtime {
                 disk.mtime_ms != base
             } else {
-                false
+                return Err(format!("BASELINE_REQUIRED:{}", canon.to_string_lossy()));
             };
             if changed {
                 return Err(format!("CONFLICT:{}:{:x}", disk.mtime_ms, disk.hash));
@@ -3313,6 +3323,7 @@ pub fn run() {
             watcher_health,
             fs_read_tree,
             fs_read_dir,
+            fs_read_text,
             fs_open,
             fs_close,
             fs_save,

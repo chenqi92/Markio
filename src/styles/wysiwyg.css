@@ -248,3 +248,23 @@
   border-radius: 4px;
   padding: 0 4px;
 }
+
+/* ─── Fenced visual widgets (mermaid / dot / chart) ─── */
+.cm-md-fenced-widget {
+  display: block;
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  cursor: text;
+}
+.cm-md-fenced-widget:hover {
+  background: var(--bg-hover);
+}
+.cm-md-fenced-widget svg {
+  max-width: 100%;
+  height: auto;
+}
+.cm-md-fenced-error pre {
+  margin: 0;
+}

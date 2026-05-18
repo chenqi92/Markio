@@ -588,16 +588,21 @@ function renderError(block: HTMLElement, message: string, source: string) {
   block.classList.add("chart-rendered", "chart-failed");
 }
 
+export function renderChartBlock(block: HTMLElement) {
+  if (block.dataset.rendered) return;
+  const source = decodeSource(block.getAttribute("data-chart") ?? block.textContent ?? "");
+  try {
+    const config = parseChartSource(source);
+    block.replaceChildren(chartFigure(config));
+    block.dataset.rendered = "1";
+    block.classList.add("chart-rendered");
+  } catch (err) {
+    renderError(block, (err as Error).message, source);
+  }
+}
+
 export function renderChartsIn(root: HTMLElement) {
-  root.querySelectorAll<HTMLElement>(".chart-block:not([data-rendered])").forEach((block) => {
-    const source = decodeSource(block.getAttribute("data-chart") ?? block.textContent ?? "");
-    try {
-      const config = parseChartSource(source);
-      block.replaceChildren(chartFigure(config));
-      block.dataset.rendered = "1";
-      block.classList.add("chart-rendered");
-    } catch (err) {
-      renderError(block, (err as Error).message, source);
-    }
-  });
+  root
+    .querySelectorAll<HTMLElement>(".chart-block:not([data-rendered])")
+    .forEach(renderChartBlock);
 }

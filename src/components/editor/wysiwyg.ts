@@ -80,6 +80,97 @@ class MathWidget extends WidgetType {
   }
 }
 
+// ─── Visual fenced-code widgets (mermaid / dot / chart) ────────────────────
+// Match the conventions the preview render pipeline uses so we can reuse the
+// per-block render helpers without duplicating logic.
+
+type VisualLang = "mermaid" | "dot" | "chart";
+
+function detectVisualLang(lang: string): VisualLang | null {
+  const lower = lang.toLowerCase();
+  if (lower === "mermaid") return "mermaid";
+  if (lower === "dot" || lower === "graphviz") return "dot";
+  if (lower === "chart" || lower === "markio-chart" || lower === "charts") return "chart";
+  return null;
+}
+
+async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: string) {
+  const encoded = encodeURIComponent(source);
+  try {
+    if (kind === "mermaid") {
+      host.classList.add("mermaid-block");
+      host.setAttribute("data-mermaid", encoded);
+      const mod = await import("@/lib/mermaid");
+      await mod.renderMermaidBlock(host);
+    } else if (kind === "dot") {
+      host.classList.add("graphviz-block");
+      host.setAttribute("data-graphviz", encoded);
+      const mod = await import("@/lib/diagrams");
+      await mod.renderGraphvizBlock(host);
+    } else {
+      host.classList.add("chart-block");
+      host.setAttribute("data-chart", encoded);
+      const mod = await import("@/lib/charts");
+      mod.renderChartBlock(host);
+    }
+  } catch (err) {
+    host.classList.add("cm-md-fenced-error");
+    const pre = document.createElement("pre");
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.fontSize = "12px";
+    pre.style.color = "var(--text-3)";
+    pre.textContent = `${kind} 渲染失败：${(err as Error).message}\n\n${source}`;
+    host.replaceChildren(pre);
+  }
+}
+
+class VisualFenceWidget extends WidgetType {
+  constructor(
+    private readonly kind: VisualLang,
+    private readonly source: string,
+  ) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof VisualFenceWidget &&
+      other.kind === this.kind &&
+      other.source === this.source
+    );
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement("div");
+    el.className = `cm-md-fenced-widget cm-md-fenced-${this.kind}`;
+    el.dataset.kind = this.kind;
+    void renderVisualWidget(el, this.kind, this.source);
+    return el;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+/**
+ * Read the fenced-code body for a `n === "FencedCode"` node. The lezer node
+ * spans both fences; we strip the first line (```lang) and the trailing
+ * ``` line. Returns the inner source code (no trailing newline).
+ */
+function extractFencedBody(view: EditorView, from: number, to: number): string {
+  const firstLine = view.state.doc.lineAt(from);
+  const bodyStart = Math.min(firstLine.to + 1, view.state.doc.length);
+  if (bodyStart >= to) return "";
+  const slice = view.state.doc.sliceString(bodyStart, to);
+  // strip a trailing ``` line if present
+  const stripped = slice.replace(/\r?\n?[ \t]*```\s*$/, "");
+  return stripped;
+}
+
+function extractFenceLang(view: EditorView, from: number): string {
+  const firstLine = view.state.doc.lineAt(from);
+  const m = firstLine.text.match(/^\s*```\s*([\w-]+)/);
+  return m ? m[1] : "";
+}
+
 class TaskCheckbox extends WidgetType {
   constructor(private readonly checked: boolean) {
     super();
@@ -386,7 +477,36 @@ function build(view: EditorView): BuildResult {
       }
 
       // ─── 代码块 ───
-      if (n === "FencedCode" || n === "CodeBlock") {
+      if (n === "FencedCode") {
+        // 视觉语言（mermaid / dot / chart）：光标不在块内时直接渲染成图。
+        const lang = extractFenceLang(view, node.from);
+        const visualKind = detectVisualLang(lang);
+        if (
+          visualKind &&
+          !rangeHasCursor({ from: node.from, to: node.to }, view)
+        ) {
+          const source = extractFencedBody(view, node.from, node.to);
+          if (source.trim().length > 0) {
+            decos.push({
+              from: node.from,
+              to: node.to,
+              deco: Decoration.replace({
+                widget: new VisualFenceWidget(visualKind, source),
+                block: true,
+              }),
+            });
+            atomic.push({
+              from: node.from,
+              to: node.to,
+              deco: Decoration.mark({}),
+            });
+            return;
+          }
+        }
+        markLines(node.from, node.to, "cm-md-line cm-md-codeblock");
+        return;
+      }
+      if (n === "CodeBlock") {
         markLines(node.from, node.to, "cm-md-line cm-md-codeblock");
         return;
       }
@@ -445,6 +565,19 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
         const pos = view.posAtDOM(mathHost);
         if (pos != null) {
           view.dispatch({ selection: { anchor: pos + 1 } });
+          view.focus();
+          e.preventDefault();
+        }
+        return;
+      }
+      // 点击 mermaid / dot / chart widget → 把光标移进 fenced code 第二行（源码体）
+      const fencedHost = target.closest<HTMLElement>(".cm-md-fenced-widget");
+      if (fencedHost) {
+        const pos = view.posAtDOM(fencedHost);
+        if (pos != null) {
+          const firstLine = view.state.doc.lineAt(pos);
+          const innerStart = Math.min(firstLine.to + 1, view.state.doc.length);
+          view.dispatch({ selection: { anchor: innerStart } });
           view.focus();
           e.preventDefault();
         }

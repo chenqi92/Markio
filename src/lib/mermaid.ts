@@ -33,7 +33,7 @@ async function getMermaid(themeId: string): Promise<MermaidModule> {
   return mermaid;
 }
 
-async function renderMermaidBlock(block: HTMLElement) {
+export async function renderMermaidBlock(block: HTMLElement) {
   if (block.dataset.rendered) return;
   const themeId = useSettings.getState().theme;
   const mermaid = await getMermaid(themeId);

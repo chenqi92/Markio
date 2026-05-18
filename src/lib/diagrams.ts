@@ -112,7 +112,7 @@ function renderError(block: HTMLElement, kind: string, message: string, source: 
   block.classList.add("diagram-rendered", "diagram-failed");
 }
 
-async function renderGraphvizBlock(block: HTMLElement) {
+export async function renderGraphvizBlock(block: HTMLElement) {
   const source = decodeSource(block.getAttribute("data-graphviz") ?? block.textContent ?? "");
   try {
     const viz = await getViz();

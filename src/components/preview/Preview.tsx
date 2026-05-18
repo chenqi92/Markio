@@ -386,20 +386,34 @@ export function Preview({
       if (cancelled) return;
       diagramHandle = renderDiagramsLazy(root);
     });
-    // Rebuild line→top anchor map after the DOM is in place. Layout may shift
-    // when math/mermaid/diagrams finish loading, so we re-collect a couple
-    // times. Anchors stay correct enough for scroll sync within ~50px.
+    // Rebuild the line→top anchor map after layout is in place. Heavy renders
+    // (mermaid SVG, katex, images) settle asynchronously, so we re-collect
+    // whenever content size changes — via ResizeObserver on the content root.
+    // Debounced because async chunked renders fire many resize events in
+    // succession; we only need a stable measurement.
     const container = containerRef.current;
+    const content = contentRef.current;
+    let rebuildPending = 0;
     const rebuildAnchors = () => {
       if (cancelled || !container) return;
       anchorsRef.current = buildPreviewAnchors(container);
+    };
+    const scheduleRebuild = () => {
+      if (rebuildPending) window.clearTimeout(rebuildPending);
+      rebuildPending = window.setTimeout(() => {
+        rebuildPending = 0;
+        rebuildAnchors();
+      }, 80) as unknown as number;
     };
     idle(() => {
       rebuildAnchors();
       if (!cancelled) applyScrollTarget();
     });
-    // second pass once heavy renderers have had a chance to flush
-    const refreshTimer = window.setTimeout(rebuildAnchors, 600);
+    let resizeObserver: ResizeObserver | null = null;
+    if (content && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(scheduleRebuild);
+      resizeObserver.observe(content);
+    }
 
     return () => {
       cancelled = true;
@@ -415,7 +429,8 @@ export function Preview({
       mathHandle?.disconnect();
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
-      window.clearTimeout(refreshTimer);
+      resizeObserver?.disconnect();
+      if (rebuildPending) window.clearTimeout(rebuildPending);
     };
   }, [html, theme, applyScrollTarget, vaultFiles]);
 

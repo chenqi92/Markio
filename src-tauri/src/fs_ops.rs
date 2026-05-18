@@ -1127,6 +1127,7 @@ pub struct TrashItem {
     pub original: String,
     pub timestamp: i64,
     pub size: u64,
+    pub is_dir: bool,
 }
 
 fn trash_dir(workspace: &str) -> PathBuf {
@@ -1137,10 +1138,18 @@ fn ts_now() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+fn move_to_trash(src: &Path, dest: &Path) -> Result<(), String> {
+    fs::rename(src, dest).map_err(|e| e.to_string())
+}
+
+fn restore_from_trash(stored: &Path, dest: &Path) -> Result<(), String> {
+    fs::rename(stored, dest).map_err(|e| e.to_string())
+}
+
 pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
     let src = PathBuf::from(file);
     if !src.exists() {
-        return Err(format!("文件不存在：{file}"));
+        return Err(format!("路径不存在：{file}"));
     }
     let dir = trash_dir(workspace);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -1149,20 +1158,17 @@ pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
         .map(|s| s.to_string_lossy().to_string())
         .ok_or_else(|| "无效文件名".to_string())?;
     let ts = ts_now();
-    let stored = format!("{ts}__{name}.bin");
+    let is_dir = src.is_dir();
+    let kind = if is_dir { "dir" } else { "file" };
+    let stored = format!("{ts}__{name}.{}", if is_dir { "dir" } else { "bin" });
     let meta_path = dir.join(format!("{ts}__{name}.meta.json"));
-    fs::rename(&src, dir.join(&stored))
-        .or_else(|_| {
-            // 跨设备 rename 失败时退化为 copy + remove
-            fs::copy(&src, dir.join(&stored))
-                .map(|_| ())
-                .and_then(|_| fs::remove_file(&src).map(|_| ()))
-        })
-        .map_err(|e| e.to_string())?;
+    move_to_trash(&src, &dir.join(&stored))?;
     let meta = serde_json::json!({
         "original": src.to_string_lossy(),
         "name": name,
         "timestamp": ts,
+        "stored": stored,
+        "kind": kind,
     });
     fs::write(&meta_path, meta.to_string()).map_err(|e| e.to_string())?;
     Ok(())
@@ -1196,7 +1202,17 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
             .unwrap_or("")
             .to_string();
         let ts = v.get("timestamp").and_then(|x| x.as_i64()).unwrap_or(0);
-        let stored = dir.join(format!("{ts}__{orig_name}.bin"));
+        let stored_name = v
+            .get("stored")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("{ts}__{orig_name}.bin"));
+        let stored = dir.join(stored_name);
+        let is_dir = v
+            .get("kind")
+            .and_then(|x| x.as_str())
+            .map(|kind| kind == "dir")
+            .unwrap_or_else(|| stored.is_dir());
         let size = stored.metadata().map(|m| m.len()).unwrap_or(0);
         out.push(TrashItem {
             path: stored.to_string_lossy().to_string(),
@@ -1204,6 +1220,7 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
             original,
             timestamp: ts,
             size,
+            is_dir,
         });
     }
     out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -1223,7 +1240,7 @@ pub fn trash_restore(workspace: &str, stored: &str) -> Result<String, String> {
     if !stored_path.starts_with(&dir) {
         return Err("拒绝恢复：回收站项目路径无效".to_string());
     }
-    if !stored_path.exists() || !stored_path.is_file() {
+    if !stored_path.exists() {
         return Err("回收站项目不存在".to_string());
     }
     // 找 meta
@@ -1254,15 +1271,9 @@ pub fn trash_restore(workspace: &str, stored: &str) -> Result<String, String> {
         return Err("拒绝恢复：目标路径不在用户文件区".to_string());
     }
     if dest.exists() {
-        return Err("原位置已存在同名文件".to_string());
+        return Err("原位置已存在同名项目".to_string());
     }
-    fs::rename(&stored_path, &dest)
-        .or_else(|_| {
-            fs::copy(&stored_path, &dest)
-                .map(|_| ())
-                .and_then(|_| fs::remove_file(&stored_path).map(|_| ()))
-        })
-        .map_err(|e| e.to_string())?;
+    restore_from_trash(&stored_path, &dest)?;
     let _ = fs::remove_file(meta_path);
     Ok(original)
 }
@@ -1279,10 +1290,14 @@ pub fn trash_purge(workspace: &str, stored: Option<String>) -> Result<(), String
         let p = PathBuf::from(&path)
             .canonicalize()
             .map_err(|_| "回收站项目不存在".to_string())?;
-        if !p.starts_with(&dir_canon) || !p.is_file() {
+        if !p.starts_with(&dir_canon) || !p.exists() {
             return Err("拒绝删除：回收站项目路径无效".to_string());
         }
-        let _ = fs::remove_file(&p);
+        if p.is_dir() {
+            let _ = fs::remove_dir_all(&p);
+        } else {
+            let _ = fs::remove_file(&p);
+        }
         // meta 也一起删
         let stem = p
             .file_stem()
@@ -1580,6 +1595,20 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    fn make_test_workspace(name: &str) -> PathBuf {
+        let unique = format!(
+            "markio-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let ws = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&ws).unwrap();
+        ws
+    }
+
     #[test]
     fn unlinked_skips_wiki_form() {
         let needle = "笔记";
@@ -1621,5 +1650,43 @@ mod tests {
         extract_tokens_into("#a #a # not-a-tag", &mut tags, &mut mentions);
         assert_eq!(tags.len(), 1);
         assert!(tags.contains("a"));
+    }
+
+    #[test]
+    fn trash_roundtrip_directory() {
+        let ws = make_test_workspace("trash-dir");
+        let dir = ws.join("Project");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("note.md"), "# Note").unwrap();
+
+        trash_move(&ws.to_string_lossy(), &dir.to_string_lossy()).unwrap();
+        assert!(!dir.exists());
+
+        let items = trash_list(&ws.to_string_lossy()).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].is_dir);
+        assert!(Path::new(&items[0].path).is_dir());
+
+        let restored = trash_restore(&ws.to_string_lossy(), &items[0].path).unwrap();
+        assert_eq!(restored, dir.to_string_lossy());
+        assert!(dir.join("note.md").exists());
+        assert!(trash_list(&ws.to_string_lossy()).unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(ws);
+    }
+
+    #[test]
+    fn trash_purge_directory() {
+        let ws = make_test_workspace("trash-purge-dir");
+        let dir = ws.join("Project");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("note.md"), "# Note").unwrap();
+
+        trash_move(&ws.to_string_lossy(), &dir.to_string_lossy()).unwrap();
+        let item = trash_list(&ws.to_string_lossy()).unwrap().remove(0);
+        trash_purge(&ws.to_string_lossy(), Some(item.path.clone())).unwrap();
+        assert!(!Path::new(&item.path).exists());
+
+        let _ = fs::remove_dir_all(ws);
     }
 }

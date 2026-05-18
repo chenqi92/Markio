@@ -73,6 +73,7 @@ export interface TrashItem {
   original: string;
   timestamp: number;
   size: number;
+  isDir: boolean;
 }
 
 export interface Attachment {

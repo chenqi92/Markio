@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { api } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
+import { useRag } from "@/stores/rag";
 import type { TrashItem } from "@/types";
 
 function daysAgo(ts: number): string {
@@ -40,6 +41,11 @@ export function TrashSection() {
   const restore = async (it: TrashItem) => {
     try {
       await api.trashRestore(ws.path, it.path);
+      if (it.isDir) {
+        void useRag.getState().reindex(ws.path);
+      } else {
+        void useRag.getState().reindexFile(ws.path, it.original);
+      }
       setToast({ stage: "done", message: "已恢复" });
       setTimeout(() => setToast(null), 1500);
       await refreshTree(ws.id);
@@ -54,7 +60,7 @@ export function TrashSection() {
   };
 
   const purge = async (it: TrashItem) => {
-    const ok = window.confirm(`永久删除 ${it.name}？`);
+    const ok = window.confirm(`永久删除${it.isDir ? "文件夹" : "文件"} ${it.name}？`);
     if (!ok) return;
     try {
       await api.trashPurge(ws.path, it.path);
@@ -127,7 +133,7 @@ export function TrashSection() {
                   style={{ opacity: 0.85 }}
                 >
                   <span className="ico" style={{ opacity: 0.65 }}>
-                    <Icon name="file" size={13} />
+                    <Icon name={it.isDir ? "folder" : "file"} size={13} />
                   </span>
                   <span className="lbl" style={{ color: "var(--text-3)" }}>
                     {it.name}

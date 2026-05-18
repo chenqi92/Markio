@@ -490,7 +490,7 @@ function TreeContextMenu({
           await api.rename(node.path, to);
           flash("已重命名");
           if (ws) {
-            void ragRemoveSilently(ws.path, node.path);
+            void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
             await loadDir(ws.id, parentPath(node.path));
           }
         } catch (e) {
@@ -508,19 +508,11 @@ function TreeContextMenu({
       danger: true,
       onClick: async () => {
         if (!ws) return;
-        if (node.isDir) {
-          setToast({
-            stage: "error",
-            message: "回收站暂不支持目录，请使用 删除文件夹（永久）",
-          });
-          setTimeout(() => setToast(null), 2500);
-          return;
-        }
         try {
           await api.trashMove(ws.path, node.path);
           closeTabsForPath(node.path);
-          void ragRemoveSilently(ws.path, node.path);
-          flash("已移到回收站");
+          void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
+          flash(node.isDir ? "文件夹已移到回收站" : "已移到回收站");
           await loadDir(ws.id, parentPath(node.path));
         } catch (e) {
           setToast({
@@ -544,7 +536,7 @@ function TreeContextMenu({
           await api.remove(node.path);
           closeTabsForPath(node.path);
           if (ws) {
-            void ragRemoveSilently(ws.path, node.path);
+            void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
             await loadDir(ws.id, parentPath(node.path));
           }
           flash("已永久删除");
@@ -562,10 +554,14 @@ function TreeContextMenu({
   return <ContextMenu x={x} y={y} items={items} onClose={onClose} />;
 }
 
-/** 顺手把 RAG 索引里的旧记录擦掉；失败仅吞掉 */
-async function ragRemoveSilently(workspace: string, file: string) {
+/** 顺手更新 RAG 索引；目录变更用全量重建来清理前缀下的旧记录。 */
+async function ragUpdateAfterPathRemoval(workspace: string, path: string, isDir: boolean) {
   try {
-    await useRag.getState().removeFile(workspace, file);
+    if (isDir) {
+      await useRag.getState().reindex(workspace);
+    } else {
+      await useRag.getState().removeFile(workspace, path);
+    }
   } catch {
     /* ignore */
   }

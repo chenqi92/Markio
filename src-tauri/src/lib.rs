@@ -3479,8 +3479,11 @@ pub fn run() {
         }
     };
     app.run(|app_handle, event| {
+        // `RunEvent::Opened` 只在 macOS / iOS 上由 Tauri 暴露（#[cfg(target_os = ...)] 门控）。
+        // Windows / Linux 上该 variant 不存在，整段必须同样 cfg 起来才能编译。
+        // 文件关联在 Windows 上走 CLI 参数 / single-instance，不经此回调。
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let tauri::RunEvent::Opened { urls } = event {
-            // macOS Finder 双击 / Linux 文件管理器 open with：文件关联触发的事件
             for url in urls {
                 let path = url
                     .to_file_path()
@@ -3490,6 +3493,11 @@ pub fn run() {
                     let _ = app_handle.emit("open-from-os", p);
                 }
             }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        {
+            let _ = app_handle;
+            let _ = event;
         }
     });
 }

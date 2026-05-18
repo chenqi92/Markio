@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { enhanceCallouts } from "@/lib/callouts";
+import { enhanceCalloutsLazy, type CalloutEnhanceHandle } from "@/lib/callouts";
+import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
-import { renderDiagramsIn } from "@/lib/diagrams";
-import { renderMathIn } from "@/lib/math";
-import { renderMermaidIn } from "@/lib/mermaid";
-import { enhanceWikiLinks } from "@/lib/wikilinks";
+import { renderDiagramsLazy } from "@/lib/diagrams";
+import { renderMathLazy } from "@/lib/math";
+import { renderMermaidLazy } from "@/lib/mermaid";
+import type { VisualBlockHandle } from "@/lib/visualScheduler";
+import { enhanceWikiLinksLazy, type WikiEnhanceHandle } from "@/lib/wikilinks";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
@@ -321,9 +323,17 @@ export function Preview({
     const root = contentRef.current;
     let cancelled = false;
     const handles: number[] = [];
+    let wikiHandle: WikiEnhanceHandle | null = null;
+    let calloutHandle: CalloutEnhanceHandle | null = null;
+    let mathHandle: VisualBlockHandle | null = null;
+    let mermaidHandle: VisualBlockHandle | null = null;
+    let diagramHandle: VisualBlockHandle | null = null;
 
     // 影响布局的（callouts 改 ::before、span 包裹）必须立刻——否则用户首屏看到的样式会跳
-    enhanceCallouts(root);
+    // 视口内同步增强（零闪烁）；视口外用 IO 等滚动时再增强。
+    perfMeasure("preview:enhanceCallouts", () => {
+      calloutHandle = enhanceCalloutsLazy(root);
+    });
 
     // 其余 enhance 在浏览器空闲帧执行，把首屏渲染让给主线程。
     // requestIdleCallback 在 WebView 上偶尔不可用，setTimeout(16) 兜底（一帧后）。
@@ -337,17 +347,34 @@ export function Preview({
           : (window.setTimeout(fn, 16) as unknown as number);
       handles.push(h);
     };
-    idle(() => enhanceCodeBlocks(root));
-    idle(() => enhanceWikiLinks(root, vaultFiles));
+    idle(() => perfMeasure("preview:enhanceCodeBlocks", () => enhanceCodeBlocks(root)));
+    idle(() =>
+      perfMeasure("preview:enhanceWikiLinks", () => {
+        if (cancelled) return;
+        wikiHandle = enhanceWikiLinksLazy(root, vaultFiles);
+      }),
+    );
     // chart / 重活儿放更后一帧，避免首屏阻塞
-    idle(() => renderChartsIn(root));
+    idle(() => perfMeasure("preview:renderCharts", () => renderChartsIn(root)));
 
-    // 重 IO（math 编译 / mermaid svg / graphviz）已经是异步，保持并发
-    Promise.all([renderMathIn(root), renderMermaidIn(root), renderDiagramsIn(root)])
-      .then(() => {
-        if (!cancelled) applyScrollTarget();
-      })
-      .catch(() => undefined);
+    // 重 IO（math 编译 / mermaid svg / graphviz）：viewport-first + 串行 idle
+    // 调度。Promise.all 并发跑只会让主线程交错执行，反而拉高单帧峰值。
+    perfMeasure("preview:renderMath", () => {
+      if (cancelled) return;
+      mathHandle = renderMathLazy(root);
+    });
+    perfMeasure("preview:renderMermaid", () => {
+      if (cancelled) return;
+      mermaidHandle = renderMermaidLazy(root);
+    });
+    perfMeasure("preview:renderDiagrams", () => {
+      if (cancelled) return;
+      diagramHandle = renderDiagramsLazy(root);
+    });
+    // scroll target now applies after layout settles; visual blocks finish lazily.
+    idle(() => {
+      if (!cancelled) applyScrollTarget();
+    });
 
     return () => {
       cancelled = true;
@@ -358,6 +385,11 @@ export function Preview({
           window.clearTimeout(h);
         }
       }
+      wikiHandle?.disconnect();
+      calloutHandle?.disconnect();
+      mathHandle?.disconnect();
+      mermaidHandle?.disconnect();
+      diagramHandle?.disconnect();
     };
   }, [html, theme, applyScrollTarget, vaultFiles]);
 
@@ -528,7 +560,9 @@ export function Preview({
           }
           return;
         }
-        const r = await api.renderMarkdown(source, basePath);
+        const r = await perfMeasureAsync("preview:renderMarkdown", () =>
+          api.renderMarkdown(source, basePath),
+        );
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
         setHtml(r.html);
         hasRenderedOnceRef.current = true;

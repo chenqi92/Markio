@@ -44,24 +44,57 @@ export function parseWikiLinkBody(body: string): WikiLinkParts | null {
   };
 }
 
-export function resolveWikiFile(files: VaultFile[] | undefined, target: string) {
-  if (!files?.length) return null;
+export interface VaultIndex {
+  byStem: Map<string, VaultFile>;
+  byName: Map<string, VaultFile>;
+  byPath: Map<string, VaultFile>;
+  // Sorted-by-length tail lookup for `nested/path` matches; rare in hot path.
+  paths: { norm: string; file: VaultFile }[];
+}
+
+export function buildVaultIndex(files: VaultFile[] | undefined): VaultIndex {
+  const idx: VaultIndex = {
+    byStem: new Map(),
+    byName: new Map(),
+    byPath: new Map(),
+    paths: [],
+  };
+  if (!files?.length) return idx;
+  for (const file of files) {
+    const stem = normalizeName(file.stem);
+    if (stem && !idx.byStem.has(stem)) idx.byStem.set(stem, file);
+    const name = normalizeName(file.name);
+    if (name && !idx.byName.has(name)) idx.byName.set(name, file);
+    const p = normalizeName(file.path);
+    if (p) {
+      if (!idx.byPath.has(p)) idx.byPath.set(p, file);
+      idx.paths.push({ norm: p, file });
+    }
+  }
+  return idx;
+}
+
+function resolveFromIndex(index: VaultIndex, target: string): VaultFile | null {
   const needle = normalizeName(target);
   if (!needle) return null;
-
-  for (const file of files) {
-    if (normalizeName(file.stem) === needle) return file;
-  }
-  for (const file of files) {
-    if (normalizeName(file.name) === needle) return file;
-  }
+  const byStem = index.byStem.get(needle);
+  if (byStem) return byStem;
+  const byName = index.byName.get(needle);
+  if (byName) return byName;
   if (needle.includes("/")) {
-    for (const file of files) {
-      const path = normalizeName(file.path);
-      if (path.endsWith(`/${needle}`) || path === needle) return file;
+    const exact = index.byPath.get(needle);
+    if (exact) return exact;
+    const tail = `/${needle}`;
+    for (const { norm, file } of index.paths) {
+      if (norm.endsWith(tail)) return file;
     }
   }
   return null;
+}
+
+export function resolveWikiFile(files: VaultFile[] | undefined, target: string) {
+  if (!files?.length) return null;
+  return resolveFromIndex(buildVaultIndex(files), target);
 }
 
 function isSkippableTextNode(node: Text): boolean {
@@ -74,9 +107,9 @@ function isSkippableTextNode(node: Text): boolean {
   );
 }
 
-function applyResolvedState(link: HTMLElement, files: VaultFile[] | undefined) {
+function applyResolvedState(link: HTMLElement, index: VaultIndex) {
   const target = link.dataset.wikiTarget ?? "";
-  const resolved = resolveWikiFile(files, target);
+  const resolved = resolveFromIndex(index, target);
   link.classList.toggle("missing", !resolved);
   if (resolved) {
     link.dataset.path = resolved.path;
@@ -87,12 +120,13 @@ function applyResolvedState(link: HTMLElement, files: VaultFile[] | undefined) {
   }
 }
 
-export function enhanceWikiLinks(root: HTMLElement, files: VaultFile[] | undefined) {
-  root.querySelectorAll<HTMLElement>("a.wikilink").forEach((link) => {
-    applyResolvedState(link, files);
+function enhanceSubtree(subtree: HTMLElement, index: VaultIndex) {
+  subtree.querySelectorAll<HTMLElement>("a.wikilink").forEach((link) => {
+    applyResolvedState(link, index);
   });
 
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+  const doc = subtree.ownerDocument ?? document;
+  const walker = doc.createTreeWalker(subtree, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const text = node.nodeValue ?? "";
       if (!text.includes("[[")) return NodeFilter.FILTER_REJECT;
@@ -113,30 +147,132 @@ export function enhanceWikiLinks(root: HTMLElement, files: VaultFile[] | undefin
     WIKI_LINK_RE.lastIndex = 0;
     let last = 0;
     let match: RegExpExecArray | null;
-    const fragment = document.createDocumentFragment();
+    const fragment = doc.createDocumentFragment();
 
     while ((match = WIKI_LINK_RE.exec(text))) {
       const body = match[1];
       const parts = parseWikiLinkBody(body);
       if (!parts) continue;
       if (match.index > last) {
-        fragment.append(document.createTextNode(text.slice(last, match.index)));
+        fragment.append(doc.createTextNode(text.slice(last, match.index)));
       }
 
-      const link = document.createElement("a");
+      const link = doc.createElement("a");
       link.href = "#";
       link.className = "wikilink";
       link.dataset.wikiTarget = parts.target;
       link.dataset.wikiRaw = body;
       if (parts.heading) link.dataset.wikiHeading = parts.heading;
       link.textContent = parts.display;
-      applyResolvedState(link, files);
+      applyResolvedState(link, index);
       fragment.append(link);
       last = match.index + match[0].length;
     }
 
     if (last === 0) continue;
-    if (last < text.length) fragment.append(document.createTextNode(text.slice(last)));
+    if (last < text.length) fragment.append(doc.createTextNode(text.slice(last)));
     textNode.parentNode?.replaceChild(fragment, textNode);
   }
+}
+
+/**
+ * Eager enhancement: walks the whole `root` subtree synchronously.
+ * Use this when you need every link enhanced immediately (small docs,
+ * tests, headless rendering for export).
+ */
+export function enhanceWikiLinks(root: HTMLElement, files: VaultFile[] | undefined) {
+  const index = buildVaultIndex(files);
+  enhanceSubtree(root, index);
+}
+
+export interface WikiEnhanceHandle {
+  /** Disconnects the observer; pending blocks stay un-enhanced. */
+  disconnect(): void;
+  /** Enhances all remaining blocks immediately (used for tests / export). */
+  flushAll(): void;
+}
+
+/**
+ * Lazy enhancement: enhances only blocks (direct children of `root`) that
+ * intersect the viewport, and enhances the rest as the user scrolls them
+ * into view. Cuts first-paint cost on large docs from ~seconds to ~ms.
+ *
+ * Falls back to immediate full enhancement when `IntersectionObserver`
+ * is unavailable (some legacy WebViews).
+ *
+ * Returns a handle; call `disconnect()` on cleanup / re-render.
+ */
+export function enhanceWikiLinksLazy(
+  root: HTMLElement,
+  files: VaultFile[] | undefined,
+  options: { rootMargin?: string } = {},
+): WikiEnhanceHandle {
+  const index = buildVaultIndex(files);
+
+  // Already-rendered <a.wikilink> elements (e.g. inserted server-side) are
+  // cheap to re-evaluate; do them up-front so click handlers see a path.
+  root.querySelectorAll<HTMLElement>("a.wikilink").forEach((link) => {
+    applyResolvedState(link, index);
+  });
+
+  // Pick block-level containers that actually contain wikilink syntax.
+  // Markdown renders to a flat tree at root (p / ul / blockquote / pre / hN).
+  const pending: HTMLElement[] = [];
+  for (const child of Array.from(root.children)) {
+    if (
+      child instanceof HTMLElement &&
+      child.textContent?.includes("[[") &&
+      !child.dataset.wikiEnhanced
+    ) {
+      pending.push(child);
+    }
+  }
+
+  if (pending.length === 0) {
+    return { disconnect: () => undefined, flushAll: () => undefined };
+  }
+
+  const IO =
+    typeof globalThis !== "undefined" && "IntersectionObserver" in globalThis
+      ? (globalThis as typeof window).IntersectionObserver
+      : null;
+
+  if (!IO) {
+    for (const block of pending) {
+      enhanceSubtree(block, index);
+      block.dataset.wikiEnhanced = "1";
+    }
+    return { disconnect: () => undefined, flushAll: () => undefined };
+  }
+
+  const observer = new IO(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const block = entry.target as HTMLElement;
+        if (block.dataset.wikiEnhanced) {
+          observer.unobserve(block);
+          continue;
+        }
+        enhanceSubtree(block, index);
+        block.dataset.wikiEnhanced = "1";
+        observer.unobserve(block);
+      }
+    },
+    { rootMargin: options.rootMargin ?? "200px 0px" },
+  );
+
+  for (const block of pending) observer.observe(block);
+
+  return {
+    disconnect: () => observer.disconnect(),
+    flushAll: () => {
+      observer.disconnect();
+      for (const block of pending) {
+        if (block.dataset.wikiEnhanced) continue;
+        enhanceSubtree(block, index);
+        block.dataset.wikiEnhanced = "1";
+      }
+    },
+  };
 }

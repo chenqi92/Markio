@@ -1,5 +1,10 @@
 import DOMPurify from "dompurify";
 import { deflateRaw } from "pako";
+import {
+  scheduleVisualBlocks,
+  type VisualBlockHandle,
+  type VisualSchedulerOptions,
+} from "./visualScheduler";
 
 type VizInstance = {
   renderSVGElement: (source: string, options?: { engine?: string }) => SVGSVGElement;
@@ -166,14 +171,38 @@ function renderPlantUmlBlock(block: HTMLElement) {
   }
 }
 
-export async function renderDiagramsIn(root: HTMLElement) {
-  const graphvizBlocks = Array.from(
-    root.querySelectorAll<HTMLElement>(".graphviz-block:not([data-rendered])"),
-  );
-  const plantUmlBlocks = Array.from(
-    root.querySelectorAll<HTMLElement>(".plantuml-block:not([data-rendered])"),
-  );
+async function renderDiagramBlock(block: HTMLElement) {
+  if (block.dataset.rendered) return;
+  if (block.classList.contains("graphviz-block")) {
+    await renderGraphvizBlock(block);
+  } else if (block.classList.contains("plantuml-block")) {
+    renderPlantUmlBlock(block);
+  }
+}
 
-  await Promise.all(graphvizBlocks.map((block) => renderGraphvizBlock(block)));
-  plantUmlBlocks.forEach(renderPlantUmlBlock);
+/** Eager: render every diagram synchronously (export / small docs / tests). */
+export async function renderDiagramsIn(root: HTMLElement) {
+  const blocks = root.querySelectorAll<HTMLElement>(
+    ".graphviz-block:not([data-rendered]), .plantuml-block:not([data-rendered])",
+  );
+  for (const block of Array.from(blocks)) {
+    await renderDiagramBlock(block);
+  }
+}
+
+/**
+ * Lazy: viewport-first scheduling. Graphviz uses a WASM viz.js instance whose
+ * `renderSVGElement` synchronously walks DOT and lays out SVG — easily 100ms+
+ * per non-trivial graph. Serial + yielding keeps the editor usable.
+ */
+export function renderDiagramsLazy(
+  root: HTMLElement,
+  options: VisualSchedulerOptions = {},
+): VisualBlockHandle {
+  return scheduleVisualBlocks<HTMLElement>(
+    root,
+    ".graphviz-block:not([data-rendered]), .plantuml-block:not([data-rendered])",
+    renderDiagramBlock,
+    options,
+  );
 }

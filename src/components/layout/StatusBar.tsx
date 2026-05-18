@@ -205,6 +205,25 @@ export function StatusBar({
           : autoSyncEnabled
             ? `↺ ${relativeTime(lastSyncAt)}`
             : "↺ 立刻同步";
+  const syncTitle =
+    syncStage === "conflict" && syncConflictFiles.length > 0
+      ? `同步冲突：\n${syncConflictFiles.join("\n")}`
+      : lastSyncError
+        ? `${lastSyncSummary ?? "同步失败"}：${lastSyncError}`
+        : autoSyncEnabled
+          ? "自动同步开启 · 点击立刻同步"
+          : "自动同步未启用 · 点击立刻同步";
+  const handleSyncClick = () => {
+    if (syncStage === "conflict") {
+      window.alert(
+        syncConflictFiles.length > 0
+          ? `同步冲突，需要在 Git 设置中解决：\n\n${syncConflictFiles.join("\n")}`
+          : `同步冲突，需要在 Git 设置中解决。${lastSyncError ? `\n\n${lastSyncError}` : ""}`,
+      );
+      return;
+    }
+    void runSyncNow();
+  };
 
   return (
     <div className="statusbar">
@@ -316,14 +335,8 @@ export function StatusBar({
         <button
           type="button"
           className="item"
-          title={
-            lastSyncError
-              ? `${lastSyncSummary ?? "同步失败"}：${lastSyncError}`
-              : autoSyncEnabled
-              ? "自动同步开启 · 点击立刻同步"
-              : "自动同步未启用 · 点击立刻同步"
-          }
-          onClick={() => void runSyncNow()}
+          title={syncTitle}
+          onClick={handleSyncClick}
           disabled={syncStatus === "syncing"}
           style={{
             background: "transparent",

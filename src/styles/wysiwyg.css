@@ -269,6 +269,49 @@
   margin: 0;
 }
 
+/* ─── Callout in wysiwyg ─── */
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-callout {
+  border-left: 3px solid var(--callout-color, var(--accent));
+  background: color-mix(in srgb, var(--callout-color, var(--accent)) 8%, var(--bg-pane-2));
+  font-style: normal;
+  color: var(--text-1);
+}
+.cm-md-callout-note,
+.cm-md-callout-info { --callout-color: #0a84ff; }
+.cm-md-callout-tip,
+.cm-md-callout-success { --callout-color: #30a46c; }
+.cm-md-callout-important,
+.cm-md-callout-question { --callout-color: #7c3aed; }
+.cm-md-callout-warning { --callout-color: #b7791f; }
+.cm-md-callout-danger,
+.cm-md-callout-bug { --callout-color: #d92d20; }
+.cm-md-callout-example { --callout-color: #c026d3; }
+.cm-md-callout-quote { --callout-color: var(--text-3); }
+
+.cm-md-callout-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  border-radius: 3px;
+  color: white;
+  background: var(--callout-color, var(--accent));
+  vertical-align: 2px;
+  text-transform: uppercase;
+}
+.cm-md-callout-label-note,
+.cm-md-callout-label-info { background: #0a84ff; }
+.cm-md-callout-label-tip,
+.cm-md-callout-label-success { background: #30a46c; }
+.cm-md-callout-label-important,
+.cm-md-callout-label-question { background: #7c3aed; }
+.cm-md-callout-label-warning { background: #b7791f; }
+.cm-md-callout-label-danger,
+.cm-md-callout-label-bug { background: #d92d20; }
+.cm-md-callout-label-example { background: #c026d3; }
+
 /* ─── Wikilink widget ─── */
 .cm-md-wikilink {
   color: var(--accent);

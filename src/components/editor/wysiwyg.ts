@@ -288,6 +288,45 @@ export function parseImageMarkdown(text: string): ImageParts | null {
   };
 }
 
+// ─── Callout label widget ─────────────────────────────────────────────────
+
+// Same canonical names as src/lib/callouts.ts so the in-editor preview matches
+// the rendered preview (aliases like `caution` → `warning`).
+const CALLOUT_ALIASES: Record<string, string> = {
+  hint: "tip",
+  important: "important",
+  caution: "warning",
+  attention: "warning",
+  error: "danger",
+  check: "success",
+  done: "success",
+  help: "question",
+  faq: "question",
+  abstract: "note",
+  summary: "note",
+  tldr: "note",
+};
+
+function normalizeCalloutType(raw: string): string {
+  const lower = raw.toLowerCase();
+  return CALLOUT_ALIASES[lower] ?? lower;
+}
+
+class CalloutLabelWidget extends WidgetType {
+  constructor(private readonly type: string) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return other instanceof CalloutLabelWidget && other.type === this.type;
+  }
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = `cm-md-callout-label cm-md-callout-label-${this.type}`;
+    span.textContent = this.type.toUpperCase();
+    return span;
+  }
+}
+
 // ─── Wikilink widget ──────────────────────────────────────────────────────
 
 const WIKI_LINK_RE = /\[\[([^\]\n]{1,200})\]\]/g;
@@ -599,8 +638,38 @@ function build(view: EditorView): BuildResult {
         return;
       }
 
-      // ─── 引用 ───
+      // ─── 引用 / Callout ───
       if (n === "Blockquote") {
+        const firstLine = view.state.doc.lineAt(node.from);
+        // `> [!type][+|-]?` marker on the first line of the quote → callout
+        const marker = firstLine.text.match(
+          /^(\s*>\s*)\[!([a-zA-Z][\w-]*)\]([+-])?/,
+        );
+        if (marker) {
+          const rawType = marker[2];
+          const type = normalizeCalloutType(rawType);
+          const tokenStart = firstLine.from + marker[1].length;
+          const tokenEnd = firstLine.from + marker[0].length;
+          // 把 [!type] 这段隐藏起来，前面塞一个样式化的标签 widget
+          if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, view, true)) {
+            decos.push({
+              from: tokenStart,
+              to: tokenEnd,
+              deco: Decoration.replace({ widget: new CalloutLabelWidget(type) }),
+            });
+            atomic.push({
+              from: tokenStart,
+              to: tokenEnd,
+              deco: Decoration.mark({}),
+            });
+          }
+          markLines(
+            node.from,
+            node.to,
+            `cm-md-line cm-md-quote-line cm-md-callout cm-md-callout-${type}`,
+          );
+          return;
+        }
         markLines(node.from, node.to, "cm-md-line cm-md-quote-line");
         return;
       }

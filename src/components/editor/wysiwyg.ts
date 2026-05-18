@@ -19,6 +19,11 @@ import {
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
 import { cursorInsideRange, detectMathRanges, type MathRange } from "@/lib/math-ranges";
+import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
+import { useVaultIndex } from "@/stores/vaultIndex";
+import { useWorkspace } from "@/stores/workspace";
+import { useTabs } from "@/stores/tabs";
+import { useUI } from "@/stores/ui";
 import { tableCellSourcePos } from "./table-edit";
 
 type KatexModule = typeof import("katex");
@@ -283,6 +288,79 @@ export function parseImageMarkdown(text: string): ImageParts | null {
   };
 }
 
+// ─── Wikilink widget ──────────────────────────────────────────────────────
+
+const WIKI_LINK_RE = /\[\[([^\]\n]{1,200})\]\]/g;
+
+interface WikilinkInfo {
+  from: number;
+  to: number;
+  display: string;
+  target: string;
+  heading?: string;
+  /** Resolved file path if the target was found in the vault, else undefined. */
+  path?: string;
+}
+
+function detectWikilinks(view: EditorView): WikilinkInfo[] {
+  const text = view.state.doc.toString();
+  const ws = useWorkspace.getState();
+  const activeWs = ws.workspaces.find((w) => w.id === ws.activeId);
+  const files = activeWs
+    ? useVaultIndex.getState().index[activeWs.path]?.files
+    : undefined;
+  const out: WikilinkInfo[] = [];
+  WIKI_LINK_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = WIKI_LINK_RE.exec(text))) {
+    const parts = parseWikiLinkBody(m[1]);
+    if (!parts) continue;
+    const resolved = resolveWikiFile(files, parts.target);
+    out.push({
+      from: m.index,
+      to: m.index + m[0].length,
+      display: parts.display,
+      target: parts.target,
+      heading: parts.heading,
+      path: resolved?.path,
+    });
+  }
+  return out;
+}
+
+class WikilinkWidget extends WidgetType {
+  constructor(private readonly info: WikilinkInfo) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof WikilinkWidget &&
+      other.info.target === this.info.target &&
+      other.info.display === this.info.display &&
+      other.info.heading === this.info.heading &&
+      other.info.path === this.info.path
+    );
+  }
+  toDOM(): HTMLElement {
+    const a = document.createElement("a");
+    a.className = "cm-md-wikilink";
+    a.href = "#";
+    a.textContent = this.info.display;
+    if (this.info.path) {
+      a.dataset.path = this.info.path;
+      a.title = `打开 ${this.info.target}${this.info.heading ? "#" + this.info.heading : ""}`;
+    } else {
+      a.classList.add("missing");
+      a.title = `未找到笔记：${this.info.target}`;
+    }
+    if (this.info.heading) a.dataset.heading = this.info.heading;
+    return a;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
 class ImageWidget extends WidgetType {
   constructor(private readonly parts: ImageParts) {
     super();
@@ -420,6 +498,23 @@ function build(view: EditorView): BuildResult {
     atomic.push({
       from: range.from,
       to: range.to,
+      deco: Decoration.mark({}),
+    });
+  }
+
+  // Wikilinks: same regex-based scan; rendered widget shows display text and
+  // remembers the resolved vault path so clicks can open the target note.
+  const wikilinkRanges = detectWikilinks(view);
+  for (const info of wikilinkRanges) {
+    if (rangeHasCursor({ from: info.from, to: info.to }, view, true)) continue;
+    decos.push({
+      from: info.from,
+      to: info.to,
+      deco: Decoration.replace({ widget: new WikilinkWidget(info) }),
+    });
+    atomic.push({
+      from: info.from,
+      to: info.to,
       deco: Decoration.mark({}),
     });
   }
@@ -768,6 +863,31 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
           view.dispatch({ selection: { anchor: pos + 1 } });
           view.focus();
           e.preventDefault();
+        }
+        return;
+      }
+      // 点击 wikilink widget：
+      //   - 已解析 + 普通点击 → 打开目标笔记（与 preview 一致）
+      //   - Alt/Option + 点击 OR 未解析 → 把光标移到源码起点编辑
+      const wikiHost = target.closest<HTMLElement>(".cm-md-wikilink");
+      if (wikiHost) {
+        const path = wikiHost.dataset.path;
+        if (path && !e.altKey) {
+          e.preventDefault();
+          void useTabs.getState().openPath(path);
+          return;
+        }
+        const pos = view.posAtDOM(wikiHost);
+        if (pos != null) {
+          view.dispatch({ selection: { anchor: pos + 2 } }); // 跳过 [[
+          view.focus();
+          e.preventDefault();
+        }
+        if (!path) {
+          useUI
+            .getState()
+            .setToast({ stage: "error", message: `未找到笔记：${wikiHost.textContent}` });
+          window.setTimeout(() => useUI.getState().setToast(null), 1800);
         }
         return;
       }

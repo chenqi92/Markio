@@ -269,6 +269,23 @@
   margin: 0;
 }
 
+/* ─── Wikilink widget ─── */
+.cm-md-wikilink {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+  cursor: pointer;
+  padding: 0 1px;
+}
+.cm-md-wikilink:hover {
+  background: var(--accent-glow, rgba(10,132,255,0.18));
+  border-radius: 3px;
+}
+.cm-md-wikilink.missing {
+  color: var(--text-3);
+  border-bottom-style: dotted;
+}
+
 /* ─── Image widget ─── */
 .cm-md-img-widget {
   display: inline-block;

@@ -140,14 +140,16 @@
 }
 .tb-btn.ai-btn-tb:hover { color: white; filter: brightness(1.1); }
 .tb-btn.ai-btn-tb svg { color: white; }
-.tb-btn.tb-wechat {
-  background: linear-gradient(135deg, #07c160, #1aad19);
-  color: white;
-  border-radius: 6px;
-  padding: 0 8px;
-  font-weight: 700;
+.tb-btn.tb-copy-as {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--accent);
 }
-.tb-btn.tb-wechat:hover { filter: brightness(1.1); color: white; }
+.tb-btn.tb-copy-as:hover {
+  background: var(--bg-elev);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* new menu dropdown */
 .new-menu {

@@ -147,11 +147,11 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
         </div>
 
         <button
-          className="tb-btn tb-wechat"
-          title="复制为…"
+          className="tb-btn tb-copy-as"
+          title="复制为公众号、小红书等平台格式"
           onClick={onCopyAs}
         >
-          <span style={{ fontSize: 11, fontWeight: 700 }}>复</span>
+          <Icon name="copy-as" size={14} />
         </button>
 
         <button

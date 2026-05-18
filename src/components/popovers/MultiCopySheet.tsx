@@ -17,7 +17,6 @@ type TargetId =
 
 interface Target {
   id: TargetId;
-  ico: string;
   name: string;
   color: string;
   sub: string;
@@ -26,61 +25,83 @@ interface Target {
 const COPY_TARGETS: Target[] = [
   {
     id: "wechat",
-    ico: "微",
     name: "微信公众号",
     color: "linear-gradient(135deg, #07c160, #1aad19)",
     sub: "打开排版面板 · 一键复制",
   },
   {
     id: "html",
-    ico: "</>",
     name: "HTML",
     color: "linear-gradient(135deg, #e44d26, #f16529)",
     sub: "带样式的完整 HTML",
   },
   {
     id: "plain",
-    ico: "T",
     name: "纯文本",
     color: "var(--text-3)",
     sub: "去掉所有 Markdown 标记",
   },
   {
     id: "twitter",
-    ico: "𝕏",
     name: "Twitter / X · 长推",
     color: "#0a0a0a",
     sub: "自动按 280 字符分串",
   },
   {
     id: "jike",
-    ico: "即",
     name: "即刻",
     color: "linear-gradient(135deg, #ffe028, #ffb800)",
     sub: "保留 Markdown 强调",
   },
   {
     id: "xhs",
-    ico: "📕",
     name: "小红书",
     color: "linear-gradient(135deg, #ff2442, #ee5a52)",
     sub: "标题正文标签分段",
   },
   {
     id: "feishu",
-    ico: "飞",
     name: "飞书富文本",
     color: "linear-gradient(135deg, #00d6b9, #0090e7)",
     sub: "Markdown 块结构粘贴",
   },
   {
     id: "notion",
-    ico: "N",
     name: "Notion 块",
     color: "#0a0a0c",
     sub: "保留 Markdown 块语法",
   },
 ];
+
+function TargetGlyph({ id }: { id: TargetId }) {
+  if (id === "wechat") {
+    return (
+      <svg viewBox="0 0 24 24" className="mc-target-svg" aria-hidden="true">
+        <path d="M10.5 6.5c-4 0-7 2.4-7 5.4 0 1.7 1 3.2 2.6 4.2l-.5 2.1 2.4-1.3c.8.2 1.6.4 2.5.4 4 0 7-2.4 7-5.4s-3-5.4-7-5.4z" />
+        <path d="M14.8 11.1c3.2.3 5.7 2.3 5.7 4.9 0 1.4-.8 2.7-2 3.5l.4 1.7-2-1.1c-.7.2-1.3.3-2.1.3-2.3 0-4.3-1-5.4-2.4" />
+        <circle cx="8.2" cy="11.3" r=".6" />
+        <circle cx="12.7" cy="11.3" r=".6" />
+      </svg>
+    );
+  }
+  if (id === "xhs") {
+    return (
+      <svg viewBox="0 0 24 24" className="mc-target-svg" aria-hidden="true">
+        <rect x="5" y="3.5" width="14" height="17" rx="3" />
+        <path d="M8.5 8h7" />
+        <path d="M8.5 12h7" />
+        <path d="M8.5 16h4" />
+        <path d="M16 4v5l-2-1.2L12 9V4" />
+      </svg>
+    );
+  }
+  if (id === "html") return <Icon name="code" size={17} />;
+  if (id === "plain") return <Icon name="type" size={17} />;
+  if (id === "feishu") return <Icon name="message" size={17} />;
+  if (id === "twitter") return <span className="mc-target-letter">X</span>;
+  if (id === "jike") return <span className="mc-target-letter">即</span>;
+  return <span className="mc-target-letter">N</span>;
+}
 
 /** 把 markdown 字符串粗略转成纯文本 */
 export function markdownToPlain(src: string): string {
@@ -269,7 +290,7 @@ export function MultiCopySheet({ onClose }: { onClose: () => void }) {
               }}
             >
               <div className="mc-tile-ico" style={{ background: t.color }}>
-                {t.ico}
+                <TargetGlyph id={t.id} />
               </div>
               <div className="mc-tile-meta">
                 <div className="mc-tile-t">{t.name}</div>

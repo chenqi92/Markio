@@ -27,6 +27,16 @@ const PATHS = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </>
   ),
+  "copy-as": (
+    <>
+      <rect x="4" y="4" width="10" height="14" rx="2" />
+      <path d="M8 8h3" />
+      <path d="M8 12h4" />
+      <path d="M15 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7" />
+      <path d="M16 13h5" />
+      <path d="M18.5 10.5 21 13l-2.5 2.5" />
+    </>
+  ),
   external: (
     <>
       <path d="M15 3h6v6" />

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Icon } from "../ui/Icon";
 import { FileTree } from "./FileTree";
-import { TodayBar } from "./TodayBar";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { pickDirectory } from "@/lib/api";
@@ -225,7 +224,6 @@ export function Sidebar() {
       </div>
 
       <FileTree />
-      <TodayBar />
     </aside>
   );
 }

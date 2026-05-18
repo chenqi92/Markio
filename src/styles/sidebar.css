@@ -241,49 +241,6 @@
 }
 .tree-empty button:hover { filter: brightness(1.08); }
 
-/* today bar */
-.today-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 14px;
-  border-top: 0.5px solid var(--border);
-  background: var(--bg-pane-2);
-  font-size: 11px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.today-bar:hover { background: var(--bg-elev); }
-.today-bar .flame {
-  flex-shrink: 0;
-  display: inline-flex;
-  color: var(--accent);
-}
-.today-bar .streak {
-  font-weight: 700;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  font-size: 12.5px;
-  min-width: 18px;
-  text-align: center;
-}
-.today-bar .bar {
-  flex: 1;
-  height: 4px;
-  background: var(--bg-pane);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.today-bar .bar > span {
-  display: block; height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  transition: width 200ms;
-}
-.today-bar .words {
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-.today-bar .words b { color: var(--text); font-weight: 600; }
-
 /* trash row controls */
 .trash-act {
   width: 18px; height: 18px;

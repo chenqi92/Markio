@@ -6,6 +6,7 @@ export interface CtxItem {
   icon?: IconName;
   kbd?: string;
   danger?: boolean;
+  disabled?: boolean;
   sep?: boolean;
   onClick?: () => void;
 }
@@ -54,7 +55,9 @@ export function ContextMenu({
             type="button"
             key={i}
             className={"ctx-item" + (it.danger ? " danger" : "")}
+            disabled={it.disabled}
             onClick={() => {
+              if (it.disabled) return;
               it.onClick?.();
               onClose();
             }}

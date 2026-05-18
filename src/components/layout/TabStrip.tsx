@@ -176,33 +176,38 @@ export function TabStrip() {
       },
       { sep: true },
       {
-        label: "关闭",
+        label: "关闭当前标签",
         icon: "x",
         onClick: () => confirmAndClose(t),
       },
       {
         label: "关闭左侧标签",
         icon: "close",
+        disabled: left.length === 0,
         onClick: () => closeTabs(left, "关闭左侧标签"),
       },
       {
         label: "关闭右侧标签",
         icon: "close",
+        disabled: right.length === 0,
         onClick: () => closeTabs(right, "关闭右侧标签"),
       },
       {
         label: "关闭其它标签",
         icon: "close",
+        disabled: others.length === 0,
         onClick: () => closeTabs(others, "关闭其它标签"),
       },
       {
         label: "关闭已保存标签",
         icon: "check",
+        disabled: saved.length === 0,
         onClick: () => closeTabs(saved, "关闭已保存标签"),
       },
       {
         label: "关闭未固定标签",
         icon: "close",
+        disabled: unpinned.length === 0,
         onClick: () => closeTabs(unpinned, "关闭未固定标签"),
       },
       {

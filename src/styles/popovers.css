@@ -121,6 +121,15 @@
   text-align: left;
 }
 .ctx-item:hover { background: var(--accent); color: white; }
+.ctx-item:disabled {
+  color: var(--text-4);
+  opacity: 0.55;
+  cursor: default;
+}
+.ctx-item:disabled:hover {
+  background: transparent;
+  color: var(--text-4);
+}
 .ctx-item .ico {
   width: 14px;
   height: 14px;

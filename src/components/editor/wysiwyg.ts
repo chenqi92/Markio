@@ -309,13 +309,32 @@ interface BuildResult {
   atomic: DecorationSet;
 }
 
-function rangeHasCursor(range: { from: number; to: number }, view: EditorView): boolean {
+/**
+ * Whether any selection (caret or range) overlaps `range`.
+ *
+ * `inclusive` controls boundary handling:
+ *   true  — caret at `range.to` counts as "inside" (inline math: lets user
+ *           place the caret right after `$` to edit the closing delimiter).
+ *   false — caret at `range.to` is OUTSIDE (block widgets like fenced code
+ *           or tables: pressing ArrowDown out of the block should re-render
+ *           immediately, not stick on the boundary).
+ */
+function rangeHasCursor(
+  range: { from: number; to: number },
+  view: EditorView,
+  inclusive: boolean = true,
+): boolean {
   for (const sel of view.state.selection.ranges) {
-    if (cursorInsideRange({ ...range, source: "", display: false } as MathRange, sel.head)) {
-      return true;
-    }
-    if (sel.from <= range.to && sel.to >= range.from) return true;
+    const head = sel.head;
+    const headInside = inclusive
+      ? head >= range.from && head <= range.to
+      : head >= range.from && head < range.to;
+    if (headInside) return true;
+    // Non-empty selections that strictly overlap the range
+    if (sel.from < range.to && sel.to > range.from) return true;
   }
+  // Keep cursorInsideRange import alive; used by other math helpers.
+  void cursorInsideRange;
   return false;
 }
 
@@ -451,7 +470,7 @@ function build(view: EditorView): BuildResult {
 
       // ─── 表格 ───
       if (n === "Table") {
-        if (!rangeHasCursor({ from: node.from, to: node.to }, view)) {
+        if (!rangeHasCursor({ from: node.from, to: node.to }, view, false)) {
           const source = view.state.doc.sliceString(node.from, node.to);
           decos.push({
             from: node.from,
@@ -584,7 +603,7 @@ function build(view: EditorView): BuildResult {
         const visualKind = detectVisualLang(lang);
         if (
           visualKind &&
-          !rangeHasCursor({ from: node.from, to: node.to }, view)
+          !rangeHasCursor({ from: node.from, to: node.to }, view, false)
         ) {
           const source = extractFencedBody(view, node.from, node.to);
           if (source.trim().length > 0) {

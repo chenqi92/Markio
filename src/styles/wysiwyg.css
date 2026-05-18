@@ -214,3 +214,37 @@
 .cm-host[data-mode="wysiwyg"] .cm-activeLine .cm-md-link {
   /* keep markers visible on active line; do nothing - they show through */
 }
+
+/* ─── Math widgets (KaTeX inline / block) ─── */
+.cm-md-math-inline {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 0 2px;
+  cursor: text;
+  color: var(--text-1);
+}
+.cm-md-math-inline:hover,
+.cm-md-math-block:hover {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
+.cm-md-math-block {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 12px;
+  text-align: center;
+  cursor: text;
+  color: var(--text-1);
+  border-radius: 6px;
+  background: var(--bg-soft);
+}
+.cm-md-math-error {
+  display: inline-block;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-soft);
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+}

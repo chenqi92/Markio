@@ -17,6 +17,68 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
+import DOMPurify from "dompurify";
+import { cursorInsideRange, detectMathRanges, type MathRange } from "@/lib/math-ranges";
+
+type KatexModule = typeof import("katex");
+let katexPromise: Promise<KatexModule> | null = null;
+function getKatex(): Promise<KatexModule> {
+  if (!katexPromise) katexPromise = import("katex");
+  return katexPromise;
+}
+
+// 渲染失败时不让 widget 退化为空白 —— 显示带 ❗ 的灰字，让用户知道写错了。
+function renderKatexInto(host: HTMLElement, source: string, display: boolean) {
+  void getKatex()
+    .then((katex) => {
+      try {
+        const html = katex.renderToString(source, {
+          displayMode: display,
+          throwOnError: false,
+          strict: "ignore",
+          output: "htmlAndMathml",
+        });
+        host.innerHTML = DOMPurify.sanitize(html, {
+          USE_PROFILES: { html: true, mathMl: true, svg: true },
+        });
+      } catch (err) {
+        host.classList.add("cm-md-math-error");
+        host.textContent = `❗ ${(err as Error).message}`;
+      }
+    })
+    .catch((err) => {
+      host.classList.add("cm-md-math-error");
+      host.textContent = `❗ KaTeX 加载失败：${(err as Error).message}`;
+    });
+}
+
+class MathWidget extends WidgetType {
+  constructor(
+    private readonly source: string,
+    private readonly display: boolean,
+  ) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof MathWidget &&
+      other.source === this.source &&
+      other.display === this.display
+    );
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement(this.display ? "div" : "span");
+    el.className = this.display ? "cm-md-math-block" : "cm-md-math-inline";
+    el.dataset.mathDisplay = String(this.display);
+    el.textContent = this.display ? `$$${this.source}$$` : `$${this.source}$`;
+    renderKatexInto(el, this.source, this.display);
+    return el;
+  }
+  ignoreEvent() {
+    // Let mousedown bubble so the wysiwyg plugin can move the caret into the source.
+    return false;
+  }
+}
 
 class TaskCheckbox extends WidgetType {
   constructor(private readonly checked: boolean) {
@@ -72,9 +134,40 @@ interface BuildResult {
   atomic: DecorationSet;
 }
 
+function rangeHasCursor(range: { from: number; to: number }, view: EditorView): boolean {
+  for (const sel of view.state.selection.ranges) {
+    if (cursorInsideRange({ ...range, source: "", display: false } as MathRange, sel.head)) {
+      return true;
+    }
+    if (sel.from <= range.to && sel.to >= range.from) return true;
+  }
+  return false;
+}
+
 function build(view: EditorView): BuildResult {
   const decos: PendingDeco[] = [];
   const atomic: PendingDeco[] = [];
+
+  // Math regions: detect once over the full doc (regex-only, no AST since
+  // lezer-markdown has no math node by default). Skip the widget when the
+  // cursor is inside so the user can edit the source plainly.
+  const mathRanges = detectMathRanges(view.state.doc.toString());
+  for (const range of mathRanges) {
+    if (rangeHasCursor(range, view)) continue;
+    decos.push({
+      from: range.from,
+      to: range.to,
+      deco: Decoration.replace({
+        widget: new MathWidget(range.source, range.display),
+        block: range.display,
+      }),
+    });
+    atomic.push({
+      from: range.from,
+      to: range.to,
+      deco: Decoration.mark({}),
+    });
+  }
 
   /** 用 replace 把 [from,to) 之间的字符隐藏起来。
    *
@@ -324,8 +417,10 @@ class WysiwygPlugin {
     this.atomic = r.atomic;
   }
   update(u: ViewUpdate) {
-    // 装饰不再随 selection 变化（保持视觉稳定），只在文档 / 视口变化时重建
-    if (u.docChanged || u.viewportChanged) {
+    // 文档 / 视口变化时全量重建。
+    // selectionSet 时也要重建：math widget 需要根据光标位置切换"渲染 ↔ 源码"。
+    // 普通 marker 仍然保持稳定布局（build 内部对它们不读取 selection）。
+    if (u.docChanged || u.viewportChanged || u.selectionSet) {
       const r = build(u.view);
       this.decorations = r.decorations;
       this.atomic = r.atomic;
@@ -341,8 +436,21 @@ const wysiwygPlugin = ViewPlugin.fromClass(WysiwygPlugin, {
     ),
   eventHandlers: {
     mousedown(this, e, view) {
-      // 点击任务复选框时切换 - [ ] / - [x]
       const target = e.target as HTMLElement;
+      // 点击数学公式 widget → 把光标移到公式源码起点，下一次 build 自动还原源码
+      const mathHost = target.closest<HTMLElement>(
+        ".cm-md-math-inline, .cm-md-math-block",
+      );
+      if (mathHost) {
+        const pos = view.posAtDOM(mathHost);
+        if (pos != null) {
+          view.dispatch({ selection: { anchor: pos + 1 } });
+          view.focus();
+          e.preventDefault();
+        }
+        return;
+      }
+      // 点击任务复选框时切换 - [ ] / - [x]
       if (!target.classList?.contains("cm-md-task")) return;
       const pos = view.posAtDOM(target);
       if (pos == null) return;

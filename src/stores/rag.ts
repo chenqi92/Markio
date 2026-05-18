@@ -100,7 +100,6 @@ export const useRag = create<RagState>((set, get) => ({
             provider: "cohere" as const,
             model: s.rerankModel,
             baseUrl: s.rerankBaseUrl || undefined,
-            apiKey: s.rerankApiKey || undefined,
           }
         : undefined;
     return api.ragSearch({

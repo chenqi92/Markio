@@ -17,6 +17,7 @@ import { injectSyntaxTheme } from "./lib/syntax-theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { api, isDesktop } from "./lib/api";
 import { preloadTauriStorage } from "./lib/tauriStorage";
+import { migrateLegacySettingSecrets } from "./lib/secretMigration";
 import { installDigestScheduler } from "./lib/digestScheduler";
 import { setLocale as setI18nLocale } from "./i18n";
 import { applyFonts } from "./lib/fonts";
@@ -49,6 +50,7 @@ async function bootstrap() {
   // 先把 store.bin 全量加载进内存（含 localStorage → plugin-store 迁移），
   // 再同步水合每个 zustand persist store，最后才 render，避免主题闪烁。
   await trace("preloadTauriStorage", () => preloadTauriStorage());
+  await trace("migrateLegacySettingSecrets", () => migrateLegacySettingSecrets());
   await trace("rehydrateAll", () =>
     Promise.all([
       useSettings.persist.rehydrate(),

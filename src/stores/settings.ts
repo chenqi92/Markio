@@ -79,7 +79,6 @@ type PreferenceKey =
   | "rerankEnabled"
   | "rerankModel"
   | "rerankBaseUrl"
-  | "rerankApiKey"
   | "webdavBaseUrl"
   | "webdavUsername"
   | "webdavRemoteDir"
@@ -222,7 +221,6 @@ interface SettingsState {
   rerankEnabled: boolean;
   rerankModel: string;
   rerankBaseUrl: string;
-  rerankApiKey: string;
   // WebDAV 同步
   webdavBaseUrl: string;
   webdavUsername: string;
@@ -361,7 +359,6 @@ export const useSettings = create<SettingsState>()(
       rerankEnabled: false,
       rerankModel: "rerank-multilingual-v3.0",
       rerankBaseUrl: "",
-      rerankApiKey: "",
       webdavBaseUrl: "",
       webdavUsername: "",
       webdavRemoteDir: "markio",
@@ -433,9 +430,21 @@ export const useSettings = create<SettingsState>()(
       name: "markio.settings.v1",
       storage: createJSONStorage(() => tauriStorage),
       skipHydration: true,
+      version: 1,
+      migrate: (persistedState) =>
+        stripLegacySecretFields(persistedState) as SettingsState,
+      partialize: (state) =>
+        stripLegacySecretFields(state) as Partial<SettingsState>,
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme);
       },
     },
   ),
 );
+
+function stripLegacySecretFields(state: unknown): unknown {
+  if (!state || typeof state !== "object") return state;
+  const next = { ...(state as Record<string, unknown>) };
+  delete next.rerankApiKey;
+  return next;
+}

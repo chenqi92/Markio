@@ -2016,6 +2016,7 @@ fn is_allowed_secret_account(account: &str) -> bool {
             | "ai:google"
             | "ai:custom"
             | "embed:openai"
+            | "rerank:cohere"
     )
 }
 
@@ -2113,6 +2114,24 @@ fn hydrate_api_key(req: &mut ChatRequest) {
             req.api_key = Some(stored);
         }
     }
+}
+
+fn hydrate_rerank_api_key(
+    cfg: Option<rag::rerank::RerankConfig>,
+) -> Option<rag::rerank::RerankConfig> {
+    let mut cfg = cfg?;
+    if cfg.provider == "cohere"
+        && cfg
+            .api_key
+            .as_ref()
+            .map(|k| k.trim().is_empty())
+            .unwrap_or(true)
+    {
+        if let Ok(Some(stored)) = secrets::get("rerank:cohere") {
+            cfg.api_key = Some(stored);
+        }
+    }
+    Some(cfg)
 }
 
 #[tauri::command]
@@ -3216,7 +3235,7 @@ async fn rag_search(
     let query = req.query;
     let limit = req.limit.unwrap_or(8);
     let expand_links = req.expand_links.unwrap_or(true);
-    let rerank_cfg = req.rerank;
+    let rerank_cfg = hydrate_rerank_api_key(req.rerank);
     let hits = tokio::task::spawn_blocking(move || -> Result<Vec<rag::SearchHit>, String> {
         let handle = rag::rag_handle(&ws_str, dim)?;
         rag::search::search_with_rerank(handle, cfg, rerank_cfg, &query, limit, expand_links)

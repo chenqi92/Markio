@@ -4616,8 +4616,55 @@ function RerankCard() {
   const enabled = useSettings((s) => s.rerankEnabled);
   const model = useSettings((s) => s.rerankModel);
   const baseUrl = useSettings((s) => s.rerankBaseUrl);
-  const apiKey = useSettings((s) => s.rerankApiKey);
   const setPreference = useSettings((s) => s.setPreference);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyConfigured, setKeyConfigured] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const has = await api.secretHas("rerank:cohere");
+        if (!cancelled) setKeyConfigured(has);
+      } catch {
+        if (!cancelled) setKeyConfigured(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveKey = async () => {
+    const value = keyDraft.trim();
+    if (!value) return;
+    setSavingKey(true);
+    try {
+      await api.secretSet("rerank:cohere", value);
+      setKeyConfigured(true);
+      setKeyDraft("");
+      setMsg("✓ Reranker API Key 已存入系统钥匙串");
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const clearKey = async () => {
+    if (!window.confirm("清除 Reranker 的 API Key？")) return;
+    try {
+      await api.secretDelete("rerank:cohere");
+      setKeyConfigured(false);
+      setKeyDraft("");
+      setMsg("已清除");
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
   return (
     <div className="settings-card">
       <CardTitle tip="在 RRF 融合之后再精排；支持 Cohere API 和兼容 /v1/rerank 的本地服务。">
@@ -4667,15 +4714,43 @@ function RerankCard() {
           <LabelWithTip tip="本地服务通常可留空。">
             API Key
           </LabelWithTip>
+          <div className="settings-help">
+            {keyConfigured ? "已存入系统钥匙串" : "未配置"}
+          </div>
         </div>
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setPreference("rerankApiKey", e.target.value)}
-          placeholder="cohere_xxx"
-          style={{ flex: 1, minWidth: 280 }}
-        />
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            placeholder="cohere_xxx"
+            style={inputStyle}
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!keyDraft.trim() || savingKey}
+            onClick={saveKey}
+          >
+            保存
+          </button>
+          {keyConfigured && (
+            <button type="button" className="btn-ghost" onClick={clearKey}>
+              清除
+            </button>
+          )}
+        </div>
       </div>
+      {msg && (
+        <div
+          className="settings-row"
+          style={{
+            color: msg.startsWith("✗") ? "var(--danger)" : "var(--text-3)",
+          }}
+        >
+          {msg}
+        </div>
+      )}
     </div>
   );
 }

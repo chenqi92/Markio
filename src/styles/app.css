@@ -262,15 +262,52 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .statusbar {
   display: flex; align-items: center;
   padding: 0 12px;
-  gap: 14px;
+  gap: 12px;
   font-size: 11px; color: var(--text-3);
   border-top: 0.5px solid var(--border);
   background: var(--bg-pane-2);
   white-space: nowrap;
   overflow: hidden;
+  min-width: 0;
 }
-.statusbar .item { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; }
+.statusbar .item {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
 .statusbar .item.right { margin-left: auto; }
+.statusbar .status-workspace {
+  flex-shrink: 1;
+  min-width: 72px;
+  max-width: 220px;
+}
+.statusbar .status-git {
+  flex-shrink: 1;
+  min-width: 56px;
+  max-width: 180px;
+}
+.statusbar .status-save,
+.statusbar .status-sync,
+.statusbar .status-alert {
+  max-width: 180px;
+}
+.statusbar .status-theme { max-width: 110px; }
+.statusbar .status-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 980px) {
+  .statusbar { gap: 10px; }
+  .statusbar .status-meta { display: none; }
+}
+@media (max-width: 760px) {
+  .statusbar .status-git,
+  .statusbar .status-save { display: none; }
+}
 .statusbar .pulse {
   width: 7px; height: 7px; border-radius: 50%;
   background: #28c840;

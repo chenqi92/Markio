@@ -197,13 +197,13 @@ export function StatusBar() {
 
   return (
     <div className="statusbar">
-      <span className="item">
+      <span className="item status-workspace" title={ws ? ws.path : "未连接仓库"}>
         <span className="pulse" />
-        <span>{ws ? ws.name : "未连接仓库"}</span>
+        <span className="status-ellipsis">{ws ? ws.name : "未连接仓库"}</span>
       </span>
       {tab && (
         <>
-          <span className="item" style={{ color: saveColor }}>
+          <span className="item status-save" style={{ color: saveColor }}>
             <span
               style={{
                 width: 6,
@@ -219,7 +219,7 @@ export function StatusBar() {
       )}
       {!online && (
         <span
-          className="item"
+          className="item status-alert"
           title="系统报告无网络。同步 / AI 调用会失败，磁盘上的笔记照常读写。"
           style={{ color: "#ff9500" }}
         >
@@ -238,7 +238,7 @@ export function StatusBar() {
       )}
       {watcher && (!watcher.running || watcher.backendErrors > 0) && (
         <span
-          className="item"
+          className="item status-alert"
           title={
             !watcher.running
               ? "文件监听已停止，仓库变动可能不会被自动索引。重新打开仓库可重启监听。"
@@ -264,7 +264,7 @@ export function StatusBar() {
       {unseenDiagnostics.length > 0 && (
         <button
           type="button"
-          className="item"
+          className="item status-alert"
           title={diagnosticTitle}
           onClick={showDiagnostics}
           style={{
@@ -283,20 +283,22 @@ export function StatusBar() {
       )}
       {git && git.branch && (
         <span
-          className="item"
+          className="item status-git"
           title={`Git · ${git.files} 处变更 · 未推 ${git.ahead} · 未拉 ${git.behind}`}
           style={{ color: git.ahead + git.behind > 0 ? "var(--accent)" : "var(--text-3)" }}
         >
-          {"⎇ "}{git.branch}
-          {git.ahead > 0 ? ` ↑${git.ahead}` : ""}
-          {git.behind > 0 ? ` ↓${git.behind}` : ""}
-          {git.files > 0 ? ` ·${git.files}` : ""}
+          <span className="status-ellipsis">
+            {"⎇ "}{git.branch}
+            {git.ahead > 0 ? ` ↑${git.ahead}` : ""}
+            {git.behind > 0 ? ` ↓${git.behind}` : ""}
+            {git.files > 0 ? ` ·${git.files}` : ""}
+          </span>
         </span>
       )}
       {git && git.branch && (
         <button
           type="button"
-          className="item"
+          className="item status-sync"
           title={syncTitle}
           onClick={handleSyncClick}
           disabled={syncStatus === "syncing"}
@@ -320,9 +322,9 @@ export function StatusBar() {
       <span className="item right">
         <PomodoroChip />
       </span>
-      <span className="item">UTF-8</span>
-      <span className="item">Markdown</span>
-      <span className="item">主题 · {theme}</span>
+      <span className="item status-meta">UTF-8</span>
+      <span className="item status-meta">Markdown</span>
+      <span className="item status-meta status-theme">主题 · {theme}</span>
     </div>
   );
 }

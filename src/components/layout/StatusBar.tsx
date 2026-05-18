@@ -47,8 +47,11 @@ export function StatusBar({
   const autosave = useSettings((s) => s.autosave);
   const autoSyncEnabled = useSettings((s) => s.autoSyncEnabled);
   const syncStatus = useSync((s) => s.status);
+  const syncStage = useSync((s) => s.stage);
   const lastSyncAt = useSync((s) => s.lastSyncAt);
   const lastSyncError = useSync((s) => s.lastError);
+  const lastSyncSummary = useSync((s) => s.lastSummary);
+  const syncConflictFiles = useSync((s) => s.conflictFiles);
   const online = useNetwork((s) => s.online);
   const diagnostics = useDiagnostics((s) => s.items);
   const markDiagnosticsSeen = useDiagnostics((s) => s.markAllSeen);
@@ -184,6 +187,24 @@ export function StatusBar({
         .join("\n\n"),
     );
   };
+  const syncLabel =
+    syncStatus === "syncing"
+      ? syncStage === "preflight"
+        ? "↻ 检查同步…"
+        : syncStage === "snapshot"
+          ? "↻ 提交快照…"
+          : syncStage === "pull"
+            ? "↻ 拉取中…"
+            : syncStage === "push"
+              ? "↻ 推送中…"
+              : "↻ 正在同步…"
+      : syncStage === "conflict"
+        ? `⚠ 同步冲突${syncConflictFiles.length ? ` ·${syncConflictFiles.length}` : ""}`
+        : syncStatus === "error"
+          ? "⚠ 同步失败"
+          : autoSyncEnabled
+            ? `↺ ${relativeTime(lastSyncAt)}`
+            : "↺ 立刻同步";
 
   return (
     <div className="statusbar">
@@ -297,7 +318,7 @@ export function StatusBar({
           className="item"
           title={
             lastSyncError
-              ? `同步失败：${lastSyncError}`
+              ? `${lastSyncSummary ?? "同步失败"}：${lastSyncError}`
               : autoSyncEnabled
               ? "自动同步开启 · 点击立刻同步"
               : "自动同步未启用 · 点击立刻同步"
@@ -318,13 +339,7 @@ export function StatusBar({
             font: "inherit",
           }}
         >
-          {syncStatus === "syncing"
-            ? "↻ 正在同步…"
-            : syncStatus === "error"
-            ? "⚠ 同步失败"
-            : autoSyncEnabled
-            ? `↺ ${relativeTime(lastSyncAt)}`
-            : "↺ 立刻同步"}
+          {syncLabel}
         </button>
       )}
       <span className="item right">

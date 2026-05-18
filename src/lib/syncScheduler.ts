@@ -17,6 +17,17 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+function conflictFilesFromError(message: string): string[] | null {
+  const idx = message.indexOf("CONFLICT:");
+  if (idx < 0) return null;
+  const rest = message.slice(idx + "CONFLICT:".length);
+  const files = rest
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return files.length > 0 ? files : [];
+}
+
 async function runOnce(workspace: string): Promise<void> {
   const sync = useSync.getState();
   if (sync.isInflight(workspace)) return;
@@ -27,14 +38,15 @@ async function runOnce(workspace: string): Promise<void> {
     return;
   }
   sync.setInflight(workspace, true);
-  sync.setStatus("syncing");
+  sync.setStage("preflight", "检查 Git 状态");
   try {
-    const status = await api.gitStatus(workspace).catch(() => null);
+    let status = await api.gitStatus(workspace).catch(() => null);
     if (!status) {
-      sync.setStatus("idle");
+      sync.setStage("idle", "当前仓库未初始化 Git");
       return;
     }
     if (status.files.length > 0) {
+      sync.setStage("snapshot", `提交 ${status.files.length} 个本地变更`);
       const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
       await api.gitCommit(
         workspace,
@@ -42,24 +54,34 @@ async function runOnce(workspace: string): Promise<void> {
         "markio",
         "markio@local",
       );
+      status = await api.gitStatus(workspace);
     }
     if (status.upstream) {
+      sync.setStage("pull", "拉取远端变更");
       await api.gitPull(workspace, { rebase: false }).catch((e) => {
         throw new Error(`git pull 失败：${errorMessage(e)}`);
       });
+      sync.setStage("push", "推送本地提交");
       await api.gitPush(workspace).catch((e) => {
         throw new Error(`git push 失败：${errorMessage(e)}`);
       });
+    } else if (status.ahead > 0 || status.files.length > 0) {
+      throw new Error("当前分支没有 upstream，请先在 Git 设置中执行 push -u。");
     }
     sync.setLastSync(Date.now());
-    sync.setStatus("idle");
+    sync.setStage("done", "同步完成");
   } catch (e) {
     const message = errorMessage(e);
-    sync.setStatus("error", message);
+    const conflictFiles = conflictFilesFromError(message);
+    if (conflictFiles) {
+      sync.setConflict(conflictFiles, message);
+    } else {
+      sync.setStatus("error", message);
+    }
     reportDiagnostic({
       source: "sync",
       severity: "error",
-      message: "Git 同步失败",
+      message: conflictFiles ? "Git 同步冲突" : "Git 同步失败",
       detail: message,
       workspace,
     });

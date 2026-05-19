@@ -157,8 +157,10 @@
 /* find-in-page bar */
 .findbar {
   position: absolute; top: 12px; right: 16px;
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  flex-wrap: wrap;
   padding: 5px 7px;
+  max-width: calc(100% - 32px);
   background: var(--bg-elev);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
@@ -169,23 +171,47 @@
   animation: cmdkIn 160ms;
 }
 .findbar input {
+  flex: 1 1 180px;
   background: transparent;
   border: 0;
   padding: 5px 8px;
-  width: 200px;
+  width: min(220px, 34vw);
+  min-width: 72px;
   font-size: 12px; color: var(--text);
 }
 .findbar .count {
   font-size: 11px; color: var(--text-3); padding: 0 4px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.findbar .count.error { color: var(--accent-2); }
+.findbar .find-options {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 4px;
+  border-left: 0.5px solid var(--border);
 }
 .findbar button {
+  flex: 0 0 24px;
   width: 24px; height: 24px;
   border-radius: 5px;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-3);
 }
 .findbar button:hover { background: var(--bg-hover); color: var(--text); }
+.findbar .find-toggle {
+  width: 26px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+.findbar .find-toggle.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
 
 /* AI 全屏面板 —— 不透出编辑器 */
 .ai-panel {

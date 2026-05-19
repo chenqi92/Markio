@@ -22,6 +22,7 @@ import { useUI } from "@/stores/ui";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { findTextRanges } from "@/lib/findText";
 import { openExternal } from "@/lib/opener";
 import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
@@ -91,6 +92,9 @@ export function Preview({
   const theme = useSettings((s) => s.theme);
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
+  const findCaseSensitive = useUI((s) => s.findCaseSensitive);
+  const findWholeWord = useUI((s) => s.findWholeWord);
+  const findRegex = useUI((s) => s.findRegex);
   const activeWorkspace = useWorkspace((s) =>
     s.workspaces.find((w) => w.id === s.activeId),
   );
@@ -448,7 +452,6 @@ export function Preview({
     }
     findCurrentRef.current = null;
     if (!findQuery) return;
-    const needle = findQuery.toLowerCase();
     let count = 0;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(n) {
@@ -458,7 +461,12 @@ export function Preview({
           null
         )
           return NodeFilter.FILTER_REJECT;
-        return n.nodeValue.toLowerCase().includes(needle)
+        return findTextRanges(n.nodeValue, findQuery, {
+          caseSensitive: findCaseSensitive,
+          wholeWord: findWholeWord,
+          regex: findRegex,
+          maxMatches: 1,
+        }).matches.length > 0
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT;
       },
@@ -468,21 +476,25 @@ export function Preview({
     while ((node = walker.nextNode())) targets.push(node as Text);
     for (const t of targets) {
       const v = t.nodeValue ?? "";
-      const lower = v.toLowerCase();
+      const result = findTextRanges(v, findQuery, {
+        caseSensitive: findCaseSensitive,
+        wholeWord: findWholeWord,
+        regex: findRegex,
+      });
+      if (result.error) continue;
       let last = 0;
       const parent = t.parentNode;
       if (!parent) continue;
       // 一次 insertBefore DocumentFragment 比 N 次 insertBefore 单节点便宜
       const frag = document.createDocumentFragment();
-      let from = 0;
-      while ((from = lower.indexOf(needle, last)) !== -1) {
+      for (const { from, to } of result.matches) {
         if (from > last) frag.appendChild(document.createTextNode(v.slice(last, from)));
         const mark = document.createElement("mark");
         mark.className = "find-hit";
         mark.dataset.idx = String(count);
-        mark.textContent = v.slice(from, from + needle.length);
+        mark.textContent = v.slice(from, to);
         frag.appendChild(mark);
-        last = from + needle.length;
+        last = to;
         count++;
       }
       if (last < v.length) frag.appendChild(document.createTextNode(v.slice(last)));
@@ -490,7 +502,14 @@ export function Preview({
       parent.removeChild(t);
     }
     applyFindCurrent(findIndexRef.current);
-  }, [html, findQuery, applyFindCurrent]);
+  }, [
+    html,
+    findQuery,
+    findCaseSensitive,
+    findWholeWord,
+    findRegex,
+    applyFindCurrent,
+  ]);
 
   useEffect(() => {
     applyFindCurrent(findIndex);

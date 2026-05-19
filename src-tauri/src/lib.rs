@@ -25,6 +25,7 @@ use std::sync::{
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -1592,77 +1593,38 @@ where
     let cap = opts.max_matches.unwrap_or(50_000);
 
     let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
-    let bytes = text.as_bytes();
-
+    let has_word_boundary = |from: usize, to: usize| {
+        let prev = text[..from]
+            .chars()
+            .next_back()
+            .map(is_word_char)
+            .unwrap_or(false);
+        let next = text[to..].chars().next().map(is_word_char).unwrap_or(false);
+        !prev && !next
+    };
+    let pattern = if opts.regex.unwrap_or(false) {
+        pattern.to_string()
+    } else {
+        regex::escape(pattern)
+    };
+    let re = RegexBuilder::new(&pattern)
+        .case_insensitive(ci)
+        .build()
+        .map_err(|e| format!("正则表达式无效：{e}"))?;
     let mut count = 0usize;
 
-    if opts.regex.unwrap_or(false) {
-        // 简单正则：不引入 regex crate；只支持 . * + ? \d \w \s 等基础 — 走 String::matches
-        // 这里先实现普通匹配（regex=true 视作普通匹配），后续接 regex crate 时替换。
-    }
-
-    if ci {
-        // 直接走 ASCII 不敏感对比的常见路径；包含非 ASCII 时降级用全文 lower 后 indexOf
-        let lower_text = text.to_lowercase();
-        let lower_pat = pattern.to_lowercase();
-        let pat_bytes_len = lower_pat.len();
-        let mut start = 0;
-        while let Some(rel) = lower_text[start..].find(&lower_pat) {
-            let from = start + rel;
-            let to = from + pat_bytes_len;
-            if ww {
-                let prev = bytes
-                    .get(from.wrapping_sub(1))
-                    .copied()
-                    .map(|b| (b as char).is_alphanumeric() || b == b'_')
-                    .unwrap_or(false);
-                let next = bytes
-                    .get(to)
-                    .copied()
-                    .map(|b| is_word_char(b as char))
-                    .unwrap_or(false);
-                if !prev && !next {
-                    on_match(from, to);
-                    count += 1;
-                }
-            } else {
-                on_match(from, to);
-                count += 1;
-            }
-            if count >= cap {
-                break;
-            }
-            start = to.max(from + 1);
+    for hit in re.find_iter(text) {
+        let from = hit.start();
+        let to = hit.end();
+        if from == to {
+            continue;
         }
-    } else {
-        let pat_len = pattern.len();
-        let mut start = 0;
-        while let Some(rel) = text[start..].find(pattern) {
-            let from = start + rel;
-            let to = from + pat_len;
-            if ww {
-                let prev = bytes
-                    .get(from.wrapping_sub(1))
-                    .copied()
-                    .map(|b| is_word_char(b as char))
-                    .unwrap_or(false);
-                let next = bytes
-                    .get(to)
-                    .copied()
-                    .map(|b| is_word_char(b as char))
-                    .unwrap_or(false);
-                if !prev && !next {
-                    on_match(from, to);
-                    count += 1;
-                }
-            } else {
-                on_match(from, to);
-                count += 1;
-            }
-            if count >= cap {
-                break;
-            }
-            start = to.max(from + 1);
+        if !ww || has_word_boundary(from, to) {
+            on_match(from, to);
+            count += 1;
+        }
+        if count >= cap {
+            break;
         }
     }
 
@@ -1687,6 +1649,64 @@ fn text_find_count(
     options: Option<TextFindOptions>,
 ) -> Result<usize, String> {
     text_find_scan(&text, &pattern, options, |_from, _to| {})
+}
+
+#[cfg(test)]
+mod text_find_tests {
+    use super::*;
+
+    fn options(case_insensitive: bool, whole_word: bool, regex: bool) -> Option<TextFindOptions> {
+        Some(TextFindOptions {
+            case_insensitive: Some(case_insensitive),
+            whole_word: Some(whole_word),
+            regex: Some(regex),
+            max_matches: None,
+        })
+    }
+
+    #[test]
+    fn literal_search_honors_case_sensitivity() {
+        let ranges = text_find_ranges(
+            "Alpha alpha ALPHA".into(),
+            "alpha".into(),
+            options(false, false, false),
+        )
+        .unwrap();
+
+        assert_eq!(ranges, vec![(6, 11)]);
+    }
+
+    #[test]
+    fn whole_word_filters_embedded_matches() {
+        let ranges = text_find_ranges(
+            "cat scatter cat_ cat".into(),
+            "cat".into(),
+            options(true, true, false),
+        )
+        .unwrap();
+
+        assert_eq!(ranges, vec![(0, 3), (17, 20)]);
+    }
+
+    #[test]
+    fn regex_search_returns_regex_ranges() {
+        let ranges = text_find_ranges(
+            "v1 v22 vx".into(),
+            r"v\d+".into(),
+            options(true, false, true),
+        )
+        .unwrap();
+
+        assert_eq!(ranges, vec![(0, 2), (3, 6)]);
+    }
+
+    #[test]
+    fn invalid_regex_returns_error() {
+        let err =
+            text_find_count("abc".into(), "(".into(), options(true, false, true)).unwrap_err();
+
+        assert!(err.contains("正则表达式无效"));
+    }
 }
 
 // ─── pandoc 导出（EPUB / DOCX） ────────────────────────────────────

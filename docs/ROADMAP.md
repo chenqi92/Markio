@@ -21,17 +21,17 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 编辑 / 预览 / WYSIWYG / 阅读 | ✅ 正式 | CodeMirror、markdown 渲染、同步滚动、Mermaid/KaTeX/代码高亮已可用 |
-| 文件保存 / 历史 / 单文件回收站 | 🟡 可用但需加固 | 原子写、mtime/hash 冲突检测、历史快照可用；目录回收站未闭环，写文件入口需统一审计 |
+| 文件保存 / 历史 / 回收站 | 🟡 可用但需加固 | 原子写、mtime/hash 冲突检测、历史快照、文件/目录回收站可用；写文件入口需统一审计 |
 | 文件树 / 快速打开 / 全文搜索 | 🟡 可用但需加固 | 文件树已有虚拟列表；仍有深度、数量、隐藏文件、只显示 markdown 等硬限制 |
 | 文档内查找 | 🟡 可用但需加固 | 预览查找仍在 DOM text node 上做高亮；Rust ranges 命令存在，但 regex 语义还未完整实现 |
 | AI 聊天 | ✅ 正式 | 多 provider、流式响应、取消、任务侧栏和引用预览已接入 |
-| 本地知识库 RAG | 🟡 可用但需加固 | sqlite-vec + FTS5 + 引用图谱 + RRF 已可用；rerank key 存储、重建取消、失败恢复还需补 |
+| 本地知识库 RAG | 🟡 可用但需加固 | sqlite-vec + FTS5 + 引用图谱 + RRF 已可用；重建取消已接入，暂停、失败恢复和重试还需补 |
 | 文件监听 / 增量索引 | 🟡 可用但需加固 | watcher 已有；需要更细事件类型、错误恢复和外部批量变更后的重建策略 |
 | Git 同步 | 🟡 可用但需加固 | git init/clone/status/fetch/commit/pull/push 等命令已接；自动同步策略仍过粗 |
 | WebDAV / S3 / Dropbox / Google Drive | 🧪 实验 / 工具 | 有连接、列表、上传、下载、删除等基础能力；不是统一双向同步引擎 |
 | iCloud | 🧪 实验 / 工具 | 主要依赖系统文件夹同步；应用内未掌握云端冲突、同步进度和错误 |
 | 导入 Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 可用但需加固 | 已有导入命令；格式转换、资源路径、进度报告和丢失项报告需要产品化 |
-| Roam / Logseq 导入 | ❌ 未做 | 不应展示成正式导入能力 |
+| Roam / Logseq 导入 | 🟡 可用但需加固 | Roam 仅支持 Markdown ZIP，Logseq 复制 pages / journals / assets；JSON / org 转换和完整报告还需补 |
 | PDF / HTML / 多格式复制 | ✅ 正式 | 主流程可用 |
 | 微信公众号样式复制 | 🟡 可用但需加固 | 预览和复制可用；直接推送草稿、图片素材上传和代码块内联化未闭环 |
 | Smart Channel | 🧪 实验 / 工具 | 目前是 `window.__markioSmartChannel` 临时桥；正式化前需改 Tauri command、权限和配额模型 |
@@ -141,7 +141,7 @@
 任务：
 - 全文搜索优先复用 FTS5，暴力 grep 只做 fallback。
 - 预览查找接 Rust ranges，补完整 regex / whole word / case-sensitive 语义。
-- RAG 重建支持取消、暂停、失败恢复、重试。
+- RAG 重建已支持取消；继续补暂停、失败恢复、重试。
 - 文件树限制可见化：显示截断原因、支持继续加载或全局搜索。
 - 替换 `window.alert/confirm/prompt` 为统一 Dialog。
 

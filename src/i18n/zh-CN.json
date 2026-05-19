@@ -48,7 +48,7 @@
         "h": "快捷键",
         "sub": "点击「录制」后按下要绑定的键组合；按 Esc 取消录制。冲突项以红色提示。"
       },
-      "sync": { "h": "同步", "sub": "每个驱动单独鉴权与配置。" },
+      "sync": { "h": "同步", "sub": "Git 自动同步可用但仍需加固；云盘目前是存储工具集，不是完整双向同步引擎。" },
       "picgo": {
         "h": "图片上传",
         "sub": "把粘贴或拖入的图片自动上传到图床，并在笔记中插入外链。"
@@ -56,18 +56,18 @@
       "ai": { "h": "AI 助手", "sub": "配置模型、API 与提示词。" },
       "rag": { "h": "知识库", "sub": "为当前仓库建立本地向量索引。" },
       "wechat": {
-        "h": "微信公众号",
-        "sub": "配置公众号排版复制的默认样式。"
+        "h": "公众号排版复制",
+        "sub": "配置公众号样式预览和复制；暂不包含直接推送草稿或素材上传。"
       },
       "wxAssistant": {
         "h": "微信助手",
         "sub": "通过企业微信机器人 / Server 酱 / 自建 webhook，把 markio 的操作通知推到你的微信。"
       },
       "smartChannel": {
-        "h": "智能通道",
-        "sub": "把 markio 文档库做成一个可被外部应用调用的 AI 查询通道。"
+        "h": "智能通道（实验）",
+        "sub": "当前通过临时桥接暴露查询能力，正式权限模型和 Tauri command 仍需补齐。"
       },
-      "export": { "h": "导入导出", "sub": "把内容带进 markio，或导出到别处。" },
+      "export": { "h": "导入导出", "sub": "导入会落到 imports 目录并给出简要报告；复杂格式迁移仍可能降级。" },
       "about": { "h": "关于", "sub": "" }
     },
     "appear": {
@@ -148,7 +148,7 @@
       }
     },
     "sync": {
-      "drivesCard": "驱动",
+      "drivesCard": "云存储工具（实验）",
       "driveStatus": {
         "disconnected": "未连接",
         "connected": "已连接 · {{folder}}",
@@ -169,8 +169,8 @@
         "openExisting": "下方查看现有 {{name}} 卡片",
         "comingSoon": "OAuth 接入仍在开发中；当前可先选择本地目录作为同步根"
       },
-      "policyCard": "同步策略",
-      "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push。",
+      "policyCard": "Git 自动同步策略（需加固）",
+      "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push；冲突策略状态机仍在完善。",
       "enableAutoSync": "启用自动同步",
       "onConflict": "冲突时",
       "frequency": "同步频率",

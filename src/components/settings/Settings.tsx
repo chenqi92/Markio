@@ -4580,6 +4580,17 @@ function RagSettings() {
     }
   };
 
+  const triggerCancel = async () => {
+    if (!ws) return;
+    try {
+      const ok = await useRag.getState().cancel(ws.path);
+      setMsg(ok ? "正在取消重建，当前文件处理完成后会停止" : "当前没有运行中的重建任务");
+      refresh();
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
   const progress = status?.progress;
   const progressPct = progress?.total
     ? Math.round((progress.processed / Math.max(1, progress.total)) * 100)
@@ -4860,7 +4871,7 @@ function RagSettings() {
             {progress?.running && (
               <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
                 <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-                  正在索引{" "}
+                  {progress.cancelRequested ? "正在取消索引" : "正在索引"}{" "}
                   {progress.currentFile
                     ? progress.currentFile.split("/").slice(-1)[0]
                     : ""}{" "}
@@ -4883,6 +4894,11 @@ function RagSettings() {
                     }}
                   />
                 </div>
+                {progress.lastError && (
+                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                    {progress.lastError}
+                  </div>
+                )}
               </div>
             )}
             <div
@@ -4900,6 +4916,16 @@ function RagSettings() {
               >
                 {status?.totalDocs ? "重新索引整个仓库" : "首次构建索引"}
               </button>
+              {progress?.running && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={triggerCancel}
+                  disabled={progress.cancelRequested}
+                >
+                  {progress.cancelRequested ? "取消中…" : "取消重建"}
+                </button>
+              )}
               <button type="button" className="btn-ghost" onClick={triggerClear}>
                 清空索引
               </button>

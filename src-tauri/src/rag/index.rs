@@ -165,13 +165,15 @@ fn build_stem_index(docs: &[Doc]) -> HashMap<String, Vec<PathBuf>> {
 }
 
 /// 全量重建索引。
-pub fn reindex_workspace<F>(
+pub fn reindex_workspace<F, C>(
     handle: Arc<RagHandle>,
     cfg: EmbedConfig,
     mut on_progress: F,
+    should_cancel: C,
 ) -> Result<(), String>
 where
     F: FnMut(),
+    C: Fn() -> bool,
 {
     let workspace = PathBuf::from(&handle.workspace);
     let docs = collect_md(&workspace, 20_000, MAX_INDEX_TOTAL_BYTES);
@@ -181,6 +183,7 @@ where
         let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
         db.progress = Some(IndexProgress {
             running: true,
+            cancel_requested: false,
             processed: 0,
             total,
             current_file: None,
@@ -202,6 +205,19 @@ where
         .checked_sub(Duration::from_millis(600))
         .unwrap_or_else(Instant::now);
     for (i, doc) in docs.iter().enumerate() {
+        if should_cancel() {
+            let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
+            if let Some(p) = db.progress.as_mut() {
+                p.running = false;
+                p.cancel_requested = true;
+                p.processed = i as u32;
+                p.current_file = None;
+                p.last_error = Some("索引已取消".to_string());
+            }
+            drop(db);
+            on_progress();
+            return Err("RAG 索引已取消".to_string());
+        }
         {
             let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
             if let Some(p) = db.progress.as_mut() {
@@ -237,6 +253,7 @@ where
         )?;
         if let Some(p) = db.progress.as_mut() {
             p.running = false;
+            p.cancel_requested = false;
             p.processed = total;
             p.current_file = None;
         }

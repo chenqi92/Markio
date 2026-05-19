@@ -59,6 +59,11 @@ pub fn rag_handle(workspace: &str, embed_dim: usize) -> Result<Arc<RagHandle>, S
     Ok(handle)
 }
 
+/// Returns the in-memory handle if the workspace has already been opened.
+pub fn existing_handle(workspace: &str) -> Option<Arc<RagHandle>> {
+    handles().lock().ok()?.get(workspace).cloned()
+}
+
 /// 当切换 embedding 模型 / 维度变化时调用：清理内存里的句柄，下一次会重新打开 DB。
 pub fn drop_handle(workspace: &str) {
     if let Ok(mut map) = handles().lock() {
@@ -84,6 +89,7 @@ pub struct IndexStatus {
 #[serde(rename_all = "camelCase")]
 pub struct IndexProgress {
     pub running: bool,
+    pub cancel_requested: bool,
     pub processed: u32,
     pub total: u32,
     pub current_file: Option<String>,

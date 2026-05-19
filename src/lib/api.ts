@@ -110,6 +110,7 @@ export interface RagEmbedConfig {
 
 export interface RagIndexProgress {
   running: boolean;
+  cancelRequested?: boolean;
   processed: number;
   total: number;
   currentFile?: string | null;
@@ -808,6 +809,8 @@ export const api = {
     invoke<RagStatus>("rag_status", { workspace }),
   ragReindex: (workspace: string, config: RagEmbedConfig) =>
     invoke<void>("rag_reindex", { req: { workspace, config } }),
+  ragCancel: (workspace: string) =>
+    invoke<boolean>("rag_cancel", { workspace }),
   ragReindexFile: (workspace: string, path: string, config: RagEmbedConfig) =>
     invoke<void>("rag_reindex_file", { req: { workspace, path, config } }),
   ragRemoveFile: (workspace: string, path: string) =>

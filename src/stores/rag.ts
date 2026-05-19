@@ -8,6 +8,7 @@ interface RagState {
   status: Record<string, RagStatus>;
   refresh: (workspaceId: string, workspacePath: string) => Promise<void>;
   reindex: (workspacePath: string) => Promise<void>;
+  cancel: (workspacePath: string) => Promise<boolean>;
   reindexFile: (workspacePath: string, file: string) => Promise<void>;
   removeFile: (workspacePath: string, file: string) => Promise<void>;
   clear: (workspaceId: string, workspacePath: string) => Promise<void>;
@@ -49,6 +50,8 @@ export const useRag = create<RagState>((set, get) => ({
     const cfg = resolveEmbedConfig();
     await api.ragReindex(workspacePath, cfg);
   },
+
+  cancel: async (workspacePath) => api.ragCancel(workspacePath),
 
   reindexFile: async (workspacePath, file) => {
     const s = useSettings.getState();

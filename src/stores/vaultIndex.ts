@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { api, isDesktop, type VaultIndex } from "@/lib/api";
 import { reportDiagnostic } from "./diagnostics";
+import { useWorkspace } from "./workspace";
+
+/** Rust 端返回的"路径不在已注册仓库 / 路径不存在"等错误：UI 已通过仓库不可用状态提示 */
+function isUnavailableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /拒绝访问|os error 2|No such file or directory|路径无效|父目录无效/i.test(msg);
+}
 
 interface VaultIndexState {
   /** workspace path → 内存中的 index */
@@ -31,6 +38,7 @@ const REBUILD_DEBOUNCE_MS = 4_000;
 const rebuildTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function runBuild(workspace: string) {
+  if (useWorkspace.getState().isUnavailable(workspace)) return;
   const { building, rebuildQueued } = useVaultIndex.getState();
   if (building.has(workspace)) {
     const next = new Set(rebuildQueued);
@@ -49,13 +57,15 @@ async function runBuild(workspace: string) {
     }));
   } catch (e) {
     console.warn("[vaultIndex] build failed", workspace, e);
-    reportDiagnostic({
-      source: "vault-index",
-      severity: "warning",
-      message: "仓库索引构建失败",
-      detail: e,
-      workspace,
-    });
+    if (!isUnavailableError(e)) {
+      reportDiagnostic({
+        source: "vault-index",
+        severity: "warning",
+        message: "仓库索引构建失败",
+        detail: e,
+        workspace,
+      });
+    }
   } finally {
     let needsQueuedRun = false;
     useVaultIndex.setState((s) => {
@@ -83,6 +93,7 @@ export const useVaultIndex = create<VaultIndexState>((set, get) => ({
 
   ensure: async (workspace, force = false) => {
     if (!isDesktop() || !workspace) return;
+    if (useWorkspace.getState().isUnavailable(workspace)) return;
     const state = get();
     const last = state.builtAt[workspace] ?? 0;
     if (!force && Date.now() - last < TTL_MS && state.index[workspace]) return;
@@ -96,13 +107,15 @@ export const useVaultIndex = create<VaultIndexState>((set, get) => ({
         }
       } catch (e) {
         console.warn("[vaultIndex] load failed", workspace, e);
-        reportDiagnostic({
-          source: "vault-index",
-          severity: "warning",
-          message: "仓库索引读取失败",
-          detail: e,
-          workspace,
-        });
+        if (!isUnavailableError(e)) {
+          reportDiagnostic({
+            source: "vault-index",
+            severity: "warning",
+            message: "仓库索引读取失败",
+            detail: e,
+            workspace,
+          });
+        }
       }
     }
 
@@ -112,6 +125,7 @@ export const useVaultIndex = create<VaultIndexState>((set, get) => ({
 
   scheduleRebuild: (workspace) => {
     if (!isDesktop() || !workspace) return;
+    if (useWorkspace.getState().isUnavailable(workspace)) return;
     const current = rebuildTimers.get(workspace);
     if (current) clearTimeout(current);
     const handle = setTimeout(() => {

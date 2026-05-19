@@ -89,17 +89,6 @@ const WECHAT_STYLE_OPTIONS = [
   { value: "minimal", label: "极简 · 文章" },
 ] as const satisfies readonly SelectOption<"warmMagazine" | "cleanTech" | "inkClassic" | "minimal">[];
 
-const WECHAT_AUTHOR_OPTIONS = [
-  { value: "unset", label: "未设置" },
-  { value: "appName", label: "markio" },
-  { value: "systemUser", label: "系统用户名" },
-] as const satisfies readonly SelectOption<"unset" | "appName" | "systemUser">[];
-
-const WECHAT_COVER_OPTIONS = [
-  { value: "firstImage", label: "取正文首图" },
-  { value: "none", label: "不附带" },
-] as const satisfies readonly SelectOption<"firstImage" | "none">[];
-
 const SMART_CHANNEL_MODEL_OPTIONS = [
   { value: "aiDefault", label: "跟随 AI 助手设置" },
   { value: "currentClaude", label: "Claude（当前账户）" },
@@ -2937,270 +2926,23 @@ function Picgo() {
 
 function WeChat() {
   const style = useSettings((s) => s.wechatStyle);
-  const author = useSettings((s) => s.wechatAuthor);
-  const accountName = useSettings((s) => s.wechatAccountName);
-  const appId = useSettings((s) => s.wechatAppId);
-  const autoSummary = useSettings((s) => s.wechatAutoSummary);
-  const defaultCover = useSettings((s) => s.wechatDefaultCover);
   const setPreference = useSettings((s) => s.setPreference);
-  const setToast = useUI((s) => s.setToast);
-
-  const [draftName, setDraftName] = useState(accountName);
-  const [draftAppId, setDraftAppId] = useState(appId);
-  const [secretDraft, setSecretDraft] = useState("");
-  const [secretStored, setSecretStored] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    setDraftName(accountName);
-    setDraftAppId(appId);
-  }, [accountName, appId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!appId) {
-      setSecretStored(false);
-      return;
-    }
-    api
-      .secretHas(`wechat:${appId}`)
-      .then((v) => !cancelled && setSecretStored(v))
-      .catch(() => !cancelled && setSecretStored(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [appId]);
-
-  const bound = Boolean(accountName && appId && secretStored);
-
-  const bind = async () => {
-    if (!draftAppId.trim()) {
-      setMsg("请填写 AppID");
-      return;
-    }
-    if (!draftName.trim()) {
-      setMsg("请填写公众号名称");
-      return;
-    }
-    if (!secretDraft.trim() && !secretStored) {
-      setMsg("请填写 AppSecret");
-      return;
-    }
-    setBusy(true);
-    setMsg(null);
-    try {
-      if (secretDraft) {
-        await api.secretSet(`wechat:${draftAppId}`, secretDraft);
-      }
-      setPreference("wechatAccountName", draftName.trim());
-      setPreference("wechatAppId", draftAppId.trim());
-      setSecretStored(true);
-      setSecretDraft("");
-      setMsg("✓ 已绑定，凭据写入系统钥匙串");
-      setToast({ stage: "done", message: "公众号已绑定" });
-      setTimeout(() => setToast(null), 2400);
-    } catch (e) {
-      setMsg(`✗ ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const unbind = async () => {
-    if (!window.confirm(`解绑「${accountName || appId}」？凭据会从钥匙串删除。`)) return;
-    setBusy(true);
-    try {
-      if (appId) await api.secretDelete(`wechat:${appId}`);
-      setPreference("wechatAccountName", "");
-      setPreference("wechatAppId", "");
-      setSecretStored(false);
-      setSecretDraft("");
-      setDraftName("");
-      setDraftAppId("");
-      setMsg("已解绑");
-    } catch (e) {
-      setMsg(`✗ ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <>
       <SectionHeader id="wechat" />
 
       <div className="settings-card">
-        <div className="settings-card-h">绑定的公众号</div>
-        {bound ? (
-          <>
-            <div className="settings-row">
-              <div className="settings-row-l">
-                <div className="settings-label">{accountName}</div>
-                <div className="settings-help">AppID · {appId}</div>
-              </div>
-              <span
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  background: "var(--accent-glow)",
-                  color: "var(--accent)",
-                  borderRadius: 4,
-                }}
-              >
-                已绑定
-              </span>
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-l">
-                <div className="settings-help">
-                  解绑后将无法一键推送草稿；样式与摘要设置会保留。
-                </div>
-              </div>
-              <button
-                className="settings-btn"
-                disabled={busy}
-                onClick={unbind}
-                style={{ color: "#ff453a" }}
-              >
-                解绑公众号
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="settings-row">
-              <div className="settings-row-l">
-                <LabelWithTip tip="在公众平台 → 开发 → 基本配置 中查到 AppID。">
-                  AppID
-                </LabelWithTip>
-              </div>
-              <input
-                type="text"
-                value={draftAppId}
-                onChange={(e) => setDraftAppId(e.target.value)}
-                placeholder="wx...."
-                style={{
-                  padding: "5px 10px",
-                  background: "var(--bg-input)",
-                  border: "0.5px solid var(--border-strong)",
-                  borderRadius: 6,
-                  width: 220,
-                  fontSize: 12,
-                  color: "var(--text)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-l">
-                <LabelWithTip tip="只在本机展示，方便区分多账号。">
-                  公众号名称
-                </LabelWithTip>
-              </div>
-              <input
-                type="text"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                placeholder="例如：markio 实验室"
-                style={{
-                  padding: "5px 10px",
-                  background: "var(--bg-input)",
-                  border: "0.5px solid var(--border-strong)",
-                  borderRadius: 6,
-                  width: 220,
-                  fontSize: 12,
-                  color: "var(--text)",
-                }}
-              />
-            </div>
-            <div className="settings-row">
-              <div className="settings-row-l">
-                <LabelWithTip tip="AppSecret 直接写入系统钥匙串；前端只检测是否存在。">
-                  AppSecret
-                </LabelWithTip>
-                <div className="settings-help">
-                  {secretStored ? "已存储 · 输入新值替换" : "未保存"}
-                </div>
-              </div>
-              <input
-                type="password"
-                value={secretDraft}
-                onChange={(e) => setSecretDraft(e.target.value)}
-                placeholder={secretStored ? "已保存 · 留空保持不变" : "公众号 AppSecret"}
-                style={{
-                  padding: "5px 10px",
-                  background: "var(--bg-input)",
-                  border: "0.5px solid var(--border-strong)",
-                  borderRadius: 6,
-                  width: 220,
-                  fontSize: 12,
-                  color: "var(--text)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              />
-            </div>
-            <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
-              <div className="settings-row-l">
-                <div className="settings-help">{msg ?? "填写后保存即可绑定。"}</div>
-              </div>
-              <button
-                className="settings-btn primary"
-                disabled={busy}
-                onClick={bind}
-              >
-                {busy ? "保存中…" : "保存并绑定"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="settings-card">
-        <div className="settings-card-h">发布默认</div>
+        <div className="settings-card-h">复制默认</div>
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">默认导出样式</div>
-            <div className="settings-help">在导出抽屉中可临时切换。</div>
+            <div className="settings-help">公众号排版面板会默认选中这套样式。</div>
           </div>
           <SelectBtn
             value={style}
             options={WECHAT_STYLE_OPTIONS}
             onChange={(v) => setPreference("wechatStyle", v)}
-          />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">默认作者署名</div>
-          </div>
-          <SelectBtn
-            value={author}
-            options={WECHAT_AUTHOR_OPTIONS}
-            onChange={(v) => setPreference("wechatAuthor", v)}
-          />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <LabelWithTip tip="发布时自动调用 AI 助手生成摘要；未配置 AI 时退化为正文前 120 字。">
-              自动生成摘要
-            </LabelWithTip>
-          </div>
-          <Toggle
-            on={autoSummary}
-            onChange={(v) => setPreference("wechatAutoSummary", v)}
-          />
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <LabelWithTip tip="发布时优先取文章里的第一张本地图片，作为公众号封面。">
-              默认封面
-            </LabelWithTip>
-          </div>
-          <SelectBtn
-            value={defaultCover}
-            options={WECHAT_COVER_OPTIONS}
-            onChange={(v) => setPreference("wechatDefaultCover", v)}
           />
         </div>
       </div>
@@ -3213,7 +2955,6 @@ function WxAssistant() {
   const webhook = useSettings((s) => s.wxAssistantWebhook);
   const dailyDigest = useSettings((s) => s.wxAssistantDailyDigest);
   const digestTime = useSettings((s) => s.wxAssistantDigestTime);
-  const publishHook = useSettings((s) => s.wxAssistantPublishHook);
   const lastDigestSent = useSettings((s) => s.wxAssistantLastDigestSentDate);
   const setPreference = useSettings((s) => s.setPreference);
   const setToast = useUI((s) => s.setToast);
@@ -3330,17 +3071,6 @@ function WxAssistant() {
 
       <div className="settings-card">
         <div className="settings-card-h">通知触发</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <LabelWithTip tip="公众号草稿创建成功后，向微信助手发送一条带链接的通知。">
-              发布公众号草稿后通知
-            </LabelWithTip>
-          </div>
-          <Toggle
-            on={publishHook && enabled}
-            onChange={(v) => enabled && setPreference("wxAssistantPublishHook", v)}
-          />
-        </div>
         <div className="settings-row">
           <div className="settings-row-l">
             <LabelWithTip tip="每天定时把当日新增 / 修改过的笔记标题与摘要推送一次。">

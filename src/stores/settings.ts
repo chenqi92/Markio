@@ -150,15 +150,15 @@ interface SettingsState {
   picgoQuality: number;
   wechatStyle: "warmMagazine" | "cleanTech" | "inkClassic" | "minimal";
   wechatAuthor: "unset" | "appName" | "systemUser";
-  /** 已绑定的公众号显示名（appSecret 在系统钥匙串） */
+  /** 预留：公众号显示名（当前复制流程不读取） */
   wechatAccountName: string;
-  /** 已绑定的公众号 AppID */
+  /** 预留：公众号 AppID */
   wechatAppId: string;
-  /** 推送时让 AI 自动生成摘要 */
+  /** 预留：公众号草稿 API 接入后用于自动摘要 */
   wechatAutoSummary: boolean;
-  /** 默认封面图：none = 不附带 / firstImage = 取正文首图 */
+  /** 预留：公众号草稿 API 接入后用于默认封面 */
   wechatDefaultCover: "none" | "firstImage";
-  /** 微信助手开关：开启后保存 / 发布动作会推到下方 webhook */
+  /** 微信助手开关：开启后每日摘要等动作会推到下方 webhook */
   wxAssistantEnabled: boolean;
   /** Server 酱 / 企业微信机器人 / 自建桥的 webhook */
   wxAssistantWebhook: string;
@@ -168,7 +168,7 @@ interface SettingsState {
   wxAssistantDigestTime: string;
   /** 上次成功推送的日期（YYYY-MM-DD），用于跨重启去重 */
   wxAssistantLastDigestSentDate: string;
-  /** 发布公众号草稿后是否再推一条通知 */
+  /** 预留：公众号草稿 API 接入后是否再推一条通知 */
   wxAssistantPublishHook: boolean;
   /** 智能通道（替代龙虾）：把当前文档工具的内容暴露给其他客户端查询 */
   smartChannelEnabled: boolean;

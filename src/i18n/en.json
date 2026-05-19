@@ -57,7 +57,7 @@
       "rag": { "h": "Knowledge base", "sub": "Build a local vector index for the current workspace." },
       "wechat": {
         "h": "WeChat Official Account",
-        "sub": "Bind your account, configure publish style and default author. Credentials are stored in the OS keychain."
+        "sub": "Configure the default style for WeChat Official Account copy."
       },
       "wxAssistant": {
         "h": "WeChat Assistant",

@@ -30,8 +30,18 @@ BUNDLE_ID="com.welape.mdview"
 : "${APPLE_INSTALLER_IDENTITY:?需要设置 APPLE_INSTALLER_IDENTITY（Mac Installer Distribution 证书）}"
 : "${APPLE_TEAM_ID:?需要设置 APPLE_TEAM_ID}"
 
-ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.entitlements"
+BASE_ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.entitlements"
 INHERIT_ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.inherit.entitlements"
+DIST_DIR="$ROOT_DIR/dist-mas"
+MAS_ENTITLEMENTS="$DIST_DIR/macos.mas.entitlements"
+
+mkdir -p "$DIST_DIR"
+cp "$BASE_ENTITLEMENTS" "$MAS_ENTITLEMENTS"
+/usr/libexec/PlistBuddy -c "Delete :com.apple.application-identifier" "$MAS_ENTITLEMENTS" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Delete :com.apple.developer.team-identifier" "$MAS_ENTITLEMENTS" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string ${APPLE_TEAM_ID}.${BUNDLE_ID}" "$MAS_ENTITLEMENTS"
+/usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string ${APPLE_TEAM_ID}" "$MAS_ENTITLEMENTS"
+ENTITLEMENTS="$MAS_ENTITLEMENTS"
 
 # 给嵌套 helper / framework 用的"继承"型 entitlements
 if [[ ! -f "$INHERIT_ENTITLEMENTS" ]]; then
@@ -50,7 +60,8 @@ fi
 echo "==> 1. 构建前端 + 通用二进制（aarch64 + x86_64）"
 cd "$ROOT_DIR"
 pnpm install --frozen-lockfile
-pnpm tauri build --target universal-apple-darwin --bundles app
+pnpm tauri build --target universal-apple-darwin --bundles app \
+  --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
 APP_PATH="$ROOT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app"
 if [[ ! -d "$APP_PATH" ]]; then
@@ -62,6 +73,9 @@ if [[ -n "${PROVISIONING_PROFILE:-}" ]]; then
   echo "==> 2. 嵌入 provisioning profile"
   cp "$PROVISIONING_PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
 fi
+
+echo "==> 清理 macOS 下载隔离扩展属性"
+/usr/bin/xattr -cr "$APP_PATH"
 
 echo "==> 3. 给所有嵌套 framework / helper 签名（inherit）"
 # 从内到外签
@@ -95,8 +109,6 @@ echo "==> 5. 验证签名"
 /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
 
 echo "==> 6. 打包成 .pkg"
-DIST_DIR="$ROOT_DIR/dist-mas"
-mkdir -p "$DIST_DIR"
 PKG_PATH="$DIST_DIR/${APP_NAME}.pkg"
 /usr/bin/productbuild \
   --component "$APP_PATH" /Applications \

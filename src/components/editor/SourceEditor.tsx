@@ -3,11 +3,13 @@ import CodeMirror, {
   type ReactCodeMirrorRef,
   EditorView,
 } from "@uiw/react-codemirror";
-import { Prec } from "@codemirror/state";
+import { EditorSelection, Prec } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
+import { search, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { EditorView as CMView, keymap } from "@codemirror/view";
 import { useSettings } from "@/stores/settings";
+import { useUI } from "@/stores/ui";
 import { registerEditor } from "@/lib/editor-bridge";
 import { writeText } from "@/lib/clipboard";
 import { markdownCommands } from "@/lib/markdown-commands";
@@ -78,6 +80,11 @@ export const SourceEditor = memo(function SourceEditor({
   wysiwyg = false,
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
+  const findQuery = useUI((s) => s.findQuery);
+  const findIndex = useUI((s) => s.findIndex);
+  const findCaseSensitive = useUI((s) => s.findCaseSensitive);
+  const findWholeWord = useUI((s) => s.findWholeWord);
+  const findRegex = useUI((s) => s.findRegex);
   const ref = useRef<ReactCodeMirrorRef>(null);
   const [view, setView] = useState<EditorView | null>(null);
   const suppressScrollRef = useRef(false);
@@ -102,6 +109,7 @@ export const SourceEditor = memo(function SourceEditor({
   const extensions = useMemo(
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
+      search(),
       EditorView.lineWrapping,
       ...(wysiwyg ? [wysiwygMarkdown] : []),
       tableKeymap,
@@ -232,6 +240,43 @@ export const SourceEditor = memo(function SourceEditor({
     registerEditor(view);
     return () => registerEditor(null);
   }, [view]);
+
+  useEffect(() => {
+    if (!view) return;
+    const query = new SearchQuery({
+      search: findQuery,
+      caseSensitive: findCaseSensitive,
+      regexp: findRegex,
+      wholeWord: findWholeWord,
+    });
+    view.dispatch({ effects: setSearchQuery.of(query) });
+  }, [view, findQuery, findCaseSensitive, findRegex, findWholeWord]);
+
+  useEffect(() => {
+    if (!view || !findQuery) return;
+    const query = new SearchQuery({
+      search: findQuery,
+      caseSensitive: findCaseSensitive,
+      regexp: findRegex,
+      wholeWord: findWholeWord,
+    });
+    if (!query.valid) return;
+    let match: { from: number; to: number } | null = null;
+    let i = 0;
+    const cursor = query.getCursor(view.state);
+    for (let next = cursor.next(); !next.done; next = cursor.next()) {
+      if (i === findIndex) {
+        match = next.value;
+        break;
+      }
+      i++;
+    }
+    if (!match) return;
+    view.dispatch({
+      selection: EditorSelection.single(match.from, match.to),
+      effects: EditorView.scrollIntoView(match.from, { y: "center" }),
+    });
+  }, [view, findQuery, findIndex, findCaseSensitive, findRegex, findWholeWord]);
 
   // 应用同步对端写过来的目标位置：优先 line（行锁定，对长代码块/公式更准），
   // 没有 line 时退化到 ratio（百分比）兜底。

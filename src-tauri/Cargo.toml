@@ -88,6 +88,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 
 # 通用错误处理
 thiserror = "1"
+regex = "1"
 
 # RAG 向量索引：sqlite + sqlite-vec 扩展 + FTS5
 # bundled-full 启用 FTS5 / R*Tree / JSON 等内置模块

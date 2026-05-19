@@ -18,6 +18,9 @@ interface UIState {
   wechatOpen: boolean;
   findQuery: string;
   findIndex: number;
+  findCaseSensitive: boolean;
+  findWholeWord: boolean;
+  findRegex: boolean;
   globalSearchOpen: boolean;
   quickCaptureOpen: boolean;
   exportSheetOpen: boolean;
@@ -36,6 +39,11 @@ interface UIState {
   openWechat: (v: boolean) => void;
   setFindQuery: (q: string) => void;
   setFindIndex: (n: number) => void;
+  setFindOptions: (
+    patch: Partial<
+      Pick<UIState, "findCaseSensitive" | "findWholeWord" | "findRegex">
+    >,
+  ) => void;
   openGlobalSearch: (v: boolean) => void;
   openQuickCapture: (v: boolean) => void;
   openExportSheet: (v: boolean) => void;
@@ -59,6 +67,9 @@ export const useUI = create<UIState>()(
       wechatOpen: false,
       findQuery: "",
       findIndex: 0,
+      findCaseSensitive: false,
+      findWholeWord: false,
+      findRegex: false,
       globalSearchOpen: false,
       quickCaptureOpen: false,
       exportSheetOpen: false,
@@ -78,6 +89,7 @@ export const useUI = create<UIState>()(
       openWechat: (v) => set({ wechatOpen: v }),
       setFindQuery: (findQuery) => set({ findQuery, findIndex: 0 }),
       setFindIndex: (findIndex) => set({ findIndex }),
+      setFindOptions: (patch) => set({ ...patch, findIndex: 0 }),
       openGlobalSearch: (globalSearchOpen) => set({ globalSearchOpen }),
       openQuickCapture: (quickCaptureOpen) => set({ quickCaptureOpen }),
       openExportSheet: (exportSheetOpen) => set({ exportSheetOpen }),

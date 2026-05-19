@@ -270,7 +270,7 @@ IPC 命令（见 `lib.rs`）：
 ## 已知 trade-off
 
 - **小仓库的文件名搜索** 仍在前端走（树是已扫好的，filter 是 JS）。> 1 万节点要 Rust 索引
-- **当前文档查找** 在 preview DOM 上 walkNodes 做高亮，>10 万字仍可能卡；后端已有 ranges 命令，但 regex 语义和前端接入还需补齐
+- **当前文档查找** 支持大小写、整词、正则和源码定位；长文档计数走 Rust，preview 高亮仍在 DOM text node 上分发
 - **AI 仓库分析** 已经接 sqlite-vec 混合检索 + 引用图谱（见上面「AI · 上下文检索」）。后续可加 reranker（如本地 BGE-reranker）进一步提精度
 - **同步能力分层**：Git 命令已接入，自动同步还需要状态机和冲突恢复；WebDAV / S3 / Dropbox / Google Drive 是云存储工具集，不是完整同步引擎
 - **iOS / Android** 没接 Tauri mobile entry

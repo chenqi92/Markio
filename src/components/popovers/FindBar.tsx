@@ -3,6 +3,8 @@ import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { api, isDesktop } from "@/lib/api";
+import { countFindMatches, type FindTextOptions } from "@/lib/findText";
+import { classNames } from "@/lib/utils";
 
 const LARGE_FIND_THRESHOLD = 30_000;
 
@@ -10,8 +12,12 @@ export function FindBar() {
   const open = useUI((s) => s.findOpen);
   const q = useUI((s) => s.findQuery);
   const idx = useUI((s) => s.findIndex);
+  const caseSensitive = useUI((s) => s.findCaseSensitive);
+  const wholeWord = useUI((s) => s.findWholeWord);
+  const regex = useUI((s) => s.findRegex);
   const setQ = useUI((s) => s.setFindQuery);
   const setIdx = useUI((s) => s.setFindIndex);
+  const setFindOptions = useUI((s) => s.setFindOptions);
   const close = () => {
     useUI.getState().openFind(false);
     setQ("");
@@ -20,48 +26,54 @@ export function FindBar() {
     if (!open && !q) return "";
     return s.activeTab()?.content ?? "";
   });
+  const options = useMemo<FindTextOptions>(
+    () => ({ caseSensitive, wholeWord, regex }),
+    [caseSensitive, wholeWord, regex],
+  );
   const useRustTotal = !!q && content.length >= LARGE_FIND_THRESHOLD && isDesktop();
 
-  // 总数：小文档走 JS indexOf；大文档在桌面端走 Rust，避免主线程整篇 lower + 扫描。
+  // 总数：小文档走 JS；大文档在桌面端走 Rust，避免主线程整篇扫描。
   const jsTotal = useMemo(() => {
-    if (useRustTotal) return 0;
-    if (!q) return 0;
-    const lower = content.toLowerCase();
-    const needle = q.toLowerCase();
-    let count = 0;
-    let i = 0;
-    while ((i = lower.indexOf(needle, i)) !== -1) {
-      count++;
-      i += needle.length;
-    }
-    return count;
-  }, [q, content, useRustTotal]);
+    if (useRustTotal || !q) return { count: 0, error: null as string | null };
+    return countFindMatches(content, q, options);
+  }, [q, content, options, useRustTotal]);
 
   const [rustTotal, setRustTotal] = useState<number | null>(null);
+  const [rustError, setRustError] = useState<string | null>(null);
   useEffect(() => {
     if (!useRustTotal) {
       setRustTotal(null);
+      setRustError(null);
       return;
     }
     let cancelled = false;
     setRustTotal(null);
+    setRustError(null);
     const t = window.setTimeout(() => {
       api
-        .textFindCount(content, q, { caseInsensitive: true })
+        .textFindCount(content, q, {
+          caseInsensitive: !caseSensitive,
+          wholeWord,
+          regex,
+        })
         .then((count) => {
           if (!cancelled) setRustTotal(count);
         })
-        .catch(() => {
-          if (!cancelled) setRustTotal(null);
+        .catch((e) => {
+          if (!cancelled) {
+            setRustError(e instanceof Error ? e.message : String(e));
+            setRustTotal(null);
+          }
         });
     }, 120);
     return () => {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [q, content, useRustTotal]);
+  }, [q, content, caseSensitive, wholeWord, regex, useRustTotal]);
 
-  const total = useRustTotal ? rustTotal ?? 0 : jsTotal;
+  const total = useRustTotal ? rustTotal ?? 0 : jsTotal.count;
+  const findError = useRustTotal ? rustError : jsTotal.error;
 
   // 每次 q / idx 变更后滚动到当前命中元素
   useEffect(() => {
@@ -78,9 +90,14 @@ export function FindBar() {
   if (!open) return null;
 
   const step = (dir: 1 | -1) => {
-    if (total === 0) return;
+    if (total === 0 || findError) return;
     setIdx((idx + dir + total) % total);
   };
+  const toggleOption = (patch: Partial<{
+    findCaseSensitive: boolean;
+    findWholeWord: boolean;
+    findRegex: boolean;
+  }>) => setFindOptions(patch);
 
   return (
     <div className="findbar" role="search">
@@ -97,8 +114,34 @@ export function FindBar() {
           if (e.key === "Escape") close();
         }}
       />
-      <span className="count">
-        {q ? `${total ? idx + 1 : 0} / ${total}` : ""}
+      <span className={classNames("count", findError && "error")} title={findError ?? undefined}>
+        {q ? (findError ? "正则错误" : `${total ? idx + 1 : 0} / ${total}`) : ""}
+      </span>
+      <span className="find-options" aria-label="查找选项">
+        <button
+          className={classNames("find-toggle", caseSensitive && "active")}
+          aria-pressed={caseSensitive}
+          title="区分大小写"
+          onClick={() => toggleOption({ findCaseSensitive: !caseSensitive })}
+        >
+          Aa
+        </button>
+        <button
+          className={classNames("find-toggle", wholeWord && "active")}
+          aria-pressed={wholeWord}
+          title="整词匹配"
+          onClick={() => toggleOption({ findWholeWord: !wholeWord })}
+        >
+          W
+        </button>
+        <button
+          className={classNames("find-toggle", regex && "active")}
+          aria-pressed={regex}
+          title="正则表达式"
+          onClick={() => toggleOption({ findRegex: !regex })}
+        >
+          .*
+        </button>
       </span>
       <button title="上一个" onClick={() => step(-1)}>‹</button>
       <button title="下一个" onClick={() => step(1)}>›</button>

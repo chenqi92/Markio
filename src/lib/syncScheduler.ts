@@ -1,4 +1,4 @@
-import { api, isDesktop } from "@/lib/api";
+import { api, isDesktop, type GitStatus } from "@/lib/api";
 import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
 import { reportDiagnostic } from "@/stores/diagnostics";
@@ -12,6 +12,29 @@ const FREQ_MS: Record<string, number> = {
 let timer: number | null = null;
 let activeWorkspace: string | null = null;
 let unsubscribeSettings: (() => void) | null = null;
+
+type SyncStoreApi = Pick<
+  ReturnType<typeof useSync.getState>,
+  "isInflight" | "setInflight" | "setStage" | "setStatus" | "setConflict" | "setLastSync"
+>;
+
+export interface SyncWorkflowDeps {
+  gitStatus: (workspace: string) => Promise<GitStatus>;
+  gitFetch: (workspace: string) => Promise<void>;
+  gitCommit: (
+    workspace: string,
+    message: string,
+    authorName: string,
+    authorEmail: string,
+  ) => Promise<string>;
+  gitPull: (workspace: string) => Promise<unknown>;
+  gitPush: (workspace: string) => Promise<void>;
+  sync: () => SyncStoreApi;
+  settings: () => Pick<ReturnType<typeof useSettings.getState>, "syncConflictStrategy">;
+  report: typeof reportDiagnostic;
+  now: () => Date;
+  online: () => boolean;
+}
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -28,57 +51,113 @@ function conflictFilesFromError(message: string): string[] | null {
   return files.length > 0 ? files : [];
 }
 
-async function runOnce(workspace: string): Promise<void> {
-  const sync = useSync.getState();
+function isNotGitRepoError(message: string): boolean {
+  return /not a git repository|不是 git 仓库|不是一个 git 仓库/i.test(message);
+}
+
+function autoSyncMessage(message: string, conflict: boolean, strategy: string): string {
+  if (!conflict || strategy === "ask") return message;
+  return `${message}\n当前自动同步不会自动应用「${strategy}」策略，请在 Git 设置中手动确认后解决。`;
+}
+
+function defaultDeps(): SyncWorkflowDeps {
+  return {
+    gitStatus: api.gitStatus,
+    gitFetch: (workspace) => api.gitFetch(workspace),
+    gitCommit: (workspace, message, authorName, authorEmail) =>
+      api.gitCommit(workspace, message, authorName, authorEmail),
+    gitPull: (workspace) => api.gitPull(workspace, { rebase: false }),
+    gitPush: (workspace) => api.gitPush(workspace),
+    sync: () => useSync.getState(),
+    settings: () => useSettings.getState(),
+    report: reportDiagnostic,
+    now: () => new Date(),
+    online: () =>
+      typeof navigator === "undefined" ? true : navigator.onLine,
+  };
+}
+
+export async function runSyncWorkflow(
+  workspace: string,
+  deps: SyncWorkflowDeps = defaultDeps(),
+): Promise<void> {
+  const sync = deps.sync();
   if (sync.isInflight(workspace)) return;
   // 显然离线时跳过：触发 git push 只会徒增超时，让 statusbar 显示离线
   // 而不是后续的"同步失败"误导用户。online 转 true 时设置变化会重新拉一次定时器。
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
+  if (!deps.online()) {
     sync.setStatus("idle");
     return;
   }
   sync.setInflight(workspace, true);
   sync.setStage("preflight", "检查 Git 状态");
   try {
-    let status = await api.gitStatus(workspace).catch(() => null);
-    if (!status) {
-      sync.setStage("idle", "当前仓库未初始化 Git");
+    let status: GitStatus;
+    try {
+      status = await deps.gitStatus(workspace);
+    } catch (e) {
+      const message = errorMessage(e);
+      if (isNotGitRepoError(message)) {
+        sync.setStage("idle", "当前仓库未初始化 Git");
+        return;
+      }
+      throw new Error(`git status 失败：${message}`);
+    }
+    if (!status.upstream && (status.files.length > 0 || status.ahead > 0)) {
+      throw new Error("当前分支没有 upstream，请先在 Git 设置中执行 push -u。");
+    }
+    if (!status.upstream) {
+      sync.setStage("idle", "当前分支没有 upstream，跳过同步");
       return;
     }
     if (status.files.length > 0) {
       sync.setStage("snapshot", `提交 ${status.files.length} 个本地变更`);
-      const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
-      await api.gitCommit(
+      const ts = deps.now().toISOString().replace("T", " ").slice(0, 19);
+      await deps.gitCommit(
         workspace,
         `markio: auto sync ${ts}`,
         "markio",
         "markio@local",
       );
-      status = await api.gitStatus(workspace);
+      status = await deps.gitStatus(workspace);
     }
-    if (status.upstream) {
+    sync.setStage("fetch", "获取远端状态");
+    await deps.gitFetch(workspace);
+    status = await deps.gitStatus(workspace);
+    if (status.behind > 0) {
       sync.setStage("pull", "拉取远端变更");
-      await api.gitPull(workspace, { rebase: false }).catch((e) => {
+      await deps.gitPull(workspace).catch((e) => {
         throw new Error(`git pull 失败：${errorMessage(e)}`);
       });
+      status = await deps.gitStatus(workspace);
+    }
+    if (status.ahead > 0) {
       sync.setStage("push", "推送本地提交");
-      await api.gitPush(workspace).catch((e) => {
+      await deps.gitPush(workspace).catch((e) => {
         throw new Error(`git push 失败：${errorMessage(e)}`);
       });
-    } else if (status.ahead > 0 || status.files.length > 0) {
-      throw new Error("当前分支没有 upstream，请先在 Git 设置中执行 push -u。");
+      status = await deps.gitStatus(workspace);
     }
-    sync.setLastSync(Date.now());
-    sync.setStage("done", "同步完成");
+    sync.setLastSync(deps.now().getTime());
+    const summary =
+      status.ahead === 0 && status.behind === 0
+        ? "同步完成"
+        : `同步完成 · 未推 ${status.ahead} · 未拉 ${status.behind}`;
+    sync.setStage("done", summary);
   } catch (e) {
-    const message = errorMessage(e);
-    const conflictFiles = conflictFilesFromError(message);
+    const rawMessage = errorMessage(e);
+    const conflictFiles = conflictFilesFromError(rawMessage);
+    const message = autoSyncMessage(
+      rawMessage,
+      !!conflictFiles,
+      deps.settings().syncConflictStrategy,
+    );
     if (conflictFiles) {
       sync.setConflict(conflictFiles, message);
     } else {
       sync.setStatus("error", message);
     }
-    reportDiagnostic({
+    deps.report({
       source: "sync",
       severity: "error",
       message: conflictFiles ? "Git 同步冲突" : "Git 同步失败",
@@ -88,6 +167,10 @@ async function runOnce(workspace: string): Promise<void> {
   } finally {
     sync.setInflight(workspace, false);
   }
+}
+
+async function runOnce(workspace: string): Promise<void> {
+  await runSyncWorkflow(workspace);
 }
 
 function clearTimer() {

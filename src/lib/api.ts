@@ -139,6 +139,20 @@ export interface RagHit {
   charEnd: number;
 }
 
+export interface GitFileStatus {
+  path: string;
+  kind: string;
+}
+
+export interface GitStatus {
+  head?: string;
+  branch?: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  files: GitFileStatus[];
+}
+
 /** 把 Rust 返回的错误 string 拆开 */
 export function parseError(e: unknown): {
   code: "CONFLICT" | "ALREADY_EXISTS" | "BASELINE_REQUIRED" | "DENIED" | "OTHER";
@@ -527,14 +541,7 @@ export const api = {
   gitClone: (url: string, dest: string, pat?: string) =>
     invoke<void>("git_clone", { url, dest, pat }),
   gitStatus: (workspace: string) =>
-    invoke<{
-      head?: string;
-      branch?: string;
-      upstream?: string;
-      ahead: number;
-      behind: number;
-      files: Array<{ path: string; kind: string }>;
-    }>("git_status", { workspace }),
+    invoke<GitStatus>("git_status", { workspace }),
   gitFetch: (workspace: string, opts?: { remote?: string; pat?: string }) =>
     invoke<void>("git_fetch", {
       workspace,

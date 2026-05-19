@@ -5,6 +5,7 @@ export type SyncStage =
   | "idle"
   | "preflight"
   | "snapshot"
+  | "fetch"
   | "pull"
   | "push"
   | "done"

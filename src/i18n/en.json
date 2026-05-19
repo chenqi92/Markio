@@ -170,7 +170,7 @@
         "comingSoon": "OAuth integration coming; for now pick a local folder as the sync root"
       },
       "policyCard": "Git auto-sync policy (hardening)",
-      "policyTip": "Auto-sync runs add / commit / pull / push on the active Git workspace at the chosen frequency; the conflict state machine is still being hardened.",
+      "policyTip": "Auto-sync runs add / commit / fetch / pull / push on the active Git workspace at the chosen frequency; conflict recovery and rollback are still being hardened.",
       "enableAutoSync": "Enable auto-sync",
       "onConflict": "On conflict",
       "frequency": "Sync frequency",

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "markio",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.welape.mdview",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -46,7 +46,9 @@
     "deep-link": {
       "mobile": [],
       "desktop": {
-        "schemes": ["markio"]
+        "schemes": [
+          "markio"
+        ]
       }
     }
   },
@@ -54,6 +56,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "resources": [
+      "PrivacyInfo.xcprivacy"
+    ],
     "category": "Productivity",
     "shortDescription": "本地优先的 Markdown 阅读器",
     "longDescription": "markio 是一款本地优先的 Markdown 阅读器，支持 8 套主题、源码/分屏/阅读三种视图、命令面板与全文搜索。",
@@ -67,14 +72,21 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["md", "markdown", "mdown", "mkd"],
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
         "name": "Markdown Document",
         "description": "Markdown document",
         "role": "Editor",
         "mimeType": "text/markdown"
       },
       {
-        "ext": ["txt"],
+        "ext": [
+          "txt"
+        ],
         "name": "Plain Text",
         "description": "Plain text document",
         "role": "Viewer",

@@ -1,6 +1,6 @@
 [package]
 name = "markio"
-version = "0.1.0"
+version = "1.0.0"
 description = "A modern markdown reader"
 authors = ["welape"]
 edition = "2021"

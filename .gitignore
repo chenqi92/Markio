@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-ssr/
+dist-mas/
 src-tauri/target/
 src-tauri/gen/
 

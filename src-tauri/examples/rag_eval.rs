@@ -1,7 +1,7 @@
 //! RAG 评估 CLI · recall@K / MRR
 //!
 //! 用法：
-//!   cargo run --bin rag_eval -- \
+//!   cargo run --example rag_eval -- \
 //!     --workspace /path/to/indexed/workspace \
 //!     --fixture ../tests/rag-fixtures/sample.json \
 //!     --k 10 \
@@ -72,7 +72,7 @@ fn parse_args() -> Result<Args, String> {
             "--base-url" => base_url = Some(take(&mut it, &flag)?),
             "--api-key" => api_key = Some(take(&mut it, &flag)?),
             "--help" | "-h" => {
-                println!("{}", include_str!("rag_eval_usage.txt"));
+                println!("{}", include_str!("../src/rag_eval_usage.txt"));
                 std::process::exit(0);
             }
             _ => return Err(format!("未知参数：{flag}")),

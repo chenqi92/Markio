@@ -27,7 +27,7 @@
 | AI 聊天 | ✅ 正式 | 多 provider、流式响应、取消、任务侧栏和引用预览已接入 |
 | 本地知识库 RAG | 🟡 可用但需加固 | sqlite-vec + FTS5 + 引用图谱 + RRF 已可用；重建取消已接入，暂停、失败恢复和重试还需补 |
 | 文件监听 / 增量索引 | 🟡 可用但需加固 | watcher 已有；需要更细事件类型、错误恢复和外部批量变更后的重建策略 |
-| Git 同步 | 🟡 可用但需加固 | git init/clone/status/fetch/commit/pull/push 等命令已接；自动同步策略仍过粗 |
+| Git 同步 | 🟡 可用但需加固 | git init/clone/status/fetch/commit/pull/push 等命令已接；自动同步已拆为 preflight/snapshot/fetch/pull/push，冲突恢复和回滚仍需加固 |
 | WebDAV / S3 / Dropbox / Google Drive | 🧪 实验 / 工具 | 有连接、列表、上传、下载、删除等基础能力；不是统一双向同步引擎 |
 | iCloud | 🧪 实验 / 工具 | 主要依赖系统文件夹同步；应用内未掌握云端冲突、同步进度和错误 |
 | 导入 Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 可用但需加固 | 已有导入命令；格式转换、资源路径、进度报告和丢失项报告需要产品化 |
@@ -89,7 +89,7 @@
 - 统一文件写入 API，所有保存路径必须经过 expected mtime/hash 或明确 force。
 - 清理旧兼容写入入口，避免绕过冲突检测。
 - 实现目录回收站：目录 move、manifest、restore、purge 全链路。
-- Git 自动同步改为状态机：preflight → snapshot → commit preview → pull/fetch → conflict → push → result。
+- Git 自动同步已拆出 preflight → snapshot → fetch → pull → push → result；继续补 commit preview、冲突恢复和回滚。
 - `syncConflictStrategy` 真正接入 Git 和云同步，不再只是设置项。
 - 后台任务失败统一进入诊断中心。
 

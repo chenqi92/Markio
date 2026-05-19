@@ -170,7 +170,7 @@
         "comingSoon": "OAuth 接入仍在开发中；当前可先选择本地目录作为同步根"
       },
       "policyCard": "Git 自动同步策略（需加固）",
-      "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、pull 和 push；冲突策略状态机仍在完善。",
+      "policyTip": "自动同步会按频率对当前活动 Git 仓库执行 add、commit、fetch、pull 和 push；冲突恢复和回滚仍在完善。",
       "enableAutoSync": "启用自动同步",
       "onConflict": "冲突时",
       "frequency": "同步频率",

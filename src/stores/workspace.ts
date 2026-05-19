@@ -354,7 +354,13 @@ export const useWorkspace = create<WorkspaceState>()(
         const id = get().activeId;
         return id ? get().treeCache[id] : undefined;
       },
-      isUnavailable: (path) => Boolean(get().unavailable[pathKey(path)]),
+      isUnavailable: (path) => {
+        const state = get();
+        const key = pathKey(path);
+        if (state.unavailable[key]) return true;
+        const ws = state.workspaces.find((w) => samePath(w.path, path));
+        return ws ? Boolean(state.unavailable[pathKey(ws.path)]) : false;
+      },
     }),
     {
       name: "markio.workspaces.v1",

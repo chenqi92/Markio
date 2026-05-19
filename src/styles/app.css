@@ -300,6 +300,75 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.status-diagnostics-panel {
+  position: fixed;
+  right: 12px;
+  bottom: 30px;
+  z-index: 80;
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 80px));
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-pane);
+  box-shadow: var(--shadow-deep);
+  color: var(--text);
+  overflow: hidden;
+}
+.status-diagnostics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+.status-diagnostics-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+.status-diagnostics-actions button {
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text-2);
+  font: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.status-diagnostics-list {
+  overflow: auto;
+  padding: 6px;
+}
+.status-diagnostic-item {
+  padding: 8px;
+  border-radius: 6px;
+  border-left: 3px solid #ff9500;
+}
+.status-diagnostic-item + .status-diagnostic-item { margin-top: 4px; }
+.status-diagnostic-item.error { border-left-color: #ff453a; }
+.status-diagnostic-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-diagnostic-title time {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.status-diagnostic-detail {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 @media (max-width: 980px) {
   .statusbar { gap: 10px; }
   .statusbar .status-meta { display: none; }

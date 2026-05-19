@@ -48,7 +48,7 @@
         "h": "Shortcuts",
         "sub": "Click \"Record\" then press the new key combo. Press Esc to cancel. Conflicts are highlighted in red."
       },
-      "sync": { "h": "Sync", "sub": "Each provider is configured and authenticated independently." },
+      "sync": { "h": "Sync", "sub": "Git auto-sync is usable but still being hardened; cloud providers are storage tools, not a full bidirectional sync engine yet." },
       "picgo": {
         "h": "Image upload",
         "sub": "Auto-upload pasted or dropped images and insert the remote URL."
@@ -56,18 +56,18 @@
       "ai": { "h": "AI Assistant", "sub": "Model, API and system prompt." },
       "rag": { "h": "Knowledge base", "sub": "Build a local vector index for the current workspace." },
       "wechat": {
-        "h": "WeChat Official Account",
-        "sub": "Configure the default style for WeChat Official Account copy."
+        "h": "WeChat layout copy",
+        "sub": "Configure WeChat layout preview and copy. Draft pushing and media upload are not complete yet."
       },
       "wxAssistant": {
         "h": "WeChat Assistant",
         "sub": "Push markio notifications via WeCom bot, ServerChan, or a custom webhook."
       },
       "smartChannel": {
-        "h": "Smart Channel",
-        "sub": "Expose markio's knowledge base as an AI query channel for other apps."
+        "h": "Smart Channel (Experimental)",
+        "sub": "Currently exposed through a temporary bridge; formal permissions and Tauri commands still need to be added."
       },
-      "export": { "h": "Import / Export", "sub": "Bring content into markio or export it elsewhere." },
+      "export": { "h": "Import / Export", "sub": "Imports land under imports/ with a short report; complex migrations may still degrade formatting." },
       "about": { "h": "About", "sub": "" }
     },
     "appear": {
@@ -148,7 +148,7 @@
       }
     },
     "sync": {
-      "drivesCard": "Providers",
+      "drivesCard": "Cloud storage tools (experimental)",
       "driveStatus": {
         "disconnected": "Not connected",
         "connected": "Connected · {{folder}}",
@@ -169,8 +169,8 @@
         "openExisting": "See the {{name}} card above",
         "comingSoon": "OAuth integration coming; for now pick a local folder as the sync root"
       },
-      "policyCard": "Sync policy",
-      "policyTip": "Auto-sync runs add / commit / pull / push on the active Git workspace at the chosen frequency.",
+      "policyCard": "Git auto-sync policy (hardening)",
+      "policyTip": "Auto-sync runs add / commit / pull / push on the active Git workspace at the chosen frequency; the conflict state machine is still being hardened.",
       "enableAutoSync": "Enable auto-sync",
       "onConflict": "On conflict",
       "frequency": "Sync frequency",

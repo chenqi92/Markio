@@ -16,7 +16,7 @@ mod watcher;
 mod webdav_ops;
 mod window_state;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -3004,13 +3004,14 @@ fn validate_rag_endpoint(provider: &str, base_url: Option<&str>) -> Result<(), S
     }
 }
 
-fn rag_jobs() -> &'static Mutex<HashSet<String>> {
-    static CELL: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    CELL.get_or_init(|| Mutex::new(HashSet::new()))
+fn rag_jobs() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static CELL: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    CELL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 struct RagJobGuard {
     workspace: String,
+    cancel: Arc<AtomicBool>,
 }
 
 impl Drop for RagJobGuard {
@@ -3021,16 +3022,36 @@ impl Drop for RagJobGuard {
     }
 }
 
+impl RagJobGuard {
+    fn cancel_token(&self) -> Arc<AtomicBool> {
+        self.cancel.clone()
+    }
+}
+
 fn begin_rag_job(workspace: &str) -> Result<RagJobGuard, String> {
     let mut jobs = rag_jobs()
         .lock()
         .map_err(|e| format!("rag job lock: {e}"))?;
-    if !jobs.insert(workspace.to_string()) {
+    if jobs.contains_key(workspace) {
         return Err("该仓库已有 RAG 索引任务在运行".to_string());
     }
+    let cancel = Arc::new(AtomicBool::new(false));
+    jobs.insert(workspace.to_string(), cancel.clone());
     Ok(RagJobGuard {
         workspace: workspace.to_string(),
+        cancel,
     })
+}
+
+fn request_rag_cancel(workspace: &str) -> Result<bool, String> {
+    let jobs = rag_jobs()
+        .lock()
+        .map_err(|e| format!("rag job lock: {e}"))?;
+    let Some(cancel) = jobs.get(workspace) else {
+        return Ok(false);
+    };
+    cancel.store(true, Ordering::Relaxed);
+    Ok(true)
 }
 
 fn empty_rag_status(workspace: &str) -> rag::IndexStatus {
@@ -3147,6 +3168,7 @@ async fn rag_reindex(
     let ws_str = ws.to_string_lossy().to_string();
     let (cfg, dim) = build_embed_config(req.config)?;
     let guard = begin_rag_job(&ws_str)?;
+    let cancel = guard.cancel_token();
     // 异步触发，不阻塞 IPC 调用方；进度通过 rag-status 事件推送。
     std::thread::spawn(move || {
         let _guard = guard;
@@ -3159,14 +3181,42 @@ async fn rag_reindex(
         };
         let app_for_progress = app.clone();
         let handle_for_progress = handle.clone();
-        if let Err(e) = rag::index::reindex_workspace(handle.clone(), cfg, move || {
-            emit_rag_status_for_handle(&app_for_progress, &handle_for_progress);
-        }) {
+        if let Err(e) = rag::index::reindex_workspace(
+            handle.clone(),
+            cfg,
+            move || {
+                emit_rag_status_for_handle(&app_for_progress, &handle_for_progress);
+            },
+            move || cancel.load(Ordering::Relaxed),
+        ) {
             eprintln!("[rag.reindex] {e}");
             emit_rag_status_for_handle(&app, &handle);
         }
     });
     Ok(())
+}
+
+#[tauri::command]
+async fn rag_cancel(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<bool, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws_str = ws.to_string_lossy().to_string();
+    let cancelled = request_rag_cancel(&ws_str)?;
+    if cancelled {
+        if let Some(handle) = rag::existing_handle(&ws_str) {
+            if let Ok(mut db) = handle.db.lock() {
+                if let Some(p) = db.progress.as_mut() {
+                    p.cancel_requested = true;
+                    p.last_error = Some("正在取消索引…".to_string());
+                }
+            }
+            emit_rag_status_for_handle(&app, &handle);
+        }
+    }
+    Ok(cancelled)
 }
 
 #[tauri::command]
@@ -3441,6 +3491,7 @@ pub fn run() {
             import_apple_notes,
             rag_status,
             rag_reindex,
+            rag_cancel,
             rag_reindex_file,
             rag_remove_file,
             rag_search,

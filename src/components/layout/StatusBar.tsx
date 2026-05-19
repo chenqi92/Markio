@@ -36,6 +36,7 @@ export function StatusBar() {
   const online = useNetwork((s) => s.online);
   const diagnostics = useDiagnostics((s) => s.items);
   const markDiagnosticsSeen = useDiagnostics((s) => s.markAllSeen);
+  const clearDiagnostics = useDiagnostics((s) => s.clear);
   const [, force] = useState(0);
   useEffect(() => {
     const handle = window.setInterval(() => force((n) => n + 1), 30_000);
@@ -48,6 +49,7 @@ export function StatusBar() {
     files: number;
   } | null>(null);
   const [watcher, setWatcher] = useState<WatcherHealthDto | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
 
   // 文件监听健康度：每 60s 拉一次。仅在异常（未运行 / 有 backend 错误）时显示，
   // 避免占用 StatusBar 视觉空间；正常运行用户感知不到。
@@ -144,18 +146,12 @@ export function StatusBar() {
     .slice(0, 5)
     .map((item) => `${item.message}${item.detail ? `：${item.detail}` : ""}`)
     .join("\n");
-  const showDiagnostics = () => {
-    if (unseenDiagnostics.length === 0) return;
-    markDiagnosticsSeen();
-    window.alert(
-      unseenDiagnostics
-        .slice(0, 10)
-        .map(
-          (item) =>
-            `【${item.source}】${item.message}${item.detail ? `\n${item.detail}` : ""}`,
-        )
-        .join("\n\n"),
-    );
+  const toggleDiagnostics = () => {
+    if (diagnostics.length === 0) return;
+    setDiagnosticsOpen((open) => {
+      if (!open) markDiagnosticsSeen();
+      return !open;
+    });
   };
   const syncLabel =
     syncStatus === "syncing"
@@ -261,12 +257,12 @@ export function StatusBar() {
           {!watcher.running ? "监听已停止" : `监听 ${watcher.backendErrors} 错误`}
         </span>
       )}
-      {unseenDiagnostics.length > 0 && (
+      {diagnostics.length > 0 && (
         <button
           type="button"
           className="item status-alert"
-          title={diagnosticTitle}
-          onClick={showDiagnostics}
+          title={diagnosticTitle || "查看后台诊断"}
+          onClick={toggleDiagnostics}
           style={{
             background: "transparent",
             border: "none",
@@ -278,8 +274,35 @@ export function StatusBar() {
             font: "inherit",
           }}
         >
-          ⚠ 后台 {unseenDiagnostics.length} 错误
+          ⚠ 后台 {unseenDiagnostics.length || diagnostics.length} 错误
         </button>
+      )}
+      {diagnosticsOpen && diagnostics.length > 0 && (
+        <div className="status-diagnostics-panel" role="dialog" aria-label="后台诊断">
+          <div className="status-diagnostics-head">
+            <strong>后台诊断</strong>
+            <div className="status-diagnostics-actions">
+              <button type="button" onClick={clearDiagnostics}>清空</button>
+              <button type="button" onClick={() => setDiagnosticsOpen(false)}>关闭</button>
+            </div>
+          </div>
+          <div className="status-diagnostics-list">
+            {diagnostics.slice(0, 10).map((item) => (
+              <div
+                key={item.id}
+                className={`status-diagnostic-item ${item.severity}`}
+              >
+                <div className="status-diagnostic-title">
+                  <span>[{item.source}] {item.message}</span>
+                  <time>{new Date(item.timestamp).toLocaleTimeString()}</time>
+                </div>
+                {item.detail && (
+                  <div className="status-diagnostic-detail">{item.detail}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {git && git.branch && (
         <span

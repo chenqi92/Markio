@@ -21,6 +21,8 @@
 
 ## 功能矩阵
 
+状态含义：✅ 正式可用；🟡 可用但仍需加固；🧪 实验 / 工具；❌ 未做。
+
 | 类目 | 功能 | 状态 |
 | --- | --- | --- |
 | **阅读** | markdown-it 级别的 GFM、表格、任务列表、脚注、删除线、智能引号 | ✅ |
@@ -34,26 +36,30 @@
 | | 工具栏格式行 / 浮动气泡 / 斜杠菜单 | ✅ |
 | | 自动补全 `[[` `@` `#` `:` | ✅ |
 | **文件** | 多仓库切换 | ✅ |
-| | 文件树 + 右键菜单（重命名 / 在 Finder 显示 / 复制路径 / 改图标 / 回收站） | ✅ |
+| | 文件树 + 右键菜单（重命名 / 在 Finder 显示 / 复制路径 / 改图标 / 回收站） | 🟡 |
 | | 拖文件 / 文件夹到窗口直接打开 | ✅ |
 | | 历史快照（每次保存写 `.markio/history/`） | ✅ |
 | | 回收站（软删 + 恢复 + 永久删除） | ✅ |
 | | 原子写 + 外部修改冲突检测 | ✅ |
-| **搜索** | ⌘K 命令面板 + 文件名快查（客户端） | ✅ |
-| | ⌘⇧F 全文搜索（Rust grep） | ✅ |
-| | ⌘F 文档内查找 + 高亮 + 上下翻 | ✅ |
+| **搜索** | ⌘K 命令面板 + 文件名快查（客户端） | 🟡 |
+| | ⌘⇧F 全文搜索（Rust grep） | 🟡 |
+| | ⌘F 文档内查找 + 高亮 + 上下翻 | 🟡 |
 | **导出** | PDF（系统打印对话框） | ✅ |
 | | HTML 单文件 | ✅ |
 | | 复制为 HTML / Markdown 片段 | ✅ |
-| | 微信公众号样式预览 + 复制 | ✅ |
+| | 微信公众号样式预览 + 复制 | 🟡 |
 | **AI** | Anthropic / OpenAI / Gemini / DeepSeek / Ollama / 自定义 | ✅ |
 | | 流式响应 + 取消生成 | ✅ |
 | | API Key 进 OS 钥匙串（不进 Tauri Store / localStorage） | ✅ |
 | | 把当前笔记前 6000 字作 system prompt | ✅ |
-| **本地知识库** | sqlite-vec 向量索引（每仓库一份 `.markio/rag.db`） | ✅ |
+| **本地知识库** | sqlite-vec 向量索引（每仓库一份 `.markio/rag.db`） | 🟡 |
 | | 嵌入模型：本地 Ollama / OpenAI 兼容（用户在设置里切换） | ✅ |
 | | 混合检索：向量 + FTS5 关键词 + 引用图谱 → RRF 融合 | ✅ |
-| | 保存笔记后自动增量更新；删除 / 移入回收站自动清理 | ✅ |
+| | 保存笔记后自动增量更新；删除 / 移入回收站自动清理 | 🟡 |
+| **同步 / 云存储** | Git init / clone / status / fetch / commit / pull / push | 🟡 |
+| | WebDAV / S3 / Dropbox / Google Drive 连接、列表、上传、删除 | 🧪 |
+| **导入** | Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 |
+| | Roam Markdown ZIP / Logseq graph 目录 | 🟡 |
 | **平台** | macOS（含 Mac App Store 打包脚本） | ✅ |
 | | Windows MSI / NSIS | ✅（脚本就绪，需要 Windows 机器跑） |
 | | Linux AppImage / deb | ✅ |

@@ -5031,12 +5031,54 @@ function useWorkspaceForRag() {
 }
 
 const IMPORT_SOURCES = [
-  { id: "notion", name: "Notion", logo: "/brand/import/notion.svg", color: "#111111" },
-  { id: "bear", name: "Bear", logo: "/brand/import/bear.svg", color: "#111827" },
-  { id: "obsidian", name: "Obsidian", logo: "/brand/import/obsidian.svg", color: "#7c3aed" },
-  { id: "evernote", name: "印象笔记", logo: "/brand/import/evernote.svg", color: "#00a82d" },
-  { id: "roam", name: "Roam", logo: "/brand/import/roamresearch.svg", color: "#475569" },
-  { id: "logseq", name: "Logseq", logo: "/brand/import/logseq.svg", color: "#2563eb" },
+  {
+    id: "notion",
+    name: "Notion",
+    logo: "/brand/import/notion.svg",
+    color: "#111111",
+    inputHint: "ZIP 归档",
+    inputTitle: "选择 Notion 导出的 .zip",
+  },
+  {
+    id: "bear",
+    name: "Bear",
+    logo: "/brand/import/bear.svg",
+    color: "#111827",
+    inputHint: "Bearbook / ZIP",
+    inputTitle: "选择 .bearbook 或 Bear 导出的 .zip",
+  },
+  {
+    id: "obsidian",
+    name: "Obsidian",
+    logo: "/brand/import/obsidian.svg",
+    color: "#7c3aed",
+    inputHint: "仓库目录",
+    inputTitle: "选择 Obsidian vault 目录",
+  },
+  {
+    id: "evernote",
+    name: "印象笔记",
+    logo: "/brand/import/evernote.svg",
+    color: "#00a82d",
+    inputHint: "ENEX 文件",
+    inputTitle: "选择印象笔记导出的 .enex",
+  },
+  {
+    id: "roam",
+    name: "Roam",
+    logo: "/brand/import/roamresearch.svg",
+    color: "#475569",
+    inputHint: "Markdown ZIP",
+    inputTitle: "选择 Roam 的 Markdown .zip；JSON 会跳过并给出警告",
+  },
+  {
+    id: "logseq",
+    name: "Logseq",
+    logo: "/brand/import/logseq.svg",
+    color: "#2563eb",
+    inputHint: "Graph 目录",
+    inputTitle: "选择 Logseq graph 目录",
+  },
 ];
 
 type ImportProvider =
@@ -5046,6 +5088,8 @@ type ImportProvider =
   | "evernote"
   | "roam"
   | "logseq";
+
+type ImportBusyProvider = ImportProvider | "apple-notes";
 
 const IMPORT_PROVIDER_MAP: Record<string, ImportProvider | null> = {
   notion: "notion",
@@ -5114,7 +5158,7 @@ function ImportExport() {
   );
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
   const refreshTree = useWorkspaceStore((s) => s.refreshTree);
-  const [importBusy, setImportBusy] = useState<ImportProvider | null>(null);
+  const [importBusy, setImportBusy] = useState<ImportBusyProvider | null>(null);
   const [importMsg, setImportMsg] = useState<{
     kind: "ok" | "err" | "info";
     text: string;
@@ -5155,7 +5199,7 @@ function ImportExport() {
       setImportMsg({ kind: "err", text: "请先打开一个仓库" });
       return;
     }
-    setImportBusy("apple-notes" as ImportProvider);
+    setImportBusy("apple-notes");
     setImportMsg({
       kind: "info",
       text: "正在通过 osascript 读取 Notes.app…（首次会弹系统授权对话框）",
@@ -5213,13 +5257,13 @@ function ImportExport() {
         </div>
       </div>
       <div className="settings-card">
-        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion、Roam、Bear、印象选归档文件，Obsidian/Logseq 选目录。">
+        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion/Roam/Bear 选 ZIP，印象笔记选 ENEX，Obsidian/Logseq 选目录。">
           从其它工具导入
         </CardTitle>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
             gap: 8,
             padding: "12px 16px",
           }}
@@ -5258,15 +5302,28 @@ function ImportExport() {
                       ? "请先打开仓库"
                       : importBusy === provider
                         ? "导入中…"
-                        : `从 ${n.name} 导入`
+                        : n.inputTitle
                 }
               >
                 <BrandMark logo={n.logo} color={n.color} size={28} />
-                <div>
-                  {n.name}
-                  {importBusy === provider && (
-                    <div style={{ fontSize: 10, color: "var(--text-3)" }}>导入中…</div>
-                  )}
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {n.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>
+                    {importBusy === provider
+                      ? "导入中…"
+                      : !activeWorkspace
+                        ? "先打开仓库"
+                        : n.inputHint}
+                  </div>
                 </div>
               </button>
             );
@@ -5322,7 +5379,7 @@ function ImportExport() {
               <div>
                 Apple Notes（macOS）
                 <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>
-                  {importBusy === ("apple-notes" as ImportProvider)
+                  {importBusy === "apple-notes"
                     ? "导入中…"
                     : "首次会弹系统授权对话框"}
                 </div>

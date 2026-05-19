@@ -1,36 +1,47 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "../ui/Icon";
+import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { api } from "@/lib/api";
 import { writeText } from "@/lib/clipboard";
 
 const STYLES = [
-  { id: "warm", name: "暖橘 · 杂志", accent: "#ff7a45" },
-  { id: "blue", name: "海蓝 · 经典", accent: "#0a84ff" },
-  { id: "ink", name: "墨黑 · 极简", accent: "#1d1d1f" },
-  { id: "rose", name: "桃粉 · 文艺", accent: "#c43d63" },
-];
+  { id: "warmMagazine", name: "暖橘 · 杂志", accent: "#ff7a45" },
+  { id: "cleanTech", name: "清爽 · 科技", accent: "#0a84ff" },
+  { id: "inkClassic", name: "墨色 · 经典", accent: "#1d1d1f" },
+  { id: "minimal", name: "极简 · 文章", accent: "#6b7280" },
+] as const;
 
 /**
- * 微信公众号导出抽屉。
- * 接入真实 API 推送在 设置 → 微信公众号 里配置；目前提供：
+ * 微信公众号排版复制抽屉。
+ * 目前提供：
  * - 样式选择
  * - 预览 HTML 渲染（沿用 Rust 的 render）
  * - 把渲染后的内容复制到剪贴板（公众号支持粘贴 HTML 样式）
  */
 export function WeChatSheet({ onClose }: { onClose: () => void }) {
   const tab = useTabs((s) => s.activeTab());
+  const styleId = useSettings((s) => s.wechatStyle);
+  const setPreference = useSettings((s) => s.setPreference);
   const setToast = useUI((s) => s.setToast);
-  const [style, setStyle] = useState(STYLES[0]);
   const [html, setHtml] = useState<string>("");
+  const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];
 
-  useMemo(() => {
+  useEffect(() => {
     if (!tab) return;
+    let cancelled = false;
     api
       .renderMarkdown(tab.content)
-      .then((r) => setHtml(r.html))
-      .catch(() => setHtml(""));
+      .then((r) => {
+        if (!cancelled) setHtml(r.html);
+      })
+      .catch(() => {
+        if (!cancelled) setHtml("");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [tab?.id, tab?.content]);
 
   const copy = async () => {
@@ -163,9 +174,9 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
             微
           </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>导出到微信公众号</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>公众号排版复制</div>
             <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-              选择样式 → 复制到公众号编辑器即可保留格式
+              选择样式 → 复制到公众号编辑器，图片仍需手动上传
             </div>
           </div>
           <button
@@ -187,7 +198,7 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
                 className={
                   "wechat-style-row" + (style.id === s.id ? " active" : "")
                 }
-                onClick={() => setStyle(s)}
+                onClick={() => setPreference("wechatStyle", s.id)}
               >
                 <span
                   style={{
@@ -204,24 +215,15 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
               </button>
             ))}
             <div className="settings-card-h" style={{ marginTop: 16 }}>
-              发布
+              复制
             </div>
             <button
               type="button"
               className="settings-btn primary"
-              style={{ width: "100%", marginBottom: 6 }}
+              style={{ width: "100%" }}
               onClick={copy}
             >
-              复制为公众号样式
-            </button>
-            <button
-              type="button"
-              className="settings-btn"
-              style={{ width: "100%" }}
-              disabled
-              title="需在 设置 → 微信公众号 绑定账号"
-            >
-              直接推送草稿
+              复制排版 HTML
             </button>
           </aside>
           <div className="wechat-preview-pane">

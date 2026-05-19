@@ -37,6 +37,9 @@ vite.config.ts.timestamp-*.mjs
 # 开发期日志（前后端汇总）
 dev-logs/
 
+# Markio local vault caches
+.markio/
+
 # Performance fixtures — small ones tracked, big ones generated locally
 tests/fixtures/perf/1mb.md
 tests/fixtures/perf/5mb.md

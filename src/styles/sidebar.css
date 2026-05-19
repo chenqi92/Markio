@@ -230,6 +230,46 @@
   color: var(--text-3);
   font-size: 11.5px;
 }
+.tree-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.tree-empty-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ff9500;
+  background: rgba(255, 149, 0, 0.12);
+  border: 0.5px solid rgba(255, 149, 0, 0.22);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.tree-empty-path {
+  display: block;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  margin: 6px 0 10px;
+  word-break: break-all;
+}
+.tree-empty-note {
+  display: block;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.tree-empty-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 .tree-empty button {
   margin-top: 10px;
   padding: 6px 12px;
@@ -239,7 +279,18 @@
   font-size: 11.5px;
   font-weight: 600;
 }
+.tree-empty-actions button { margin-top: 0; }
+.tree-empty button.secondary {
+  background: var(--bg-pane-2);
+  color: var(--text-2);
+  border: 0.5px solid var(--border);
+}
 .tree-empty button:hover { filter: brightness(1.08); }
+.tree-empty button.secondary:hover {
+  background: var(--bg-elev);
+  color: var(--text);
+  filter: none;
+}
 
 /* trash row controls */
 .trash-act {

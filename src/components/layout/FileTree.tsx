@@ -57,25 +57,16 @@ export function FileTree() {
 
   if (unavailable) {
     return (
-      <div className="tree scroll tree-empty">
-        仓库路径不可用
-        <br />
-        <span
-          style={{
-            color: "var(--text-3)",
-            fontSize: 11,
-            display: "block",
-            margin: "6px 0 10px",
-            wordBreak: "break-all",
-          }}
-        >
-          {ws.path}
+      <div className="tree scroll tree-empty tree-unavailable">
+        <span className="tree-empty-icon" aria-hidden>
+          <Icon name="alert" size={18} />
         </span>
-        <span style={{ color: "var(--text-3)", fontSize: 11 }}>
+        <strong>仓库路径不可用</strong>
+        <span className="tree-empty-path">{ws.path}</span>
+        <span className="tree-empty-note">
           外接盘未挂载、目录被删除或同步未拉下来时会出现此状态。
         </span>
-        <br />
-        <div style={{ display: "inline-flex", gap: 8, marginTop: 8 }}>
+        <div className="tree-empty-actions">
           <button
             type="button"
             onClick={() => {
@@ -86,6 +77,7 @@ export function FileTree() {
           </button>
           <button
             type="button"
+            className="secondary"
             onClick={async () => {
               const dir = await pickDirectory();
               if (dir) await addWorkspace(dir);

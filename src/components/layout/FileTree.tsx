@@ -22,6 +22,9 @@ export function FileTree() {
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const loadDir = useWorkspace((s) => s.loadDir);
+  const unavailable = useWorkspace((s) =>
+    ws ? s.isUnavailable(ws.path) : false,
+  );
   const activePath = useTabs((s) =>
     s.tabs.find((t) => t.id === s.activeId)?.path,
   );
@@ -48,6 +51,49 @@ export function FileTree() {
         >
           选择文件夹…
         </button>
+      </div>
+    );
+  }
+
+  if (unavailable) {
+    return (
+      <div className="tree scroll tree-empty">
+        仓库路径不可用
+        <br />
+        <span
+          style={{
+            color: "var(--text-3)",
+            fontSize: 11,
+            display: "block",
+            margin: "6px 0 10px",
+            wordBreak: "break-all",
+          }}
+        >
+          {ws.path}
+        </span>
+        <span style={{ color: "var(--text-3)", fontSize: 11 }}>
+          外接盘未挂载、目录被删除或同步未拉下来时会出现此状态。
+        </span>
+        <br />
+        <div style={{ display: "inline-flex", gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            onClick={() => {
+              void refreshTree(ws.id);
+            }}
+          >
+            重试
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const dir = await pickDirectory();
+              if (dir) await addWorkspace(dir);
+            }}
+          >
+            选择其它文件夹…
+          </button>
+        </div>
       </div>
     );
   }

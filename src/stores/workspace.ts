@@ -11,6 +11,12 @@ interface WorkspaceState {
   activeId: string | null;
   treeCache: Record<string, FileEntry | undefined>;
   loading: boolean;
+  /**
+   * 当前注册失败的仓库路径（路径键 → true）。
+   * 路径不存在 / 权限拒绝时设置；下次再次成功注册时清除。
+   * 用于让上层 UI 显示"不可用"占位，并让 fs / vault-index 操作静默跳过。
+   */
+  unavailable: Record<string, true>;
   /** 已经向 Rust 注册过的路径（去重） */
   _registered: Set<string>;
 
@@ -24,6 +30,7 @@ interface WorkspaceState {
   loadDir: (id: string, path: string) => Promise<void>;
   activeWorkspace: () => Workspace | undefined;
   activeTree: () => FileEntry | undefined;
+  isUnavailable: (path: string) => boolean;
 }
 
 function pathKey(path: string): string {
@@ -108,19 +115,56 @@ async function registerWorkspace(path: string, registered: Set<string>) {
   return canon;
 }
 
-async function safeRegister(path: string, registered: Set<string>) {
+/** os error 2 / ENOENT — 仓库根路径已被删除或挂载点已离线 */
+function isMissingPathError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /os error 2|No such file or directory|找不到|不存在/i.test(msg);
+}
+
+type SetState = {
+  (
+    partial:
+      | Partial<WorkspaceState>
+      | ((state: WorkspaceState) => Partial<WorkspaceState>),
+  ): void;
+};
+
+async function safeRegister(
+  path: string,
+  registered: Set<string>,
+  set: SetState,
+) {
   if (isRegistered(registered, path)) return path;
   try {
-    return await registerWorkspace(path, registered);
-  } catch (e) {
-    console.error("workspaceRegister failed", path, e);
-    reportDiagnostic({
-      source: "workspace",
-      severity: "error",
-      message: "仓库注册失败",
-      detail: e,
-      workspace: path,
+    const canon = await registerWorkspace(path, registered);
+    set((s) => {
+      if (!s.unavailable[pathKey(path)] && !s.unavailable[pathKey(canon)]) {
+        return {};
+      }
+      const next = { ...s.unavailable };
+      delete next[pathKey(path)];
+      delete next[pathKey(canon)];
+      return { unavailable: next };
     });
+    return canon;
+  } catch (e) {
+    console.warn("workspaceRegister failed", path, e);
+    set((s) => {
+      const key = pathKey(path);
+      if (s.unavailable[key]) return {};
+      return { unavailable: { ...s.unavailable, [key]: true } };
+    });
+    // 路径缺失是常见场景（外接盘未挂载 / 目录被删 / 同步未拉下来），
+    // 不再以错误弹窗打扰用户；UI 已经在文件树位置显示"不可用"占位。
+    if (!isMissingPathError(e)) {
+      reportDiagnostic({
+        source: "workspace",
+        severity: "error",
+        message: "仓库注册失败",
+        detail: e,
+        workspace: path,
+      });
+    }
     return null;
   }
 }
@@ -137,17 +181,27 @@ export const useWorkspace = create<WorkspaceState>()(
       activeId: null,
       treeCache: {},
       loading: false,
+      unavailable: {},
       _registered: new Set<string>(),
 
       hydrate: async () => {
         const registered = get()._registered;
         const activeId = get().activeId;
         const active = get().workspaces.find((w) => w.id === activeId);
-        if (active) await safeRegister(active.path, registered);
+        if (active) await safeRegister(active.path, registered, set);
       },
 
       addWorkspace: async (path) => {
         const canon = await registerWorkspace(path, get()._registered);
+        set((s) => {
+          if (!s.unavailable[pathKey(path)] && !s.unavailable[pathKey(canon)]) {
+            return {};
+          }
+          const next = { ...s.unavailable };
+          delete next[pathKey(path)];
+          delete next[pathKey(canon)];
+          return { unavailable: next };
+        });
         const existing = get().workspaces.find(
           (w) => samePath(w.path, path) || samePath(w.path, canon),
         );
@@ -173,10 +227,13 @@ export const useWorkspace = create<WorkspaceState>()(
         const ws = get().workspaces.find((w) => w.id === id);
         set((s) => {
           const next = s.workspaces.filter((w) => w.id !== id);
+          const nextUnavailable = ws ? { ...s.unavailable } : s.unavailable;
+          if (ws) delete nextUnavailable[pathKey(ws.path)];
           return {
             workspaces: next,
             activeId: s.activeId === id ? next[0]?.id ?? null : s.activeId,
             treeCache: { ...s.treeCache, [id]: undefined },
+            unavailable: nextUnavailable,
           };
         });
         if (ws) {
@@ -208,7 +265,15 @@ export const useWorkspace = create<WorkspaceState>()(
             treeRefreshQueued.delete(targetId);
             const ws = get().workspaces.find((w) => w.id === targetId);
             if (!ws) return;
-            await safeRegister(ws.path, get()._registered);
+            const canon = await safeRegister(ws.path, get()._registered, set);
+            // 注册失败（路径不存在等）→ 直接返回，避免连锁触发 readDir 报错
+            if (!canon) {
+              set((s) => ({
+                treeCache: { ...s.treeCache, [targetId]: undefined },
+              }));
+              if (!treeRefreshQueued.has(targetId)) break;
+              continue;
+            }
             set({ loading: true });
             try {
               const previous = get().treeCache[targetId];
@@ -218,13 +283,20 @@ export const useWorkspace = create<WorkspaceState>()(
               }));
             } catch (e) {
               console.error("readDir failed", e);
-              reportDiagnostic({
-                source: "workspace",
-                severity: "error",
-                message: "文件树刷新失败",
-                detail: e,
-                workspace: ws.path,
-              });
+              if (!isMissingPathError(e)) {
+                reportDiagnostic({
+                  source: "workspace",
+                  severity: "error",
+                  message: "文件树刷新失败",
+                  detail: e,
+                  workspace: ws.path,
+                });
+              } else {
+                set((s) => ({
+                  unavailable: { ...s.unavailable, [pathKey(ws.path)]: true },
+                  treeCache: { ...s.treeCache, [targetId]: undefined },
+                }));
+              }
             } finally {
               set({ loading: false });
             }
@@ -242,7 +314,8 @@ export const useWorkspace = create<WorkspaceState>()(
         if (dirLoadInFlight.has(key)) return;
         dirLoadInFlight.add(key);
         try {
-          await safeRegister(ws.path, get()._registered);
+          const canon = await safeRegister(ws.path, get()._registered, set);
+          if (!canon) return;
           const dir = await api.readDir(path);
           set((s) => {
             const current = s.treeCache[id];
@@ -257,13 +330,19 @@ export const useWorkspace = create<WorkspaceState>()(
           });
         } catch (e) {
           console.error("loadDir failed", path, e);
-          reportDiagnostic({
-            source: "workspace",
-            severity: "warning",
-            message: "目录加载失败",
-            detail: pathErrorDetail(path, e),
-            workspace: ws.path,
-          });
+          if (!isMissingPathError(e)) {
+            reportDiagnostic({
+              source: "workspace",
+              severity: "warning",
+              message: "目录加载失败",
+              detail: pathErrorDetail(path, e),
+              workspace: ws.path,
+            });
+          } else {
+            set((s) => ({
+              unavailable: { ...s.unavailable, [pathKey(ws.path)]: true },
+            }));
+          }
         } finally {
           dirLoadInFlight.delete(key);
         }
@@ -275,6 +354,7 @@ export const useWorkspace = create<WorkspaceState>()(
         const id = get().activeId;
         return id ? get().treeCache[id] : undefined;
       },
+      isUnavailable: (path) => Boolean(get().unavailable[pathKey(path)]),
     }),
     {
       name: "markio.workspaces.v1",

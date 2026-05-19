@@ -32,6 +32,11 @@ function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function todayPatch(s: Pick<State, "completedDay">) {
+  const tk = todayKey();
+  return s.completedDay === tk ? null : { completedDay: tk, completedFocus: 0 };
+}
+
 interface State {
   mode: PomodoroMode;
   /** 当前剩余秒数 */
@@ -47,6 +52,7 @@ interface State {
   pause: () => void;
   reset: (mode?: PomodoroMode) => void;
   setMode: (mode: PomodoroMode) => void;
+  ensureToday: () => void;
   /** 由全局 ticker 每秒触发 */
   tick: () => void;
 }
@@ -62,33 +68,46 @@ export const usePomodoro = create<State>()(
       completedFocus: 0,
       start: () => {
         requestNotificationPermission();
-        set({ running: true, lastTick: Date.now() });
+        const patch = todayPatch(get());
+        set({ ...(patch ?? {}), running: true, lastTick: Date.now() });
       },
       pause: () => set({ running: false, lastTick: null }),
       reset: (mode) => {
         const m = mode ?? get().mode;
-        set({ mode: m, remaining: DURATION[m], running: false, lastTick: null });
+        const patch = todayPatch(get());
+        set({ ...(patch ?? {}), mode: m, remaining: DURATION[m], running: false, lastTick: null });
       },
-      setMode: (mode) =>
-        set({ mode, remaining: DURATION[mode], running: false, lastTick: null }),
+      setMode: (mode) => {
+        const patch = todayPatch(get());
+        set({ ...(patch ?? {}), mode, remaining: DURATION[mode], running: false, lastTick: null });
+      },
+      ensureToday: () => {
+        const patch = todayPatch(get());
+        if (patch) set(patch);
+      },
       tick: () => {
         const s = get();
-        if (!s.running) return;
+        const patch = todayPatch(s);
+        const current = patch ? { ...s, ...patch } : s;
+        if (patch) {
+          set(patch);
+        }
+        if (!current.running) return;
         const now = Date.now();
-        const delta = s.lastTick ? Math.floor((now - s.lastTick) / 1000) : 1;
+        const delta = current.lastTick ? Math.floor((now - current.lastTick) / 1000) : 1;
         if (delta < 1) return;
-        const next = s.remaining - delta;
+        const next = current.remaining - delta;
         if (next > 0) {
-          set({ remaining: next, lastTick: s.lastTick! + delta * 1000 });
+          set({ remaining: next, lastTick: current.lastTick! + delta * 1000 });
           return;
         }
         // 完成本局
         const tk = todayKey();
-        const wasFocus = s.mode === "focus";
-        const completedDay = s.completedDay === tk ? s.completedDay : tk;
+        const wasFocus = current.mode === "focus";
+        const completedDay = current.completedDay === tk ? current.completedDay : tk;
         const completedFocus =
-          s.completedDay === tk
-            ? s.completedFocus + (wasFocus ? 1 : 0)
+          current.completedDay === tk
+            ? current.completedFocus + (wasFocus ? 1 : 0)
             : wasFocus
             ? 1
             : 0;

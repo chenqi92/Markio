@@ -27,6 +27,7 @@ export function PomodoroChip() {
   const pause = usePomodoro((s) => s.pause);
   const reset = usePomodoro((s) => s.reset);
   const setMode = usePomodoro((s) => s.setMode);
+  const ensureToday = usePomodoro((s) => s.ensureToday);
   const tick = usePomodoro((s) => s.tick);
 
   const [open, setOpen] = useState(false);
@@ -38,6 +39,12 @@ export function PomodoroChip() {
     const id = window.setInterval(() => tick(), 1000);
     return () => window.clearInterval(id);
   }, [running, tick]);
+
+  useEffect(() => {
+    ensureToday();
+    const id = window.setInterval(ensureToday, 60_000);
+    return () => window.clearInterval(id);
+  }, [ensureToday]);
 
   // 点击外部关闭面板
   useEffect(() => {

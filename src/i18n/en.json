@@ -122,6 +122,12 @@
         "slash": "Slash command only",
         "toolbar": "Top toolbar only"
       },
+      "bubbleTriggerCard": "Floating bubble trigger",
+      "bubbleTriggerHelp": "Requires the floating bubble to be enabled above (All / Floating bubble only)",
+      "bubbleTrigger": {
+        "selection": "When text is selected (left-click drag)",
+        "rightClick": "Right-click (suppresses native browser menu)"
+      },
       "modeCard": "Default view",
       "mode": {
         "source": "Source only",

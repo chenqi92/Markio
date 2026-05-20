@@ -331,11 +331,14 @@ async fn md_render_stream(
         if sections.is_empty() {
             sections.push(String::new());
         }
+        // 累计每段在原文中的起始行号，作为 data-line 偏移传给 render；
+        // 否则每段都从 1 开始计数，前端 anchors 非单调，分屏 scroll sync 错位
+        let mut line_offset: usize = 0;
         for (idx, sec) in sections.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
-            let r = markdown::render(sec, base.as_deref(), &roots);
+            let r = markdown::render_with_line_offset(sec, base.as_deref(), &roots, line_offset);
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
@@ -347,6 +350,7 @@ async fn md_render_stream(
                     "html": r.html,
                 }),
             );
+            line_offset += sec.matches('\n').count();
         }
         if cancel.load(Ordering::Relaxed) {
             return;

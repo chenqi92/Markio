@@ -25,11 +25,12 @@ import {
 } from "./table-edit";
 import { wysiwygMarkdown } from "./wysiwyg";
 import { getMathContext, type MathContext } from "@/lib/math-context";
+import { registerPane as registerScrollPane } from "@/lib/splitScrollSync";
 
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onScroll?: (info: import("@/lib/scrollSync").ScrollInfo) => void;
+  /** 行号跳转 / 全局搜索点击结果时用，单次目标。分屏滚动同步走 splitScrollSync 不经过这里。 */
   scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
   onPasteImages?: (
     files: File[],
@@ -46,6 +47,11 @@ interface Props {
     rows: number;
     cols: number;
     rect: TableSelectionRect | null;
+  }) => void;
+  /** 非表格区域右键：把屏幕坐标 + 文档位置交给宿主。宿主总是会处理（屏蔽原生菜单）。 */
+  onEditorContextMenu?: (info: {
+    coords: { x: number; y: number };
+    pos: number;
   }) => void;
   onSlashTrigger?: (coords: { x: number; y: number }) => void;
   onAutocompleteUpdate?: (
@@ -69,11 +75,11 @@ const CODE_FENCE_SCAN_LIMIT_LINES = 800;
 export const SourceEditor = memo(function SourceEditor({
   value,
   onChange,
-  onScroll,
   scrollTarget,
   onPasteImages,
   onSelectionChange,
   onTableContextMenu,
+  onEditorContextMenu,
   onSlashTrigger,
   onAutocompleteUpdate,
   onMathContext,
@@ -87,19 +93,16 @@ export const SourceEditor = memo(function SourceEditor({
   const findRegex = useUI((s) => s.findRegex);
   const ref = useRef<ReactCodeMirrorRef>(null);
   const [view, setView] = useState<EditorView | null>(null);
-  const suppressScrollRef = useRef(false);
   // 所有 callback prop 都锁进 ref，extensions useMemo 不依赖它们的身份。
   // 父组件 rerender / callback 重建不再触发 CodeMirror reconfigure（重建解析器 + 装饰链很贵）。
-  const onScrollRef = useRef(onScroll);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onAutocompleteUpdateRef = useRef(onAutocompleteUpdate);
   const onMathContextRef = useRef(onMathContext);
   useEffect(() => {
-    onScrollRef.current = onScroll;
     onSelectionChangeRef.current = onSelectionChange;
     onAutocompleteUpdateRef.current = onAutocompleteUpdate;
     onMathContextRef.current = onMathContext;
-  }, [onScroll, onSelectionChange, onAutocompleteUpdate, onMathContext]);
+  }, [onSelectionChange, onAutocompleteUpdate, onMathContext]);
   const tableSelectionRectRef = useRef<TableSelectionRect | null>(null);
   const tableDragRef = useRef<{
     tableFrom: number;
@@ -117,44 +120,6 @@ export const SourceEditor = memo(function SourceEditor({
       listContinuationKeymap,
       smartQuotesHandler,
       mathInputHandler,
-      // 用 CodeMirror 自己的 domEventHandlers 注册 scroll —— 它内部会把 handler
-      // 挂到正确的 scrollDOM/scroller 上（用 React useEffect 的 [view] 依赖在某些
-      // 渲染时序下不一定能正确触发重绑）
-      EditorView.domEventHandlers({
-        scroll(_event, v) {
-          if (suppressScrollRef.current) return;
-          const fn = onScrollRef.current;
-          if (!fn) return;
-          const el = v.scrollDOM;
-          // Compute the fractional source line at the viewport top, so the
-          // preview can line-anchor instead of percentage-snap. lineBlockAt
-          // returns the block info for a doc position; we go through a coord
-          // probe so soft-wrapped lines still resolve sensibly.
-          let topLine: number | undefined;
-          try {
-            const docTop = el.getBoundingClientRect().top;
-            const probe = v.posAtCoords({ x: 0, y: docTop + 1 });
-            if (probe != null) {
-              const line = v.state.doc.lineAt(probe);
-              const block = v.lineBlockAt(line.from);
-              const within =
-                block.height > 0
-                  ? Math.max(0, Math.min(1, (el.scrollTop - block.top) / block.height))
-                  : 0;
-              topLine = line.number + within;
-            }
-          } catch {
-            // posAtCoords may throw if view isn't mounted yet; fall back to
-            // percentage-based sync in that case.
-          }
-          fn({
-            top: el.scrollTop,
-            height: el.scrollHeight,
-            clientHeight: el.clientHeight,
-            topLine,
-          });
-        },
-      }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) tableSelectionRectRef.current = null;
         const onSel = onSelectionChangeRef.current;
@@ -241,6 +206,63 @@ export const SourceEditor = memo(function SourceEditor({
     return () => registerEditor(null);
   }, [view]);
 
+  // 源码侧滚动通过 splitScrollSync 单例总线驱动：注册「读取 / 写入视口顶部
+  // 源码行号」的能力，由总线在另一端 scroll 触发时直接命令式写过来。
+  useEffect(() => {
+    if (!view) return;
+    registerScrollPane("source", {
+      el: view.scrollDOM,
+      getTopLine: () => {
+        try {
+          const el = view.scrollDOM;
+          const rect = el.getBoundingClientRect();
+          const probeY = rect.top + 1;
+          // x=0 容易落到 gutter / window 边缘外，posAtCoords 会返回 null；
+          // 优先用 scrollDOM 内容区左缘 +4，落空再退到右缘 -4
+          const probe =
+            view.posAtCoords({ x: rect.left + 4, y: probeY }) ??
+            view.posAtCoords({ x: rect.right - 4, y: probeY });
+          if (probe == null) return null;
+          const line = view.state.doc.lineAt(probe);
+          const block = view.lineBlockAt(line.from);
+          const within =
+            block.height > 0
+              ? Math.max(0, Math.min(1, (el.scrollTop - block.top) / block.height))
+              : 0;
+          return line.number + within;
+        } catch {
+          return null;
+        }
+      },
+      setTopLine: (line) => {
+        const el = view.scrollDOM;
+        const lineNo = Math.max(
+          1,
+          Math.min(view.state.doc.lines, Math.floor(line)),
+        );
+        const docLine = view.state.doc.line(lineNo);
+        const block = view.lineBlockAt(docLine.from);
+        const frac = Math.max(0, line - lineNo);
+        const next = block.top + (frac > 0 ? frac * block.height : 0);
+        if (Math.abs(el.scrollTop - next) < 1) return;
+        el.scrollTop = next;
+      },
+      getRatio: () => {
+        const el = view.scrollDOM;
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        return max <= 0 ? 0 : el.scrollTop / max;
+      },
+      setRatio: (ratio) => {
+        const el = view.scrollDOM;
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        const next = max * Math.max(0, Math.min(1, ratio));
+        if (Math.abs(el.scrollTop - next) < 1) return;
+        el.scrollTop = next;
+      },
+    });
+    return () => registerScrollPane("source", null);
+  }, [view]);
+
   useEffect(() => {
     if (!view) return;
     const query = new SearchQuery({
@@ -299,11 +321,9 @@ export const SourceEditor = memo(function SourceEditor({
     }
     if (next == null) return;
     if (Math.abs(el.scrollTop - next) < 1) return;
-    suppressScrollRef.current = true;
+    // lineJump 一次性写源码 scrollTop；分屏总线会捕获这次 scroll 并按"源码视口顶
+    // 部对应行号"同步预览侧，正是我们想要的（跳到第 N 行 → 预览也滚到第 N 行）
     el.scrollTop = next;
-    requestAnimationFrame(() => {
-      suppressScrollRef.current = false;
-    });
   }, [view, scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
 
   useEffect(() => {
@@ -429,10 +449,24 @@ export const SourceEditor = memo(function SourceEditor({
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      if (!onTableContextMenu) return;
-      const hit = tableCellFromCoords(view, { x: e.clientX, y: e.clientY });
+      // 1) 表格 cell 优先
+      const hit = onTableContextMenu
+        ? tableCellFromCoords(view, { x: e.clientX, y: e.clientY })
+        : null;
       if (!hit) {
         tableSelectionRectRef.current = null;
+        // 2) 非表格区域：必须屏蔽浏览器原生菜单，由宿主决定弹什么自定义菜单
+        e.preventDefault();
+        e.stopPropagation();
+        if (onEditorContextMenu) {
+          const pos =
+            view.posAtCoords({ x: e.clientX, y: e.clientY }) ??
+            view.state.selection.main.head;
+          onEditorContextMenu({
+            coords: { x: e.clientX, y: e.clientY },
+            pos,
+          });
+        }
         return;
       }
       e.preventDefault();
@@ -467,7 +501,7 @@ export const SourceEditor = memo(function SourceEditor({
       view.contentDOM.removeEventListener("mousedown", handleMouseDown, true);
       view.contentDOM.removeEventListener("contextmenu", handleContextMenu, true);
     };
-  }, [view, onTableContextMenu]);
+  }, [view, onTableContextMenu, onEditorContextMenu]);
 
   // 监听 `/` 触发斜杠菜单
   useEffect(() => {

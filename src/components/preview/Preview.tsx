@@ -7,6 +7,7 @@ import {
   topLineFromScroll,
   type LineAnchor,
 } from "@/lib/scrollSync";
+import { registerPane as registerScrollPane } from "@/lib/splitScrollSync";
 import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
@@ -24,6 +25,10 @@ import { useWorkspace } from "@/stores/workspace";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { findTextRanges } from "@/lib/findText";
 import { openExternal } from "@/lib/opener";
+import {
+  inspectPreviewClick,
+  type PreviewClickInfo,
+} from "@/lib/preview-context-menu";
 import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
 import { GraphView } from "./GraphView";
@@ -32,7 +37,7 @@ interface Props {
   source: string;
   basePath?: string;
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
-  onScroll?: (info: import("@/lib/scrollSync").ScrollInfo) => void;
+  /** 行号跳转的一次性目标。分屏滚动同步走 splitScrollSync 不经过这里。 */
   scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
   /** kanban 等可写视图回写 source */
   onSourceChange?: (next: string) => void;
@@ -57,6 +62,11 @@ interface Props {
       after: number;
     },
   ) => void;
+  /** 预览侧右键（非表格区域）。Preview 已 preventDefault，宿主只负责弹什么。 */
+  onPreviewContextMenu?: (info: {
+    coords: { x: number; y: number };
+    info: PreviewClickInfo;
+  }) => void;
 }
 
 function escapeHtml(input: string): string {
@@ -77,16 +87,15 @@ export function Preview({
   source,
   basePath,
   onMeta,
-  onScroll,
   scrollTarget,
   onSourceChange,
   onTableHover,
   onTableCellContext,
   onTableQuickAdd,
+  onPreviewContextMenu,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const suppressScrollRef = useRef(false);
   const [html, setHtml] = useState("");
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
@@ -148,11 +157,8 @@ export function Preview({
     }
     if (nextTop == null) return;
     if (Math.abs(el.scrollTop - nextTop) < 1) return;
-    suppressScrollRef.current = true;
+    // lineJump 是一次性写入；分屏总线会把这次 scroll 同步过去
     el.scrollTop = nextTop;
-    requestAnimationFrame(() => {
-      suppressScrollRef.current = false;
-    });
   }, [scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
 
   // 表格装饰 = 两层：
@@ -651,26 +657,40 @@ export function Preview({
     };
   }, [source, basePath, viewKind, fm.body]);
 
+  // 预览侧用 splitScrollSync 单例总线接入分屏滚动同步。containerRef 既是 scroll
+  // 元素也是 anchors 测量基准。viewKind 切换会换 containerRef 指向的元素（kanban /
+  // list / graph 都有各自的早返回），所以同时把 viewKind 进依赖触发重注册。
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !onScroll) return;
-    const handler = () => {
-      if (suppressScrollRef.current) return;
-      const anchors = anchorsRef.current;
-      const topLine =
-        anchors.length > 0
-          ? topLineFromScroll(anchors, el.scrollTop) ?? undefined
-          : undefined;
-      onScroll({
-        top: el.scrollTop,
-        height: el.scrollHeight,
-        clientHeight: el.clientHeight,
-        topLine,
-      });
-    };
-    el.addEventListener("scroll", handler, { passive: true });
-    return () => el.removeEventListener("scroll", handler);
-  }, [onScroll]);
+    if (!el) return;
+    registerScrollPane("preview", {
+      el,
+      getTopLine: () => {
+        const anchors = anchorsRef.current;
+        if (anchors.length === 0) return null;
+        return topLineFromScroll(anchors, el.scrollTop);
+      },
+      setTopLine: (line) => {
+        const anchors = anchorsRef.current;
+        if (anchors.length === 0) return;
+        const next = scrollPosForLine(anchors, line);
+        if (next == null) return;
+        if (Math.abs(el.scrollTop - next) < 1) return;
+        el.scrollTop = next;
+      },
+      getRatio: () => {
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        return max <= 0 ? 0 : el.scrollTop / max;
+      },
+      setRatio: (ratio) => {
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        const next = max * Math.max(0, Math.min(1, ratio));
+        if (Math.abs(el.scrollTop - next) < 1) return;
+        el.scrollTop = next;
+      },
+    });
+    return () => registerScrollPane("preview", null);
+  }, [viewKind]);
 
   useEffect(() => {
     applyScrollTarget();
@@ -716,6 +736,31 @@ export function Preview({
     };
     el.addEventListener("click", handler);
     return () => el.removeEventListener("click", handler);
+  }, []);
+
+  // 屏蔽 WebView 原生右键菜单（返回 / 刷新 / 另存为 / 打印），用宿主的 ContextMenu 接管
+  const onPreviewContextMenuRef = useRef(onPreviewContextMenu);
+  useEffect(() => {
+    onPreviewContextMenuRef.current = onPreviewContextMenu;
+  });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: MouseEvent) => {
+      // 任何情况下都屏蔽 WebView 原生菜单。
+      e.preventDefault();
+      e.stopPropagation();
+      // 表格 cell 的右键已经在内层 (.preview) 上由 onTableCellContext 接管，
+      // 那条路径会自己派发到源码侧的 TableContextMenu；这里只兜底不再额外弹。
+      if (e.target instanceof Element && e.target.closest("table")) return;
+      const info = inspectPreviewClick(e.target);
+      onPreviewContextMenuRef.current?.({
+        coords: { x: e.clientX, y: e.clientY },
+        info,
+      });
+    };
+    el.addEventListener("contextmenu", handler);
+    return () => el.removeEventListener("contextmenu", handler);
   }, []);
 
   if (viewKind === "kanban") {

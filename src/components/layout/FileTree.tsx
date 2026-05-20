@@ -13,6 +13,7 @@ import { useFileIcons } from "@/stores/fileIcons";
 import { api, parseError, pickDirectory } from "@/lib/api";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
+import { useDialog } from "@/stores/dialog";
 import type { FileEntry } from "@/types";
 
 export function FileTree() {
@@ -23,6 +24,9 @@ export function FileTree() {
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const loadDir = useWorkspace((s) => s.loadDir);
   const openGlobalSearch = useUI((s) => s.openGlobalSearch);
+  const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
+  const alertDialog = useDialog((s) => s.alert);
   const unavailable = useWorkspace((s) =>
     ws ? s.isUnavailable(ws.path) : false,
   );
@@ -152,7 +156,12 @@ export function FileTree() {
             style={{ opacity: 1 }}
             onClick={async () => {
               if (!ws) return;
-              const name = window.prompt("新笔记文件名（自动追加 .md）", "未命名");
+              const name = await promptDialog({
+                title: "新建笔记",
+                message: "输入文件名；未包含 .md 时会自动追加。",
+                defaultValue: "未命名",
+                confirmLabel: "创建",
+              });
               if (!name) return;
               const fname = name.endsWith(".md") ? name : `${name}.md`;
               const path = `${ws.path}/${fname}`;
@@ -163,11 +172,18 @@ export function FileTree() {
               } catch (e) {
                 const err = parseError(e);
                 if (err.code === "ALREADY_EXISTS") {
-                  const reuse = window.confirm(`${fname} 已存在。打开它？`);
+                  const reuse = await confirmDialog({
+                    title: "文件已存在",
+                    message: `${fname} 已存在。要打开它吗？`,
+                    confirmLabel: "打开",
+                  });
                   if (reuse)
                     await useTabs.getState().openFile(ws.id, path);
                 } else {
-                  window.alert(`创建失败：${err.message}`);
+                  await alertDialog({
+                    title: "创建失败",
+                    message: err.message,
+                  });
                 }
               }
             }}

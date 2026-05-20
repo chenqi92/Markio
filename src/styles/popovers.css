@@ -213,6 +213,84 @@
   color: var(--accent);
 }
 
+/* app dialog */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0,0,0,0.24);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.app-dialog {
+  width: min(420px, 100%);
+  padding: 16px;
+  border-radius: 10px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+}
+.app-dialog-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.app-dialog-message {
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.app-dialog-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--bg-pane);
+  color: var(--text);
+  font-size: 13px;
+}
+.app-dialog-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.app-dialog-btn {
+  min-width: 68px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.app-dialog-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.app-dialog-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.app-dialog-btn.primary.danger {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
 /* AI 全屏面板 —— 不透出编辑器 */
 .ai-panel {
   position: absolute;

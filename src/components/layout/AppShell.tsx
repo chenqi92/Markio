@@ -8,6 +8,7 @@ import { Crumb } from "./Crumb";
 import { StatusBar } from "./StatusBar";
 import { Welcome } from "../Welcome";
 import { ToastHost } from "../popovers/Toast";
+import { DialogHost } from "../popovers/DialogHost";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
@@ -144,6 +145,7 @@ export function AppShell() {
         {pinnedPlanPath && <PinnedPlanBar />}
       </Suspense>
       <ToastHost />
+      <DialogHost />
     </div>
   );
 }

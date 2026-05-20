@@ -3205,6 +3205,7 @@ function SmartChannelSettings() {
   const setPreference = useSettings((s) => s.setPreference);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspaceStore((s) => s.activeWorkspace());
+  const confirmDialog = useDialog((s) => s.confirm);
 
   const [usage, setUsage] = useState<{ used: number; limit: number }>({
     used: 0,
@@ -3233,8 +3234,14 @@ function SmartChannelSettings() {
     }
   };
 
-  const rotate = () => {
-    if (!window.confirm("重置通道 ID 会让现有外部 app 失效，确定继续？")) return;
+  const rotate = async () => {
+    const ok = await confirmDialog({
+      title: "重置通道 ID？",
+      message: "重置通道 ID 会让现有外部 app 失效。",
+      confirmLabel: "重置",
+      danger: true,
+    });
+    if (!ok) return;
     setPreference("smartChannelId", generateChannelId());
   };
 
@@ -3523,6 +3530,7 @@ function AI() {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [keyDraft, setKeyDraft] = useState("");
   const [savingKey, setSavingKey] = useState(false);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   // 切换 provider 时刷新"是否已配"
   useEffect(() => {
@@ -3557,7 +3565,13 @@ function AI() {
   };
 
   const clearKey = async () => {
-    if (!window.confirm(`清除 ${provider} 的 API Key？`)) return;
+    const ok = await confirmDialog({
+      title: "清除 API Key？",
+      message: `清除 ${provider} 的 API Key？`,
+      confirmLabel: "清除",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.secretDelete(`ai:${provider}`);
       setAi({ aiKeyConfigured: false });
@@ -4393,6 +4407,7 @@ function RerankCard() {
   const [keyConfigured, setKeyConfigured] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   useEffect(() => {
     let cancelled = false;
@@ -4426,7 +4441,12 @@ function RerankCard() {
   };
 
   const clearKey = async () => {
-    if (!window.confirm("清除 Reranker 的 API Key？")) return;
+    const ok = await confirmDialog({
+      title: "清除 Reranker API Key？",
+      confirmLabel: "清除",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.secretDelete("rerank:cohere");
       setKeyConfigured(false);
@@ -4545,6 +4565,7 @@ function RagSettings() {
   const [openaiKeyConfigured, setOpenaiKeyConfigured] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   // 当前活动 workspace
   const wsLoaded = useWorkspaceForRag();
@@ -4583,7 +4604,12 @@ function RagSettings() {
   };
 
   const clearOpenaiKey = async () => {
-    if (!window.confirm("清除 OpenAI Embedding 的 API Key？")) return;
+    const ok = await confirmDialog({
+      title: "清除 OpenAI Embedding API Key？",
+      confirmLabel: "清除",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.secretDelete("embed:openai");
       setOpenaiKeyConfigured(false);
@@ -4609,10 +4635,13 @@ function RagSettings() {
 
   const triggerClear = async () => {
     if (!ws) return;
-    if (
-      !window.confirm("确认清空索引库？已索引的向量会全部丢失，下次需要重建。")
-    )
-      return;
+    const ok = await confirmDialog({
+      title: "清空索引库？",
+      message: "已索引的向量会全部丢失，下次需要重建。",
+      confirmLabel: "清空",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await useRag.getState().clear(ws.id, ws.path);
       setMsg("索引已清空");

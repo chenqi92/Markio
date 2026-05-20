@@ -6,6 +6,7 @@ import { useWorkspace } from "./stores/workspace";
 import { useSettings } from "./stores/settings";
 import { useRag } from "./stores/rag";
 import { useVaultIndex } from "./stores/vaultIndex";
+import { useDialog } from "./stores/dialog";
 import { isDarkTheme } from "./themes";
 import { api, isDesktop, parseError, pickDirectory, pickFile } from "./lib/api";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
@@ -96,6 +97,8 @@ export default function App() {
   const hydrate = useWorkspace((s) => s.hydrate);
   const setAi = useSettings((s) => s.setAi);
   const activeWorkspacePath = useWorkspace((s) => s.activeWorkspace()?.path ?? null);
+  const confirmDialog = useDialog((s) => s.confirm);
+  const promptDialog = useDialog((s) => s.prompt);
 
   useEffect(() => {
     startSyncScheduler(activeWorkspacePath);
@@ -436,20 +439,24 @@ export default function App() {
       "app.findInFile": () => openFind(true),
       "app.save": () => {
         if (!activeDirty) return;
-        saveActive().then((outcome) => {
+        void (async () => {
+          const outcome = await saveActive();
           if (outcome === "ok") {
             setToast({ stage: "done", message: "已保存" });
             setTimeout(() => setToast(null), 1500);
           } else if (outcome === "conflict") {
-            const force = window.confirm(
-              "文件已被外部修改。继续保存会覆盖磁盘版本。点确认覆盖，取消则放弃保存。",
-            );
+            const force = await confirmDialog({
+              title: "覆盖磁盘版本？",
+              message: "文件已被外部修改。继续保存会覆盖磁盘版本。",
+              confirmLabel: "覆盖保存",
+              danger: true,
+            });
             if (force) {
               const id = useTabs.getState().activeId;
-              if (id) useTabs.getState().saveTab(id, true);
+              if (id) void useTabs.getState().saveTab(id, true);
             }
           }
-        });
+        })();
       },
       "app.newNote": () => {
         (async () => {
@@ -459,7 +466,12 @@ export default function App() {
             setTimeout(() => setToast(null), 2000);
             return;
           }
-          const name = window.prompt("新笔记文件名（自动追加 .md）", "未命名");
+          const name = await promptDialog({
+            title: "新建笔记",
+            message: "输入文件名；未包含 .md 时会自动追加。",
+            defaultValue: "未命名",
+            confirmLabel: "创建",
+          });
           if (!name) return;
           const fname = name.endsWith(".md") ? name : `${name}.md`;
           const path = `${ws.path}/${fname}`;
@@ -470,7 +482,11 @@ export default function App() {
           } catch (err) {
             const e2 = parseError(err);
             if (e2.code === "ALREADY_EXISTS") {
-              const reuse = window.confirm(`${fname} 已存在。打开它？`);
+              const reuse = await confirmDialog({
+                title: "文件已存在",
+                message: `${fname} 已存在。要打开它吗？`,
+                confirmLabel: "打开",
+              });
               if (reuse) {
                 await useTabs.getState().openFile(ws.id, path);
               }
@@ -507,13 +523,18 @@ export default function App() {
       "app.closeTab": () => {
         if (!activeId) return;
         const t = useTabs.getState().tabs.find((x) => x.id === activeId);
-        if (t && t.dirty) {
-          const ok = window.confirm(
-            `${t.title} 还有未保存的修改。继续关闭会丢失。`,
-          );
-          if (!ok) return;
-        }
-        closeTab(activeId);
+        void (async () => {
+          if (t && t.dirty) {
+            const ok = await confirmDialog({
+              title: "关闭未保存标签？",
+              message: `${t.title} 还有未保存的修改。继续关闭会丢失。`,
+              confirmLabel: "关闭",
+              danger: true,
+            });
+            if (!ok) return;
+          }
+          closeTab(activeId);
+        })();
       },
       "app.toggleFocus": toggleFocus,
       "app.toggleSidebar": toggleSidebar,
@@ -567,6 +588,8 @@ export default function App() {
     openPath,
     addWorkspace,
     setToast,
+    confirmDialog,
+    promptDialog,
   ]);
 
   return <AppShell />;

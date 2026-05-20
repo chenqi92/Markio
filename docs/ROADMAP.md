@@ -90,11 +90,11 @@
 
 已落地：
 - `fs_save` 已优先校验调用方传入的 expected mtime/hash 基线；同一文件被旧标签或快速捕获流程持有旧内容时，不会因为进程内 opened 表较新而静默覆盖。
+- 目录回收站 move / manifest / restore / purge 主链路已实现并有 Rust 测试；回收站条目命名不会覆盖同毫秒同名项目，manifest 写入失败会尝试回滚原位置。
 
 任务：
 - 统一文件写入 API，所有保存路径必须经过 expected mtime/hash 或明确 force。
 - 清理旧兼容写入入口，避免绕过冲突检测。
-- 实现目录回收站：目录 move、manifest、restore、purge 全链路。
 - Git 自动同步已拆出 preflight → snapshot → fetch → pull → push → result；继续补 commit preview、冲突恢复和回滚。
 - `syncConflictStrategy` 真正接入 Git 和云同步，不再只是设置项。
 - 后台任务失败统一进入诊断中心。

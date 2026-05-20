@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: frontend (tsc + vite build)
+    name: frontend (lint + test + e2e)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,11 +30,20 @@ jobs:
       - name: install deps
         run: pnpm install --frozen-lockfile
 
+      - name: lint
+        run: pnpm lint
+
       - name: type-check + build
         run: pnpm build
 
       - name: vitest
         run: pnpm test
+
+      - name: install playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: playwright e2e
+        run: pnpm e2e
 
   rust:
     name: rust (fmt + check)

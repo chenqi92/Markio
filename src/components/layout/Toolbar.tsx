@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { NewMenu } from "./NewMenu";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
+import { useDialog } from "@/stores/dialog";
 import { classNames } from "@/lib/utils";
 import { markdownCommands } from "@/lib/markdown-commands";
 import { shortcutText } from "@/lib/shortcuts";
@@ -29,6 +30,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
   const openHistory = useUI((s) => s.openHistory);
   const saveActive = useTabs((s) => s.saveActive);
   const setToast = useUI((s) => s.setToast);
+  const confirmDialog = useDialog((s) => s.confirm);
   const dirty = useTabs((s) => s.activeTab()?.dirty ?? false);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -40,9 +42,12 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
       setToast({ stage: "done", message: "已保存" });
       setTimeout(() => setToast(null), 1500);
     } else if (outcome === "conflict") {
-      const force = window.confirm(
-        "文件已被外部修改。继续保存会覆盖磁盘版本。",
-      );
+      const force = await confirmDialog({
+        title: "覆盖磁盘版本？",
+        message: "文件已被外部修改。继续保存会覆盖磁盘版本。",
+        confirmLabel: "覆盖保存",
+        danger: true,
+      });
       if (force) {
         const id = useTabs.getState().activeId;
         if (id) await useTabs.getState().saveTab(id, true);

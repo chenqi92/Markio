@@ -47,8 +47,12 @@ impl Db {
         std::fs::create_dir_all(&dir).map_err(|e| format!("创建 .markio 目录失败：{e}"))?;
         let path = dir.join("rag.db");
         let conn = Connection::open(&path).map_err(|e| format!("打开向量数据库失败：{e}"))?;
-        conn.pragma_update(None, "journal_mode", "WAL")
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
             .map_err(|e| format!("启用 WAL 失败：{e}"))?;
+        if !journal_mode.eq_ignore_ascii_case("wal") {
+            return Err(format!("启用 WAL 失败：当前模式为 {journal_mode}"));
+        }
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
         conn.pragma_update(None, "foreign_keys", "ON").ok();
 

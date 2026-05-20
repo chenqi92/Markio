@@ -1,0 +1,31 @@
+/* Keep WebView2/DWM compositor cost predictable on Windows.
+   Large live blur surfaces make the whole desktop feel laggy on some GPUs. */
+.markio-root,
+.markio-root * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.statusbar .pulse,
+.repo-sync-stat .pulse,
+.lv-card-stat .pulse,
+.qc2-bolt-pulse,
+.ai-glow,
+.ai-welcome-orb,
+.typing-dot,
+.export-progress-orb,
+.export-progress-bar::before {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markio-root,
+  .markio-root *,
+  .markio-root *::before,
+  .markio-root *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}

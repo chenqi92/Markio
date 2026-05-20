@@ -9,7 +9,7 @@
 // 增量重索引由前端在收到事件后调用 `rag_reindex_file` / `rag_remove_file` 决策；
 // 后端这层只做事件分发，避免双向耦合。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,9 +18,13 @@ use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventR
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::ignore::{is_text_note_path, is_under_nested_code_project, IgnoreRules};
+
 type DebouncerHandle = Debouncer<notify::RecommendedWatcher>;
 
 static WATCHERS: OnceLock<Mutex<HashMap<PathBuf, DebouncerHandle>>> = OnceLock::new();
+const RECURSIVE_WATCH_ENTRY_LIMIT: usize = 20_000;
+const SELECTIVE_WATCH_DIR_LIMIT: usize = 5_000;
 
 fn map() -> &'static Mutex<HashMap<PathBuf, DebouncerHandle>> {
     WATCHERS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -110,40 +114,70 @@ struct FsChangedPayload {
     kind: &'static str,
 }
 
-fn should_ignore(rela: &Path) -> bool {
-    for comp in rela.components() {
-        let s = comp.as_os_str().to_string_lossy();
-        let s = s.as_ref();
-        if s.starts_with('.') {
-            // 命中 .markio / .git / .DS_Store / dotfiles 都直接跳过
-            return true;
-        }
-        if matches!(
-            s,
-            "node_modules"
-                | "target"
-                | "dist"
-                | "build"
-                | "coverage"
-                | "__pycache__"
-                | ".turbo"
-                | ".next"
-                | ".nuxt"
-        ) {
-            return true;
+fn raw_entry_count_exceeds(root: &Path, limit: usize) -> bool {
+    let mut count = 0usize;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            count += 1;
+            if count > limit {
+                return true;
+            }
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ft.is_dir() && !ft.is_symlink() {
+                stack.push(entry.path());
+            }
         }
     }
     false
 }
 
-fn is_text_like(path: &Path) -> bool {
-    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-        return false;
-    };
-    matches!(
-        ext.to_ascii_lowercase().as_str(),
-        "md" | "markdown" | "mdown" | "mkd" | "txt"
-    )
+fn selective_watch_dirs(root: &Path, ignore: &IgnoreRules) -> (Vec<PathBuf>, usize) {
+    let mut dirs = Vec::new();
+    let mut seen = HashSet::new();
+    let mut skipped_after_limit = 0usize;
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        if !seen.insert(dir.clone()) {
+            continue;
+        }
+        if dirs.len() < SELECTIVE_WATCH_DIR_LIMIT {
+            dirs.push(dir.clone());
+        } else {
+            skipped_after_limit += 1;
+            continue;
+        }
+
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(rela) = path.strip_prefix(root) else {
+                continue;
+            };
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ignore.is_ignored(rela, ft.is_dir()) {
+                continue;
+            }
+            if is_under_nested_code_project(root, &path) {
+                continue;
+            }
+            if ft.is_dir() && !ft.is_symlink() {
+                stack.push(path);
+            }
+        }
+    }
+
+    (dirs, skipped_after_limit)
 }
 
 pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
@@ -155,8 +189,10 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
         }
     }
     let workspace_str = ws.to_string_lossy().to_string();
+    let ignore = IgnoreRules::load(&ws);
     let ws_for_cb = ws.clone();
     let app_for_cb = app.clone();
+    let ignore_for_cb = ignore.clone();
 
     let ws_for_stats = ws.clone();
     let mut debouncer: DebouncerHandle = new_debouncer(
@@ -179,10 +215,13 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
                 let Ok(rela) = path.strip_prefix(&ws_for_cb) else {
                     continue;
                 };
-                if should_ignore(rela) {
+                if ignore_for_cb.is_ignored(rela, path.is_dir()) {
                     continue;
                 }
-                if !path.is_dir() && !is_text_like(&path) {
+                if is_under_nested_code_project(&ws_for_cb, &path) {
+                    continue;
+                }
+                if !path.is_dir() && !is_text_note_path(&path) {
                     continue;
                 }
                 let kind = if path.exists() { "modified" } else { "removed" };
@@ -207,10 +246,38 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
     )
     .map_err(|e| format!("初始化 watcher 失败：{e}"))?;
 
-    debouncer
-        .watcher()
-        .watch(&ws, RecursiveMode::Recursive)
-        .map_err(|e| format!("注册监听失败：{e}"))?;
+    if raw_entry_count_exceeds(&ws, RECURSIVE_WATCH_ENTRY_LIMIT) {
+        let (dirs, skipped_after_limit) = selective_watch_dirs(&ws, &ignore);
+        for (idx, dir) in dirs.iter().enumerate() {
+            let result = debouncer.watcher().watch(dir, RecursiveMode::NonRecursive);
+            if let Err(e) = result {
+                let msg = format!("注册选择性监听失败 {}：{e}", dir.display());
+                if idx == 0 {
+                    return Err(msg);
+                }
+                with_stats(&ws, |s| {
+                    s.backend_errors += 1;
+                    s.last_error = Some(msg);
+                });
+            }
+        }
+        with_stats(&ws, |s| {
+            s.last_error = Some(format!(
+                "大目录已启用选择性监听：{} 个目录，跳过 node_modules/target/隐藏目录{}",
+                dirs.len(),
+                if skipped_after_limit > 0 {
+                    format!("，另有 {skipped_after_limit} 个目录超过监听上限")
+                } else {
+                    String::new()
+                }
+            ));
+        });
+    } else {
+        debouncer
+            .watcher()
+            .watch(&ws, RecursiveMode::Recursive)
+            .map_err(|e| format!("注册监听失败：{e}"))?;
+    }
 
     let mut guard = map().lock().map_err(|e| format!("watcher lock: {e}"))?;
     guard.insert(ws, debouncer);
@@ -220,5 +287,63 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
 pub fn unwatch(workspace: &Path) {
     if let Ok(mut guard) = map().lock() {
         guard.remove(workspace);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{raw_entry_count_exceeds, selective_watch_dirs};
+    use crate::ignore::IgnoreRules;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "markio-watcher-{name}-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ))
+    }
+
+    #[test]
+    fn raw_entry_count_detects_large_tree() {
+        let root = temp_dir("large");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.md"), "").unwrap();
+        std::fs::write(root.join("b.md"), "").unwrap();
+
+        assert!(raw_entry_count_exceeds(&root, 1));
+        assert!(!raw_entry_count_exceeds(&root, 10));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn selective_watch_skips_dependency_and_hidden_dirs() {
+        let root = temp_dir("selective");
+        std::fs::create_dir_all(root.join("notes")).unwrap();
+        std::fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(root.join(".markio/history")).unwrap();
+        std::fs::create_dir_all(root.join("FastBee-master/src")).unwrap();
+        std::fs::write(root.join("FastBee-master/pom.xml"), "").unwrap();
+
+        let ignore = IgnoreRules::load(&root);
+        let (dirs, skipped) = selective_watch_dirs(&root, &ignore);
+
+        let names = dirs
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(skipped, 0);
+        assert!(names.iter().any(|n| n == ""));
+        assert!(names.iter().any(|n| n == "notes"));
+        assert!(!names.iter().any(|n| n.starts_with("node_modules")));
+        assert!(!names.iter().any(|n| n.starts_with(".markio")));
+        assert!(!names.iter().any(|n| n.starts_with("FastBee-master")));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

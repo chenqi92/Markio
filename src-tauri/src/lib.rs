@@ -5,6 +5,7 @@ mod dropbox_ops;
 mod fs_ops;
 mod gdrive_ops;
 mod git_ops;
+mod ignore;
 mod import;
 mod markdown;
 mod oauth;

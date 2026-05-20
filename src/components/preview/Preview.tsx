@@ -570,14 +570,16 @@ export function Preview({
     const renderDelay = isFirst
       ? 0
       : source.length > 100_000
-        ? 350
+        ? 700
         : source.length > 30_000
-          ? 180
-          : 60;
+          ? 350
+          : source.length > 10_000
+            ? 180
+            : 80;
     timerRef.current = window.setTimeout(async () => {
       timerRef.current = null;
       try {
-        if (source.length > 30_000) {
+        if (source.length > 20_000) {
           const chunks: string[] = [];
           const flushChunks = () => {
             flushTimer = null;

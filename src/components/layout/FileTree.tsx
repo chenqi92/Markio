@@ -472,6 +472,8 @@ function TreeContextMenu({
   const loadDir = useWorkspace((s) => s.loadDir);
   const setToast = useUI((s) => s.setToast);
   const openFile = useTabs((s) => s.openFile);
+  const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
   const closeTabsForPath = useTabsForPath();
 
   const flash = (msg: string) => {
@@ -526,7 +528,12 @@ function TreeContextMenu({
       label: "重命名…",
       icon: "edit",
       onClick: async () => {
-        const next = window.prompt("新名字", node.name);
+        const next = await promptDialog({
+          title: "重命名",
+          message: "输入新的文件或文件夹名称。",
+          defaultValue: node.name,
+          confirmLabel: "重命名",
+        });
         if (!next || next === node.name) return;
         const parent = node.path.replace(/[\\/][^\\/]+$/, "");
         const to = `${parent}/${next}`;
@@ -572,9 +579,12 @@ function TreeContextMenu({
       icon: "trash",
       danger: true,
       onClick: async () => {
-        const ok = window.confirm(
-          `永久删除 ${node.name}？无法从回收站恢复。`,
-        );
+        const ok = await confirmDialog({
+          title: "永久删除",
+          message: `永久删除 ${node.name}？无法从回收站恢复。`,
+          confirmLabel: "永久删除",
+          danger: true,
+        });
         if (!ok) return;
         try {
           await api.remove(node.path);

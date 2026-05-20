@@ -9,6 +9,7 @@ import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
+import { useDialog } from "@/stores/dialog";
 import { insertBlock } from "@/lib/editor-bridge";
 import type { AIMsgRef } from "@/stores/aiSessions";
 
@@ -52,6 +53,7 @@ export function AIAssistantMessage({
   const theme = useSettings((s) => s.theme);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspace((s) => s.activeWorkspace());
+  const promptDialog = useDialog((s) => s.prompt);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,7 +137,12 @@ export function AIAssistantMessage({
     }
     const ymd = new Date().toISOString().slice(0, 10);
     const guess = `AI · ${prevUserText?.slice(0, 24) ?? ymd}`.replace(/[\/\\:*?"<>|]/g, " ");
-    const name = window.prompt("另存为新笔记，文件名（自动追加 .md）", guess);
+    const name = await promptDialog({
+      title: "另存为新笔记",
+      message: "输入文件名；未包含 .md 时会自动追加。",
+      defaultValue: guess,
+      confirmLabel: "保存",
+    });
     if (!name) return;
     const fname = name.endsWith(".md") ? name : `${name}.md`;
     const path = `${ws.path}/${fname}`;

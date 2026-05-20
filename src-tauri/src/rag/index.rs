@@ -19,19 +19,7 @@ use super::db::Db;
 use super::embed::{self, EmbedConfig};
 use super::graph;
 use super::{IndexProgress, RagHandle};
-
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "build",
-    "dist",
-    ".markio",
-    ".obsidian",
-    ".vscode",
-    ".idea",
-    "__pycache__",
-];
+use crate::ignore::{is_markdown_name, is_under_nested_code_project, IgnoreRules};
 const MAX_INDEX_FILE_SIZE: u64 = 4_000_000;
 const MAX_INDEX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
 
@@ -59,24 +47,29 @@ struct Doc {
 fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Vec<Doc> {
     let mut out = Vec::new();
     let mut total_bytes = 0u64;
+    let ignore = IgnoreRules::load(workspace);
     walk(
+        workspace,
         workspace,
         0,
         &mut out,
         max_files,
         max_total_bytes,
         &mut total_bytes,
+        &ignore,
     );
     out
 }
 
 fn walk(
+    workspace: &Path,
     dir: &Path,
     depth: usize,
     out: &mut Vec<Doc>,
     max_files: usize,
     max_total_bytes: u64,
     total_bytes: &mut u64,
+    ignore: &IgnoreRules,
 ) {
     if depth > 12 || out.len() >= max_files {
         return;
@@ -99,17 +92,26 @@ fn walk(
         if ft.is_symlink() {
             continue;
         }
+        if is_under_nested_code_project(workspace, &path) {
+            continue;
+        }
+        if path
+            .strip_prefix(workspace)
+            .ok()
+            .is_some_and(|rel| ignore.is_ignored(rel, ft.is_dir()))
+        {
+            continue;
+        }
         if ft.is_dir() {
-            if SKIP_DIRS.iter().any(|s| name_lower == *s) {
-                continue;
-            }
             walk(
+                workspace,
                 &path,
                 depth + 1,
                 out,
                 max_files,
                 max_total_bytes,
                 total_bytes,
+                ignore,
             );
         } else if ft.is_file() {
             if !is_md(&name_lower) {
@@ -143,10 +145,7 @@ fn walk(
 }
 
 fn is_md(name_lower: &str) -> bool {
-    name_lower.ends_with(".md")
-        || name_lower.ends_with(".markdown")
-        || name_lower.ends_with(".mdown")
-        || name_lower.ends_with(".mkd")
+    is_markdown_name(name_lower)
 }
 
 fn build_stem_index(docs: &[Doc]) -> HashMap<String, Vec<PathBuf>> {
@@ -303,6 +302,17 @@ pub fn reindex_file(handle: Arc<RagHandle>, cfg: EmbedConfig, path: &Path) -> Re
         content,
     };
     let workspace = PathBuf::from(&handle.workspace);
+    let ignore = IgnoreRules::load(&workspace);
+    if is_under_nested_code_project(&workspace, path) {
+        return Ok(false);
+    }
+    if path
+        .strip_prefix(&workspace)
+        .ok()
+        .is_some_and(|rel| ignore.is_ignored(rel, false))
+    {
+        return Ok(false);
+    }
     // 单文件不重建 stem 索引；wiki 解析允许 target_path 为空（仅记 label）
     let stem_index: HashMap<String, Vec<PathBuf>> = HashMap::new();
     upsert_doc(&handle, &cfg, &doc, &workspace, &stem_index)?;

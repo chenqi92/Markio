@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::ignore::{is_markdown_name, is_under_nested_code_project, IgnoreRules};
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
@@ -21,56 +23,21 @@ const MAX_ENTRIES: usize = 8_000;
 const MAX_DIR_CHILDREN: usize = 2_000;
 const MAX_VISITED_ENTRIES: usize = 50_000;
 
-/// 这些目录一旦遇到就完整跳过，不再下钻。
-/// 目的：避免 walker 卡在 node_modules / cargo target / build cache 等海量目录里。
-///
-/// Windows / macOS 大小写不敏感文件系统上 "Node_Modules" 也算 "node_modules"，
-/// 这里做小写归一化。
-fn is_skip_dir(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    matches!(
-        n.as_str(),
-        "node_modules"
-            | "target"
-            | "dist"
-            | "build"
-            | "out"
-            | ".next"
-            | ".nuxt"
-            | ".svelte-kit"
-            | ".turbo"
-            | ".cache"
-            | ".parcel-cache"
-            | ".venv"
-            | "venv"
-            | "env"
-            | "__pycache__"
-            | ".mypy_cache"
-            | ".pytest_cache"
-            | ".ruff_cache"
-            | ".tox"
-            | ".gradle"
-            | ".idea"
-            | ".vscode"
-            | ".vs"
-            | "derivedata"
-            | "pods"
-            | ".bundle"
-            | ".terraform"
-            | "vendor"
-    )
-}
-
 fn is_hidden(name: &str) -> bool {
-    name.starts_with('.') && name != "." && name != ".."
+    crate::ignore::is_hidden_name(name)
 }
 
 fn is_markdown(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.ends_with(".md")
-        || lower.ends_with(".markdown")
-        || lower.ends_with(".mdown")
-        || lower.ends_with(".mkd")
+    is_markdown_name(name)
+}
+
+fn ignored_by_rules(root: &Path, path: &Path, is_dir: bool, rules: &IgnoreRules) -> bool {
+    if is_under_nested_code_project(root, path) {
+        return true;
+    }
+    path.strip_prefix(root)
+        .ok()
+        .is_some_and(|rel| rules.is_ignored(rel, is_dir))
 }
 
 /// 当作"附件"看待的扩展名 —— 不在主文件树里、但放进侧边栏的「附件」分区
@@ -103,12 +70,23 @@ fn modified_ms(p: &Path) -> i64 {
 }
 
 struct Walker {
+    root: PathBuf,
+    ignore: IgnoreRules,
     visited: usize,
     counted: usize,
     cap_hit: bool,
 }
 
 impl Walker {
+    fn ignored(&self, path: &Path, is_dir: bool) -> bool {
+        if is_under_nested_code_project(&self.root, path) {
+            return true;
+        }
+        path.strip_prefix(&self.root)
+            .ok()
+            .is_some_and(|rel| self.ignore.is_ignored(rel, is_dir))
+    }
+
     fn walk(&mut self, dir: &Path, depth: usize) -> Option<FileEntry> {
         if self.cap_hit {
             return None;
@@ -171,10 +149,10 @@ impl Walker {
                 // 安全起见，跳过符号链接，避免循环
                 continue;
             }
+            if self.ignored(&path, ft.is_dir()) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
                 dirs.push((path, name));
             } else if ft.is_file() {
                 if !is_markdown(&name) {
@@ -254,6 +232,8 @@ pub fn walk_tree(root_path: &str) -> Result<FileEntry, String> {
         return Err(format!("不是文件夹：{root_path}"));
     }
     let mut w = Walker {
+        root: root.clone(),
+        ignore: IgnoreRules::load(&root),
         visited: 0,
         counted: 0,
         cap_hit: false,
@@ -278,6 +258,7 @@ pub fn read_dir_shallow(root_path: &str) -> Result<FileEntry, String> {
     }
 
     let entries = fs::read_dir(&root).map_err(|e| format!("无法读取目录：{e}"))?;
+    let ignore = IgnoreRules::load(&root);
     let mut dirs: Vec<FileEntry> = Vec::new();
     let mut files: Vec<FileEntry> = Vec::new();
     let mut truncated = false;
@@ -301,11 +282,11 @@ pub fn read_dir_shallow(root_path: &str) -> Result<FileEntry, String> {
         if ft.is_symlink() {
             continue;
         }
+        if ignored_by_rules(&root, &path, ft.is_dir(), &ignore) {
+            continue;
+        }
 
         if ft.is_dir() {
-            if is_skip_dir(&name) {
-                continue;
-            }
             dirs.push(FileEntry {
                 name,
                 path: path.to_string_lossy().to_string(),
@@ -557,12 +538,14 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
     let mut out: Vec<Backlink> = Vec::new();
 
     fn visit(
+        root: &Path,
         dir: &Path,
         depth: usize,
         needle: &str,
         skip: &str,
         out: &mut Vec<Backlink>,
         max: usize,
+        ignore: &IgnoreRules,
     ) {
         if out.len() >= max || depth > MAX_DEPTH {
             return;
@@ -587,11 +570,11 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, needle, skip, out, max);
+                visit(root, &path, depth + 1, needle, skip, out, max, ignore);
             } else if ft.is_file() && is_markdown(&name) {
                 // 跳过自身
                 if path.to_string_lossy() == skip {
@@ -632,7 +615,9 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
         }
     }
 
-    visit(Path::new(workspace), 0, &needle, file, &mut out, max);
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    visit(root, root, 0, &needle, file, &mut out, max, &ignore);
     out
 }
 
@@ -694,12 +679,14 @@ pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
     let mut out: Vec<Backlink> = Vec::new();
 
     fn visit(
+        root: &Path,
         dir: &Path,
         depth: usize,
         needle: &str,
         skip: &str,
         out: &mut Vec<Backlink>,
         max: usize,
+        ignore: &IgnoreRules,
     ) {
         if out.len() >= max || depth > MAX_DEPTH {
             return;
@@ -724,11 +711,11 @@ pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, needle, skip, out, max);
+                visit(root, &path, depth + 1, needle, skip, out, max, ignore);
             } else if ft.is_file() && is_markdown(&name) {
                 if path.to_string_lossy() == skip {
                     continue;
@@ -767,7 +754,9 @@ pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
         }
     }
 
-    visit(Path::new(workspace), 0, &needle, file, &mut out, max);
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    visit(root, root, 0, &needle, file, &mut out, max, &ignore);
     out
 }
 
@@ -787,11 +776,13 @@ pub fn index_tokens(workspace: &str) -> VaultTokens {
     let mut files: BTreeSet<String> = BTreeSet::new();
 
     fn visit(
+        root: &Path,
         dir: &Path,
         depth: usize,
         tags: &mut BTreeSet<String>,
         mentions: &mut BTreeSet<String>,
         files: &mut BTreeSet<String>,
+        ignore: &IgnoreRules,
     ) {
         if depth > MAX_DEPTH {
             return;
@@ -813,11 +804,11 @@ pub fn index_tokens(workspace: &str) -> VaultTokens {
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, tags, mentions, files);
+                visit(root, &path, depth + 1, tags, mentions, files, ignore);
             } else if ft.is_file() && is_markdown(&name) {
                 let stem = path
                     .file_stem()
@@ -842,13 +833,9 @@ pub fn index_tokens(workspace: &str) -> VaultTokens {
         }
     }
 
-    visit(
-        Path::new(workspace),
-        0,
-        &mut tags,
-        &mut mentions,
-        &mut files,
-    );
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    visit(root, root, 0, &mut tags, &mut mentions, &mut files, &ignore);
 
     VaultTokens {
         tags: tags.into_iter().collect(),
@@ -995,12 +982,14 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
     let mut mentions: BTreeSet<String> = BTreeSet::new();
 
     fn visit(
+        root: &Path,
         dir: &Path,
         depth: usize,
         prev_by_path: &HashMap<String, &VaultFile>,
         files: &mut Vec<VaultFile>,
         tags: &mut std::collections::BTreeSet<String>,
         mentions: &mut std::collections::BTreeSet<String>,
+        ignore: &IgnoreRules,
     ) {
         if depth > MAX_DEPTH || files.len() >= VAULT_INDEX_MAX_FILES {
             return;
@@ -1040,11 +1029,20 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, prev_by_path, files, tags, mentions);
+                visit(
+                    root,
+                    &path,
+                    depth + 1,
+                    prev_by_path,
+                    files,
+                    tags,
+                    mentions,
+                    ignore,
+                );
             } else if ft.is_file() && is_markdown(&name) {
                 let stem = path
                     .file_stem()
@@ -1085,13 +1083,17 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
         }
     }
 
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
     visit(
-        Path::new(workspace),
+        root,
+        root,
         0,
         &prev_by_path,
         &mut files,
         &mut tags,
         &mut mentions,
+        &ignore,
     );
 
     files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -1420,7 +1422,14 @@ pub struct Attachment {
 pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
     let mut out: Vec<Attachment> = Vec::new();
 
-    fn visit(dir: &Path, depth: usize, out: &mut Vec<Attachment>, max: usize) {
+    fn visit(
+        root: &Path,
+        dir: &Path,
+        depth: usize,
+        out: &mut Vec<Attachment>,
+        max: usize,
+        ignore: &IgnoreRules,
+    ) {
         if out.len() >= max || depth > MAX_DEPTH {
             return;
         }
@@ -1457,11 +1466,11 @@ pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, out, max);
+                visit(root, &path, depth + 1, out, max, ignore);
             } else if ft.is_file() {
                 let Some(kind) = attachment_kind(&name) else {
                     continue;
@@ -1478,7 +1487,9 @@ pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
         }
     }
 
-    visit(Path::new(root), 0, &mut out, max);
+    let root_path = Path::new(root);
+    let ignore = IgnoreRules::load(root_path);
+    visit(root_path, root_path, 0, &mut out, max, &ignore);
     out.sort_by(|a, b| b.modified.cmp(&a.modified));
     out
 }
@@ -1523,12 +1534,14 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
     let mut counted = 0usize;
 
     fn visit(
+        root: &Path,
         dir: &Path,
         depth: usize,
         needle: &str,
         hits: &mut Vec<GrepHit>,
         counted: &mut usize,
         max_results: usize,
+        ignore: &IgnoreRules,
     ) {
         if hits.len() >= max_results || depth > MAX_DEPTH || *counted > MAX_ENTRIES {
             return;
@@ -1553,11 +1566,20 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
             if ft.is_symlink() {
                 continue;
             }
+            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
+                continue;
+            }
             if ft.is_dir() {
-                if is_skip_dir(&name) {
-                    continue;
-                }
-                visit(&path, depth + 1, needle, hits, counted, max_results);
+                visit(
+                    root,
+                    &path,
+                    depth + 1,
+                    needle,
+                    hits,
+                    counted,
+                    max_results,
+                    ignore,
+                );
             } else if ft.is_file() && is_markdown(&name) {
                 *counted += 1;
                 if *counted > MAX_GREP_FILES {
@@ -1609,13 +1631,17 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
         }
     }
 
+    let root_path = Path::new(root);
+    let ignore = IgnoreRules::load(root_path);
     visit(
-        Path::new(root),
+        root_path,
+        root_path,
         0,
         &needle,
         &mut hits,
         &mut counted,
         max_results,
+        &ignore,
     );
     hits
 }

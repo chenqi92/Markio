@@ -20,7 +20,17 @@ export default defineConfig(async () => ({
     host,
     hmr: { protocol: "ws", host, port },
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/src-tauri/**",
+        "**/dev-logs/**",
+        "**/dist/**",
+        "**/coverage/**",
+        "**/.turbo/**",
+        "**/.next/**",
+        "**/.vite/**",
+      ],
     },
   },
   build: {

@@ -26,6 +26,22 @@ pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
 }
 
+fn empty_status() -> GitStatus {
+    GitStatus {
+        head: None,
+        branch: None,
+        upstream: None,
+        ahead: 0,
+        behind: 0,
+        files: Vec::new(),
+    }
+}
+
+fn has_git_metadata(path: &Path) -> bool {
+    path.ancestors()
+        .any(|ancestor| ancestor.join(".git").exists())
+}
+
 fn map_io(e: std::io::Error) -> String {
     format!("git: {e}")
 }
@@ -274,6 +290,12 @@ fn parse_status_line(line: &str) -> Option<GitFileStatus> {
 }
 
 pub fn status(path: &Path) -> Result<GitStatus, String> {
+    // `git -C <non-repo> status` is surprisingly expensive on large synced
+    // folders. The status bar polls this path, so short-circuit common note
+    // vaults that are not Git repositories before spawning any git process.
+    if !has_git_metadata(path) {
+        return Ok(empty_status());
+    }
     let head = optional_git(path, &["rev-parse", "--short=7", "HEAD"]);
     let branch = optional_git(path, &["branch", "--show-current"]);
     let upstream = optional_git(
@@ -636,5 +658,22 @@ mod tests {
             inject_askpass_user("https://github.com/x/y.git", ""),
             "https://github.com/x/y.git",
         );
+    }
+
+    #[test]
+    fn status_short_circuits_non_git_dirs() {
+        let unique = format!(
+            "markio-non-git-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let status = status(&dir).unwrap();
+
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(status.branch.is_none());
+        assert_eq!(status.files.len(), 0);
     }
 }

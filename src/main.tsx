@@ -24,9 +24,18 @@ import { applyFonts } from "./lib/fonts";
 import { devLog, installDevLogger } from "./lib/devLogger";
 import "./i18n";
 
+function shouldInstallDevLogger(): boolean {
+  if (!import.meta.env.DEV || typeof window === "undefined") return false;
+  const envEnabled = import.meta.env.VITE_MARKIO_DEV_LOG === "1";
+  const queryEnabled = new URLSearchParams(window.location.search).get("devlog") === "1";
+  const storageEnabled = localStorage.getItem("markio.devLog") === "1";
+  return envEnabled || queryEnabled || storageEnabled;
+}
+
 async function bootstrap() {
-  // dev 模式：第一时间挂日志，确保后续 bootstrap / 渲染异常都能落盘
-  if (import.meta.env.DEV) {
+  // 开发日志会拦截 console/HMR/invoke 并写入 dev-logs/。默认关闭，排查问题时
+  // 用 VITE_MARKIO_DEV_LOG=1、?devlog=1 或 localStorage markio.devLog=1 显式启用。
+  if (shouldInstallDevLogger()) {
     installDevLogger();
   }
 

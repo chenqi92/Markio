@@ -37,7 +37,7 @@
 | Smart Channel | 🧪 实验 / 工具 | 目前是 `window.__markioSmartChannel` 临时桥；正式化前需改 Tauri command、权限和配额模型 |
 | 更新 / i18n / 打包脚本 | ✅ 正式 | Tauri updater、中文/英文资源、桌面打包脚本已存在；仍需发布链路验证 |
 | CI / Rust 门禁 | ✅ 正式 | 2026-05-18 已改为源码变更触发 CI，并强制 fmt / clippy |
-| 前端 lint / E2E / visual regression | 🟡 可用但需加固 | ESLint + React hooks 基线、Playwright 最小 E2E 已接入 CI；visual regression 尚未接入 |
+| 前端 lint / E2E / visual regression | 🟡 可用但需加固 | ESLint + React hooks 基线、Playwright 行为流 + 视觉守卫已接入 CI；仍需扩大覆盖面 |
 
 ---
 
@@ -75,10 +75,11 @@
 - 本地 Rust fmt / clippy 已清零。
 - 前端 ESLint 基线已落地；现阶段把历史 hooks deps / any / console 等问题保留为 warning。
 - 最小 Playwright E2E 已覆盖启动、打开文件夹、打开文件、编辑保存、冲突提示、搜索跳转。
+- Playwright 视觉守卫已覆盖主窗口分屏布局，检查侧栏、工具栏、编辑区、预览区是否有稳定视觉内容。
 - 发布前 preflight 已串起 lint/test/build/E2E/release static check，并在打包文档中补齐 updater、签名、公证和回滚确认项。
 
 继续补：
-- 增加 visual regression：稳定截图夹具、关键视口、失败截图归档。
+- 扩展 visual regression：暗色主题、设置页、弹窗、移动窄视口和失败截图归档。
 - 扩展 E2E：导入报告、真实 Tauri shell 路径、更多保存/删除/恢复流。
 
 ---

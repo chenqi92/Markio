@@ -4,6 +4,7 @@ import { ToolbarMenuPortal } from "./ToolbarMenuPortal";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
+import { useDialog } from "@/stores/dialog";
 import { api, parseError, pickDirectory, pickFile } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 
@@ -75,6 +76,8 @@ export function NewMenu({
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const setToast = useUI((s) => s.setToast);
+  const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   const create = async (t: Template) => {
     if (!ws) {
@@ -84,7 +87,12 @@ export function NewMenu({
       return;
     }
     const { name, content } = t.build();
-    const userName = window.prompt("文件名（自动追加 .md）", name.replace(/\.md$/i, ""));
+    const userName = await promptDialog({
+      title: t.title,
+      message: "输入文件名；未包含 .md 时会自动追加。",
+      defaultValue: name.replace(/\.md$/i, ""),
+      confirmLabel: "创建",
+    });
     if (!userName) {
       onClose();
       return;
@@ -100,7 +108,11 @@ export function NewMenu({
     } catch (e) {
       const err = parseError(e);
       if (err.code === "ALREADY_EXISTS") {
-        const reuse = window.confirm(`${fname} 已存在。打开它？`);
+        const reuse = await confirmDialog({
+          title: "文件已存在",
+          message: `${fname} 已存在。要打开它吗？`,
+          confirmLabel: "打开",
+        });
         if (reuse) await useTabs.getState().openFile(ws.id, path);
       } else {
         setToast({ stage: "error", message: `创建失败：${err.message}` });

@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
+import { useDialog } from "@/stores/dialog";
 import type { TrashItem } from "@/types";
 
 function daysAgo(ts: number): string {
@@ -19,6 +20,7 @@ export function TrashSection() {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const setToast = useUI((s) => s.setToast);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TrashItem[]>([]);
 
@@ -60,7 +62,12 @@ export function TrashSection() {
   };
 
   const purge = async (it: TrashItem) => {
-    const ok = window.confirm(`永久删除${it.isDir ? "文件夹" : "文件"} ${it.name}？`);
+    const ok = await confirmDialog({
+      title: `永久删除${it.isDir ? "文件夹" : "文件"}？`,
+      message: `${it.name} 将从回收站中彻底移除，无法恢复。`,
+      confirmLabel: "永久删除",
+      danger: true,
+    });
     if (!ok) return;
     try {
       await api.trashPurge(ws.path, it.path);
@@ -75,7 +82,12 @@ export function TrashSection() {
   };
 
   const purgeAll = async () => {
-    const ok = window.confirm(`清空回收站（${items.length} 项）？`);
+    const ok = await confirmDialog({
+      title: "清空回收站？",
+      message: `${items.length} 项将从回收站中彻底移除，无法恢复。`,
+      confirmLabel: "清空",
+      danger: true,
+    });
     if (!ok) return;
     try {
       await api.trashPurge(ws.path);

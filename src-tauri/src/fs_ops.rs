@@ -1146,6 +1146,29 @@ fn restore_from_trash(stored: &Path, dest: &Path) -> Result<(), String> {
     fs::rename(stored, dest).map_err(|e| e.to_string())
 }
 
+fn trash_item_paths(
+    dir: &Path,
+    timestamp: i64,
+    name: &str,
+    is_dir: bool,
+) -> Result<(String, PathBuf, PathBuf), String> {
+    let ext = if is_dir { "dir" } else { "bin" };
+    for attempt in 0..10_000 {
+        let stem = if attempt == 0 {
+            format!("{timestamp}__{name}")
+        } else {
+            format!("{timestamp}__{attempt}__{name}")
+        };
+        let stored = format!("{stem}.{ext}");
+        let stored_path = dir.join(&stored);
+        let meta_path = dir.join(format!("{stem}.meta.json"));
+        if !stored_path.exists() && !meta_path.exists() {
+            return Ok((stored, stored_path, meta_path));
+        }
+    }
+    Err("回收站已有过多同名项目，请稍后再试".to_string())
+}
+
 pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
     let src = PathBuf::from(file);
     if !src.exists() {
@@ -1160,9 +1183,8 @@ pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
     let ts = ts_now();
     let is_dir = src.is_dir();
     let kind = if is_dir { "dir" } else { "file" };
-    let stored = format!("{ts}__{name}.{}", if is_dir { "dir" } else { "bin" });
-    let meta_path = dir.join(format!("{ts}__{name}.meta.json"));
-    move_to_trash(&src, &dir.join(&stored))?;
+    let (stored, stored_path, meta_path) = trash_item_paths(&dir, ts, &name, is_dir)?;
+    move_to_trash(&src, &stored_path)?;
     let meta = serde_json::json!({
         "original": src.to_string_lossy(),
         "name": name,
@@ -1170,7 +1192,15 @@ pub fn trash_move(workspace: &str, file: &str) -> Result<(), String> {
         "stored": stored,
         "kind": kind,
     });
-    fs::write(&meta_path, meta.to_string()).map_err(|e| e.to_string())?;
+    if let Err(e) = atomic_write(&meta_path, &meta.to_string()) {
+        let rollback = restore_from_trash(&stored_path, &src);
+        return Err(match rollback {
+            Ok(()) => format!("写回收站清单失败，已回滚：{e}"),
+            Err(rollback_err) => {
+                format!("写回收站清单失败：{e}；回滚失败：{rollback_err}")
+            }
+        });
+    }
     Ok(())
 }
 
@@ -1686,6 +1716,28 @@ mod tests {
         let item = trash_list(&ws.to_string_lossy()).unwrap().remove(0);
         trash_purge(&ws.to_string_lossy(), Some(item.path.clone())).unwrap();
         assert!(!Path::new(&item.path).exists());
+
+        let _ = fs::remove_dir_all(ws);
+    }
+
+    #[test]
+    fn trash_item_paths_do_not_reuse_existing_names() {
+        let ws = make_test_workspace("trash-collision");
+        let trash = trash_dir(&ws.to_string_lossy());
+        fs::create_dir_all(&trash).unwrap();
+
+        let (stored_a, stored_path_a, meta_path_a) =
+            trash_item_paths(&trash, 123, "Project", true).unwrap();
+        fs::create_dir_all(&stored_path_a).unwrap();
+        fs::write(&meta_path_a, "{}").unwrap();
+
+        let (stored_b, stored_path_b, meta_path_b) =
+            trash_item_paths(&trash, 123, "Project", true).unwrap();
+
+        assert_ne!(stored_a, stored_b);
+        assert!(!stored_path_b.exists());
+        assert!(!meta_path_b.exists());
+        assert!(stored_b.contains("__1__Project.dir"));
 
         let _ = fs::remove_dir_all(ws);
     }

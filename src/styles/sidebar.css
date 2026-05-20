@@ -216,6 +216,11 @@
   font-size: 9.5px; padding: 1px 5px;
   background: var(--accent-glow); color: var(--accent);
   border-radius: 999px; font-weight: 600;
+  flex-shrink: 0;
+}
+.tree-row .badge.warn {
+  background: rgba(217,119,6,0.10);
+  color: #d97706;
 }
 .tree-row .dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
@@ -223,6 +228,45 @@
 }
 .tree-row.unsaved .dot { opacity: 1; }
 .tree-children { padding-left: 16px; }
+
+.tree-limit-alert {
+  margin: 4px 10px 8px;
+  padding: 8px 10px;
+  border: 0.5px solid rgba(217,119,6,0.45);
+  border-left: 3px solid #d97706;
+  border-radius: 6px;
+  background: rgba(217,119,6,0.08);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.tree-limit-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #d97706;
+}
+.tree-limit-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.tree-limit-copy { color: var(--text-3); }
+.tree-limit-action {
+  margin-top: 7px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tree-limit-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 
 .tree-empty {
   padding: 24px 16px;

@@ -4,6 +4,7 @@ import { useRecents } from "@/stores/recents";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useFileIcons } from "@/stores/fileIcons";
+import { useDialog } from "@/stores/dialog";
 import { isIconName } from "../ui/Icon";
 
 /**
@@ -21,6 +22,7 @@ export function RecentSection() {
     s.tabs.find((t) => t.id === s.activeId)?.path,
   );
   const customIcons = useFileIcons((s) => s.icons);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [open, setOpen] = useState(true);
 
   if (!ws) return null;
@@ -55,9 +57,13 @@ export function RecentSection() {
           className="sec-act"
           title="清除最近"
           style={{ opacity: 1 }}
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation();
-            const ok = window.confirm("清空当前仓库的最近列表？");
+            const ok = await confirmDialog({
+              title: "清空最近列表？",
+              message: "将清空当前仓库的最近文件记录，不会删除文件本身。",
+              confirmLabel: "清空",
+            });
             if (!ok) return;
             for (const it of recents) forget(it.path);
           }}

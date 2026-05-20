@@ -21,6 +21,7 @@ interface UIState {
   findCaseSensitive: boolean;
   findWholeWord: boolean;
   findRegex: boolean;
+  lineJump: { path: string; line: number; nonce: number } | null;
   globalSearchOpen: boolean;
   quickCaptureOpen: boolean;
   exportSheetOpen: boolean;
@@ -44,6 +45,8 @@ interface UIState {
       Pick<UIState, "findCaseSensitive" | "findWholeWord" | "findRegex">
     >,
   ) => void;
+  jumpToLine: (path: string, line: number) => void;
+  clearLineJump: (nonce?: number) => void;
   openGlobalSearch: (v: boolean) => void;
   openQuickCapture: (v: boolean) => void;
   openExportSheet: (v: boolean) => void;
@@ -70,6 +73,7 @@ export const useUI = create<UIState>()(
       findCaseSensitive: false,
       findWholeWord: false,
       findRegex: false,
+      lineJump: null,
       globalSearchOpen: false,
       quickCaptureOpen: false,
       exportSheetOpen: false,
@@ -90,6 +94,14 @@ export const useUI = create<UIState>()(
       setFindQuery: (findQuery) => set({ findQuery, findIndex: 0 }),
       setFindIndex: (findIndex) => set({ findIndex }),
       setFindOptions: (patch) => set({ ...patch, findIndex: 0 }),
+      jumpToLine: (path, line) =>
+        set({ lineJump: { path, line, nonce: Date.now() } }),
+      clearLineJump: (nonce) =>
+        set((s) =>
+          !s.lineJump || (nonce != null && s.lineJump.nonce !== nonce)
+            ? s
+            : { lineJump: null },
+        ),
       openGlobalSearch: (globalSearchOpen) => set({ globalSearchOpen }),
       openQuickCapture: (quickCaptureOpen) => set({ quickCaptureOpen }),
       openExportSheet: (exportSheetOpen) => set({ exportSheetOpen }),

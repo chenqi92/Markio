@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
+import { useDialog } from "@/stores/dialog";
 import { api } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 import type { Snapshot } from "@/types";
@@ -43,6 +44,7 @@ export function HistorySheet() {
   );
   const updateContent = useTabs((s) => s.updateContent);
   const setToast = useUI((s) => s.setToast);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [preview, setPreview] = useState<{ ts: number; content: string } | null>(
     null,
@@ -78,27 +80,28 @@ export function HistorySheet() {
     }
   };
 
-  const onRestore = (s: Snapshot) => {
+  const onRestore = async (s: Snapshot) => {
     if (!tabId) return;
-    const ok = window.confirm(
-      `恢复到 ${formatTs(s.timestamp)} 的版本？未保存的更改会丢失。`,
-    );
+    const ok = await confirmDialog({
+      title: "恢复历史版本？",
+      message: `恢复到 ${formatTs(s.timestamp)} 的版本。未保存的更改会丢失。`,
+      confirmLabel: "恢复",
+      danger: true,
+    });
     if (!ok) return;
-    api
-      .historyRead(s.path)
-      .then((c) => {
-        updateContent(tabId, c);
-        setToast({ stage: "done", message: "已恢复（记得保存）" });
-        setTimeout(() => setToast(null), 2000);
-      })
-      .catch((e: Error) => {
-        setToast({
-          stage: "error",
-          message: `恢复失败：${e.message}`,
-        });
-        setTimeout(() => setToast(null), 2500);
-      });
     close();
+    try {
+      const c = await api.historyRead(s.path);
+      updateContent(tabId, c);
+      setToast({ stage: "done", message: "已恢复（记得保存）" });
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setToast({
+        stage: "error",
+        message: `恢复失败：${(e as Error).message}`,
+      });
+      setTimeout(() => setToast(null), 2500);
+    }
   };
 
   return (

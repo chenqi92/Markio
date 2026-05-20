@@ -592,7 +592,7 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
   const aligns = info.aligns.slice();
   const colCount = aligns.length;
   let row = info.cursorRow;
-  let col = info.cursorCol;
+  const col = info.cursorCol;
   if (row < 0) row = Math.min(1, cells.length - 1);
   row = Math.max(0, Math.min(cells.length - 1, row));
   let targetRow = row;

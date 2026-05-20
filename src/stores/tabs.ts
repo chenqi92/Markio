@@ -88,7 +88,7 @@ export const useTabs = create<TabsState>((set, get) => ({
       set({ activeId: exist.id });
       return;
     }
-    let content = "";
+    let content: string;
     let sig: FileSig;
     try {
       const opened = await api.open(path);

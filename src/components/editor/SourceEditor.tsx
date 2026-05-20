@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, {
   type ReactCodeMirrorRef,
   EditorView,
@@ -183,10 +183,10 @@ export const SourceEditor = memo(function SourceEditor({
             re: RegExp;
             triggerLen: number;
           }> = [
-            { kind: "wiki", re: /\[\[([\w一-鿿\-\.\/ ]{0,40})$/, triggerLen: 2 },
-            { kind: "mention", re: /(^|\s)@([\w一-鿿\-]{0,30})$/, triggerLen: 1 },
-            { kind: "tag", re: /(^|\s)#([\w一-鿿\-]{0,30})$/, triggerLen: 1 },
-            { kind: "emoji", re: /(^|\s):([\w\-]{0,30})$/, triggerLen: 1 },
+            { kind: "wiki", re: /\[\[([\w一-鿿./ -]{0,40})$/, triggerLen: 2 },
+            { kind: "mention", re: /(^|\s)@([\w一-鿿-]{0,30})$/, triggerLen: 1 },
+            { kind: "tag", re: /(^|\s)#([\w一-鿿-]{0,30})$/, triggerLen: 1 },
+            { kind: "emoji", re: /(^|\s):([\w-]{0,30})$/, triggerLen: 1 },
           ];
           for (const t of triggers) {
             const m = before.match(t.re);

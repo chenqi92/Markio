@@ -158,7 +158,7 @@ export function eventToBinding(e: KeyboardEvent): string | null {
   // 修饰键自己被按下时不算
   const k = e.key;
   if (k === "Meta" || k === "Control" || k === "Shift" || k === "Alt") return null;
-  let key = normalizeKey(k);
+  const key = normalizeKey(k);
   if (!key) return null;
   // Mod+数字键（"1" 等）保留为数字；字母统一小写已在 normalizeKey 处理
   const out: string[] = [];

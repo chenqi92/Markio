@@ -36,6 +36,7 @@ import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
 import {
   scrollRatio as computeRatio,
+  type ScrollTarget,
   type ScrollInfo,
 } from "@/lib/scrollSync";
 
@@ -92,6 +93,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const saveTab = useTabs((s) => s.saveTab);
   const workspaces = useWorkspace((s) => s.workspaces);
   const mode = useUI((s) => s.mode);
+  const lineJump = useUI((s) => s.lineJump);
+  const clearLineJump = useUI((s) => s.clearLineJump);
   const setToast = useUI((s) => s.setToast);
   const autosave = useSettings((s) => s.autosave);
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
@@ -122,6 +125,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     ratio?: number;
     nonce: number;
   } | null>(null);
+  const [lineJumpTarget, setLineJumpTarget] = useState<{
+    path: string;
+    target: ScrollTarget;
+  } | null>(null);
+  const lineJumpClearTimer = useRef<number | null>(null);
   const [meta, setMeta] = useState<{
     outline: OutlineItem[];
     words: number;
@@ -169,6 +177,37 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   useEffect(() => {
     if (renderMode !== "split") setScrollSync(null);
   }, [renderMode]);
+
+  useEffect(() => {
+    if (!tab || !lineJump || lineJump.path !== tab.path || lineJump.line <= 0) {
+      return;
+    }
+    if (lineJumpClearTimer.current != null) {
+      window.clearTimeout(lineJumpClearTimer.current);
+      lineJumpClearTimer.current = null;
+    }
+    const target = {
+      path: tab.path,
+      target: { nonce: lineJump.nonce, line: lineJump.line },
+    };
+    setLineJumpTarget(target);
+    clearLineJump(lineJump.nonce);
+    lineJumpClearTimer.current = window.setTimeout(() => {
+      lineJumpClearTimer.current = null;
+      setLineJumpTarget((current) =>
+        current?.target.nonce === target.target.nonce ? null : current,
+      );
+    }, 1000);
+  }, [tab?.path, lineJump, clearLineJump]);
+
+  useEffect(
+    () => () => {
+      if (lineJumpClearTimer.current != null) {
+        window.clearTimeout(lineJumpClearTimer.current);
+      }
+    },
+    [],
+  );
 
   // 持久化写入按 250ms 节流：拖分栏时 pointermove 可能每像素触发，
   // 立即写 localStorage 会冗余几十次并阻塞渲染线程。
@@ -805,13 +844,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             onChange={handleContentChange}
             onScroll={handleSourceScroll}
             scrollTarget={
-              scrollSync?.target === "source"
+              (lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null) ??
+              (scrollSync?.target === "source"
                 ? {
                     nonce: scrollSync.nonce,
                     line: scrollSync.line,
                     ratio: scrollSync.ratio,
                   }
-                : null
+                : null)
             }
             onPasteImages={handlePasteImages}
             onTableContextMenu={handleTableContextMenu}
@@ -847,13 +887,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           onMeta={onMetaInternal}
           onScroll={handlePreviewScroll}
           scrollTarget={
-            scrollSync?.target === "preview"
+            (lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null) ??
+            (scrollSync?.target === "preview"
               ? {
                   nonce: scrollSync.nonce,
                   line: scrollSync.line,
                   ratio: scrollSync.ratio,
                 }
-              : null
+              : null)
           }
           onSourceChange={handleContentChange}
           onTableHover={handleTableHover}

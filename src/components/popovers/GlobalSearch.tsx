@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 import type { GrepHit } from "@/types";
 
+const MAX_GLOBAL_SEARCH_RESULTS = 200;
+
 /**
  * 真·全文搜索（⌘⇧F）：触发 Rust grep，命中文件名 + 行号 + 片段
  * 点击命中项：打开文件 + 滚到对应行。
@@ -16,12 +18,14 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const openFile = useTabs((s) => s.openFile);
   const setFindQuery = useUI((s) => s.setFindQuery);
   const openFind = useUI((s) => s.openFind);
+  const jumpToLine = useUI((s) => s.jumpToLine);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<GrepHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState(0);
   const seqRef = useRef(0);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     if (!ws || q.trim().length < 2) {
@@ -34,7 +38,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     const seq = ++seqRef.current;
     const t = setTimeout(async () => {
       try {
-        const r = await api.grep(ws.path, q.trim(), 200);
+        const r = await api.grep(ws.path, q.trim(), MAX_GLOBAL_SEARCH_RESULTS);
         if (seq !== seqRef.current) return;
         setHits(r);
       } catch (e) {
@@ -53,6 +57,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const openHit = async (h: GrepHit) => {
     if (!ws) return;
     await openFile(ws.id, h.path);
+    if (h.line > 0) jumpToLine(h.path, h.line);
     // 同步触发文档内查找，预览面板会高亮第一处
     setFindQuery(q.trim());
     openFind(true);
@@ -78,6 +83,10 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [hits, sel, onClose]);
+
+  useEffect(() => {
+    itemRefs.current[sel]?.scrollIntoView({ block: "nearest" });
+  }, [sel]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, GrepHit[]>();
@@ -126,11 +135,17 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <div className="cmdk-group-h">
-                {hits.length} 处命中 · {grouped.length} 个文件
+                {hits.length >= MAX_GLOBAL_SEARCH_RESULTS
+                  ? `显示前 ${MAX_GLOBAL_SEARCH_RESULTS} 处命中`
+                  : `${hits.length} 处命中`}{" "}
+                · {grouped.length} 个文件
               </div>
               {hits.map((h, i) => (
                 <button
                   type="button"
+                  ref={(el) => {
+                    itemRefs.current[i] = el;
+                  }}
                   key={i}
                   className={"cmdk-item" + (i === sel ? " sel" : "")}
                   onClick={() => openHit(h)}

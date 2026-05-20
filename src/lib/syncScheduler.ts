@@ -101,7 +101,7 @@ export async function runSyncWorkflow(
         sync.setStage("idle", "当前仓库未初始化 Git");
         return;
       }
-      throw new Error(`git status 失败：${message}`);
+      throw new Error(`git status 失败：${message}`, { cause: e });
     }
     if (!status.upstream && (status.files.length > 0 || status.ahead > 0)) {
       throw new Error("当前分支没有 upstream，请先在 Git 设置中执行 push -u。");

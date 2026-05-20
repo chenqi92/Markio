@@ -136,7 +136,7 @@ export function AIAssistantMessage({
       return;
     }
     const ymd = new Date().toISOString().slice(0, 10);
-    const guess = `AI · ${prevUserText?.slice(0, 24) ?? ymd}`.replace(/[\/\\:*?"<>|]/g, " ");
+    const guess = `AI · ${prevUserText?.slice(0, 24) ?? ymd}`.replace(/[/\\:*?"<>|]/g, " ");
     const name = await promptDialog({
       title: "另存为新笔记",
       message: "输入文件名；未包含 .md 时会自动追加。",

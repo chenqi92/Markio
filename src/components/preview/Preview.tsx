@@ -544,7 +544,7 @@ export function Preview({
     if (viewKind === "kanban" || viewKind === "list" || viewKind === "graph") {
       // 仍需把字数 / 标题大纲算出来给 Outline 用
       const words = fm.body
-        .replace(/[`*_#>\-\[\]()]/g, "")
+        .replace(/[`*_#>\-[\]()]/g, "")
         .trim().length;
       const outline: OutlineItem[] = [];
       const lines = fm.body.split("\n");

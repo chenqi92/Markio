@@ -46,7 +46,7 @@ const SCOPE_MODES: ScopeMode[] = [
     id: "custom",
     icon: "sparkle",
     label: "手动选择",
-    hint: ({}) => "0 篇",
+    hint: () => "0 篇",
   },
 ];
 

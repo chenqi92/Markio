@@ -97,7 +97,8 @@ type PreferenceKey =
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
-  | "customThemeId";
+  | "customThemeId"
+  | "bubbleTrigger";
 
 export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
 
@@ -125,6 +126,8 @@ interface SettingsState {
   startupBehavior: "restoreTabs" | "welcome" | "lastWorkspace";
   closeLastTabBehavior: "keepWindow" | "showWelcome" | "quitApp";
   shortcutStyle: "all" | "bubble" | "slash" | "toolbar";
+  /** 浮动格式栏的触发方式：左键拖选 / 右键点击 */
+  bubbleTrigger: "selection" | "rightClick";
   followSystemTheme: boolean;
   darkVariant: string;
   lightVariant: string;
@@ -296,6 +299,7 @@ export const useSettings = create<SettingsState>()(
       startupBehavior: "restoreTabs",
       closeLastTabBehavior: "keepWindow",
       shortcutStyle: "all",
+      bubbleTrigger: "selection",
       followSystemTheme: false,
       darkVariant: "dark",
       lightVariant: "light",

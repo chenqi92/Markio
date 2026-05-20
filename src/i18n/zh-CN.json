@@ -122,6 +122,12 @@
         "slash": "只用 / 命令",
         "toolbar": "只用顶部工具栏"
       },
+      "bubbleTriggerCard": "浮动气泡触发方式",
+      "bubbleTriggerHelp": "需先在「编辑快捷菜单」里允许浮动气泡（全部启用 / 只用浮动气泡）",
+      "bubbleTrigger": {
+        "selection": "选中文本时（左键拖选）",
+        "rightClick": "右键点击（屏蔽浏览器原生菜单）"
+      },
       "modeCard": "默认模式",
       "mode": {
         "source": "纯源码",

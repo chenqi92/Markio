@@ -442,6 +442,19 @@ fn is_block_tag_end(end: &TagEnd) -> bool {
 
 /// 主渲染入口
 pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf]) -> RenderResult {
+    render_with_line_offset(source, base_path, allowed_roots, 0)
+}
+
+/// 与 [`render`] 等价，但 `data-line` 全部加上 `line_offset`。流式渲染按 H1 切片
+/// 后每段独立 render，行号会从 1 重新计数，前端 anchors 因此非单调、scroll sync
+/// 退化。通过把段在原文中的起始行号作为偏移传入，可以让所有切片合并后的
+/// data-line 在源文档坐标系里保持单调递增。
+pub fn render_with_line_offset(
+    source: &str,
+    base_path: Option<&Path>,
+    allowed_roots: &[PathBuf],
+    line_offset: usize,
+) -> RenderResult {
     let parser = Parser::new_ext(source, parser_options()).into_offset_iter();
     let mut html = String::new();
     let mut outline: Vec<OutlineItem> = Vec::new();
@@ -475,7 +488,7 @@ pub fn render(source: &str, base_path: Option<&Path>, allowed_roots: &[PathBuf])
     };
 
     for (ev, range) in parser {
-        let line = source[..range.start].matches('\n').count() + 1;
+        let line = source[..range.start].matches('\n').count() + 1 + line_offset;
         let ev = rewrite_asset_event(ev, base_path, allowed_roots);
         if let Some((_lvl, _)) = heading.as_mut() {
             match &ev {
@@ -786,6 +799,23 @@ mod tests {
         assert!(
             res.html.contains("data-line=\"9\""),
             "code block missing data-line=9: {}",
+            res.html
+        );
+    }
+
+    #[test]
+    fn render_with_line_offset_adds_to_all_data_line() {
+        // 模拟流式渲染：第二段从全文第 11 行开始
+        let src = "## Section\n\nbody text\n";
+        let res = render_with_line_offset(src, None, &[], 10);
+        assert!(
+            res.html.contains("data-line=\"11\""),
+            "heading data-line should be 1+10=11, got: {}",
+            res.html
+        );
+        assert!(
+            res.html.contains("data-line=\"13\""),
+            "paragraph data-line should be 3+10=13, got: {}",
             res.html
         );
     }

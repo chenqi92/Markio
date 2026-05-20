@@ -69,6 +69,7 @@ export function TabStrip() {
   const [ctx, setCtx] = useState<{ x: number; y: number; tab: TabStripItem } | null>(null);
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
 
   // 把 pinned 排前面，和 TabStrip 的可视顺序保持一致。
   const ordered = [...tabs].sort((a, b) => {
@@ -226,15 +227,42 @@ export function TabStrip() {
     return menu;
   };
 
+  // 把 contextmenu 改成原生 DOM 监听 + capture：之前依赖 React 合成事件的
+  // preventDefault 在 WebView2 个别版本上会被原生菜单抢先（同 Preview 之前的坑），
+  // 这里挂在 strip 容器上、phase=capture 且任何位置都 preventDefault，再按命中的
+  // data-tab-id 路由到对应 tab 的菜单（空白处也不让原生菜单出来）。
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = (e.target as HTMLElement | null)?.closest(
+        "[data-tab-id]",
+      ) as HTMLElement | null;
+      const id = target?.getAttribute("data-tab-id");
+      if (!id) {
+        setCtx(null);
+        return;
+      }
+      const tab = ordered.find((x) => x.id === id);
+      if (!tab) return;
+      setCtx({ x: e.clientX, y: e.clientY, tab });
+    };
+    el.addEventListener("contextmenu", onCtx, true);
+    return () => el.removeEventListener("contextmenu", onCtx, true);
+  }, [ordered]);
+
   if (tabs.length === 0) return null;
 
   return (
     <>
-      <div className="tabstrip">
+      <div className="tabstrip" ref={stripRef}>
         {ordered.map((t) => (
           <div
             key={t.id}
             role="tab"
+            data-tab-id={t.id}
             draggable={!t.pinned}
             className={classNames(
               "tab",
@@ -246,10 +274,6 @@ export function TabStrip() {
             onClick={() => setActive(t.id)}
             onAuxClick={(e) => {
               if (e.button === 1) void confirmAndClose(t);
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setCtx({ x: e.clientX, y: e.clientY, tab: t });
             }}
             onDragStart={(e) => {
               if (t.pinned) return;

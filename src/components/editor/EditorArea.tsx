@@ -29,16 +29,18 @@ import {
 import { EditorSelection } from "@codemirror/state";
 import { TableToolbar } from "../popovers/TableToolbar";
 import { TableContextMenu } from "../popovers/TableContextMenu";
+import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
+import { buildEditorContextItems } from "@/lib/editor-context-menu";
+import {
+  buildPreviewContextItems,
+  type PreviewClickInfo,
+} from "@/lib/preview-context-menu";
 import { MathPreview } from "../popovers/MathPreview";
 import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
-import {
-  scrollRatio as computeRatio,
-  type ScrollTarget,
-  type ScrollInfo,
-} from "@/lib/scrollSync";
+import type { ScrollTarget } from "@/lib/scrollSync";
 
 interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
@@ -55,8 +57,6 @@ const MODE_CLASS: Record<ViewMode, string> = {
 const MAX_PASTE_IMAGES = 8;
 const MAX_PASTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const SPLIT_WIDTH_KEY = "markio.split.sourcePercent";
-
-const scrollRatio = computeRatio;
 
 function buildS3Key(notePath: string, fileName?: string): string {
   const stem = (fileName || "image").replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -99,14 +99,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const autosave = useSettings((s) => s.autosave);
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
+  const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
   );
-  const syncNonce = useRef(0);
-  const scrollSyncFrame = useRef<number | null>(null);
-  const scrollSyncLock = useRef<"source" | "preview" | null>(null);
-  const scrollSyncLockTimer = useRef<number | null>(null);
   const splitRootRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
@@ -119,12 +116,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       return 50;
     }
   });
-  const [scrollSync, setScrollSync] = useState<{
-    target: "source" | "preview";
-    line?: number;
-    ratio?: number;
-    nonce: number;
-  } | null>(null);
   const [lineJumpTarget, setLineJumpTarget] = useState<{
     path: string;
     target: ScrollTarget;
@@ -163,6 +154,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     y: number;
   } | null>(null);
   const [mathCtx, setMathCtx] = useState<MathContext | null>(null);
+  const [editorMenu, setEditorMenu] = useState<{
+    x: number;
+    y: number;
+    items: CtxItem[];
+  } | null>(null);
 
   const onMetaInternal = useCallback(
     (m: { outline: OutlineItem[]; words: number; readingMinutes: number }) => {
@@ -173,10 +169,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   const renderMode = mode;
-
-  useEffect(() => {
-    if (renderMode !== "split") setScrollSync(null);
-  }, [renderMode]);
 
   useEffect(() => {
     if (!tab || !lineJump || lineJump.path !== tab.path || lineJump.line <= 0) {
@@ -235,61 +227,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     };
   }, []);
 
-  const scheduleScrollSync = useCallback(
-    (
-      origin: "source" | "preview",
-      target: "source" | "preview",
-      info: ScrollInfo,
-    ) => {
-      if (renderMode !== "split") return;
-      if (scrollSyncLock.current === origin) return;
-      const ratio = scrollRatio(info);
-      const line = info.topLine;
-      if (scrollSyncFrame.current != null) {
-        window.cancelAnimationFrame(scrollSyncFrame.current);
-      }
-      scrollSyncFrame.current = window.requestAnimationFrame(() => {
-        scrollSyncFrame.current = null;
-        scrollSyncLock.current = target;
-        if (scrollSyncLockTimer.current != null) {
-          window.clearTimeout(scrollSyncLockTimer.current);
-        }
-        scrollSyncLockTimer.current = window.setTimeout(() => {
-          scrollSyncLock.current = null;
-          scrollSyncLockTimer.current = null;
-        }, 140);
-        setScrollSync({
-          target,
-          line,
-          ratio,
-          nonce: ++syncNonce.current,
-        });
-      });
-    },
-    [renderMode],
-  );
-
-  useEffect(
-    () => () => {
-      if (scrollSyncFrame.current != null) window.cancelAnimationFrame(scrollSyncFrame.current);
-      if (scrollSyncLockTimer.current != null) window.clearTimeout(scrollSyncLockTimer.current);
-    },
-    [],
-  );
-
-  const handleSourceScroll = useCallback(
-    (info: ScrollInfo) => {
-      scheduleScrollSync("source", "preview", info);
-    },
-    [scheduleScrollSync],
-  );
-
-  const handlePreviewScroll = useCallback(
-    (info: ScrollInfo) => {
-      scheduleScrollSync("preview", "source", info);
-    },
-    [scheduleScrollSync],
-  );
+  // 分屏滚动同步走 src/lib/splitScrollSync.ts 总线，不再经过 EditorArea state
 
   const handleSplitPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -633,6 +571,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     }) => {
       setBubble(null);
       setSlash(null);
+      setEditorMenu(null);
       setTableMenu({
         x: info.coords.x,
         y: info.coords.y,
@@ -651,17 +590,78 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       hasSelection: boolean;
       coords: { x: number; y: number } | null;
     }) => {
-      if (!allowBubble) {
+      // 选区→气泡：仅当用户允许气泡且触发方式是 "selection" 时才弹
+      if (!allowBubble || bubbleTrigger !== "selection") {
         setBubble(null);
       } else if (!info.hasSelection || !info.coords) {
         setBubble(null);
       } else {
+        setEditorMenu(null);
         setBubble(info.coords);
       }
       // 表格 toolbar 不再由源码 cursor 触发；改由 Preview 中的 table hover 触发，
       // 见 handleTableHover —— 这样 toolbar 只会浮在渲染后的 table 上方，不污染 md 编辑区
     },
-    [allowBubble],
+    [allowBubble, bubbleTrigger],
+  );
+
+  // 编辑器右键（非表格区域）。表格 cell 的右键已经在 SourceEditor 内部优先匹配走 TableContextMenu。
+  // 这里参考 Typora / Obsidian：
+  //   * 永远屏蔽浏览器原生菜单（由 SourceEditor 那侧 preventDefault；本处只决定弹什么）。
+  //   * 若用户配置 bubbleTrigger=rightClick 且选区里有内容，弹气泡（保留旧行为，方便快速格式化）。
+  //   * 其它情况按光标所在区域（链接 / 图片 / 代码块 / 标题 / 选区 / 纯文本）弹一份自适应的 ContextMenu。
+  const handleEditorContextMenu = useCallback(
+    (info: { coords: { x: number; y: number }; pos: number }) => {
+      setSlash(null);
+      setTableMenu(null);
+      const view = getEditor();
+      if (!view) return;
+      const hasSelection = !view.state.selection.main.empty;
+      if (bubbleTrigger === "rightClick" && allowBubble && hasSelection) {
+        setEditorMenu(null);
+        setBubble(info.coords);
+        return;
+      }
+      setBubble(null);
+      const items = buildEditorContextItems({
+        view,
+        pos: info.pos,
+        modifierLabel: (mac, win) =>
+          typeof navigator !== "undefined" &&
+          navigator.platform.toLowerCase().includes("mac")
+            ? mac
+            : win,
+        toast: (message) => {
+          setToast({ stage: "error", message });
+          window.setTimeout(() => setToast(null), 1600);
+        },
+      });
+      setEditorMenu({ x: info.coords.x, y: info.coords.y, items });
+    },
+    [allowBubble, bubbleTrigger, setToast],
+  );
+
+  // 预览侧右键。Preview 内部已经 preventDefault，这里只决定弹什么条目。
+  const handlePreviewContextMenu = useCallback(
+    (info: { coords: { x: number; y: number }; info: PreviewClickInfo }) => {
+      setBubble(null);
+      setSlash(null);
+      setTableMenu(null);
+      const items = buildPreviewContextItems({
+        info: info.info,
+        modifierLabel: (mac, win) =>
+          typeof navigator !== "undefined" &&
+          navigator.platform.toLowerCase().includes("mac")
+            ? mac
+            : win,
+        toast: (message) => {
+          setToast({ stage: "done", message });
+          window.setTimeout(() => setToast(null), 1200);
+        },
+      });
+      setEditorMenu({ x: info.coords.x, y: info.coords.y, items });
+    },
+    [setToast],
   );
 
   // toolbar 自身 hover 时延迟消失：Preview 上 mouseleave + toolbar 上 mouseleave 都
@@ -842,19 +842,12 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             value={tab.content}
             wysiwyg={renderMode === "wysiwyg"}
             onChange={handleContentChange}
-            onScroll={handleSourceScroll}
             scrollTarget={
-              (lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null) ??
-              (scrollSync?.target === "source"
-                ? {
-                    nonce: scrollSync.nonce,
-                    line: scrollSync.line,
-                    ratio: scrollSync.ratio,
-                  }
-                : null)
+              lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null
             }
             onPasteImages={handlePasteImages}
             onTableContextMenu={handleTableContextMenu}
+            onEditorContextMenu={handleEditorContextMenu}
             onSelectionChange={handleSelectionChange}
             onSlashTrigger={
               allowSlash ? handleSlashTrigger : undefined
@@ -885,21 +878,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           source={tab.content}
           basePath={tab.path}
           onMeta={onMetaInternal}
-          onScroll={handlePreviewScroll}
           scrollTarget={
-            (lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null) ??
-            (scrollSync?.target === "preview"
-              ? {
-                  nonce: scrollSync.nonce,
-                  line: scrollSync.line,
-                  ratio: scrollSync.ratio,
-                }
-              : null)
+            lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null
           }
           onSourceChange={handleContentChange}
           onTableHover={handleTableHover}
           onTableCellContext={handleTableCellContext}
           onTableQuickAdd={handleTableQuickAdd}
+          onPreviewContextMenu={handlePreviewContextMenu}
         />
       )}
       <Outline
@@ -941,6 +927,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           cols={tableMenu.cols}
           rect={tableMenu.rect}
           onClose={() => setTableMenu(null)}
+        />
+      )}
+      {editorMenu && (
+        <ContextMenu
+          x={editorMenu.x}
+          y={editorMenu.y}
+          items={editorMenu.items}
+          onClose={() => setEditorMenu(null)}
         />
       )}
       {slash && (

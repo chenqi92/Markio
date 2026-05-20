@@ -17,6 +17,7 @@ import { useRag } from "@/stores/rag";
 import { useUI } from "@/stores/ui";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
+import { useDialog } from "@/stores/dialog";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
@@ -237,6 +238,7 @@ function FontCard() {
   const bodyFont = useSettings((s) => s.bodyFontFamily);
   const monoFont = useSettings((s) => s.monoFontFamily);
   const setFontFamily = useSettings((s) => s.setFontFamily);
+  const promptDialog = useDialog((s) => s.prompt);
 
   const renderFontRow = (
     kind: "ui" | "body" | "mono",
@@ -259,12 +261,13 @@ function FontCard() {
             ...presets.map((p) => ({ value: p.value, label: p.label })),
             { value: "__custom__", label: t("common.custom") },
           ]}
-          onChange={(v) => {
+          onChange={async (v) => {
             if (v === "__custom__") {
-              const input = window.prompt(
-                t("settings.appear.customFontPrompt"),
-                current || "",
-              );
+              const input = await promptDialog({
+                title: t("settings.appear.customFontPrompt"),
+                defaultValue: current || "",
+                confirmLabel: t("common.save"),
+              });
               if (input !== null) setFontFamily(kind, input.trim());
             } else {
               setFontFamily(kind, v);
@@ -320,6 +323,7 @@ function CustomThemesCard() {
   const remove = useCustomThemes((s) => s.remove);
   const apply = useCustomThemes((s) => s.apply);
   const setPreference = useSettings((s) => s.setPreference);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -355,7 +359,12 @@ function CustomThemesCard() {
   };
 
   const onRemove = async (id: string) => {
-    if (!window.confirm(t("settings.appear.confirmRemoveTheme", { id }))) return;
+    const ok = await confirmDialog({
+      title: t("settings.appear.confirmRemoveTheme", { id }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
     setErr(null);
     setBusy(id);
     try {

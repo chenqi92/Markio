@@ -22,6 +22,7 @@ export function FileTree() {
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const loadDir = useWorkspace((s) => s.loadDir);
+  const openGlobalSearch = useUI((s) => s.openGlobalSearch);
   const unavailable = useWorkspace((s) =>
     ws ? s.isUnavailable(ws.path) : false,
   );
@@ -175,37 +176,21 @@ export function FileTree() {
           </button>
         </div>
         {tree.truncated && (
-          <div
-            role="alert"
-            style={{
-              margin: "4px 10px 8px",
-              padding: "8px 10px",
-              border: "1px solid #d97706",
-              borderLeft: "3px solid #d97706",
-              borderRadius: 6,
-              background: "rgba(217,119,6,0.08)",
-              color: "var(--text-2)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              display: "flex",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <span
-              aria-hidden
-              style={{ flexShrink: 0, fontWeight: 700, color: "#d97706" }}
-            >
-              !
-            </span>
+          <div role="alert" className="tree-limit-alert">
+            <span aria-hidden className="tree-limit-icon">!</span>
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                列表已截断 · 未显示全部文件
-              </div>
-              <div style={{ color: "var(--text-3)" }}>
+              <div className="tree-limit-title">列表已截断 · 未显示全部文件</div>
+              <div className="tree-limit-copy">
                 目录或子项数超过上限（单目录 ≤ 2000 · 总条目 ≤ 8000 · 深度 ≤ 8）。
-                文件并未丢失，使用顶部搜索可定位未显示项。
+                文件并未丢失，可用全局搜索定位未显示项。
               </div>
+              <button
+                type="button"
+                className="tree-limit-action"
+                onClick={() => openGlobalSearch(true)}
+              >
+                全局搜索
+              </button>
             </div>
           </div>
         )}
@@ -445,6 +430,11 @@ const TreeRow = memo(function TreeRow({
         )}
       </span>
       <span className="lbl">{node.name}</span>
+      {node.truncated && (
+        <span className="badge warn" title="此目录已达到显示上限，仍可用全局搜索定位其中的文件">
+          截断
+        </span>
+      )}
     </div>
   );
 });

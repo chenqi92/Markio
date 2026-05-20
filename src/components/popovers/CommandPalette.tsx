@@ -6,6 +6,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useSettings } from "@/stores/settings";
 import { useRecents } from "@/stores/recents";
 import { useVaultIndex } from "@/stores/vaultIndex";
+import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
 import { shortcutText } from "@/lib/shortcuts";
@@ -55,6 +56,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const openFile = useTabs((s) => s.openFile);
   const saveActive = useTabs((s) => s.saveActive);
+  const promptDialog = useDialog((s) => s.prompt);
 
   const baseCommands: Cmd[] = useMemo(
     () => [
@@ -148,14 +150,17 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         l2: "把当前问题发给智能通道，AI 会基于仓库内容回答",
         ico: "flame",
         run: async () => {
-          const q = window.prompt(
-            "智能通道 · 想问什么？（基于当前仓库检索 + AI 回答）",
-          );
-          if (!q || !q.trim()) return;
+          const query = await promptDialog({
+            title: "智能通道查询",
+            message: "输入问题，AI 会基于当前仓库检索后回答。",
+            placeholder: "想问什么？",
+            confirmLabel: "查询",
+          });
+          if (!query || !query.trim()) return;
           const { setToast } = useUI.getState();
           setToast({ stage: "uploading", message: "智能通道查询中…" });
           try {
-            const res = await smartChannelQuery({ query: q.trim() });
+            const res = await smartChannelQuery({ query: query.trim() });
             setToast({
               stage: "done",
               message: `智能通道：${res.answer.replace(/\s+/g, " ").slice(0, 80)}${res.answer.length > 80 ? "…" : ""}`,
@@ -186,6 +191,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       saveActive,
       addWorkspace,
       openSettings,
+      promptDialog,
       setTheme,
     ],
   );

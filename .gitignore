@@ -37,6 +37,10 @@ vite.config.ts.timestamp-*.mjs
 # 开发期日志（前后端汇总）
 dev-logs/
 
+# Playwright artifacts
+playwright-report/
+test-results/
+
 # Markio local vault caches
 .markio/
 

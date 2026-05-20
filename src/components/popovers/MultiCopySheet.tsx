@@ -114,9 +114,9 @@ export function markdownToPlain(src: string): string {
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/(\*|_)(.+?)\1/g, "$2")
     .replace(/~~(.+?)~~/g, "$1")
-    .replace(/^>\s?/gm, "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^[-*+]\s+/gm, "· ")
+    .replace(/^[ \t]{0,3}>\s?/gm, "")
+    .replace(/^[ \t]{0,3}#{1,6}\s+/gm, "")
+    .replace(/^[ \t]{0,3}[-*+]\s+/gm, "· ")
     .replace(/^\d+\.\s+/gm, (m) => m)
     .replace(/\n{3,}/g, "\n\n")
     .trim();

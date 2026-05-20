@@ -37,7 +37,7 @@
 | Smart Channel | 🧪 实验 / 工具 | 目前是 `window.__markioSmartChannel` 临时桥；正式化前需改 Tauri command、权限和配额模型 |
 | 更新 / i18n / 打包脚本 | ✅ 正式 | Tauri updater、中文/英文资源、桌面打包脚本已存在；仍需发布链路验证 |
 | CI / Rust 门禁 | ✅ 正式 | 2026-05-18 已改为源码变更触发 CI，并强制 fmt / clippy |
-| 前端 lint / E2E / visual regression | ❌ 未做 | 目前只有 TypeScript build 和 Vitest 单测 |
+| 前端 lint / E2E / visual regression | 🟡 可用但需加固 | ESLint + React hooks 基线、Playwright 最小 E2E 已接入 CI；visual regression 尚未接入 |
 
 ---
 
@@ -71,12 +71,14 @@
 
 已落地：
 - CI 不再只监听 `package.json`。
-- `cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、前端 build/test 会在 CI 主流程执行。
+- `cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`、前端 lint/build/test/E2E 会在 CI 主流程执行。
 - 本地 Rust fmt / clippy 已清零。
+- 前端 ESLint 基线已落地；现阶段把历史 hooks deps / any / console 等问题保留为 warning。
+- 最小 Playwright E2E 已覆盖启动、打开文件夹、打开文件、编辑保存、冲突提示、搜索跳转。
 
 继续补：
-- 增加前端 lint：ESLint + React hooks 规则 + import 边界规则。
-- 增加最小 E2E：启动、打开文件夹、打开文件、编辑保存、冲突提示、搜索、导入报告。
+- 增加 visual regression：稳定截图夹具、关键视口、失败截图归档。
+- 扩展 E2E：导入报告、真实 Tauri shell 路径、更多保存/删除/恢复流。
 - 增加发布前 checklist：build、测试、updater manifest、签名/公证、回滚包。
 
 ---

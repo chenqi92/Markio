@@ -19,10 +19,33 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { wrapInvoke } from "./devLogger";
 
+interface E2EApiBridge {
+  invoke?: (cmd: string, args?: Record<string, unknown>) => unknown | Promise<unknown>;
+  pickDirectory?: () => string | null | Promise<string | null>;
+  pickFile?: (
+    filters?: { name: string; extensions: string[] }[],
+  ) => string | null | Promise<string | null>;
+}
+
+declare global {
+  interface Window {
+    __MARKIO_E2E__?: E2EApiBridge;
+  }
+}
+
 const isTauri = () =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+function e2eBridge(): E2EApiBridge | null {
+  if (!import.meta.env.DEV || typeof window === "undefined") return null;
+  return window.__MARKIO_E2E__ ?? null;
+}
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const bridge = e2eBridge();
+  if (bridge?.invoke) {
+    return (await bridge.invoke(cmd, args)) as T;
+  }
   if (!isTauri()) {
     throw new Error(
       `Tauri 命令 \`${cmd}\` 仅在桌面端可用。请通过 \`pnpm tauri:dev\` 启动。`,
@@ -36,6 +59,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 }
 
 export async function pickDirectory(): Promise<string | null> {
+  const bridge = e2eBridge();
+  if (bridge?.pickDirectory) return bridge.pickDirectory();
   if (!isTauri()) return null;
   const selected = await openDialog({ directory: true, multiple: false });
   if (typeof selected === "string") return selected;
@@ -45,13 +70,15 @@ export async function pickDirectory(): Promise<string | null> {
 export async function pickFile(
   filters?: { name: string; extensions: string[] }[],
 ): Promise<string | null> {
+  const bridge = e2eBridge();
+  if (bridge?.pickFile) return bridge.pickFile(filters);
   if (!isTauri()) return null;
   const selected = await openDialog({ multiple: false, filters });
   if (typeof selected === "string") return selected;
   return null;
 }
 
-export const isDesktop = isTauri;
+export const isDesktop = () => isTauri() || Boolean(e2eBridge());
 
 export interface FileSig {
   mtime: number;

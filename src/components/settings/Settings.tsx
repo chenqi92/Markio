@@ -1143,6 +1143,7 @@ function S3DriveDrawer() {
     lastModified: string;
   }> | null>(null);
   const [listTruncated, setListTruncated] = useState(false);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   const cfgPayload = () => ({
     endpoint: s3Endpoint,
@@ -1228,7 +1229,13 @@ function S3DriveDrawer() {
   };
 
   const deleteRemote = async (key: string) => {
-    if (!confirm(`确认删除远端对象 ${key}？此操作不可撤销。`)) return;
+    const ok = await confirmDialog({
+      title: "删除远端对象？",
+      message: `${key} 将从远端存储中删除，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("delete");
     setMsg(null);
     try {
@@ -1467,6 +1474,7 @@ function DropboxDriveDrawer() {
     | null
   >(null);
   const [uploadPath, setUploadPath] = useState("");
+  const confirmDialog = useDialog((s) => s.confirm);
 
   useEffect(() => {
     api.dropboxStatus().then(setStatus).catch(() => setStatus(null));
@@ -1491,7 +1499,13 @@ function DropboxDriveDrawer() {
   };
 
   const signout = async () => {
-    if (!confirm("注销 Dropbox 授权？token 将从系统钥匙串中清除。")) return;
+    const ok = await confirmDialog({
+      title: "注销 Dropbox 授权？",
+      message: "token 将从系统钥匙串中清除。",
+      confirmLabel: "注销",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("signout");
     try {
       await api.dropboxSignout();
@@ -1521,7 +1535,13 @@ function DropboxDriveDrawer() {
   };
 
   const del = async (path: string) => {
-    if (!confirm(`从 Dropbox 删除 ${path}？此操作不可撤销。`)) return;
+    const ok = await confirmDialog({
+      title: "从 Dropbox 删除？",
+      message: `${path} 将被删除，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("delete");
     try {
       await api.dropboxDelete(path);
@@ -1757,6 +1777,7 @@ function GDriveDriveDrawer() {
     }>
     | null
   >(null);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   useEffect(() => {
     api.gdriveStatus().then(setStatus).catch(() => setStatus(null));
@@ -1781,7 +1802,13 @@ function GDriveDriveDrawer() {
   };
 
   const signout = async () => {
-    if (!confirm("注销 Google Drive 授权？token 将从系统钥匙串清除。")) return;
+    const ok = await confirmDialog({
+      title: "注销 Google Drive 授权？",
+      message: "token 将从系统钥匙串中清除。",
+      confirmLabel: "注销",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("signout");
     try {
       await api.gdriveSignout();
@@ -1811,7 +1838,13 @@ function GDriveDriveDrawer() {
   };
 
   const del = async (file: { id: string; name: string }) => {
-    if (!confirm(`从 Google Drive 删除 ${file.name}？此操作不可撤销。`)) return;
+    const ok = await confirmDialog({
+      title: "从 Google Drive 删除？",
+      message: `${file.name} 将被删除，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("delete");
     try {
       await api.gdriveDelete(file.id);

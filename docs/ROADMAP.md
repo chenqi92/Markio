@@ -75,11 +75,11 @@
 - 本地 Rust fmt / clippy 已清零。
 - 前端 ESLint 基线已落地；现阶段把历史 hooks deps / any / console 等问题保留为 warning。
 - 最小 Playwright E2E 已覆盖启动、打开文件夹、打开文件、编辑保存、冲突提示、搜索跳转。
+- 发布前 preflight 已串起 lint/test/build/E2E/release static check，并在打包文档中补齐 updater、签名、公证和回滚确认项。
 
 继续补：
 - 增加 visual regression：稳定截图夹具、关键视口、失败截图归档。
 - 扩展 E2E：导入报告、真实 Tauri shell 路径、更多保存/删除/恢复流。
-- 增加发布前 checklist：build、测试、updater manifest、签名/公证、回滚包。
 
 ---
 

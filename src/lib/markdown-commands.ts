@@ -5,6 +5,7 @@ import {
   selectedText,
   wrapSelection,
 } from "@/lib/editor-bridge";
+import { useDialog } from "@/stores/dialog";
 
 const URL_RE = /^(https?:\/\/|mailto:|\/|\.{1,2}\/|#)/i;
 
@@ -67,9 +68,13 @@ export const markdownCommands = {
   mark: () => wrapSelection("==", "==", "高亮"),
   inlineCode: () => wrapSelection("`", "`", "code"),
   underline: () => wrapSelection("<u>", "</u>", "下划线"),
-  link: () => {
+  link: async () => {
     const current = selectedText().trim();
-    const url = window.prompt("链接 URL", URL_RE.test(current) ? current : "https://");
+    const url = await useDialog.getState().prompt({
+      title: "链接 URL",
+      defaultValue: URL_RE.test(current) ? current : "https://",
+      confirmLabel: "插入",
+    });
     if (!url) return;
     if (URL_RE.test(current)) {
       replaceSelection(`[链接文本](${url})`, { selectText: "链接文本" });
@@ -78,9 +83,13 @@ export const markdownCommands = {
     wrapSelection("[", `](${url})`, "链接文本");
   },
   wikiLink: () => wrapSelection("[[", "]]", "笔记名"),
-  image: () => {
+  image: async () => {
     const current = selectedText().trim();
-    const url = window.prompt("图片 URL", URL_RE.test(current) ? current : "https://");
+    const url = await useDialog.getState().prompt({
+      title: "图片 URL",
+      defaultValue: URL_RE.test(current) ? current : "https://",
+      confirmLabel: "插入",
+    });
     if (!url) return;
     if (URL_RE.test(current)) {
       replaceSelection(`![alt](${url})`, { selectText: "alt" });

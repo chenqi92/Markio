@@ -22,21 +22,25 @@ async function appendToFile(path: string, body: string): Promise<void> {
   // 试读现有文件；如果不存在就新建。读到后追加时间戳分隔块。
   let baseline = "";
   let mtime: number | undefined;
+  let hash: string | undefined;
   try {
     const opened = await api.open(path);
     baseline = opened.content;
     mtime = opened.sig.mtime;
+    hash = opened.sig.hash;
   } catch {
     // 文件不存在 → 用 createNew 建一个空壳，再读回 mtime
     try {
       const sig = await api.createNew(path, "");
       mtime = sig.mtime;
+      hash = sig.hash;
     } catch (e) {
       const err = parseError(e);
       if (err.code !== "ALREADY_EXISTS") throw e;
       const opened = await api.open(path);
       baseline = opened.content;
       mtime = opened.sig.mtime;
+      hash = opened.sig.hash;
     }
   }
   const ts = new Date().toLocaleTimeString("zh-CN", {
@@ -48,7 +52,7 @@ async function appendToFile(path: string, body: string): Promise<void> {
   const next = baseline.endsWith("\n") || baseline === ""
     ? baseline + (baseline === "" ? "" : "\n") + block
     : baseline + "\n\n" + block;
-  await api.save(path, next, mtime);
+  await api.save(path, next, mtime, hash);
 }
 
 export function QuickCapture({ onClose }: { onClose: () => void }) {

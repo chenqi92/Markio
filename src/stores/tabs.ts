@@ -196,6 +196,7 @@ export const useTabs = create<TabsState>((set, get) => ({
         tab.path,
         content,
         sig?.mtime,
+        sig?.hash,
         force,
       );
       const ws = useWorkspace

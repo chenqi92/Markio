@@ -467,8 +467,36 @@ fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), Strin
     state.record_close(&canon)
 }
 
+fn parse_expected_hash(raw: &str) -> Result<u64, String> {
+    let trimmed = raw.trim().trim_start_matches("0x");
+    if trimmed.is_empty() {
+        return Err("保存失败：文件基线哈希为空，请重新打开文件后再保存。".to_string());
+    }
+    u64::from_str_radix(trimmed, 16)
+        .map_err(|_| "保存失败：文件基线哈希无效，请重新打开文件后再保存。".to_string())
+}
+
+fn disk_changed_since_baseline(
+    disk: FileSig,
+    known: Option<FileSig>,
+    expected_mtime: Option<i64>,
+    expected_hash: Option<&str>,
+) -> Result<Option<bool>, String> {
+    if let Some(hash) = expected_hash.filter(|hash| !hash.trim().is_empty()) {
+        return Ok(Some(disk.hash != parse_expected_hash(hash)?));
+    }
+    if let Some(mtime) = expected_mtime {
+        return Ok(Some(disk.mtime_ms != mtime));
+    }
+    if let Some(known) = known {
+        return Ok(Some(disk.hash != known.hash));
+    }
+    Ok(None)
+}
+
 /// 原子保存 + 冲突检测。
-/// - `expected_mtime` 是前端打开 / 上次保存时记下的 mtime
+/// - `expected_mtime` / `expected_hash` 是调用方打开 / 上次保存时记下的基线
+/// - 调用方基线优先于进程内 opened 表，避免旧标签覆盖新标签保存过的内容
 /// - `force` 表示用户主动覆盖
 /// - 返回新 sig；冲突时返回 Err("CONFLICT:<current_mtime>:<current_hash>")
 #[tauri::command]
@@ -477,6 +505,7 @@ fn fs_save(
     path: String,
     content: String,
     expected_mtime: Option<i64>,
+    expected_hash: Option<String>,
     force: Option<bool>,
 ) -> Result<SigDto, String> {
     let canon = validate_path(&state, &path)?;
@@ -492,14 +521,9 @@ fn fs_save(
         if old_content.as_ref().is_some() {
             let disk = signature_for(&canon).map_err(|e| e.to_string())?;
             let known = state.last_sig(&canon);
-            let baseline_mtime = expected_mtime.or(known.map(|s| s.mtime_ms));
-            let changed = if let Some(known) = known {
-                disk.hash != known.hash
-            } else if let Some(base) = baseline_mtime {
-                disk.mtime_ms != base
-            } else {
-                return Err(format!("BASELINE_REQUIRED:{}", canon.to_string_lossy()));
-            };
+            let changed =
+                disk_changed_since_baseline(disk, known, expected_mtime, expected_hash.as_deref())?
+                    .ok_or_else(|| format!("BASELINE_REQUIRED:{}", canon.to_string_lossy()))?;
             if changed {
                 return Err(format!("CONFLICT:{}:{:x}", disk.mtime_ms, disk.hash));
             }
@@ -3631,5 +3655,54 @@ fn forward_cli_open_files(app: &tauri::AppHandle) {
             // （Tauri event channel 在 Webview 就绪后会回放最近一次 emit）
             let _ = app.emit("open-from-os", s.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{disk_changed_since_baseline, FileSig};
+
+    fn sig(mtime_ms: i64, hash: u64) -> FileSig {
+        FileSig { mtime_ms, hash }
+    }
+
+    #[test]
+    fn explicit_hash_baseline_wins_over_opened_state() {
+        let disk = sig(20, 0xbb);
+        let opened = sig(20, 0xbb);
+
+        let changed =
+            disk_changed_since_baseline(disk, Some(opened), Some(10), Some("aa")).unwrap();
+
+        assert!(changed.unwrap());
+    }
+
+    #[test]
+    fn opened_state_is_fallback_when_caller_has_no_baseline() {
+        let disk = sig(20, 0xbb);
+        let opened = sig(10, 0xbb);
+
+        let changed = disk_changed_since_baseline(disk, Some(opened), None, None).unwrap();
+
+        assert!(!changed.unwrap());
+    }
+
+    #[test]
+    fn explicit_mtime_is_used_when_hash_is_absent() {
+        let disk = sig(20, 0xbb);
+        let opened = sig(20, 0xbb);
+
+        let changed = disk_changed_since_baseline(disk, Some(opened), Some(10), None).unwrap();
+
+        assert!(changed.unwrap());
+    }
+
+    #[test]
+    fn missing_baseline_is_reported_separately() {
+        let disk = sig(20, 0xbb);
+
+        let changed = disk_changed_since_baseline(disk, None, None, None).unwrap();
+
+        assert!(changed.is_none());
     }
 }

@@ -133,6 +133,12 @@ export async function installMarkioE2E(page: Page): Promise<void> {
           const path = String(args?.path);
           const content = String(args?.content ?? "");
           const force = Boolean(args?.force);
+          const expectedHash =
+            typeof args?.expectedHash === "string" && args.expectedHash.trim()
+              ? args.expectedHash
+              : undefined;
+          const expectedMtime =
+            typeof args?.expectedMtime === "number" ? args.expectedMtime : undefined;
           const file = files[path];
           if (!file) throw new Error(`missing fixture file: ${path}`);
           if (state.conflictNextSave && !force) {
@@ -140,6 +146,12 @@ export async function installMarkioE2E(page: Page): Promise<void> {
             updateFile(path, `${file.content}\nexternal change\n`);
             const current = files[path];
             throw new Error(`CONFLICT:${current.mtime}:${current.hash}`);
+          }
+          if (!force && expectedHash && file.hash !== expectedHash) {
+            throw new Error(`CONFLICT:${file.mtime}:${file.hash}`);
+          }
+          if (!force && !expectedHash && expectedMtime !== undefined && file.mtime !== expectedMtime) {
+            throw new Error(`CONFLICT:${file.mtime}:${file.hash}`);
           }
           updateFile(path, content);
           const saved = files[path];

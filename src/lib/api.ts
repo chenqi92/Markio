@@ -300,14 +300,15 @@ export const api = {
   open: (path: string) => invoke<OpenedFile>("fs_open", { path }),
   /** 关闭：释放 Rust 端记录的指纹 */
   close: (path: string) => invoke<void>("fs_close", { path }),
-  /** 原子保存 + 冲突检测；失败时 Err message 形如 "CONFLICT:<mtime>:<hash>" */
+  /** 原子保存 + 冲突检测；调用方基线优先，失败时 Err message 形如 "CONFLICT:<mtime>:<hash>" */
   save: (
     path: string,
     content: string,
     expectedMtime: number | undefined,
+    expectedHash?: string,
     force = false,
   ) =>
-    invoke<FileSig>("fs_save", { path, content, expectedMtime, force }),
+    invoke<FileSig>("fs_save", { path, content, expectedMtime, expectedHash, force }),
   /** 新建：若已存在直接 Err "ALREADY_EXISTS:<path>" */
   createNew: (path: string, content: string) =>
     invoke<FileSig>("fs_create_new", { path, content }),

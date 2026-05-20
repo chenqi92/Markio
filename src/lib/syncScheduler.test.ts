@@ -68,6 +68,9 @@ function makeDeps(statuses: GitStatus[]): {
     gitPush: vi.fn(async () => {
       gitCalls.push("push");
     }),
+    gitResolveConflict: vi.fn(async (_workspace, strategy) => {
+      gitCalls.push(`resolve:${strategy}`);
+    }),
     sync: () => sync,
     settings: () => ({ syncConflictStrategy: "ask" }),
     report: vi.fn(),
@@ -145,5 +148,39 @@ describe("runSyncWorkflow", () => {
       "git pull 失败：CONFLICT:a.md\ndocs/b.md",
     ]);
     expect(deps.gitPush).not.toHaveBeenCalled();
+  });
+
+  it("applies explicit local conflict strategy during auto sync", async () => {
+    const { deps, calls, gitCalls } = makeDeps([
+      gitStatus(),
+      gitStatus({ behind: 1 }),
+      gitStatus({ ahead: 1 }),
+      gitStatus(),
+    ]);
+    deps.settings = () => ({ syncConflictStrategy: "local" });
+    deps.gitPull = vi.fn(async () => {
+      gitCalls.push("pull");
+      throw new Error("CONFLICT:a.md");
+    });
+
+    await runSyncWorkflow("/repo", deps);
+
+    expect(gitCalls).toEqual([
+      "status",
+      "fetch",
+      "status",
+      "pull",
+      "resolve:ours",
+      "commit",
+      "status",
+      "push",
+      "status",
+    ]);
+    expect(calls).toContainEqual([
+      "stage",
+      "conflict",
+      "按策略自动处理冲突 · 保留本地",
+    ]);
+    expect(calls.filter((c) => c[0] === "conflict")).toHaveLength(0);
   });
 });

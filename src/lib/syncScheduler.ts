@@ -29,6 +29,11 @@ export interface SyncWorkflowDeps {
   ) => Promise<string>;
   gitPull: (workspace: string) => Promise<unknown>;
   gitPush: (workspace: string) => Promise<void>;
+  gitResolveConflict: (
+    workspace: string,
+    strategy: "ours" | "theirs",
+    files: string[],
+  ) => Promise<void>;
   sync: () => SyncStoreApi;
   settings: () => Pick<ReturnType<typeof useSettings.getState>, "syncConflictStrategy">;
   report: typeof reportDiagnostic;
@@ -57,7 +62,18 @@ function isNotGitRepoError(message: string): boolean {
 
 function autoSyncMessage(message: string, conflict: boolean, strategy: string): string {
   if (!conflict || strategy === "ask") return message;
-  return `${message}\n当前自动同步不会自动应用「${strategy}」策略，请在 Git 设置中手动确认后解决。`;
+  if (strategy === "newest") {
+    return `${message}\n「最新版本」策略需要人工确认文件内容，自动同步已停在冲突状态。`;
+  }
+  return `${message}\n自动同步未能完成「${strategy}」策略，请在 Git 设置中手动确认后解决。`;
+}
+
+function gitResolutionForStrategy(
+  strategy: ReturnType<typeof useSettings.getState>["syncConflictStrategy"],
+): "ours" | "theirs" | null {
+  if (strategy === "local") return "ours";
+  if (strategy === "remote") return "theirs";
+  return null;
 }
 
 function defaultDeps(): SyncWorkflowDeps {
@@ -68,6 +84,8 @@ function defaultDeps(): SyncWorkflowDeps {
       api.gitCommit(workspace, message, authorName, authorEmail),
     gitPull: (workspace) => api.gitPull(workspace, { rebase: false }),
     gitPush: (workspace) => api.gitPush(workspace),
+    gitResolveConflict: (workspace, strategy, files) =>
+      api.gitResolveConflict(workspace, strategy, files),
     sync: () => useSync.getState(),
     settings: () => useSettings.getState(),
     report: reportDiagnostic,
@@ -126,9 +144,36 @@ export async function runSyncWorkflow(
     status = await deps.gitStatus(workspace);
     if (status.behind > 0) {
       sync.setStage("pull", "拉取远端变更");
-      await deps.gitPull(workspace).catch((e) => {
-        throw new Error(`git pull 失败：${errorMessage(e)}`);
-      });
+      try {
+        await deps.gitPull(workspace);
+      } catch (e) {
+        const pullMessage = errorMessage(e);
+        const conflictFiles = conflictFilesFromError(pullMessage);
+        const resolution = conflictFiles
+          ? gitResolutionForStrategy(deps.settings().syncConflictStrategy)
+          : null;
+        if (!conflictFiles || !resolution) {
+          throw new Error(`git pull 失败：${pullMessage}`, { cause: e });
+        }
+        const label = resolution === "ours" ? "保留本地" : "采用远端";
+        sync.setStage("conflict", `按策略自动处理冲突 · ${label}`);
+        try {
+          await deps.gitResolveConflict(workspace, resolution, conflictFiles);
+          sync.setStage("snapshot", "提交冲突解决结果");
+          const ts = deps.now().toISOString().replace("T", " ").slice(0, 19);
+          await deps.gitCommit(
+            workspace,
+            `markio: resolve sync conflicts ${ts}`,
+            "markio",
+            "markio@local",
+          );
+        } catch (resolveError) {
+          throw new Error(
+            `git pull 冲突自动处理失败：${errorMessage(resolveError)}\nCONFLICT:${conflictFiles.join("\n")}`,
+            { cause: resolveError },
+          );
+        }
+      }
       status = await deps.gitStatus(workspace);
     }
     if (status.ahead > 0) {

@@ -20,7 +20,38 @@
 5. macOS 沙盒权限已经在 `src-tauri/entitlements/macos.entitlements` 中声明：
    - `app-sandbox` + `files.user-selected.read-write` + `files.bookmarks.app-scope` + `network.client`
 
-## 二、Mac App Store 打包
+## 二、发布前检查
+
+每次发版前先从干净的 `main` 分支执行：
+
+```bash
+pnpm release:preflight
+```
+
+它会依次跑：
+
+- `pnpm lint`
+- `pnpm test`
+- `pnpm build`
+- `pnpm e2e`
+- `pnpm release:check`
+
+`release:check` 是静态发布配置检查，覆盖：
+
+- `package.json`、`src-tauri/tauri.conf.json`、`Cargo.toml`、`Cargo.lock` 版本一致。
+- Tauri updater 已启用，`createUpdaterArtifacts`、公钥和 `latest.json` endpoint 已配置。
+- GitHub release workflow 使用 `tauri-apps/tauri-action`，并读取 `TAURI_SIGNING_PRIVATE_KEY`。
+- CI 已执行前端 lint / build / Vitest / Playwright，以及 Rust fmt / test / clippy。
+- macOS entitlements、隐私清单、MAS 打包脚本、公证脚本都存在。
+
+人工确认项：
+
+- GitHub Actions secrets 中存在 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
+- macOS 直发包完成 `notarytool` 公证和 `stapler` 打钉验证。
+- GitHub Release 附带安装包和 updater `latest.json`。
+- 保留上一版 release asset，不删除上一版 tag；回滚时把用户引导回上一版安装包，必要时把 updater endpoint 指向上一版 `latest.json`。
+
+## 三、Mac App Store 打包
 
 ```bash
 APPLE_SIGNING_IDENTITY="3rd Party Mac Developer Application: 韩 ABCDE12345" \
@@ -36,7 +67,7 @@ PROVISIONING_PROFILE="$HOME/Downloads/markio_mas.provisionprofile" \
 - 打开 Xcode → Window → Organizer → Mac Apps，把 `.pkg` 拖进来 → Distribute App
 - 或者直接打开 **Transporter.app**（Mac App Store 上免费下载），把 `.pkg` 拖进去
 
-## 三、直发渠道（DMG + 公证）
+## 四、直发渠道（DMG + 公证）
 
 ```bash
 # 第一次配置公证凭据
@@ -51,7 +82,7 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: 韩 ABCDE12345" \
 
 产物：`src-tauri/target/universal-apple-darwin/release/bundle/dmg/markio_*.dmg`
 
-## 四、Windows / Linux
+## 五、Windows / Linux
 
 ```bash
 # Windows 上跑（先安装 Rust toolchain + WebView2）
@@ -86,7 +117,7 @@ CI 自动化建议放到独立 workflow（与 `release.yml` 解耦），因为 P
 凭据轮换较频繁；样例参考：`.github/workflows/release.yml` 的 windows-x64 job
 继续补 `--bundles msix` 步骤（待官方 bundler 提供原生支持后切换）。
 
-## 五、常见问题
+## 六、常见问题
 
 | 现象 | 处理 |
 | --- | --- |
@@ -96,6 +127,6 @@ CI 自动化建议放到独立 workflow（与 `release.yml` 解耦），因为 P
 | 沙盒里读不到文件 | 走系统 Open Panel（`pickDirectory` / `pickFile`），不要硬编码路径 |
 | Hardened runtime 报 EXC_BAD_INSTRUCTION | 升级 Rust + 重跑，必要时加 `-allow-jit` 等 entitlement |
 
-## 六、自动化（GitHub Actions 草稿）
+## 七、自动化（GitHub Actions 草稿）
 
 参考 `.github/workflows/release.yml`（可后续补）：使用 `tauri-apps/tauri-action` 的官方 Action 绑定证书与公证凭据。

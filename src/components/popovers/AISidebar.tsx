@@ -7,6 +7,7 @@ import { useAISessions, type AIScope } from "@/stores/aiSessions";
 import { useSettings } from "@/stores/settings";
 import { useRag } from "@/stores/rag";
 import { useUI } from "@/stores/ui";
+import { useDialog } from "@/stores/dialog";
 import type { Workspace } from "@/types";
 
 interface ScopeMode {
@@ -77,6 +78,7 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
   const createSession = useAISessions((s) => s.createSession);
   const setActive = useAISessions((s) => s.setActive);
   const deleteSession = useAISessions((s) => s.deleteSession);
+  const confirmDialog = useDialog((s) => s.confirm);
 
   // 只显示当前仓库下的会话（null workspaceId 视为"全局"也显示）
   const visible = useMemo(() => {
@@ -206,9 +208,15 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
                   type="button"
                   className="ai-session-x"
                   title="删除会话"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    if (window.confirm(`删除「${s.title}」？`)) deleteSession(s.id);
+                    const ok = await confirmDialog({
+                      title: "删除会话？",
+                      message: `删除「${s.title}」后不可恢复。`,
+                      confirmLabel: "删除",
+                      danger: true,
+                    });
+                    if (ok) deleteSession(s.id);
                   }}
                 >
                   ×

@@ -5,6 +5,7 @@ import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useNetwork } from "@/stores/network";
 import { useDiagnostics } from "@/stores/diagnostics";
+import { useDialog } from "@/stores/dialog";
 import { api, isDesktop, type WatcherHealthDto } from "@/lib/api";
 import { runSyncNow } from "@/lib/syncScheduler";
 import { PomodoroChip } from "../popovers/PomodoroChip";
@@ -37,6 +38,7 @@ export function StatusBar() {
   const diagnostics = useDiagnostics((s) => s.items);
   const markDiagnosticsSeen = useDiagnostics((s) => s.markAllSeen);
   const clearDiagnostics = useDiagnostics((s) => s.clear);
+  const alertDialog = useDialog((s) => s.alert);
   const [, force] = useState(0);
   useEffect(() => {
     const handle = window.setInterval(() => force((n) => n + 1), 30_000);
@@ -181,13 +183,15 @@ export function StatusBar() {
         : autoSyncEnabled
           ? "自动同步开启 · 点击立刻同步"
           : "自动同步未启用 · 点击立刻同步";
-  const handleSyncClick = () => {
+  const handleSyncClick = async () => {
     if (syncStage === "conflict") {
-      window.alert(
-        syncConflictFiles.length > 0
-          ? `同步冲突，需要在 Git 设置中解决：\n\n${syncConflictFiles.join("\n")}`
-          : `同步冲突，需要在 Git 设置中解决。${lastSyncError ? `\n\n${lastSyncError}` : ""}`,
-      );
+      await alertDialog({
+        title: "同步冲突",
+        message:
+          syncConflictFiles.length > 0
+            ? `需要在 Git 设置中解决：\n\n${syncConflictFiles.join("\n")}`
+            : `需要在 Git 设置中解决。${lastSyncError ? `\n\n${lastSyncError}` : ""}`,
+      });
       return;
     }
     void runSyncNow();

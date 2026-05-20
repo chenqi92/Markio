@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
+import { useDialog } from "@/stores/dialog";
 import { api } from "@/lib/api";
 import { writeText } from "@/lib/clipboard";
 import { classNames } from "@/lib/utils";
@@ -64,6 +65,7 @@ export function TabStrip() {
   const togglePin = useTabs((s) => s.togglePin);
   const reorderTabs = useTabs((s) => s.reorderTabs);
   const setToast = useUI((s) => s.setToast);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [ctx, setCtx] = useState<{ x: number; y: number; tab: TabStripItem } | null>(null);
   const dragFrom = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -92,26 +94,29 @@ export function TabStrip() {
     }
   };
 
-  const confirmDirtyTabs = (targets: TabStripItem[], action: string) => {
+  const confirmDirtyTabs = async (targets: TabStripItem[], action: string) => {
     const dirty = targets.filter((x) => x.dirty);
     if (dirty.length === 0) return true;
     const suffix = dirty.length > 1 ? ` 等 ${dirty.length} 个标签` : "";
-    return window.confirm(
-      `${action}包含未保存的标签（${dirty[0].title}${suffix}）。继续关闭会丢失修改。`,
-    );
+    return confirmDialog({
+      title: "关闭未保存标签？",
+      message: `${action}包含未保存的标签（${dirty[0].title}${suffix}）。继续关闭会丢失修改。`,
+      confirmLabel: "关闭",
+      danger: true,
+    });
   };
 
-  const closeTabs = (targets: TabStripItem[], action: string) => {
+  const closeTabs = async (targets: TabStripItem[], action: string) => {
     if (targets.length === 0) {
       showToast("done", "没有可关闭的标签");
       return;
     }
-    if (!confirmDirtyTabs(targets, action)) return;
+    if (!(await confirmDirtyTabs(targets, action))) return;
     for (const x of targets) closeTab(x.id);
   };
 
-  const confirmAndClose = (t: TabStripItem) => {
-    closeTabs([t], "关闭当前标签");
+  const confirmAndClose = async (t: TabStripItem) => {
+    await closeTabs([t], "关闭当前标签");
   };
 
   const items = (t: TabStripItem): CtxItem[] => {
@@ -178,43 +183,43 @@ export function TabStrip() {
       {
         label: "关闭当前标签",
         icon: "x",
-        onClick: () => confirmAndClose(t),
+        onClick: () => void confirmAndClose(t),
       },
       {
         label: "关闭左侧标签",
         icon: "close",
         disabled: left.length === 0,
-        onClick: () => closeTabs(left, "关闭左侧标签"),
+        onClick: () => void closeTabs(left, "关闭左侧标签"),
       },
       {
         label: "关闭右侧标签",
         icon: "close",
         disabled: right.length === 0,
-        onClick: () => closeTabs(right, "关闭右侧标签"),
+        onClick: () => void closeTabs(right, "关闭右侧标签"),
       },
       {
         label: "关闭其它标签",
         icon: "close",
         disabled: others.length === 0,
-        onClick: () => closeTabs(others, "关闭其它标签"),
+        onClick: () => void closeTabs(others, "关闭其它标签"),
       },
       {
         label: "关闭已保存标签",
         icon: "check",
         disabled: saved.length === 0,
-        onClick: () => closeTabs(saved, "关闭已保存标签"),
+        onClick: () => void closeTabs(saved, "关闭已保存标签"),
       },
       {
         label: "关闭未固定标签",
         icon: "close",
         disabled: unpinned.length === 0,
-        onClick: () => closeTabs(unpinned, "关闭未固定标签"),
+        onClick: () => void closeTabs(unpinned, "关闭未固定标签"),
       },
       {
         label: "关闭所有标签",
         icon: "trash",
         danger: true,
-        onClick: () => closeTabs(ordered, "关闭所有标签"),
+        onClick: () => void closeTabs(ordered, "关闭所有标签"),
       },
     );
 
@@ -240,7 +245,7 @@ export function TabStrip() {
             )}
             onClick={() => setActive(t.id)}
             onAuxClick={(e) => {
-              if (e.button === 1) confirmAndClose(t);
+              if (e.button === 1) void confirmAndClose(t);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -286,7 +291,7 @@ export function TabStrip() {
                 role="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  confirmAndClose(t);
+                  void confirmAndClose(t);
                 }}
               >
                 ×

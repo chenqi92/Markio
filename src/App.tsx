@@ -13,6 +13,7 @@ import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
 import { useSession } from "./stores/session";
+import { reportDiagnostic } from "./stores/diagnostics";
 import { installNetworkListeners } from "./stores/network";
 import { installLongTaskObserver } from "./lib/longTaskObserver";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -145,7 +146,14 @@ export default function App() {
     const url = useSettings.getState().crashWebhookUrl;
     if (!url) return;
     const t = window.setTimeout(() => {
-      void api.crashFlushToWebhook(url).catch(() => undefined);
+      void api.crashFlushToWebhook(url).catch((err) => {
+        reportDiagnostic({
+          source: "crash",
+          severity: "warning",
+          message: "崩溃摘要上报失败",
+          detail: err,
+        });
+      });
     }, 5_000);
     return () => window.clearTimeout(t);
   }, []);
@@ -313,6 +321,12 @@ export default function App() {
         );
       } catch (err) {
         console.warn("[rag-status] subscribe failed", err);
+        reportDiagnostic({
+          source: "rag",
+          severity: "warning",
+          message: "RAG 状态订阅失败",
+          detail: err,
+        });
       }
     })();
     return () => {
@@ -363,13 +377,27 @@ export default function App() {
               useWorkspace
                 .getState()
                 .loadDir(ws.id, targetDir)
-                .catch(() => undefined);
+                .catch((err) => {
+                  reportDiagnostic({
+                    source: "watcher",
+                    severity: "warning",
+                    message: "文件变化后刷新目录失败",
+                    detail: err,
+                    workspace,
+                  });
+                });
             }
           }, 600);
           pendingRefresh.set(refreshKey, handle);
         });
       } catch (err) {
         console.warn("[fs-changed] subscribe failed", err);
+        reportDiagnostic({
+          source: "watcher",
+          severity: "error",
+          message: "文件监听订阅失败",
+          detail: err,
+        });
       }
     })();
     return () => {

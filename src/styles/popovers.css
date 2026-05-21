@@ -14,9 +14,7 @@
   width: 640px; max-width: 90vw;
   height: fit-content;
   max-height: 70vh;
-  background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
+  background: var(--bg-modal, var(--bg-elev));
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-deep);
@@ -214,7 +212,8 @@
   color: var(--accent);
 }
 
-/* app dialog */
+/* app dialog
+ * scrim 透明度 0.24 → 0.55，跟其它弹窗的 scrim 对齐；编辑器内容不再透到弹窗背后。 */
 .dialog-scrim {
   position: fixed;
   inset: 0;
@@ -223,16 +222,16 @@
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: rgba(0,0,0,0.24);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  background: rgba(0,0,0,0.55);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 .app-dialog {
   width: min(420px, 100%);
   padding: 16px;
   border-radius: 10px;
   border: 0.5px solid var(--border-strong);
-  background: var(--bg-elev);
+  background: var(--bg-modal, var(--bg-elev));
   box-shadow: var(--shadow-soft);
   color: var(--text);
 }

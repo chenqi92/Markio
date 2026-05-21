@@ -23,6 +23,7 @@ import { useCustomThemes } from "@/stores/customThemes";
 import { useDialog } from "@/stores/dialog";
 import { THEMES } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
+import { displayPath } from "@/lib/utils";
 import * as aiCache from "@/lib/aiCache";
 import { openExternal } from "@/lib/opener";
 import { writeText } from "@/lib/clipboard";
@@ -199,7 +200,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
   };
 
   const footerName = activeWorkspace?.name ?? t("settings.workspace.localUser", { defaultValue: "本地用户" });
-  const footerSub = activeWorkspace?.path ?? t("settings.workspace.noWorkspace", { defaultValue: "尚未打开仓库" });
+  const footerSub = activeWorkspace?.path
+    ? displayPath(activeWorkspace.path)
+    : t("settings.workspace.noWorkspace", { defaultValue: "尚未打开仓库" });
   const footerInitial = (footerName || "M").trim().charAt(0).toUpperCase();
 
   return (
@@ -2464,7 +2467,7 @@ function GitSyncCard() {
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">当前工作仓库</div>
-          <div className="settings-help">{workspacePath || "未选择"}</div>
+          <div className="settings-help">{workspacePath ? displayPath(workspacePath) : "未选择"}</div>
         </div>
       </div>
 

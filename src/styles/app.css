@@ -582,9 +582,9 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 /* ── 快速捕获弹窗 ── */
 .qc-scrim {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.42);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(0,0,0,0.58);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
   z-index: 2000;
   display: flex; justify-content: center;
   padding-top: 14vh;
@@ -594,7 +594,9 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .qc2-window {
   width: 680px; max-width: 92vw; align-self: flex-start;
   height: fit-content;
-  background: var(--bg-window, var(--bg-elev));
+  /* 用 --bg-modal (完全不透明) 替代 --bg-elev (0.92-0.98 alpha)，
+   * 否则编辑器内容透过来；blur 在不透明背景上仍然没意义但 scrim 已经够厚。 */
+  background: var(--bg-modal, var(--bg-elev));
   border: 0.5px solid var(--border-strong);
   border-radius: 18px;
   box-shadow: 0 50px 120px rgba(0,0,0,0.42);
@@ -778,7 +780,7 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .ex-sheet {
   width: 640px; max-width: 92vw;
   align-self: flex-start;
-  background: var(--bg-elev);
+  background: var(--bg-modal, var(--bg-elev));
   border: 0.5px solid var(--border-strong);
   border-radius: 16px;
   box-shadow: 0 50px 120px rgba(0,0,0,0.42);

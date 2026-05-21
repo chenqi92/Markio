@@ -3,6 +3,9 @@
 //
 // 用法：
 //   await openExternal("https://example.com");
+//
+// 仅放行 http(s)。其他协议（javascript:、file:、自定义 scheme 等）拒绝，
+// 防止 markdown / AI 输出里的恶意链接绕过浏览器同源限制或本地协议处理器。
 
 let cachedOpener: typeof import("@tauri-apps/plugin-opener") | null = null;
 let triedOpener = false;
@@ -18,8 +21,23 @@ async function getOpener() {
   return cachedOpener;
 }
 
+export function isSafeExternalUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export async function openExternal(url: string): Promise<void> {
-  if (!url) return;
+  if (!isSafeExternalUrl(url)) {
+    if (typeof console !== "undefined") {
+      console.warn("[opener] blocked non-http(s) URL:", url);
+    }
+    return;
+  }
   const o = await getOpener();
   if (o) {
     try {

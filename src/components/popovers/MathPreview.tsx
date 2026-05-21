@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import { sanitizeHtml } from "@/lib/safeHtml";
 
 interface Props {
   formula: string;
@@ -17,16 +18,20 @@ interface Props {
 export function MathPreview({ formula, display, x, y }: Props) {
   const html = useMemo(() => {
     try {
-      return katex.renderToString(formula, {
-        displayMode: display,
-        throwOnError: false,
-        strict: "ignore",
-        output: "html",
-      });
+      return sanitizeHtml(
+        katex.renderToString(formula, {
+          displayMode: display,
+          throwOnError: false,
+          strict: "ignore",
+          output: "html",
+        }),
+      );
     } catch (e) {
-      return `<span style="color:#e5484d;font-family:var(--font-mono);font-size:11px">${
-        (e as Error).message
-      }</span>`;
+      // KaTeX 已 throwOnError:false，走到这里通常是 sanitize 异常；把消息当文本展示，
+      // 经 DOMPurify escape 后再注入。
+      return sanitizeHtml(
+        `<span style="color:#e5484d;font-family:var(--font-mono);font-size:11px">${(e as Error).message}</span>`,
+      );
     }
   }, [formula, display]);
 

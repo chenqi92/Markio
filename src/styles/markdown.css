@@ -5,17 +5,26 @@
   outline: 2px solid var(--accent-glow);
 }
 
-/* preview markdown — used by .preview wrapper */
+/* preview markdown — used by .preview wrapper
+ * 宽度走 clamp(min, 比例, max)：窄屏不挤、宽屏放开；
+ *   - 所见即所得 / 默认：clamp(720, 78%, 1200)
+ *   - 阅读模式 (preview-only)：clamp(900, 84%, 1440)
+ * 字符密度仍可读 (typographic best practice 约 60-90 字符/行 在中文下大约 30-45)，
+ * 1440 上限避免超宽屏文字一行 200+ 字。 */
 .preview {
   padding: 48px clamp(24px, 6%, 64px) 200px;
   font-family: var(--font-serif);
   font-size: 16px;
   line-height: 1.75;
   color: var(--text);
-  max-width: 820px;
+  max-width: clamp(720px, 78%, 1200px);
   margin: 0 auto;
 }
-.editor-split.preview-only .preview { max-width: 1080px; padding: 56px clamp(48px, 8%, 100px) 200px; font-size: 17px; }
+.editor-split.preview-only .preview {
+  max-width: clamp(900px, 84%, 1440px);
+  padding: 56px clamp(48px, 8%, 100px) 200px;
+  font-size: 17px;
+}
 .editor-split.preview-only .preview h1 { font-size: 36px; }
 .editor-split.preview-only .preview h2 { font-size: 26px; }
 .editor-split.split .preview {

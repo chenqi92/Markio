@@ -842,6 +842,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             value={tab.content}
             wysiwyg={renderMode === "wysiwyg"}
             onChange={handleContentChange}
+            syncScroll={renderMode === "split"}
             scrollTarget={
               lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null
             }
@@ -878,6 +879,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           source={tab.content}
           basePath={tab.path}
           onMeta={onMetaInternal}
+          syncScroll={renderMode === "split"}
           scrollTarget={
             lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null
           }

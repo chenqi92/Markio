@@ -84,11 +84,17 @@ export async function installMarkioE2E(page: Page): Promise<void> {
         ],
       };
     };
-    const renderMarkdown = (source: string) => {
-      const escaped = source
+    const escapeHtml = (input: string) =>
+      input
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    const slugify = (input: string) =>
+      input
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, "-")
+        .replace(/^-+|-+$/g, "") || "section";
+    const renderMarkdown = (source: string) => {
       const outline = source
         .split("\n")
         .map((line) => line.match(/^(#{1,6})\s+(.+)$/))
@@ -98,8 +104,50 @@ export async function installMarkioE2E(page: Page): Promise<void> {
           text: match[2],
           anchor: match[2].toLowerCase().replace(/\s+/g, "-"),
         }));
+      const lines = source.split("\n");
+      const html: string[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.trim()) continue;
+        const heading = line.match(/^(#{1,6})\s+(.+)$/);
+        if (heading) {
+          const level = heading[1].length;
+          const text = heading[2].trim();
+          html.push(
+            `<h${level} id="${slugify(text)}" data-line="${i + 1}">${escapeHtml(text)}</h${level}>`,
+          );
+          continue;
+        }
+        const list = line.match(/^\s*[-*+]\s+(.+)$/);
+        if (list) {
+          const start = i + 1;
+          const items: string[] = [];
+          while (i < lines.length) {
+            const item = lines[i].match(/^\s*[-*+]\s+(.+)$/);
+            if (!item) break;
+            items.push(`<li>${escapeHtml(item[1])}</li>`);
+            i++;
+          }
+          i--;
+          html.push(`<ul data-line="${start}">${items.join("")}</ul>`);
+          continue;
+        }
+        const start = i + 1;
+        const parts: string[] = [];
+        while (
+          i < lines.length &&
+          lines[i].trim() &&
+          !/^(#{1,6})\s+/.test(lines[i]) &&
+          !/^\s*[-*+]\s+/.test(lines[i])
+        ) {
+          parts.push(lines[i]);
+          i++;
+        }
+        i--;
+        html.push(`<p data-line="${start}">${escapeHtml(parts.join(" "))}</p>`);
+      }
       return {
-        html: `<pre>${escaped}</pre>`,
+        html: html.join(""),
         outline,
         words: source.trim().length,
         readingMinutes: 1,

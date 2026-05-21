@@ -84,6 +84,22 @@ describe("splitScrollSync", () => {
     expect(dst.getCallsTopLine()).toEqual([]);
   });
 
+  it("falls back to ratio when destination cannot apply a line target", () => {
+    const srcEl = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcEl, dstEl);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    dst.pane.setTopLine = () => false;
+    src.state.topLine = 12;
+    src.state.ratio = 0.35;
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    srcEl.dispatchEvent(new Event("scroll"));
+    expect(dst.getCallsRatio()).toEqual([0.35]);
+    expect(dst.getCallsTopLine()).toEqual([]);
+  });
+
   it("does not echo: programmatic write on destination doesn't ricochet to origin", () => {
     vi.useFakeTimers();
     const srcEl = document.createElement("div");

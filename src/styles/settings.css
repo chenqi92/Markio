@@ -977,12 +977,15 @@
 }
 
 /* 发布日志 timeline */
-.about-cl { display: flex; flex-direction: column; gap: 18px; }
+.about-cl { display: flex; flex-direction: column; gap: 20px; }
 .about-cl-row {
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 120px 1fr;
   gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 0.5px solid var(--border);
 }
+.about-cl-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .about-cl-side {
   display: flex; flex-direction: column; gap: 4px;
   font-size: 12px;
@@ -997,18 +1000,34 @@
   margin-top: 2px;
   font-weight: 600;
 }
-.about-cl-tag.cur { background: var(--text); color: var(--bg-window); }
+.about-cl-tag.cur { background: var(--text); color: var(--bg-modal, var(--bg-window)); }
 .about-cl-tag.major { background: var(--accent-glow); color: var(--accent); }
-.about-cl-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.about-cl-section { display: flex; gap: 8px; align-items: flex-start; }
-.about-cl-section ul { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.6; color: var(--text-2); }
+.about-cl-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* 每个 section 用 grid 把 chip 锁在第 1 列固定 50px 宽，正文在第 2 列；
+ * 之前用 flex + flex-shrink 在长文本下偶尔会让 chip 跟下一段文字视觉重叠。 */
+.about-cl-section {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.about-cl-section ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+.about-cl-section ul li { margin-bottom: 4px; }
 .about-cl-chip {
   font-size: 10px;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 2px 0;
+  border-radius: 4px;
   font-weight: 700;
-  flex-shrink: 0;
-  margin-top: 2px;
+  text-align: center;
+  width: 100%;
+  margin-top: 4px;
+  letter-spacing: 0.04em;
 }
 .about-cl-chip.added { background: rgba(34,197,94,0.15); color: #16a34a; }
 .about-cl-chip.changed { background: rgba(59,130,246,0.15); color: #2563eb; }

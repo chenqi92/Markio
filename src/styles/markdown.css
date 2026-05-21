@@ -722,5 +722,13 @@
 .cm-host .cm-activeLine { background: var(--bg-hover); }
 .cm-host .cm-content { caret-color: var(--accent); color: var(--text); }
 .cm-host .cm-cursor { border-left-color: var(--accent); }
-.cm-host .cm-selectionBackground,
-.cm-host .cm-content ::selection { background: var(--bg-selected) !important; }
+/* CodeMirror 用自己的 .cm-selectionBackground 层画选区；浏览器原生 ::selection
+ * 必须设成透明，否则两层都画一次 (CM 层 + 原生层) 而 --bg-selected 又是半透明色，
+ * 叠出来就是斑驳的"叠影"效果 (用户截图反馈的源码模式选中阴影错位)。 */
+.cm-host .cm-selectionBackground {
+  background: var(--bg-selected) !important;
+}
+.cm-host .cm-content ::selection,
+.cm-host .cm-line ::selection {
+  background: transparent !important;
+}

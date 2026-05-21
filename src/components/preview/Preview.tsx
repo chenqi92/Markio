@@ -17,6 +17,7 @@ import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderDiagramsLazy } from "@/lib/diagrams";
 import { renderMathLazy } from "@/lib/math";
 import { renderMermaidLazy } from "@/lib/mermaid";
+import { blockExternalImages } from "@/lib/remoteImageGuard";
 import type { VisualBlockHandle } from "@/lib/visualScheduler";
 import { enhanceWikiLinksLazy, type WikiEnhanceHandle } from "@/lib/wikilinks";
 import type { OutlineItem } from "@/types";
@@ -132,6 +133,7 @@ export function Preview({
   const onSourceChangeRef = useRef(onSourceChange);
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
+  const loadRemoteImages = useSettings((s) => s.loadRemoteImages);
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
   const findCaseSensitive = useUI((s) => s.findCaseSensitive);
@@ -390,6 +392,14 @@ export function Preview({
     let mathHandle: VisualBlockHandle | null = null;
     let mermaidHandle: VisualBlockHandle | null = null;
     let diagramHandle: VisualBlockHandle | null = null;
+    let unblockImages: (() => void) | null = null;
+
+    // 默认拦截 http(s) 图片，避免 canary / 追踪像素。用户在 Settings → 通用
+    // 里把 loadRemoteImages 打开后整体放行（不调本函数）。必须在其它 enhance
+    // 之前跑——否则浏览器已经发出图片请求，再替换 src 也救不回来。
+    if (!loadRemoteImages) {
+      unblockImages = blockExternalImages(root);
+    }
 
     // 影响布局的（callouts 改 ::before、span 包裹）必须立刻——否则用户首屏看到的样式会跳
     // 视口内同步增强（零闪烁）；视口外用 IO 等滚动时再增强。
@@ -478,9 +488,10 @@ export function Preview({
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
       resizeObserver?.disconnect();
+      unblockImages?.();
       if (rebuildPending) window.clearTimeout(rebuildPending);
     };
-  }, [html, theme, applyScrollTarget, vaultFiles, syncScroll]);
+  }, [html, theme, applyScrollTarget, vaultFiles, syncScroll, loadRemoteImages]);
 
   // Find 高亮：扫描文字节点，包 <mark class="find-hit">。
   // 当前命中项单独切换，避免“下一处”时重扫整篇预览。

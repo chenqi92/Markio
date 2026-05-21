@@ -10,6 +10,7 @@ export function General() {
   const startupBehavior = useSettings((s) => s.startupBehavior);
   const closeLastTabBehavior = useSettings((s) => s.closeLastTabBehavior);
   const showInTray = useSettings((s) => s.showInTray);
+  const loadRemoteImages = useSettings((s) => s.loadRemoteImages);
   const setPreference = useSettings((s) => s.setPreference);
   const startupOptions = useMemo(
     () =>
@@ -68,6 +69,25 @@ export function General() {
                 /* 非桌面环境忽略 */
               });
             }}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">
+              {t("settings.general.loadRemoteImages", {
+                defaultValue: "自动加载外链图片",
+              })}
+            </div>
+            <div className="settings-help">
+              {t("settings.general.loadRemoteImagesHelp", {
+                defaultValue:
+                  "默认显示占位符以避免追踪像素 / canary 链接泄漏使用者 IP；关闭时点击图片即可加载单张。",
+              })}
+            </div>
+          </div>
+          <Toggle
+            on={loadRemoteImages}
+            onChange={(v) => setPreference("loadRemoteImages", v)}
           />
         </div>
       </div>

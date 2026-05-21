@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { Icon } from "../ui/Icon";
+import { Icon, type IconName } from "../ui/Icon";
 import { FileTree } from "./FileTree";
+import { TaskInbox } from "./TaskInbox";
+import { TagLandscape } from "./TagLandscape";
 import { useWorkspace } from "@/stores/workspace";
-import { useUI } from "@/stores/ui";
+import { useUI, type SidebarTab } from "@/stores/ui";
 import { pickDirectory } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
+
+const SIDEBAR_TABS: ReadonlyArray<{ id: SidebarTab; label: string; icon: IconName }> = [
+  { id: "files", label: "文件", icon: "folder" },
+  { id: "tasks", label: "任务", icon: "check" },
+  { id: "tags", label: "标签", icon: "hash" },
+];
 
 export function Sidebar() {
   const workspaces = useWorkspace((s) => s.workspaces);
@@ -14,6 +22,8 @@ export function Sidebar() {
   const removeWorkspace = useWorkspace((s) => s.removeWorkspace);
   const active = useWorkspace((s) => s.activeWorkspace());
   const openCommand = useUI((s) => s.openCommand);
+  const sidebarTab = useUI((s) => s.sidebarTab);
+  const setSidebarTab = useUI((s) => s.setSidebarTab);
 
   const [open, setOpen] = useState(false);
 
@@ -223,7 +233,26 @@ export function Sidebar() {
         </div>
       </div>
 
-      <FileTree />
+      <div className="sb-tabs" role="tablist">
+        {SIDEBAR_TABS.map((tab) => (
+          <button
+            type="button"
+            key={tab.id}
+            role="tab"
+            aria-selected={sidebarTab === tab.id}
+            className={"sb-tab" + (sidebarTab === tab.id ? " active" : "")}
+            onClick={() => setSidebarTab(tab.id)}
+            title={tab.label}
+          >
+            <Icon name={tab.icon} size={12} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {sidebarTab === "files" && <FileTree />}
+      {sidebarTab === "tasks" && <TaskInbox />}
+      {sidebarTab === "tags" && <TagLandscape />}
     </aside>
   );
 }

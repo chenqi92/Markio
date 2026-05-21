@@ -11,9 +11,11 @@ import { reportDiagnostic } from "@/stores/diagnostics";
 import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
+import { getProviderModels } from "@/lib/ai-providers";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
 import { AIPreview } from "./AIPreview";
+import { AIContextDrawer } from "./AIContextDrawer";
 
 export interface AIAttachedItem {
   path: string;
@@ -102,33 +104,8 @@ const SUGGESTIONS_FOR: Record<AIMode, string[]> = {
   proof: ["校对一下：我们应该让用户随时可以回到任何一个时间点,从而 鼓励他们大胆改写"],
 };
 
-/** 各 provider 下的常见模型 —— 用户也可以在设置里手填覆盖 */
-const MODELS_BY_PROVIDER: Record<string, Array<{ id: string; name: string; tag: string }>> = {
-  anthropic: [
-    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", tag: "默认 · 最快" },
-    { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", tag: "推理 · 长文档" },
-    { id: "claude-opus-4-7", name: "Claude Opus 4.7", tag: "复杂任务" },
-  ],
-  openai: [
-    { id: "gpt-4o-mini", name: "GPT-4o mini", tag: "默认 · 便宜" },
-    { id: "gpt-4o", name: "GPT-4o", tag: "通用" },
-    { id: "o1-mini", name: "o1-mini", tag: "推理" },
-  ],
-  google: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "默认 · 快" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tag: "推理 · 长文档" },
-  ],
-  deepseek: [
-    { id: "deepseek-chat", name: "DeepSeek V3", tag: "通用" },
-    { id: "deepseek-reasoner", name: "DeepSeek R1", tag: "推理" },
-  ],
-  ollama: [
-    { id: "qwen2.5:14b", name: "Qwen 2.5 14B", tag: "本地 · 推荐" },
-    { id: "llama3.2:3b", name: "Llama 3.2 3B", tag: "本地 · 轻量" },
-    { id: "mistral:7b", name: "Mistral 7B", tag: "本地 · 通用" },
-  ],
-  custom: [],
-};
+// 模型列表统一从 src/lib/ai-providers.ts 取（Settings、AIPanel、Rust 默认 endpoint
+// 同源），下方 modelList 调 getProviderModels(provider) 即可。
 
 export function AIPanel({ onClose }: { onClose: () => void }) {
   const provider = useSettings((s) => s.aiProvider);
@@ -147,6 +124,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [attachedItems, setAttachedItems] = useState<AIAttachedItem[]>([]);
   const [previewName, setPreviewName] = useState<string | null>(null);
+  const [ctxDrawerOpen, setCtxDrawerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const ensureVaultIndex = useVaultIndex((s) => s.ensure);
 
@@ -179,7 +157,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     return `${m?.sub ?? ""} · ${provider} · ${model}`;
   }, [configured, aiMode, provider, model]);
 
-  const modelList = MODELS_BY_PROVIDER[provider] ?? [];
+  const modelList = getProviderModels(provider);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -514,11 +492,28 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             <div className="ai-sub">{subtitle}</div>
           </div>
         </div>
+        <div className="ai-top-r">
+          <button
+            type="button"
+            className={"ai-top-btn" + (ctxDrawerOpen ? " on" : "")}
+            onClick={() => setCtxDrawerOpen((v) => !v)}
+            title="上下文管理"
+          >
+            <Icon name="sliders" size={12} />
+            <span>上下文</span>
+          </button>
+        </div>
       </div>
 
       <div className="ai-workspace-body">
         <AISidebar aiMode={aiMode} />
         <div className="ai-main">
+          {ctxDrawerOpen && (
+            <AIContextDrawer
+              attachedCount={attachedItems.length}
+              onClose={() => setCtxDrawerOpen(false)}
+            />
+          )}
           <div
             className={"ai-body scroll" + (previewName ? " with-preview" : "")}
             ref={scrollRef}

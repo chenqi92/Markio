@@ -111,7 +111,11 @@ pub struct ChatMsg {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatRequest {
-    pub provider: String, // "anthropic" | "openai" | "ollama" | "deepseek" | "google" | "custom"
+    // anthropic / google 走专有协议；其余都走 OpenAI 兼容（chat completions）。
+    // 已支持：anthropic | openai | google | deepseek | ollama | nvidia | xai |
+    //         groq | openrouter | siliconflow | zhipu | dashscope | moonshot |
+    //         mistral | together | custom
+    pub provider: String,
     pub api_key: Option<String>,
     pub endpoint: Option<String>,
     pub model: String,
@@ -345,12 +349,7 @@ async fn call_openai_compat(req: ChatRequest) -> Result<ChatResponse, String> {
     let endpoint = req
         .endpoint
         .clone()
-        .unwrap_or_else(|| match req.provider.as_str() {
-            "openai" => "https://api.openai.com/v1".to_string(),
-            "deepseek" => "https://api.deepseek.com/v1".to_string(),
-            "ollama" => "http://127.0.0.1:11434/v1".to_string(),
-            _ => "https://api.openai.com/v1".to_string(),
-        });
+        .unwrap_or_else(|| default_openai_compat_endpoint(&req.provider));
     let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
 
     let mut messages: Vec<serde_json::Value> = Vec::new();
@@ -425,6 +424,343 @@ async fn call_openai_compat(req: ChatRequest) -> Result<ChatResponse, String> {
         input_tokens,
         output_tokens,
     })
+}
+
+/// 走 OpenAI 兼容协议 (chat completions) 的 provider 默认 endpoint。
+/// 新增 provider 时改这里 + src/lib/ai-providers.ts，两边保持一致。
+fn default_openai_compat_endpoint(provider: &str) -> String {
+    match provider {
+        "openai" => "https://api.openai.com/v1",
+        "deepseek" => "https://api.deepseek.com/v1",
+        "ollama" => "http://127.0.0.1:11434/v1",
+        "nvidia" => "https://integrate.api.nvidia.com/v1",
+        "xai" => "https://api.x.ai/v1",
+        "groq" => "https://api.groq.com/openai/v1",
+        "openrouter" => "https://openrouter.ai/api/v1",
+        "siliconflow" => "https://api.siliconflow.cn/v1",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4",
+        "dashscope" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "moonshot" => "https://api.moonshot.cn/v1",
+        "mistral" => "https://api.mistral.ai/v1",
+        "together" => "https://api.together.xyz/v1",
+        // custom 或未知 provider 不强行回填，让前端的报错信息更直白
+        _ => "https://api.openai.com/v1",
+    }
+    .to_string()
+}
+
+// ─── 模型列表拉取 ────────────────────────────────────────────────
+//
+// 三套协议：
+//   anthropic       → GET {endpoint}/v1/models, x-api-key + anthropic-version
+//   google          → GET {endpoint}/v1beta/models?key=..., 过滤 supportedGenerationMethods
+//   其余 (OpenAI 兼容) → GET {endpoint}/models, Bearer key
+//
+// 返回结构里：
+//   id            原始模型 id，可直接发给 chat API
+//   label         展示名（Anthropic display_name / Google displayName / 聚合站斜杠后段）
+//   group         聚合站的 "vendor/model" 前缀分组（无斜杠则 None）
+//   context_length 已知则带回（OpenRouter / Google）
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub id: String,
+    pub label: Option<String>,
+    pub group: Option<String>,
+    pub context_length: Option<u32>,
+}
+
+pub async fn list_models(
+    provider: String,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<ModelInfo>, String> {
+    match provider.as_str() {
+        "anthropic" => list_models_anthropic(endpoint, api_key).await,
+        "google" => list_models_google(endpoint, api_key).await,
+        _ => list_models_openai_compat(&provider, endpoint, api_key).await,
+    }
+}
+
+async fn list_models_anthropic(
+    endpoint: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<ModelInfo>, String> {
+    let key = api_key
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "缺少 API Key".to_string())?;
+    let endpoint = endpoint
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+    let url = format!("{}/v1/models?limit=1000", endpoint.trim_end_matches('/'));
+    let client = http_chat_client();
+    let resp = client
+        .get(&url)
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Anthropic API {}: {}",
+            status,
+            truncate(&body, 400)
+        ));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+    let arr = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| "响应缺少 data 数组".to_string())?;
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let id = item
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            continue;
+        }
+        let label = item
+            .get("display_name")
+            .and_then(|x| x.as_str())
+            .map(String::from);
+        out.push(ModelInfo {
+            id,
+            label,
+            group: None,
+            context_length: None,
+        });
+    }
+    Ok(out)
+}
+
+async fn list_models_google(
+    endpoint: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<ModelInfo>, String> {
+    let key = api_key
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "缺少 API Key".to_string())?;
+    let endpoint = endpoint
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+    let client = http_chat_client();
+    let mut all = Vec::new();
+    let mut page_token: Option<String> = None;
+    // 翻页最多 5 次（200 * 5 = 1000 个上限），防止恶意/异常响应卡住主线程
+    for _ in 0..5 {
+        let mut url = format!(
+            "{}/v1beta/models?pageSize=200&key={}",
+            endpoint.trim_end_matches('/'),
+            urlencode_val(&key),
+        );
+        if let Some(tok) = page_token.as_ref() {
+            url.push_str(&format!("&pageToken={}", urlencode_val(tok)));
+        }
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("请求失败：{e}"))?;
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("读取响应失败：{e}"))?;
+        if !status.is_success() {
+            return Err(format!("Google API {}: {}", status, truncate(&body, 400)));
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+        if let Some(arr) = v.get("models").and_then(|m| m.as_array()) {
+            for item in arr {
+                // 只保留支持 generateContent 的（过滤掉 embedContent / countTokens-only）
+                let supports_chat = item
+                    .get("supportedGenerationMethods")
+                    .and_then(|m| m.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .any(|x| x.as_str() == Some("generateContent"))
+                    })
+                    .unwrap_or(false);
+                if !supports_chat {
+                    continue;
+                }
+                let name = item.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                let id = name.strip_prefix("models/").unwrap_or(name).to_string();
+                if id.is_empty() {
+                    continue;
+                }
+                let label = item
+                    .get("displayName")
+                    .and_then(|x| x.as_str())
+                    .map(String::from);
+                let context_length = item
+                    .get("inputTokenLimit")
+                    .and_then(|n| n.as_u64())
+                    .map(|n| n as u32);
+                all.push(ModelInfo {
+                    id,
+                    label,
+                    group: None,
+                    context_length,
+                });
+            }
+        }
+        page_token = v
+            .get("nextPageToken")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        if page_token.is_none() {
+            break;
+        }
+    }
+    Ok(all)
+}
+
+async fn list_models_openai_compat(
+    provider: &str,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<ModelInfo>, String> {
+    let endpoint = endpoint
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default_openai_compat_endpoint(provider));
+    if endpoint.is_empty() {
+        return Err("请先填 Endpoint".to_string());
+    }
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+    let client = http_chat_client();
+    let mut builder = client.get(&url);
+    if let Some(k) = api_key.as_ref() {
+        if !k.is_empty() {
+            builder = builder.bearer_auth(k);
+        }
+    }
+    let resp = builder
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!("API {}: {}", status, truncate(&body, 400)));
+    }
+    parse_openai_models_payload(&body)
+}
+
+/// 提出来便于单测。OpenAI / DeepSeek / Groq / OpenRouter / SiliconFlow / NVIDIA NIM
+/// 都遵循 `{ data: [{ id, ... }] }` 这套；额外字段是各家自己加的，能解析就解析，
+/// 不能就回退到 id-only。
+fn parse_openai_models_payload(body: &str) -> Result<Vec<ModelInfo>, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("解析响应失败：{e}"))?;
+    // Ollama 自家 /api/tags 是 { models: [...] }，但 /v1/models 走 OpenAI 兼容
+    // 也是 { data: [...] }，所以这里只看 data。
+    let arr = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| "响应缺少 data 数组".to_string())?;
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let id = item
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            continue;
+        }
+        // 聚合站常用 "vendor/model" 形式，自然分组
+        let (group, label) = match id.split_once('/') {
+            Some((g, l)) => (Some(g.to_string()), Some(l.to_string())),
+            None => (None, None),
+        };
+        // OpenRouter: { context_length: 200000, top_provider: { context_length: ... } }
+        let context_length = item
+            .get("context_length")
+            .and_then(|n| n.as_u64())
+            .or_else(|| {
+                item.get("top_provider")
+                    .and_then(|t| t.get("context_length"))
+                    .and_then(|n| n.as_u64())
+            })
+            .map(|n| n as u32);
+        out.push(ModelInfo {
+            id,
+            label,
+            group,
+            context_length,
+        });
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod list_models_tests {
+    use super::*;
+
+    #[test]
+    fn parses_openai_data_payload() {
+        let body = r#"{
+            "object": "list",
+            "data": [
+                { "id": "gpt-4o-mini", "object": "model" },
+                { "id": "gpt-4o", "object": "model" }
+            ]
+        }"#;
+        let list = parse_openai_models_payload(body).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].id, "gpt-4o-mini");
+        assert!(list[0].group.is_none());
+    }
+
+    #[test]
+    fn parses_openrouter_payload_with_groups_and_ctx() {
+        let body = r#"{
+            "data": [
+                { "id": "anthropic/claude-3.5-sonnet", "context_length": 200000 },
+                { "id": "openai/gpt-4o-mini", "top_provider": { "context_length": 128000 } },
+                { "id": "meta-llama/llama-3.3-70b-instruct" }
+            ]
+        }"#;
+        let list = parse_openai_models_payload(body).unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].group.as_deref(), Some("anthropic"));
+        assert_eq!(list[0].label.as_deref(), Some("claude-3.5-sonnet"));
+        assert_eq!(list[0].context_length, Some(200000));
+        assert_eq!(list[1].context_length, Some(128000));
+        assert_eq!(list[2].group.as_deref(), Some("meta-llama"));
+    }
+
+    #[test]
+    fn rejects_missing_data_array() {
+        let body = r#"{ "object": "list" }"#;
+        let err = parse_openai_models_payload(body).unwrap_err();
+        assert!(err.contains("data"));
+    }
+
+    #[test]
+    fn skips_blank_ids() {
+        let body = r#"{ "data": [ { "id": "" }, { "id": "ok" } ] }"#;
+        let list = parse_openai_models_payload(body).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "ok");
+    }
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -577,12 +913,7 @@ async fn stream_openai_compat(
     let endpoint = req
         .endpoint
         .clone()
-        .unwrap_or_else(|| match req.provider.as_str() {
-            "openai" => "https://api.openai.com/v1".to_string(),
-            "deepseek" => "https://api.deepseek.com/v1".to_string(),
-            "ollama" => "http://127.0.0.1:11434/v1".to_string(),
-            _ => "https://api.openai.com/v1".to_string(),
-        });
+        .unwrap_or_else(|| default_openai_compat_endpoint(&req.provider));
     let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
 
     let mut messages: Vec<serde_json::Value> = Vec::new();

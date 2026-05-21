@@ -10,6 +10,7 @@ mod import;
 mod markdown;
 mod oauth;
 pub mod rag;
+mod rss;
 mod s3_ops;
 mod secrets;
 mod state;
@@ -2064,6 +2065,16 @@ fn is_allowed_secret_account(account: &str) -> bool {
             | "ai:ollama"
             | "ai:google"
             | "ai:custom"
+            | "ai:nvidia"
+            | "ai:xai"
+            | "ai:groq"
+            | "ai:openrouter"
+            | "ai:siliconflow"
+            | "ai:zhipu"
+            | "ai:dashscope"
+            | "ai:moonshot"
+            | "ai:mistral"
+            | "ai:together"
             | "embed:openai"
             | "rerank:cohere"
     )
@@ -2131,26 +2142,53 @@ fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
     Ok(url.host_str().map(str::to_ascii_lowercase))
 }
 
-fn validate_ai_endpoint(req: &ChatRequest) -> Result<(), String> {
-    let Some(endpoint) = req.endpoint.as_deref().filter(|s| !s.trim().is_empty()) else {
-        return Ok(());
-    };
+/// 每个 provider 允许覆盖的官方 host 白名单：自定义 endpoint 必须落在这些 host
+/// 之一（或是 loopback / "custom" 任意），否则视为钓鱼地址直接拒绝。新增 provider
+/// 时改这里 + src/lib/ai-providers.ts + ai.rs 的默认 endpoint 三处。
+fn allowed_hosts_for(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "anthropic" => &["api.anthropic.com"],
+        "google" => &["generativelanguage.googleapis.com"],
+        "openai" => &["api.openai.com"],
+        "deepseek" => &["api.deepseek.com"],
+        "nvidia" => &["integrate.api.nvidia.com"],
+        "xai" => &["api.x.ai"],
+        "groq" => &["api.groq.com"],
+        "openrouter" => &["openrouter.ai"],
+        "siliconflow" => &["api.siliconflow.cn"],
+        "zhipu" => &["open.bigmodel.cn"],
+        "dashscope" => &["dashscope.aliyuncs.com"],
+        "moonshot" => &["api.moonshot.cn"],
+        "mistral" => &["api.mistral.ai"],
+        "together" => &["api.together.xyz"],
+        _ => &[],
+    }
+}
+
+fn check_ai_endpoint_host(provider: &str, endpoint: &str) -> Result<(), String> {
     let host = endpoint_host(endpoint)?;
     let loopback = is_loopback_host(host.as_deref());
-    let allowed = match req.provider.as_str() {
-        "anthropic" => host.as_deref() == Some("api.anthropic.com"),
-        "google" => host.as_deref() == Some("generativelanguage.googleapis.com"),
-        "openai" => host.as_deref() == Some("api.openai.com"),
-        "deepseek" => host.as_deref() == Some("api.deepseek.com"),
+    let allowed = match provider {
         "ollama" => loopback,
         "custom" => true,
-        _ => false,
+        other => {
+            let list = allowed_hosts_for(other);
+            list.iter()
+                .any(|h| host.as_deref() == Some(*h))
+        }
     };
     if allowed {
         Ok(())
     } else {
         Err("该 provider 不允许使用非官方或非本机 endpoint".to_string())
     }
+}
+
+fn validate_ai_endpoint(req: &ChatRequest) -> Result<(), String> {
+    let Some(endpoint) = req.endpoint.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return Ok(());
+    };
+    check_ai_endpoint_host(&req.provider, endpoint)
 }
 
 fn hydrate_api_key(req: &mut ChatRequest) {
@@ -2210,6 +2248,35 @@ async fn ai_chat_stream(
 fn ai_chat_cancel(stream_id: String) -> Result<(), String> {
     ai::cancel_stream(&stream_id);
     Ok(())
+}
+
+#[tauri::command]
+async fn rss_fetch(url: String) -> Result<rss::RssFetchResult, String> {
+    // 只放行 http/https；Rust 端做了 URL parse + scheme 检查 + body 大小 + 条目数上限
+    rss::fetch(&url).await
+}
+
+#[tauri::command]
+async fn ai_list_models(
+    provider: String,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<ai::ModelInfo>, String> {
+    // 走和 ai_chat 一致的安全闸门：endpoint host 必须在白名单里，否则拒绝；
+    // Key 留空时再从系统钥匙串补 ai:${provider}。
+    if let Some(ep) = endpoint.as_deref().filter(|s| !s.trim().is_empty()) {
+        check_ai_endpoint_host(&provider, ep)?;
+    }
+    let mut key = api_key;
+    if key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
+        let account = format!("ai:{}", provider);
+        if is_allowed_secret_account(&account) {
+            if let Ok(Some(stored)) = secrets::get(&account) {
+                key = Some(stored);
+            }
+        }
+    }
+    ai::list_models(provider, endpoint, key).await
 }
 
 // ─── Git 同步 ──────────────────────────────────────────────────────
@@ -3494,6 +3561,8 @@ pub fn run() {
             ai_chat,
             ai_chat_stream,
             ai_chat_cancel,
+            ai_list_models,
+            rss_fetch,
             ai_retrieve,
             git_init,
             git_clone,

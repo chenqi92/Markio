@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Icon } from "../ui/Icon";
 import { usePinnedPlan } from "@/stores/pinnedPlan";
 import {
   PRIO_COLOR,
@@ -108,7 +109,7 @@ export function KanbanView({ body, source, filePath, meta, onSourceChange }: Pro
               onClick={() => togglePin(filePath)}
               title="钉到所有页面右下角"
             >
-              <span aria-hidden>📌</span>
+              <Icon name="pin" size={12} />
               <span>{isPinned ? "已钉选" : "钉到所有页面"}</span>
             </button>
           )}

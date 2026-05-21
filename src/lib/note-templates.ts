@@ -2,9 +2,11 @@
 // build() 返回模板正文（已替换日期等占位符）。Welcome 的模板网格直接渲染数组。
 // 注意：尽量用纯函数 / 静态字符串，方便未来加 e2e 测试。
 
+import type { IconName } from "@/components/ui/Icon";
+
 export interface NoteTemplate {
   id: string;
-  icon: string;
+  icon: IconName;
   title: string;
   sub: string;
   /** 默认文件名（不含扩展名）；点进去后用户还可改 */
@@ -36,7 +38,7 @@ function quarter(d: Date): { year: number; q: number } {
 export const NOTE_TEMPLATES: NoteTemplate[] = [
   {
     id: "blank",
-    icon: "📄",
+    icon: "file",
     title: "空白笔记",
     sub: "从零开始",
     defaultName: () => "未命名",
@@ -44,7 +46,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "folder",
-    icon: "📁",
+    icon: "folder",
     title: "文件夹",
     sub: "新建一个空目录",
     defaultName: () => "新文件夹",
@@ -53,7 +55,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "daily",
-    icon: "☀️",
+    icon: "sun",
     title: "今日 Daily",
     sub: "三栏：要做 / 笔记 / 复盘",
     defaultName: (d) => ymd(d),
@@ -70,7 +72,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "weekly",
-    icon: "📅",
+    icon: "calendar",
     title: "周报",
     sub: "目标 / 进展 / 下周计划",
     defaultName: (d) => {
@@ -95,7 +97,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "monthly-retro",
-    icon: "🌙",
+    icon: "moon",
     title: "月度 Retro",
     sub: "顺 / 不顺 / 想做",
     defaultName: (d) => `${ymMonth(d)} retro`,
@@ -115,7 +117,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "okr",
-    icon: "🎯",
+    icon: "target",
     title: "OKR 季度目标",
     sub: "Objective + 3 KR",
     defaultName: (d) => {
@@ -142,7 +144,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "kickoff",
-    icon: "🚀",
+    icon: "sparkle",
     title: "项目启动",
     sub: "范围 / 里程碑 / 干系人",
     defaultName: () => "项目启动",
@@ -172,7 +174,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "meeting",
-    icon: "💬",
+    icon: "message",
     title: "会议纪要",
     sub: "议题 / 决议 / 行动",
     defaultName: (d) => `${ymd(d)} 会议`,
@@ -196,7 +198,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "reading",
-    icon: "📚",
+    icon: "book",
     title: "读书笔记",
     sub: "金句 + 反应 + 行动",
     defaultName: () => "读书笔记",
@@ -219,7 +221,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "travel",
-    icon: "✈️",
+    icon: "external",
     title: "旅行日记",
     sub: "时间 + 行程 + 花销",
     defaultName: (d) => `${ymd(d)} 旅行`,
@@ -242,7 +244,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "recipe",
-    icon: "🍳",
+    icon: "list",
     title: "食谱",
     sub: "用料 + 步骤 + 心得",
     defaultName: () => "食谱",
@@ -262,7 +264,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "training",
-    icon: "💪",
+    icon: "chart",
     title: "训练记录",
     sub: "组数 / 重量 / 感觉",
     defaultName: (d) => `${ymd(d)} 训练`,
@@ -281,7 +283,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "resume",
-    icon: "📋",
+    icon: "user",
     title: "求职简历",
     sub: "一页式 · 经历 + 项目",
     defaultName: () => "简历",
@@ -304,7 +306,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "speech",
-    icon: "🎤",
+    icon: "users",
     title: "演讲稿",
     sub: "结构：钩子 / 论点 / 收束",
     defaultName: () => "演讲稿",
@@ -335,7 +337,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "bug-postmortem",
-    icon: "🐛",
+    icon: "alert",
     title: "Bug 复盘",
     sub: "现象 / 根因 / 行动",
     defaultName: (d) => `${ymd(d)} Bug 复盘`,
@@ -362,7 +364,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   },
   {
     id: "habit",
-    icon: "✅",
+    icon: "check",
     title: "习惯追踪",
     sub: "本月签到表",
     defaultName: (d) => `${ymMonth(d)} 习惯`,
@@ -381,7 +383,7 @@ ${row}
   },
   {
     id: "flashcard",
-    icon: "🎴",
+    icon: "note",
     title: "学习卡片",
     sub: "正 / 反 / 备注",
     defaultName: () => "学习卡片",
@@ -406,7 +408,7 @@ ${row}
   },
   {
     id: "canvas-map",
-    icon: "🗺",
+    icon: "diagram",
     title: "Canvas 知识地图",
     sub: "中心主题 + 分支",
     defaultName: () => "知识地图",

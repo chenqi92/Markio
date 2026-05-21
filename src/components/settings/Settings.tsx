@@ -5776,7 +5776,7 @@ function WebClipper() {
           marginBottom: 16,
         }}
       >
-        ⚠️ 扩展端 → 桌面端的推送通道未接，下方开关已存好；扩展上架后即生效。
+        扩展端 → 桌面端的推送通道未接，下方开关已存好；扩展上架后即生效。
       </div>
 
       <div className="settings-card">
@@ -6171,7 +6171,7 @@ function MobileDevices() {
           marginBottom: 16,
         }}
       >
-        ⚠️ macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；
+        macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；
         mDNS + WS 握手后端开发中。当前可登记设备清单，握手通道上线后即可激活。
       </div>
 

@@ -97,7 +97,7 @@ export function PinnedPlanBar() {
         <div className="pin-plan-hd">
           <div className="pin-plan-meta">
             <div className="pin-plan-title">
-              <span aria-hidden>📌</span>
+              <Icon name="pin" size={11} />
               <span>{title}</span>
             </div>
             <div className="pin-plan-sub">文件不可读，已暂停同步</div>

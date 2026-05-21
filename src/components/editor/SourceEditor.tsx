@@ -32,6 +32,8 @@ interface Props {
   onChange: (v: string) => void;
   /** 行号跳转 / 全局搜索点击结果时用，单次目标。分屏滚动同步走 splitScrollSync 不经过这里。 */
   scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
+  /** 仅分屏模式启用源码 ↔ 预览滚动同步。 */
+  syncScroll?: boolean;
   onPasteImages?: (
     files: File[],
     range: { from: number; to: number },
@@ -84,6 +86,7 @@ export const SourceEditor = memo(function SourceEditor({
   onAutocompleteUpdate,
   onMathContext,
   wysiwyg = false,
+  syncScroll = false,
 }: Props) {
   const fontSize = useSettings((s) => s.fontSize);
   const findQuery = useUI((s) => s.findQuery);
@@ -209,25 +212,23 @@ export const SourceEditor = memo(function SourceEditor({
   // 源码侧滚动通过 splitScrollSync 单例总线驱动：注册「读取 / 写入视口顶部
   // 源码行号」的能力，由总线在另一端 scroll 触发时直接命令式写过来。
   useEffect(() => {
-    if (!view) return;
+    if (!view || !syncScroll) {
+      registerScrollPane("source", null);
+      return;
+    }
     registerScrollPane("source", {
       el: view.scrollDOM,
       getTopLine: () => {
         try {
-          const el = view.scrollDOM;
-          const rect = el.getBoundingClientRect();
-          const probeY = rect.top + 1;
-          // x=0 容易落到 gutter / window 边缘外，posAtCoords 会返回 null；
-          // 优先用 scrollDOM 内容区左缘 +4，落空再退到右缘 -4
-          const probe =
-            view.posAtCoords({ x: rect.left + 4, y: probeY }) ??
-            view.posAtCoords({ x: rect.right - 4, y: probeY });
-          if (probe == null) return null;
-          const line = view.state.doc.lineAt(probe);
-          const block = view.lineBlockAt(line.from);
+          const top = view.scrollDOM.scrollTop;
+          const blocks = view.viewportLineBlocks;
+          const block =
+            blocks.find((b) => b.top + b.height >= top + 1) ?? blocks[0];
+          if (!block) return null;
+          const line = view.state.doc.lineAt(block.from);
           const within =
             block.height > 0
-              ? Math.max(0, Math.min(1, (el.scrollTop - block.top) / block.height))
+              ? Math.max(0, Math.min(1, (top - block.top) / block.height))
               : 0;
           return line.number + within;
         } catch {
@@ -244,8 +245,10 @@ export const SourceEditor = memo(function SourceEditor({
         const block = view.lineBlockAt(docLine.from);
         const frac = Math.max(0, line - lineNo);
         const next = block.top + (frac > 0 ? frac * block.height : 0);
-        if (Math.abs(el.scrollTop - next) < 1) return;
+        if (!Number.isFinite(next)) return false;
+        if (Math.abs(el.scrollTop - next) < 1) return true;
         el.scrollTop = next;
+        return true;
       },
       getRatio: () => {
         const el = view.scrollDOM;
@@ -261,7 +264,7 @@ export const SourceEditor = memo(function SourceEditor({
       },
     });
     return () => registerScrollPane("source", null);
-  }, [view]);
+  }, [view, syncScroll]);
 
   useEffect(() => {
     if (!view) return;

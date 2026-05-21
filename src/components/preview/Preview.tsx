@@ -39,6 +39,8 @@ interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
   /** 行号跳转的一次性目标。分屏滚动同步走 splitScrollSync 不经过这里。 */
   scrollTarget?: import("@/lib/scrollSync").ScrollTarget | null;
+  /** 仅分屏模式启用源码 ↔ 预览滚动同步。 */
+  syncScroll?: boolean;
   /** kanban 等可写视图回写 source */
   onSourceChange?: (next: string) => void;
   /** 鼠标悬停在渲染后的表格上时上报；index 是 doc 顺序 */
@@ -88,6 +90,7 @@ export function Preview({
   basePath,
   onMeta,
   scrollTarget,
+  syncScroll = false,
   onSourceChange,
   onTableHover,
   onTableCellContext,
@@ -662,7 +665,10 @@ export function Preview({
   // list / graph 都有各自的早返回），所以同时把 viewKind 进依赖触发重注册。
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !syncScroll) {
+      registerScrollPane("preview", null);
+      return;
+    }
     registerScrollPane("preview", {
       el,
       getTopLine: () => {
@@ -672,11 +678,12 @@ export function Preview({
       },
       setTopLine: (line) => {
         const anchors = anchorsRef.current;
-        if (anchors.length === 0) return;
+        if (anchors.length === 0) return false;
         const next = scrollPosForLine(anchors, line);
-        if (next == null) return;
-        if (Math.abs(el.scrollTop - next) < 1) return;
+        if (next == null || !Number.isFinite(next)) return false;
+        if (Math.abs(el.scrollTop - next) < 1) return true;
         el.scrollTop = next;
+        return true;
       },
       getRatio: () => {
         const max = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -690,7 +697,7 @@ export function Preview({
       },
     });
     return () => registerScrollPane("preview", null);
-  }, [viewKind]);
+  }, [viewKind, syncScroll]);
 
   useEffect(() => {
     applyScrollTarget();

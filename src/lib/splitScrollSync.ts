@@ -17,8 +17,8 @@ export interface PaneHandle {
   el: HTMLElement;
   /** 取视口顶部对应的（分数）源码行号；anchors / 探针不可用时返回 null。 */
   getTopLine: () => number | null;
-  /** 把视口顶部对齐到指定源码行号（分数）。 */
-  setTopLine: (line: number) => void;
+  /** 把视口顶部对齐到指定源码行号（分数）。返回 false 表示当前无法按行同步。 */
+  setTopLine: (line: number) => boolean | void;
   /** 兜底：取 scrollTop / (scrollHeight - clientHeight)。 */
   getRatio: () => number;
   /** 兜底：按比例写 scrollTop。 */
@@ -61,10 +61,10 @@ function syncFrom(origin: Role) {
   setLock(other(origin));
   const line = src.getTopLine();
   if (line != null && Number.isFinite(line)) {
-    dstSlot.pane.setTopLine(line);
-  } else {
-    dstSlot.pane.setRatio(src.getRatio());
+    const ok = dstSlot.pane.setTopLine(line);
+    if (ok !== false) return;
   }
+  dstSlot.pane.setRatio(src.getRatio());
 }
 
 export function registerPane(role: Role, pane: PaneHandle | null): void {

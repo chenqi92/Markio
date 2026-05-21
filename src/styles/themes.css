@@ -17,6 +17,7 @@
   --bg-pane: rgba(255, 255, 255, 0.55);
   --bg-pane-2: rgba(255, 255, 255, 0.35);
   --bg-elev: rgba(255, 255, 255, 0.92);
+  --bg-modal: #ffffff;
   --bg-input: rgba(255, 255, 255, 0.6);
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-active: rgba(0, 0, 0, 0.07);
@@ -51,6 +52,7 @@
   --bg-pane: rgba(44, 44, 46, 0.45);
   --bg-pane-2: rgba(36, 36, 40, 0.6);
   --bg-elev: rgba(58, 58, 60, 0.95);
+  --bg-modal: #2a2a2c;
   --bg-input: rgba(20, 20, 22, 0.6);
   --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-active: rgba(255, 255, 255, 0.1);
@@ -85,6 +87,7 @@
   --bg-pane: rgba(238, 232, 213, 0.6);
   --bg-pane-2: rgba(245, 239, 220, 0.5);
   --bg-elev: rgba(253, 246, 227, 0.96);
+  --bg-modal: #fdf6e3;
   --bg-input: rgba(255, 252, 240, 0.7);
   --bg-hover: rgba(101, 123, 131, 0.08);
   --bg-active: rgba(101, 123, 131, 0.12);
@@ -119,6 +122,7 @@
   --bg-pane: rgba(59, 66, 82, 0.5);
   --bg-pane-2: rgba(67, 76, 94, 0.4);
   --bg-elev: rgba(67, 76, 94, 0.95);
+  --bg-modal: #3b4252;
   --bg-input: rgba(46, 52, 64, 0.6);
   --bg-hover: rgba(229, 233, 240, 0.06);
   --bg-active: rgba(229, 233, 240, 0.1);
@@ -153,6 +157,7 @@
   --bg-pane: rgba(234, 222, 199, 0.55);
   --bg-pane-2: rgba(240, 228, 205, 0.45);
   --bg-elev: rgba(248, 240, 223, 0.96);
+  --bg-modal: #f8f0df;
   --bg-input: rgba(252, 246, 232, 0.7);
   --bg-hover: rgba(92, 72, 40, 0.06);
   --bg-active: rgba(92, 72, 40, 0.1);
@@ -187,6 +192,7 @@
   --bg-pane: rgba(16, 16, 16, 0.7);
   --bg-pane-2: rgba(12, 12, 12, 0.7);
   --bg-elev: rgba(20, 20, 20, 0.98);
+  --bg-modal: #141414;
   --bg-input: rgba(0, 0, 0, 0.7);
   --bg-hover: rgba(255, 200, 60, 0.08);
   --bg-active: rgba(255, 200, 60, 0.14);
@@ -221,6 +227,7 @@
   --bg-pane: rgba(53, 55, 71, 0.5);
   --bg-pane-2: rgba(60, 62, 80, 0.5);
   --bg-elev: rgba(68, 71, 90, 0.95);
+  --bg-modal: #383a4a;
   --bg-input: rgba(40, 42, 54, 0.6);
   --bg-hover: rgba(189, 147, 249, 0.08);
   --bg-active: rgba(189, 147, 249, 0.14);
@@ -255,6 +262,7 @@
   --bg-pane: rgba(248, 232, 226, 0.5);
   --bg-pane-2: rgba(250, 236, 230, 0.45);
   --bg-elev: rgba(255, 248, 244, 0.97);
+  --bg-modal: #fff8f4;
   --bg-input: rgba(255, 251, 248, 0.7);
   --bg-hover: rgba(168, 56, 84, 0.05);
   --bg-active: rgba(168, 56, 84, 0.09);

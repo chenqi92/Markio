@@ -12,6 +12,7 @@ import { writeText } from "@/lib/clipboard";
 import { useFileIcons } from "@/stores/fileIcons";
 import { useFileMeta, FILE_COLOR_PALETTE } from "@/stores/fileMeta";
 import { api, parseError, pickDirectory } from "@/lib/api";
+import { displayPath } from "@/lib/utils";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
@@ -70,7 +71,7 @@ export function FileTree() {
           <Icon name="alert" size={18} />
         </span>
         <strong>仓库路径不可用</strong>
-        <span className="tree-empty-path">{ws.path}</span>
+        <span className="tree-empty-path">{displayPath(ws.path)}</span>
         <span className="tree-empty-note">
           外接盘未挂载、目录被删除或同步未拉下来时会出现此状态。
         </span>

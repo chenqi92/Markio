@@ -7,6 +7,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useUI, type SidebarTab } from "@/stores/ui";
 import { pickDirectory } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
+import { displayPath } from "@/lib/utils";
 
 const SIDEBAR_TABS: ReadonlyArray<{ id: SidebarTab; label: string; icon: IconName }> = [
   { id: "files", label: "文件", icon: "folder" },
@@ -56,7 +57,7 @@ export function Sidebar() {
               </div>
               <div className="repo-info">
                 <div className="repo-name">{active.name}</div>
-                <div className="repo-sub" title={active.path}>
+                <div className="repo-sub" title={displayPath(active.path)}>
                   <span
                     className="pulse"
                     style={{
@@ -159,7 +160,7 @@ export function Sidebar() {
                     </div>
                     <div className="meta">
                       <div className="nm">{w.name}</div>
-                      <div className="sb">{w.path}</div>
+                      <div className="sb">{displayPath(w.path)}</div>
                     </div>
                     {w.id === activeId && (
                       <div className="check">

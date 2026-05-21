@@ -457,8 +457,13 @@
 .settings-btn.primary:hover { filter: brightness(1.05); background: var(--accent); }
 .settings-btn.primary:active { filter: brightness(0.94); }
 
+/* 旧的弹窗 .settings-window + 新的覆盖页 .settings-workspace 共用一套输入样式；
+ * 之前漏写 .settings-workspace 那个分支，导致 Git/WebDAV 卡里所有 input
+ * 都用浏览器默认样式（无 padding、无圆角、字号 16）跟 SelectBtn / 按钮严重不协调。 */
 .settings-window input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-.settings-window textarea {
+.settings-window textarea,
+.settings-workspace input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.settings-workspace textarea {
   min-height: var(--settings-control-size);
   padding: 0 10px;
   background: var(--bg-input);
@@ -467,12 +472,23 @@
   font-size: 12px !important;
   line-height: 1.35;
   color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
 }
 
 .settings-window input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus,
-.settings-window textarea:focus {
+.settings-window textarea:focus,
+.settings-workspace input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus,
+.settings-workspace textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* textarea 需要垂直 padding；上面的 padding: 0 10px 只对单行输入合适 */
+.settings-window textarea,
+.settings-workspace textarea {
+  padding: 8px 10px;
 }
 
 .settings-choice-row {
@@ -849,9 +865,7 @@
 
 /* ─── 通用模态（检查更新 / 发布日志 / 反馈） ─── */
 .about-modal {
-  background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
+  background: var(--bg-modal, var(--bg-elev));
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-deep);

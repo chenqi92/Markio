@@ -3825,75 +3825,25 @@ function AI() {
 
       <div className="settings-card">
         <div className="settings-card-h">API 提供方</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 8,
-            padding: "12px 16px",
-          }}
-        >
-          {AI_PROVIDERS.map((p) => {
-            const savedKey = providerConfigs[p.id]?.model || providerConfigs[p.id]?.endpoint;
-            return (
-              <button
-                type="button"
-                key={p.id}
-                onClick={() => switchProvider(p.id)}
-                title={`${p.name} · ${p.defaultEndpoint || "自定义 endpoint"}`}
-                style={{
-                  position: "relative",
-                  padding: "9px 12px",
-                  background:
-                    provider === p.id ? "var(--accent-glow)" : "var(--bg-pane-2)",
-                  border:
-                    "1px solid " +
-                    (provider === p.id ? "var(--accent)" : "var(--border)"),
-                  borderRadius: 9,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <div
-                  style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}
-                >
-                  {p.name}
-                </div>
-                <div
-                  style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}
-                >
-                  {p.sub}
-                </div>
-                {savedKey && provider !== p.id && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 8,
-                      fontSize: 9,
-                      color: "var(--text-3)",
-                    }}
-                    title="已为此提供方记住配置"
-                  >
-                    ·已记住
-                  </span>
-                )}
-                {provider === p.id && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 8,
-                      color: "var(--accent)",
-                      fontWeight: 700,
-                    }}
-                  >
-                    ✓
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">当前提供方</div>
+            <div className="settings-help">
+              切换后会自动恢复该提供方上次的 endpoint / 模型（API Key 始终独立保存）
+            </div>
+          </div>
+          <SelectBtn
+            value={provider}
+            options={AI_PROVIDERS.map((p) => {
+              const saved = providerConfigs[p.id]?.model || providerConfigs[p.id]?.endpoint;
+              return {
+                value: p.id,
+                label: `${p.name} · ${p.sub}${saved && provider !== p.id ? " · 已记住" : ""}`,
+              };
+            })}
+            onChange={(v) => switchProvider(v)}
+            minMenuWidth={320}
+          />
         </div>
       </div>
 

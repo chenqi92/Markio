@@ -775,10 +775,12 @@
 .settings-main2 .select-btn.open {
   background: var(--bg-elev);
 }
-.settings-main2 .settings-btn {
+/* 注意：必须 :not(.primary)，否则 .settings-btn.primary 的 accent 背景会被这里覆掉，
+ * 变成白底白字看不见（这是 image #17 报告的 bug）。 */
+.settings-main2 .settings-btn:not(.primary) {
   background: var(--bg-pane);
 }
-.settings-main2 .settings-btn:hover:not(:disabled) {
+.settings-main2 .settings-btn:not(.primary):hover:not(:disabled) {
   background: var(--bg-elev);
 }
 

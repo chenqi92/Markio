@@ -762,12 +762,14 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 }
 .qc2-btn-primary kbd { background: rgba(255,255,255,0.22); }
 
-/* ── 导出弹窗 ── */
+/* ── 导出弹窗 ──
+ * scrim 透明度从 0.42 → 0.58；blur 12 → 20px；模态背景改用 bg-elev (不透明) 而不是 bg-window
+ * (后者在某些主题下半透明)，避免编辑器内容透到弹窗后面。 */
 .ex-scrim {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.42);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(0,0,0,0.58);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
   z-index: 1900;
   display: flex; justify-content: center;
   padding-top: 10vh;
@@ -776,7 +778,7 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .ex-sheet {
   width: 640px; max-width: 92vw;
   align-self: flex-start;
-  background: var(--bg-window, var(--bg-elev));
+  background: var(--bg-elev);
   border: 0.5px solid var(--border-strong);
   border-radius: 16px;
   box-shadow: 0 50px 120px rgba(0,0,0,0.42);

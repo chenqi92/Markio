@@ -1,7 +1,7 @@
 /* settings window */
 .settings-window {
   --settings-label-size: 13px;
-  --settings-help-size: 11.5px;
+  --settings-help-size: 12px;
   --settings-control-size: 30px;
   width: 880px; max-width: 92vw;
   height: 620px; max-height: 86vh;
@@ -42,7 +42,7 @@
   min-height: 32px;
   padding: 0 12px;
   margin: 1px 8px;
-  font-size: 12.5px; line-height: 1;
+  font-size: 12px; line-height: 1;
   color: var(--text-2);
   border-radius: 7px;
   cursor: pointer;
@@ -72,7 +72,7 @@
   margin: 0 0 4px;
 }
 .settings-sub {
-  font-size: 12.5px; color: var(--text-3);
+  font-size: 12px; color: var(--text-3);
   line-height: 1.45;
   margin: 0 0 18px;
 }
@@ -85,7 +85,7 @@
 }
 .settings-card-h {
   padding: 0 16px;
-  font-size: 10.5px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   line-height: 1.2;
   color: var(--text-3);
   text-transform: uppercase; letter-spacing: 0.08em;
@@ -152,7 +152,7 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
@@ -173,7 +173,7 @@
   background: var(--bg-elev);
   box-shadow: var(--shadow-deep);
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
   letter-spacing: 0;
@@ -388,7 +388,7 @@
 .select-option-desc {
   display: block;
   margin-top: 1px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -428,7 +428,7 @@
 
 .settings-btn {
   min-height: 34px;
-  font-size: 12.5px; line-height: 1; color: var(--text);
+  font-size: 12px; line-height: 1; color: var(--text);
   padding: 0 16px;
   background: var(--bg-pane-2);
   border: 0.5px solid var(--border-strong);
@@ -525,7 +525,7 @@
   /* 这些变量原本只定义在 .settings-window 弹窗上；嵌入式覆盖页要自己声明一份，
    * 否则 .select-btn / .kbd / .settings-btn 的尺寸都会塌掉 */
   --settings-label-size: 13px;
-  --settings-help-size: 11.5px;
+  --settings-help-size: 12px;
   --settings-control-size: 30px;
   position: relative;
   flex: 1;
@@ -565,7 +565,7 @@
 .settings-mark::before { top: 9px; height: 2px; }
 .settings-mark::after  { top: 14px; height: 2px; opacity: 0.6; }
 .settings-topbar-t { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; line-height: 1.2; }
-.settings-topbar-s { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.settings-topbar-s { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
 .settings-topbar-r { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .settings-search-top {
@@ -677,8 +677,8 @@
   font-weight: 700; font-size: 12px;
   flex-shrink: 0;
 }
-.settings-nav2-foot-l .t { font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-nav2-foot-l .s { font-size: 10.5px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav2-foot-l .t { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav2-foot-l .s { font-size: 11px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* main：覆盖原 .settings-card 卡片样式为"无卡片"无圆角排版。
  * grid-template-columns 把右侧灰白空间收起来——内容居中，行可读宽度封到 880。 */
@@ -732,7 +732,7 @@
   border-bottom: 0.5px solid var(--border);
 }
 .settings-main2 .settings-row:last-child { border-bottom: 0; }
-.settings-main2 .settings-label { font-size: 13.5px; color: var(--text); font-weight: 500; }
+.settings-main2 .settings-label { font-size: 13px; color: var(--text); font-weight: 500; }
 .settings-main2 .settings-help { font-size: 12px; color: var(--text-3); margin-top: 3px; }
 
 /* 单选行：dot 紧贴 label 放最左，整行可点。在 no-card 模式下要重写布局，
@@ -814,7 +814,7 @@
 .about-mark::after  { top: 32px; height: 4px; opacity: 0.55; }
 
 .about-hero-name { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
-.about-hero-ver { font-size: 12.5px; color: var(--text-3); margin-top: 4px; }
+.about-hero-ver { font-size: 12px; color: var(--text-3); margin-top: 4px; }
 .about-hero-tag { font-size: 13px; color: var(--text-2); margin-top: 6px; max-width: 480px; }
 .about-hero-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 
@@ -841,7 +841,7 @@
 .about-thanks {
   margin-top: 24px;
   padding: 12px 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-3);
   line-height: 1.7;
   border-top: 0.5px solid var(--border);
@@ -870,7 +870,7 @@
   padding: 12px 16px;
   border-bottom: 0.5px solid var(--border);
 }
-.about-modal-t { flex: 1; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.about-modal-t { flex: 1; font-size: 13px; font-weight: 700; color: var(--text); }
 .about-modal-x {
   width: 26px; height: 26px;
   border-radius: 6px;
@@ -938,7 +938,7 @@
 }
 .about-notes {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   background: var(--bg-pane);
   border: 0.5px solid var(--border);
   border-radius: 8px;
@@ -987,7 +987,7 @@
 .about-cl-tag.major { background: var(--accent-glow); color: var(--accent); }
 .about-cl-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .about-cl-section { display: flex; gap: 8px; align-items: flex-start; }
-.about-cl-section ul { margin: 0; padding-left: 16px; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
+.about-cl-section ul { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.6; color: var(--text-2); }
 .about-cl-chip {
   font-size: 10px;
   padding: 1px 7px;
@@ -1020,15 +1020,15 @@
 }
 .about-fb-kind:hover { border-color: var(--text-3); }
 .about-fb-kind.active { border-color: var(--text); background: var(--bg-pane-2); color: var(--text); }
-.about-fb-kind .t { font-size: 12.5px; font-weight: 600; color: var(--text); }
-.about-fb-kind .s { font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+.about-fb-kind .t { font-size: 12px; font-weight: 600; color: var(--text); }
+.about-fb-kind .s { font-size: 11px; color: var(--text-3); margin-top: 2px; }
 .about-fb-text {
   width: 100%;
   background: var(--bg-input);
   border: 0.5px solid var(--border-strong);
   border-radius: 8px;
   padding: 10px 12px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text);
   font-family: inherit;
   resize: vertical;
@@ -1184,7 +1184,7 @@
   font-size: 13px; font-weight: 600; color: var(--text);
 }
 .sync-target-tt .s {
-  font-size: 11.5px; color: var(--text-3); margin-top: 2px;
+  font-size: 12px; color: var(--text-3); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sync-target-chev {
@@ -1193,3 +1193,25 @@
   font-family: var(--font-mono);
   margin-right: 4px;
 }
+
+/* ─── 同步子卡的统一状态行 (Git / WebDAV / S3 内部用) ───────────────
+ * 跟在 CardTitle 后面，一眼看出连接状态 + 摘要 + 可点的操作；
+ * 各卡片下方的具体配置行保持原样。 */
+.sync-card-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg-pane-2);
+}
+.settings-main2 .sync-card-status {
+  padding: 10px 0;
+  background: transparent;
+}
+.sync-card-status .summary {
+  flex: 1; min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sync-card-status .summary .strong { color: var(--text); font-weight: 600; }
+.sync-card-status .summary .dim { color: var(--text-3); }

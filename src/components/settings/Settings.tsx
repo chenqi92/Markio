@@ -2420,11 +2420,46 @@ function GitSyncCard() {
     await run();
   };
 
+  // 统一状态行：dot 反映 head/working tree 状态；off=未检测，ok=clean+无 ahead/behind，warn=有变动或与远端不同步
+  const gitStatusDot: "ok" | "warn" | "off" = !status
+    ? "off"
+    : status.files.length > 0 || status.ahead > 0 || status.behind > 0
+      ? "warn"
+      : "ok";
+  const gitSummary = !status
+    ? "尚未检测 · 点右侧「刷新」获取本地仓库状态"
+    : `${status.branch ?? "(detached)"} · ↑${status.ahead} ↓${status.behind} · ${status.files.length} 个改动`;
+
   return (
     <div className="settings-card">
       <CardTitle tip="支持 clone、init、status、fetch、commit、pull、push、分支切换和冲突处理；PAT 仅保存在系统钥匙串。">
         Git 同步
       </CardTitle>
+
+      <div className="sync-card-status">
+        <span className={`upload-dot upload-dot-${gitStatusDot}`} aria-hidden />
+        <div className="summary">
+          {!status ? (
+            gitSummary
+          ) : (
+            <>
+              <span className="strong">{status.branch ?? "(detached)"}</span>
+              <span className="dim"> · </span>
+              <span>↑{status.ahead} ↓{status.behind}</span>
+              <span className="dim"> · </span>
+              <span>{status.files.length} 个改动</span>
+            </>
+          )}
+        </div>
+        <button
+          className="settings-btn"
+          type="button"
+          onClick={refreshStatus}
+          disabled={!workspacePath || busy === "status"}
+        >
+          {busy === "status" ? "检测中…" : "刷新"}
+        </button>
+      </div>
 
       <div className="settings-row">
         <div className="settings-row-l">
@@ -3720,7 +3755,7 @@ function SmartChannelSettings() {
                 background: "var(--bg-input)",
                 border: "0.5px solid var(--border-strong)",
                 borderRadius: 6,
-                fontSize: 12.5,
+                fontSize: 12,
                 color: "var(--text)",
                 resize: "vertical",
                 fontFamily: "inherit",
@@ -3759,7 +3794,7 @@ function SmartChannelSettings() {
                 padding: 10,
                 background: "var(--bg-pane-2)",
                 borderRadius: 6,
-                fontSize: 12.5,
+                fontSize: 12,
                 whiteSpace: "pre-wrap",
                 lineHeight: 1.6,
                 color: "var(--text)",
@@ -3777,7 +3812,7 @@ function SmartChannelSettings() {
                     margin: "4px 0 0",
                     padding: 0,
                     listStyle: "none",
-                    fontSize: 11.5,
+                    fontSize: 12,
                   }}
                 >
                   {testRefs.map((r, i) => (
@@ -4437,6 +4472,11 @@ function WebDavCard() {
   const [stored, setStored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [connStatus, setConnStatus] = useState<"unknown" | "ok" | "fail">("unknown");
+  // baseUrl 改变后旧的测试结果失效
+  useEffect(() => {
+    setConnStatus("unknown");
+  }, [baseUrl]);
 
   useEffect(() => {
     if (!baseUrl) {
@@ -4473,11 +4513,52 @@ function WebDavCard() {
     });
   };
 
+  // 统一状态行：off=没填 URL，unknown=没测过，ok=测过且通，fail=测过但失败
+  const wdDot: "ok" | "warn" | "off" =
+    !baseUrl ? "off" : connStatus === "ok" ? "ok" : connStatus === "fail" ? "warn" : "off";
+  const wdSummary = !baseUrl
+    ? "未配置 · 在下方填服务地址"
+    : connStatus === "ok"
+      ? `已连通 · ${baseUrl}`
+      : connStatus === "fail"
+        ? `连接失败 · ${baseUrl}`
+        : `${baseUrl} · 尚未测试`;
+
+  const testConnection = async () => {
+    if (!baseUrl) return;
+    setBusy("conn");
+    setMsg(null);
+    try {
+      await api.webdavTest(baseUrl, auth());
+      setConnStatus("ok");
+      setMsg({ kind: "ok", text: "连接成功" });
+    } catch (e) {
+      setConnStatus("fail");
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="settings-card">
       <CardTitle tip="支持坚果云、TeraCloud、Nextcloud 和自建 WebDAV；密码只保存到系统钥匙串。">
         WebDAV
       </CardTitle>
+
+      <div className="sync-card-status">
+        <span className={`upload-dot upload-dot-${wdDot}`} aria-hidden />
+        <div className="summary">{wdSummary}</div>
+        <button
+          className="settings-btn"
+          type="button"
+          onClick={testConnection}
+          disabled={!baseUrl || busy !== null}
+        >
+          {busy === "conn" ? "测试中…" : "测试连接"}
+        </button>
+      </div>
+
       <div className="settings-row">
         <div className="settings-row-l">
           <LabelWithTip tip="例如 https://dav.jianguoyun.com/dav/">
@@ -4541,14 +4622,8 @@ function WebDavCard() {
           style={{ flex: 1, minWidth: 220 }}
         />
       </div>
+      {/* 测试连接已经移到上方 .sync-card-status，这里只留初始化 / 列出 */}
       <div className="settings-action-row">
-        <button
-          className="settings-btn"
-          disabled={!baseUrl || busy !== null}
-          onClick={() => wrap("连接测试", () => api.webdavTest(baseUrl, auth()))}
-        >
-          测试连接
-        </button>
         <button
           className="settings-btn"
           disabled={!baseUrl || busy !== null}
@@ -5148,12 +5223,12 @@ function RagSettings() {
               }}
             >
               <div
-                style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}
+                style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}
               >
                 {p.n}
               </div>
               <div
-                style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}
+                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}
               >
                 {p.sub}
               </div>
@@ -5798,7 +5873,7 @@ function ImportExport() {
                   background: "var(--bg-pane-2)",
                   border: "0.5px solid var(--border)",
                   borderRadius: 8,
-                  fontSize: 12.5,
+                  fontSize: 12,
                   color: disabled ? "var(--text-3)" : "var(--text)",
                   cursor: disabled ? "not-allowed" : "pointer",
                   opacity: disabled ? 0.55 : 1,
@@ -5852,7 +5927,7 @@ function ImportExport() {
                 background: "var(--bg-pane-2)",
                 border: "0.5px solid var(--border)",
                 borderRadius: 8,
-                fontSize: 12.5,
+                fontSize: 12,
                 color:
                   importBusy !== null || !activeWorkspace
                     ? "var(--text-3)"

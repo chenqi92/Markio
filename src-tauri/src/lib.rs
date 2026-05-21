@@ -3274,6 +3274,14 @@ fn peek_embed_dim(workspace: &Path) -> Option<usize> {
     .ok()
 }
 
+/// 用空 input "ping" 测一次 embedding 服务是否可达；前端在开始 reindex 前先调它，
+/// 服务不可达就直接报错给用户，不要白白起一个会失败一整轮的后台任务。
+#[tauri::command]
+async fn rag_embed_test(config: rag::embed::EmbedConfig) -> Result<usize, String> {
+    let result = rag::embed::embed(&config, &["ping".to_string()]).await?;
+    Ok(result.dim)
+}
+
 #[tauri::command]
 async fn rag_reindex(
     app: tauri::AppHandle,
@@ -3609,6 +3617,7 @@ pub fn run() {
             import_apple_notes,
             rag_status,
             rag_reindex,
+            rag_embed_test,
             rag_cancel,
             rag_reindex_file,
             rag_remove_file,

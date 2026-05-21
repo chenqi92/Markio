@@ -584,6 +584,11 @@ export const api = {
       }>;
     }>("rss_fetch", { url }),
 
+  /** 用 ping 测一次 embedding 服务可达性；前端 reindex 前先调，服务不可达直接报错。
+   *  返回向量维度供 UI 显示。 */
+  ragEmbedTest: (config: RagEmbedConfig) =>
+    invoke<number>("rag_embed_test", { config }),
+
   /** 关键词检索：从仓库里抽 query 相关片段（含周边 ±3 行）作 AI 上下文 */
   aiRetrieve: (workspace: string, query: string, k = 5) =>
     invoke<

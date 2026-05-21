@@ -48,6 +48,14 @@ export const useRag = create<RagState>((set, get) => ({
 
   reindex: async (workspacePath) => {
     const cfg = resolveEmbedConfig();
+    // 先 ping 一次 embedding 服务，不可达就直接抛错给 UI；不要白白起一个
+    // 会失败一整轮的后台任务（image #18 的 "正在索引 4/72 + 无法连接 Ollama" bug）。
+    try {
+      await api.ragEmbedTest(cfg);
+    } catch (e) {
+      const msg = (e as Error).message;
+      throw new Error(`embedding 服务不可达：${msg}`);
+    }
     await api.ragReindex(workspacePath, cfg);
   },
 
@@ -56,6 +64,11 @@ export const useRag = create<RagState>((set, get) => ({
   reindexFile: async (workspacePath, file) => {
     const s = useSettings.getState();
     if (!s.ragEnabled) return;
+    // 只有该 workspace 已经至少索引过一次 (status.totalDocs > 0) 才做单文件增量；
+    // 没有现存索引就别在保存时偷偷拉起 embedding 服务（用户可能根本没装 Ollama）。
+    const st = get().status;
+    const known = Object.values(st).find((s) => s.workspace === workspacePath);
+    if (!known || (known.totalDocs ?? 0) === 0) return;
     const cfg = resolveEmbedConfig();
     try {
       await api.ragReindexFile(workspacePath, file, cfg);

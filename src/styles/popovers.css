@@ -1,9 +1,10 @@
-/* command palette */
+/* command palette
+ * scrim 透明度从 0.35 → 0.55，blur 8 → 16px：原值在浅色主题下编辑器内容透到弹窗后面太明显。 */
 .scrim {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.35);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: rgba(0,0,0,0.55);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
   z-index: 1000;
   display: flex; justify-content: center;
   align-items: flex-start;

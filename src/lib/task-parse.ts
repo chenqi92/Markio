@@ -25,7 +25,7 @@ const DATE_RE = /\b(\d{4}-\d{2}-\d{2})\b/;
 export function parseTask(rawLine: string): ParsedTask | null {
   const m = rawLine.match(TASK_LINE);
   if (!m) return null;
-  let text = m[1];
+  let text = m[1]!;
 
   const tags: string[] = [];
   text = text.replace(/(^|\s)#([\w一-鿿/.-]+)/g, (_, lead: string, name: string) => {

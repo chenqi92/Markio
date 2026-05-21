@@ -7,12 +7,12 @@ function computeHeadingSpans(content: string) {
   let offset = 0;
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
+    const ln = lines[i]!;
     if (/^\s*```/.test(ln)) inFence = !inFence;
     if (!inFence) {
       const m = /^(#{1,6})[ \t]+\S/.exec(ln);
       if (m) {
-        headings.push({ line: i, level: m[1].length, offset });
+        headings.push({ line: i, level: m[1]!.length, offset });
       }
     }
     offset += ln.length + 1;
@@ -21,8 +21,8 @@ function computeHeadingSpans(content: string) {
   return headings.map((h, i) => {
     let to = totalLen;
     for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= h.level) {
-        to = headings[j].offset;
+      if (headings[j]!.level <= h.level) {
+        to = headings[j]!.offset;
         break;
       }
     }
@@ -48,15 +48,15 @@ describe("computeHeadingSpans", () => {
     const src = "# Real\n```\n# Fake\n```\n# Also Real\n";
     const spans = computeHeadingSpans(src);
     expect(spans).toHaveLength(2);
-    expect(spans[0].level).toBe(1);
+    expect(spans[0]!.level).toBe(1);
   });
 
   it("computes span end at next same-or-higher-level heading", () => {
     const src = "# A\nbody A\n## A1\nbody A1\n# B\n";
     const spans = computeHeadingSpans(src);
-    expect(spans[0].level).toBe(1);
+    expect(spans[0]!.level).toBe(1);
     // section A includes A1
-    const aText = src.slice(spans[0].from, spans[0].to);
+    const aText = src.slice(spans[0]!.from, spans[0]!.to);
     expect(aText).toContain("# A");
     expect(aText).toContain("## A1");
     expect(aText).not.toContain("# B");
@@ -67,14 +67,14 @@ describe("moveSection", () => {
   it("moves earlier section after later", () => {
     const src = "# A\nbodyA\n# B\nbodyB\n";
     const spans = computeHeadingSpans(src);
-    const next = moveSection(src, spans[0].from, spans[0].to, spans[1].to);
+    const next = moveSection(src, spans[0]!.from, spans[0]!.to, spans[1]!.to);
     expect(next.indexOf("# B")).toBeLessThan(next.indexOf("# A"));
   });
 
   it("noop when insertBefore inside the moved range", () => {
     const src = "# A\nbodyA\n# B\n";
     const spans = computeHeadingSpans(src);
-    const next = moveSection(src, spans[0].from, spans[0].to, spans[0].from + 1);
+    const next = moveSection(src, spans[0]!.from, spans[0]!.to, spans[0]!.from + 1);
     expect(next).toBe(src);
   });
 });

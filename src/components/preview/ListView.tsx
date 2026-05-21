@@ -36,7 +36,7 @@ function parseItems(body: string): Item[] {
   const m = body.match(/```json\s*\n([\s\S]*?)\n```/);
   if (!m) return [];
   try {
-    const parsed = JSON.parse(m[1]);
+    const parsed = JSON.parse(m[1]!);
     if (Array.isArray(parsed)) return parsed as Item[];
   } catch {
     /* ignore */
@@ -135,26 +135,26 @@ export function ListView({ body, title }: { body: string; title?: string }) {
           <h1 className="lv-title">{title ?? "列表"}</h1>
           <div className="lv-meta">
             <span>{items.length} 项</span>
-            {stats.up > 0 && (
+            {(stats.up ?? 0) > 0 && (
               <>
                 <span className="dot">·</span>
-                <span style={{ color: STATUS_META.up.color }}>
+                <span style={{ color: STATUS_META.up!.color }}>
                   ● {stats.up} 运行
                 </span>
               </>
             )}
-            {stats.warn > 0 && (
+            {(stats.warn ?? 0) > 0 && (
               <>
                 <span className="dot">·</span>
-                <span style={{ color: STATUS_META.warn.color }}>
+                <span style={{ color: STATUS_META.warn!.color }}>
                   ● {stats.warn} 警告
                 </span>
               </>
             )}
-            {stats.down > 0 && (
+            {(stats.down ?? 0) > 0 && (
               <>
                 <span className="dot">·</span>
-                <span style={{ color: STATUS_META.down.color }}>
+                <span style={{ color: STATUS_META.down!.color }}>
                   ● {stats.down} 离线
                 </span>
               </>
@@ -163,7 +163,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
         </div>
       </div>
 
-      {(tags.length > 0 || stats.warn > 0 || stats.down > 0) && (
+      {(tags.length > 0 || (stats.warn ?? 0) > 0 || (stats.down ?? 0) > 0) && (
         <div className="lv-filters">
           <button
             type="button"
@@ -182,7 +182,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
               {t}
             </button>
           ))}
-          {stats.warn > 0 && (
+          {(stats.warn ?? 0) > 0 && (
             <button
               type="button"
               className={"lv-filter" + (filter === "warn" ? " active" : "")}
@@ -191,7 +191,7 @@ export function ListView({ body, title }: { body: string; title?: string }) {
               需要关注
             </button>
           )}
-          {stats.down > 0 && (
+          {(stats.down ?? 0) > 0 && (
             <button
               type="button"
               className={"lv-filter" + (filter === "down" ? " active" : "")}

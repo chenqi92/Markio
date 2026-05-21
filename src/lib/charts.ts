@@ -120,8 +120,8 @@ function parseLooseChart(source: string): Record<string, unknown> {
     const match = line.match(/^([^:]+):\s*(.*)$/);
     if (!match) continue;
     const indent = rawLine.length - rawLine.trimStart().length;
-    const key = match[1].trim();
-    const value = match[2].trim();
+    const key = match[1]!.trim();
+    const value = match[2]!.trim();
     if (/^series$/i.test(key) && !value) {
       inSeries = true;
       continue;
@@ -197,7 +197,7 @@ function normalizeChart(raw: Record<string, unknown>): ChartConfig {
   }));
 
   if (type === "pie") {
-    const values = series[0].data
+    const values = series[0]!.data
       .slice(0, labels.length)
       .map((value) => Math.max(0, value));
     const pairs = labels
@@ -210,7 +210,7 @@ function normalizeChart(raw: Record<string, unknown>): ChartConfig {
       subtitle,
       unit,
       labels: pairs.map((item) => item.label),
-      series: [{ name: series[0].name, data: pairs.map((item) => item.value) }],
+      series: [{ name: series[0]!.name, data: pairs.map((item) => item.value) }],
     };
   }
 
@@ -396,7 +396,7 @@ function cartesianSvg(config: ChartConfig, mode: "bar" | "line") {
       const path = svgNode("path", {
         class: "chart-line",
         d: points
-          .map(([xx, yy], index) => `${index === 0 ? "M" : "L"} ${xx.toFixed(2)} ${yy.toFixed(2)}`)
+          .map(([xx, yy], index) => `${index === 0 ? "M" : "L"} ${xx!.toFixed(2)} ${yy!.toFixed(2)}`)
           .join(" "),
         stroke: color(seriesIndex),
       });
@@ -406,8 +406,8 @@ function cartesianSvg(config: ChartConfig, mode: "bar" | "line") {
           svg.append(
             svgNode("circle", {
               class: "chart-point",
-              cx: xx,
-              cy: yy,
+              cx: xx!,
+              cy: yy!,
               r: 3,
               fill: color(seriesIndex),
             }),
@@ -441,7 +441,7 @@ function pieSvg(config: ChartConfig) {
     role: "img",
     "aria-label": config.title,
   });
-  const values = config.series[0].data;
+  const values = config.series[0]!.data;
   const total = values.reduce((sum, value) => sum + value, 0);
   const cx = 250;
   const cy = 178;
@@ -495,12 +495,12 @@ function legend(config: ChartConfig) {
   const wrap = create("div", "chart-legend");
   const total =
     config.type === "pie"
-      ? config.series[0].data.reduce((sum, value) => sum + value, 0)
+      ? config.series[0]!.data.reduce((sum, value) => sum + value, 0)
       : 0;
   const names =
     config.type === "pie"
       ? config.labels.map((label, index) => {
-          const value = config.series[0].data[index] ?? 0;
+          const value = config.series[0]!.data[index] ?? 0;
           const percent = total > 0 ? ` · ${Math.round((value / total) * 100)}%` : "";
           return `${label} ${formatNumber(value, config.unit)}${percent}`;
         })
@@ -532,7 +532,7 @@ function dataTable(config: ChartConfig) {
     config.labels.forEach((label, index) => {
       const row = create("tr");
       row.append(create("td", undefined, label));
-      row.append(create("td", undefined, formatNumber(config.series[0].data[index] ?? 0, config.unit)));
+      row.append(create("td", undefined, formatNumber(config.series[0]!.data[index] ?? 0, config.unit)));
       tbody.append(row);
     });
     table.append(thead, tbody);

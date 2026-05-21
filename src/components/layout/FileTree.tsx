@@ -282,7 +282,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
   const out: FlatRow[] = [];
   const stack: FlatRow[] = [];
   for (let i = roots.length - 1; i >= 0; i--) {
-    stack.push({ node: roots[i], depth: 0 });
+    stack.push({ node: roots[i]!, depth: 0 });
   }
   while (stack.length > 0) {
     const row = stack.pop()!;
@@ -291,7 +291,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
       const children = row.node.children;
       if (children) {
         for (let i = children.length - 1; i >= 0; i--) {
-          stack.push({ node: children[i], depth: row.depth + 1 });
+          stack.push({ node: children[i]!, depth: row.depth + 1 });
         }
       }
     }
@@ -377,7 +377,7 @@ function VirtualizedTree({
         }}
       >
         {items.map((vi) => {
-          const row = flat[vi.index];
+          const row = flat[vi.index]!;
           return (
             <div
               key={row.node.path}

@@ -67,7 +67,7 @@ function enhanceCalloutBlockquote(blockquote: HTMLElement): boolean {
   const match = textNode.nodeValue?.match(markerRe);
   if (!match) return false;
 
-  const rawType = match[1].toLowerCase();
+  const rawType = match[1]!.toLowerCase();
   const type = CALLOUT_ALIASES[rawType] ?? rawType;
   const title =
     match[3]?.trim() ||

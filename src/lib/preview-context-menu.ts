@@ -158,6 +158,6 @@ export function buildPreviewContextItems(deps: BuildPreviewItemsDeps): CtxItem[]
     },
   });
 
-  while (items.length && items[items.length - 1].sep) items.pop();
+  while (items.length && items[items.length - 1]!.sep) items.pop();
   return items;
 }

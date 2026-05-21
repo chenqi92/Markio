@@ -47,10 +47,10 @@ function appendEncodedTriplet(out: string[], b1: number, b2: number, b3: number)
   const c3 = ((b2 & 0xf) << 2) | (b3 >> 6);
   const c4 = b3 & 0x3f;
   out.push(
-    PLANTUML_ALPHABET[c1],
-    PLANTUML_ALPHABET[c2],
-    PLANTUML_ALPHABET[c3],
-    PLANTUML_ALPHABET[c4],
+    PLANTUML_ALPHABET[c1]!,
+    PLANTUML_ALPHABET[c2]!,
+    PLANTUML_ALPHABET[c3]!,
+    PLANTUML_ALPHABET[c4]!,
   );
 }
 
@@ -60,7 +60,7 @@ export function plantUmlEncode(source: string) {
   for (let i = 0; i < compressed.length; i += 3) {
     appendEncodedTriplet(
       out,
-      compressed[i],
+      compressed[i]!,
       compressed[i + 1] ?? 0,
       compressed[i + 2] ?? 0,
     );

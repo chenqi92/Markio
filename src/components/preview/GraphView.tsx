@@ -33,8 +33,8 @@ function layout(nodes: Node[], radius: number) {
     const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
     const x = cx + radius * Math.cos(ang);
     const y = cy + radius * Math.sin(ang);
-    const r = Math.max(4, Math.min(18, 4 + Math.sqrt(sorted[i].inDegree) * 3));
-    positions.set(sorted[i].id, { x, y, r });
+    const r = Math.max(4, Math.min(18, 4 + Math.sqrt(sorted[i]!.inDegree) * 3));
+    positions.set(sorted[i]!.id, { x, y, r });
   }
   return { positions, ordered: sorted };
 }

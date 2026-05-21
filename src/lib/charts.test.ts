@@ -15,7 +15,7 @@ describe("chart fenced block parser", () => {
     expect(chart.type).toBe("bar");
     expect(chart.labels).toEqual(["一月", "二月"]);
     expect(chart.series).toHaveLength(2);
-    expect(chart.series[1].data).toEqual([8, 11]);
+    expect(chart.series[1]!.data).toEqual([8, 11]);
   });
 
   it("parses loose series syntax", () => {
@@ -39,6 +39,6 @@ series:
     }`);
     expect(chart.type).toBe("pie");
     expect(chart.labels).toEqual(["桌面", "移动"]);
-    expect(chart.series[0].data).toEqual([42, 58]);
+    expect(chart.series[0]!.data).toEqual([42, 58]);
   });
 });

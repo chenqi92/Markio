@@ -22,22 +22,22 @@ describe("blockExternalImages", () => {
     const cleanup = blockExternalImages(root);
 
     const imgs = root.querySelectorAll("img");
-    expect(imgs[0].getAttribute("data-original-src")).toBe(
+    expect(imgs[0]!.getAttribute("data-original-src")).toBe(
       "https://example.com/a.png",
     );
-    expect(imgs[0].classList.contains(_internal.BLOCK_CLASS)).toBe(true);
-    expect(imgs[0].getAttribute("src")?.startsWith("data:image/svg+xml")).toBe(true);
+    expect(imgs[0]!.classList.contains(_internal.BLOCK_CLASS)).toBe(true);
+    expect(imgs[0]!.getAttribute("src")?.startsWith("data:image/svg+xml")).toBe(true);
 
-    expect(imgs[1].getAttribute("data-original-src")).toBe(
+    expect(imgs[1]!.getAttribute("data-original-src")).toBe(
       "http://example.org/b.jpg",
     );
 
     // data:/ 相对路径不动
-    expect(imgs[2].getAttribute("src")).toBe("data:image/png;base64,xxx");
-    expect(imgs[2].classList.contains(_internal.BLOCK_CLASS)).toBe(false);
+    expect(imgs[2]!.getAttribute("src")).toBe("data:image/png;base64,xxx");
+    expect(imgs[2]!.classList.contains(_internal.BLOCK_CLASS)).toBe(false);
 
-    expect(imgs[3].getAttribute("src")).toBe("local/image.png");
-    expect(imgs[3].classList.contains(_internal.BLOCK_CLASS)).toBe(false);
+    expect(imgs[3]!.getAttribute("src")).toBe("local/image.png");
+    expect(imgs[3]!.classList.contains(_internal.BLOCK_CLASS)).toBe(false);
 
     cleanup();
     root.remove();

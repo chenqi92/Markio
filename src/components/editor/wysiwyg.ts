@@ -173,7 +173,7 @@ function extractFencedBody(state: EditorState, from: number, to: number): string
 function extractFenceLang(state: EditorState, from: number): string {
   const firstLine = state.doc.lineAt(from);
   const m = firstLine.text.match(/^\s*```\s*([\w-]+)/);
-  return m ? m[1] : "";
+  return m ? m[1]! : "";
 }
 
 // ─── Table widget ───────────────────────────────────────────────────────────
@@ -191,8 +191,8 @@ export function parseTableSource(src: string): ParsedTable {
     const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
     return inner.split("|").map((s) => s.trim());
   };
-  const header = splitRow(lines[0]);
-  const alignRow = splitRow(lines[1]);
+  const header = splitRow(lines[0]!);
+  const alignRow = splitRow(lines[1]!);
   const aligns = alignRow.map((s) => {
     const left = s.startsWith(":");
     const right = s.endsWith(":");
@@ -281,8 +281,8 @@ export function parseImageMarkdown(text: string): ImageParts | null {
   const m = text.match(IMAGE_URL_RE);
   if (!m) return null;
   return {
-    alt: m[1],
-    url: m[2],
+    alt: m[1]!,
+    url: m[2]!,
     title: m[3] ?? m[4],
   };
 }
@@ -351,7 +351,7 @@ function detectWikilinks(state: EditorState): WikilinkInfo[] {
   WIKI_LINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = WIKI_LINK_RE.exec(text))) {
-    const parts = parseWikiLinkBody(m[1]);
+    const parts = parseWikiLinkBody(m[1]!);
     if (!parts) continue;
     const resolved = resolveWikiFile(files, parts.target);
     out.push({
@@ -644,9 +644,9 @@ function build(state: EditorState): BuildResult {
           /^(\s*>\s*)\[!([a-zA-Z][\w-]*)\]([+-])?/,
         );
         if (marker) {
-          const rawType = marker[2];
+          const rawType = marker[2]!;
           const type = normalizeCalloutType(rawType);
-          const tokenStart = firstLine.from + marker[1].length;
+          const tokenStart = firstLine.from + marker[1]!.length;
           const tokenEnd = firstLine.from + marker[0].length;
           // 把 [!type] 这段隐藏起来，前面塞一个样式化的标签 widget
           if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, state, true)) {
@@ -1009,8 +1009,8 @@ const wysiwygMousedown = EditorView.domEventHandlers({
       const text = line.text;
       const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
       if (!m) return;
-      const insert = m[2].toLowerCase() === "x" ? " " : "x";
-      const from = line.from + m[1].length;
+      const insert = m[2]!.toLowerCase() === "x" ? " " : "x";
+      const from = line.from + m[1]!.length;
       const to = from + 1;
       view.dispatch({ changes: { from, to, insert } });
       e.preventDefault();

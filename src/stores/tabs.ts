@@ -266,7 +266,7 @@ export const useTabs = create<TabsState>((set, get) => ({
         return s;
       }
       const [it] = tabs.splice(fromIdx, 1);
-      tabs.splice(toIdx, 0, it);
+      tabs.splice(toIdx, 0, it!);
       return { tabs };
     }),
 

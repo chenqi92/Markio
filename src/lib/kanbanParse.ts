@@ -39,7 +39,7 @@ const PRIO_KEY: Record<string, Priority> = {
 function extractEmoji(raw: string): { emoji?: string; rest: string } {
   // 取头部第一个非 ASCII 字符当 emoji（够用，避免 grapheme 复杂度）
   const m = raw.match(/^([^\sA-Za-z0-9])\s*(.*)$/u);
-  if (m) return { emoji: m[1], rest: m[2].trim() };
+  if (m) return { emoji: m[1]!, rest: m[2]!.trim() };
   return { rest: raw };
 }
 
@@ -61,31 +61,31 @@ function parseTaskText(text: string): {
   // tag: 第一个 #word
   const tagM = t.match(/(^|\s)#([\p{L}\p{N}_-]+)/u);
   if (tagM) {
-    tag = tagM[2];
-    t = t.replace(tagM[0], tagM[1]).trim();
+    tag = tagM[2]!;
+    t = t.replace(tagM[0], tagM[1]!).trim();
   }
   // priority: !high|!med|!low
   const prioM = t.match(/(^|\s)!(high|med|mid|low)\b/i);
   if (prioM) {
-    prio = PRIO_KEY[prioM[2].toLowerCase()];
-    t = t.replace(prioM[0], prioM[1]).trim();
+    prio = PRIO_KEY[prioM[2]!.toLowerCase()];
+    t = t.replace(prioM[0], prioM[1]!).trim();
   }
   // due: @text (no spaces)
   const dueM = t.match(/(^|\s)@(\S+)/);
   if (dueM) {
-    due = dueM[2];
-    t = t.replace(dueM[0], dueM[1]).trim();
+    due = dueM[2]!;
+    t = t.replace(dueM[0], dueM[1]!).trim();
   }
   // est: ~text (no spaces)
   const estM = t.match(/(^|\s)~(\S+)/);
   if (estM) {
-    est = estM[2];
-    t = t.replace(estM[0], estM[1]).trim();
+    est = estM[2]!;
+    t = t.replace(estM[0], estM[1]!).trim();
   }
   // progress: {NN%}
   const pgM = t.match(/\{(\d{1,3})%\}/);
   if (pgM) {
-    progress = Math.max(0, Math.min(100, parseInt(pgM[1], 10)));
+    progress = Math.max(0, Math.min(100, parseInt(pgM[1]!, 10)));
     t = t.replace(pgM[0], "").trim();
   }
 
@@ -97,18 +97,18 @@ export function parseKanban(body: string): Column[] {
   const cols: Column[] = [];
   let current: Column | null = null;
   for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
+    const ln = lines[i]!;
     const hMatch = ln.match(/^#{1,3}\s+(.+?)\s*$/);
     if (hMatch) {
-      const { emoji, rest } = extractEmoji(hMatch[1].trim());
-      current = { title: rest || hMatch[1].trim(), emoji, tasks: [] };
+      const { emoji, rest } = extractEmoji(hMatch[1]!.trim());
+      current = { title: rest || hMatch[1]!.trim(), emoji, tasks: [] };
       cols.push(current);
       continue;
     }
     const tMatch = ln.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
     if (tMatch && current) {
-      const done = tMatch[1].toLowerCase() === "x";
-      const parsed = parseTaskText(tMatch[2]);
+      const done = tMatch[1]!.toLowerCase() === "x";
+      const parsed = parseTaskText(tMatch[2]!);
       current.tasks.push({
         raw: ln,
         lineIndex: i,
@@ -139,7 +139,7 @@ export function toggleTaskInSource(
   const lines = source.split("\n");
   const idx = offset + task.lineIndex;
   if (idx < 0 || idx >= lines.length) return null;
-  const oldLine = lines[idx];
+  const oldLine = lines[idx]!;
   if (!oldLine.includes("[ ]") && !/\[[xX]\]/.test(oldLine)) return null;
   const replaced = task.done
     ? oldLine.replace(/\[[xX]\]/, "[ ]")
@@ -161,10 +161,10 @@ export function appendTaskToColumn(
   // 找列头行
   let colStart = -1;
   for (let i = 0; i < bodyLines.length; i++) {
-    const hm = bodyLines[i].match(/^#{1,3}\s+(.+?)\s*$/);
+    const hm = bodyLines[i]!.match(/^#{1,3}\s+(.+?)\s*$/);
     if (!hm) continue;
-    const { rest } = extractEmoji(hm[1].trim());
-    if (rest === columnTitle || hm[1].trim() === columnTitle) {
+    const { rest } = extractEmoji(hm[1]!.trim());
+    if (rest === columnTitle || hm[1]!.trim() === columnTitle) {
       colStart = i;
       break;
     }
@@ -173,14 +173,14 @@ export function appendTaskToColumn(
   // 找下一个列头或文末
   let nextCol = bodyLines.length;
   for (let i = colStart + 1; i < bodyLines.length; i++) {
-    if (/^#{1,3}\s+/.test(bodyLines[i])) {
+    if (/^#{1,3}\s+/.test(bodyLines[i]!)) {
       nextCol = i;
       break;
     }
   }
   // 找该列最后一个非空行
   let insertAt = nextCol;
-  while (insertAt > colStart + 1 && bodyLines[insertAt - 1].trim() === "") {
+  while (insertAt > colStart + 1 && bodyLines[insertAt - 1]!.trim() === "") {
     insertAt--;
   }
   const newLine = `- [ ] ${taskText}`;

@@ -1466,7 +1466,7 @@ function GitSyncCard() {
     } catch (e) {
       const text = String(e);
       if (text.includes("CONFLICT:")) {
-        const files = text.split("CONFLICT:")[1].split("\n").filter(Boolean);
+        const files = text.split("CONFLICT:")[1]!.split("\n").filter(Boolean);
         setConflict(files);
         setMessage({ kind: "err", text: `${label} 冲突，需要解决 ${files.length} 个文件` });
       } else {

@@ -180,7 +180,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (modelList.length === 0) return;
     if (!modelList.find((m) => m.id === model)) {
-      setAi({ aiModel: modelList[0].id });
+      setAi({ aiModel: modelList[0]!.id });
     }
   }, [provider, modelList, model, setAi]);
 
@@ -564,8 +564,8 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                   // 找到前一条 user 消息作为"重生成"的源
                   let prevUser: string | undefined;
                   for (let i = idx - 1; i >= 0; i--) {
-                    if (history[i].role === "user") {
-                      prevUser = history[i].text;
+                    if (history[i]!.role === "user") {
+                      prevUser = history[i]!.text;
                       break;
                     }
                   }
@@ -823,9 +823,9 @@ function AIInputBar({
   ): { start: number; end: number; query: string } | null => {
     let i = cursor - 1;
     while (i >= 0) {
-      const ch = value[i];
+      const ch = value[i]!;
       if (ch === "@") {
-        const prev = i > 0 ? value[i - 1] : "";
+        const prev = i > 0 ? value[i - 1]! : "";
         if (i === 0 || /\s/.test(prev)) {
           return {
             start: i,
@@ -887,7 +887,7 @@ function AIInputBar({
     return p.startsWith(prefix) ? p.slice(prefix.length) : p;
   };
 
-  const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0];
+  const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0]!;
 
   // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab + @ 添加的文件/文件夹
   const ctxChips = useMemo(() => {

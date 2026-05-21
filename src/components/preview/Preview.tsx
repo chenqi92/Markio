@@ -88,7 +88,7 @@ function markdownTaskLines(source: string): Array<{ line: number; checked: boole
   return source.split(/\r?\n/).reduce<Array<{ line: number; checked: boolean }>>(
     (out, text, index) => {
       const m = text.match(/^\s*[-*+]\s+\[([ xX])\]/);
-      if (m) out.push({ line: index + 1, checked: m[1].toLowerCase() === "x" });
+      if (m) out.push({ line: index + 1, checked: m[1]!.toLowerCase() === "x" });
       return out;
     },
     [],
@@ -177,7 +177,7 @@ export function Preview({
       return;
     }
     const safeIdx = Math.max(0, Math.min(hits.length - 1, nextIndex));
-    const current = hits[safeIdx];
+    const current = hits[safeIdx]!;
     current.classList.add("current");
     findCurrentRef.current = current;
   }, []);
@@ -604,11 +604,11 @@ export function Preview({
       const outline: OutlineItem[] = [];
       const lines = fm.body.split("\n");
       for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+        const m = lines[i]!.match(/^(#{1,6})\s+(.+?)\s*$/);
         if (m)
           outline.push({
-            level: m[1].length,
-            text: m[2].trim(),
+            level: m[1]!.length,
+            text: m[2]!.trim(),
             anchor: `h-${i}`,
           });
       }

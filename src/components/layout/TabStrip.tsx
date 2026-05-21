@@ -26,8 +26,8 @@ function selectTabStripItems(): TabStripItem[] {
 function sameTabStripItems(a: TabStripItem[], b: TabStripItem[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    const x = a[i];
-    const y = b[i];
+    const x = a[i]!;
+    const y = b[i]!;
     if (
       x.id !== y.id ||
       x.path !== y.path ||
@@ -101,7 +101,7 @@ export function TabStrip() {
     const suffix = dirty.length > 1 ? ` 等 ${dirty.length} 个标签` : "";
     return confirmDialog({
       title: "关闭未保存标签？",
-      message: `${action}包含未保存的标签（${dirty[0].title}${suffix}）。继续关闭会丢失修改。`,
+      message: `${action}包含未保存的标签（${dirty[0]!.title}${suffix}）。继续关闭会丢失修改。`,
       confirmLabel: "关闭",
       danger: true,
     });

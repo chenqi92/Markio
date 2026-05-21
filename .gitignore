@@ -47,3 +47,4 @@ test-results/
 # Performance fixtures — small ones tracked, big ones generated locally
 tests/fixtures/perf/1mb.md
 tests/fixtures/perf/5mb.md
+mdview-design

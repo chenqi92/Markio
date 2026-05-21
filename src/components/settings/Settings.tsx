@@ -8,8 +8,11 @@ import {
 } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import {
+  UpdateDialog,
+  ChangelogDialog,
+  FeedbackDialog,
+} from "../popovers/AboutDialogs";
 import { Icon, type IconName } from "../ui/Icon";
 import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
 import { useSettings, generateChannelId, type DriveId, type DriveConfig } from "@/stores/settings";
@@ -41,22 +44,60 @@ import {
   BODY_FONT_PRESETS,
   MONO_FONT_PRESETS,
 } from "@/lib/fonts";
+import {
+  AI_PROVIDERS,
+  getProvider,
+  getProviderDefaults,
+  type AIProviderId,
+} from "@/lib/ai-providers";
+import { AIModelPicker } from "./AIModelPicker";
 
-const SECTIONS = [
-  { id: "appear", icon: "palette" },
-  { id: "general", icon: "sliders" },
-  { id: "editor", icon: "edit" },
-  { id: "shortcuts", icon: "cmd" },
-  { id: "sync", icon: "sync" },
-  { id: "picgo", icon: "image" },
-  { id: "ai", icon: "sparkle" },
-  { id: "rag", icon: "search" },
-  { id: "wechat", icon: "message" },
-  { id: "wxAssistant", icon: "bot" },
-  { id: "smartChannel", icon: "flame" },
-  { id: "export", icon: "upload" },
-  { id: "about", icon: "info" },
-] as const satisfies readonly { id: string; icon: IconName }[];
+/** 设置导航分组：参考 mdview-design 把分区按用途分到 通用 / 工作流 / 集成 / 其他。
+ *  顺序决定 UI 渲染顺序；nav 在每段第一项前插入分组标题。 */
+const SECTION_GROUPS: ReadonlyArray<{
+  group: "general" | "workflow" | "integration" | "other";
+  items: ReadonlyArray<{ id: string; icon: IconName }>;
+}> = [
+  {
+    group: "general",
+    items: [
+      { id: "appear", icon: "palette" },
+      { id: "general", icon: "sliders" },
+      { id: "editor", icon: "edit" },
+      { id: "shortcuts", icon: "cmd" },
+    ],
+  },
+  {
+    group: "workflow",
+    items: [
+      { id: "ai", icon: "sparkle" },
+      { id: "rag", icon: "search" },
+      { id: "export", icon: "upload" },
+    ],
+  },
+  {
+    group: "integration",
+    items: [
+      { id: "sync", icon: "sync" },
+      { id: "picgo", icon: "image" },
+      { id: "clipper", icon: "external" },
+      { id: "rss", icon: "rss" },
+      { id: "mobile", icon: "smartphone" },
+      { id: "wechat", icon: "message" },
+      { id: "wxAssistant", icon: "bot" },
+      { id: "smartChannel", icon: "flame" },
+    ],
+  },
+  {
+    group: "other",
+    items: [{ id: "about", icon: "info" }],
+  },
+];
+
+const SECTIONS = SECTION_GROUPS.flatMap((g) => g.items) as ReadonlyArray<{
+  id: string;
+  icon: IconName;
+}>;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
@@ -130,49 +171,138 @@ const SMART_CHANNEL_STYLE_OPTIONS = [
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<SectionId>("appear");
+  const [query, setQuery] = useState("");
   const { t } = useTranslation();
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
+
+  // Esc 关闭 —— App 层也注册了 app.escape，但当焦点在 settings 输入框里时
+  // App 层 keydown 会被 input 吞掉，所以本组件兜底再监听一次。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // 顶部搜索：按 section 名称做大小写不敏感的匹配；命中 0 项时不隐藏 nav
+  // （保持空间稳定），只把不匹配项 dim 掉。
+  const q = query.trim().toLowerCase();
+  const matches = (id: string): boolean => {
+    if (!q) return true;
+    const label = sectionLabel(t, id as SectionId).toLowerCase();
+    const header = t(`settings.headers.${id}.h`).toLowerCase();
+    return label.includes(q) || header.includes(q) || id.toLowerCase().includes(q);
+  };
+
+  const footerName = activeWorkspace?.name ?? t("settings.workspace.localUser", { defaultValue: "本地用户" });
+  const footerSub = activeWorkspace?.path ?? t("settings.workspace.noWorkspace", { defaultValue: "尚未打开仓库" });
+  const footerInitial = (footerName || "M").trim().charAt(0).toUpperCase();
+
   return (
-    <div className="scrim" onClick={onClose}>
-      <div className="settings-window" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-titlebar">
-          <div className="settings-title">{t("settings.title")}</div>
-          <button className="icon-btn" onClick={onClose} title={t("common.close")}>
+    <div className="settings-workspace" role="dialog" aria-label={t("settings.title")}>
+      <div className="settings-topbar">
+        <div className="settings-topbar-l">
+          <div className="settings-mark" aria-hidden />
+          <div className="settings-topbar-tt">
+            <div className="settings-topbar-t">{t("settings.title")}</div>
+            <div className="settings-topbar-s">
+              {t("settings.subtitle", { defaultValue: "所有偏好在此 · 修改会即时生效" })}
+            </div>
+          </div>
+        </div>
+        <div className="settings-topbar-r">
+          <div className="settings-search-top">
+            <Icon name="search" size={12} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("settings.searchPlaceholder", { defaultValue: "搜索设置…" })}
+              aria-label={t("settings.searchPlaceholder", { defaultValue: "搜索设置…" })}
+            />
+            <span className="kbd">⌘ ,</span>
+          </div>
+          <button
+            type="button"
+            className="settings-close"
+            onClick={onClose}
+            title={t("common.close")}
+            aria-label={t("common.close")}
+          >
             <Icon name="x" size={14} />
           </button>
         </div>
-        <div className="settings-body">
-          <aside className="settings-nav">
-            {SECTIONS.map((s) => (
-              <button
-                type="button"
-                key={s.id}
-                className={
-                  "settings-nav-item" + (section === s.id ? " active" : "")
-                }
-                onClick={() => setSection(s.id)}
-              >
-                <span className="ico">
-                  <Icon name={s.icon} size={14} />
-                </span>
-                <span>{sectionLabel(t, s.id)}</span>
-              </button>
-            ))}
-          </aside>
-          <div className="settings-main">
-            {section === "appear" && <Appearance />}
-            {section === "general" && <General />}
-            {section === "editor" && <Editor />}
-            {section === "sync" && <Sync />}
-            {section === "shortcuts" && <Shortcuts />}
-            {section === "picgo" && <Picgo />}
-            {section === "wechat" && <WeChat />}
-            {section === "wxAssistant" && <WxAssistant />}
-            {section === "smartChannel" && <SmartChannelSettings />}
-            {section === "ai" && <AI />}
-            {section === "rag" && <RagSettings />}
-            {section === "export" && <ImportExport />}
-            {section === "about" && <About />}
+      </div>
+
+      <div className="settings-body2">
+        <aside className="settings-nav2">
+          {SECTION_GROUPS.map((grp) => (
+            <div key={grp.group}>
+              <div className="settings-nav2-group">
+                {t(`settings.groups.${grp.group}`, {
+                  defaultValue:
+                    grp.group === "general"
+                      ? "通用"
+                      : grp.group === "workflow"
+                        ? "工作流"
+                        : grp.group === "integration"
+                          ? "集成"
+                          : "其他",
+                })}
+              </div>
+              {grp.items.map((s) => {
+                const dim = !matches(s.id);
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    className={
+                      "settings-nav2-item" +
+                      (section === s.id ? " active" : "") +
+                      (dim ? " dim" : "")
+                    }
+                    onClick={() => setSection(s.id as SectionId)}
+                    tabIndex={dim ? -1 : 0}
+                  >
+                    <span className="ico">
+                      <Icon name={s.icon} size={12} />
+                    </span>
+                    <span className="lbl">{sectionLabel(t, s.id as SectionId)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          <div className="settings-nav2-foot">
+            <div className="settings-nav2-foot-l">
+              <div className="settings-nav2-foot-av">{footerInitial}</div>
+              <div style={{ minWidth: 0 }}>
+                <div className="t">{footerName}</div>
+                <div className="s" title={footerSub}>{footerSub}</div>
+              </div>
+            </div>
           </div>
+        </aside>
+        <div className="settings-main2 scroll">
+          {section === "appear" && <Appearance />}
+          {section === "general" && <General />}
+          {section === "editor" && <Editor />}
+          {section === "sync" && <Sync />}
+          {section === "shortcuts" && <Shortcuts />}
+          {section === "picgo" && <Picgo />}
+          {section === "clipper" && <WebClipper />}
+          {section === "rss" && <RssFeeds />}
+          {section === "mobile" && <MobileDevices />}
+          {section === "wechat" && <WeChat />}
+          {section === "wxAssistant" && <WxAssistant />}
+          {section === "smartChannel" && <SmartChannelSettings />}
+          {section === "ai" && <AI />}
+          {section === "rag" && <RagSettings />}
+          {section === "export" && <ImportExport />}
+          {section === "about" && <About />}
         </div>
       </div>
     </div>
@@ -3548,15 +3678,6 @@ function SmartChannelSettings() {
   );
 }
 
-const AI_PROVIDERS = [
-  { id: "anthropic", n: "Anthropic", sub: "Claude 系列 · 推荐" },
-  { id: "openai", n: "OpenAI", sub: "GPT-4 / 4o / o-series" },
-  { id: "google", n: "Google", sub: "Gemini 2.5" },
-  { id: "deepseek", n: "DeepSeek", sub: "V3 / R1 · 国内" },
-  { id: "ollama", n: "本地 · Ollama", sub: "Qwen / Llama / Mistral" },
-  { id: "custom", n: "自定义", sub: "OpenAI 兼容 endpoint" },
-];
-
 function AI() {
   const provider = useSettings((s) => s.aiProvider);
   const keyConfigured = useSettings((s) => s.aiKeyConfigured);
@@ -3564,12 +3685,38 @@ function AI() {
   const model = useSettings((s) => s.aiModel);
   const temperature = useSettings((s) => s.aiTemperature);
   const maxTokens = useSettings((s) => s.aiMaxTokens);
+  const providerConfigs = useSettings((s) => s.aiProviderConfigs);
   const setAi = useSettings((s) => s.setAi);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [keyDraft, setKeyDraft] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const confirmDialog = useDialog((s) => s.confirm);
+
+  const def = getProvider(provider);
+
+  // endpoint / model 改动时落到当前 provider 的槽位，下次切回来还在。
+  const persistProviderField = (patch: { endpoint?: string; model?: string }) => {
+    const cur = providerConfigs[provider] ?? {};
+    setAi({
+      aiProviderConfigs: {
+        ...providerConfigs,
+        [provider]: { ...cur, ...patch },
+      },
+    });
+  };
+
+  const switchProvider = (id: AIProviderId) => {
+    if (id === provider) return;
+    const saved = providerConfigs[id] ?? {};
+    const defaults = getProviderDefaults(id);
+    setAi({
+      aiProvider: id,
+      aiEndpoint: saved.endpoint ?? defaults.endpoint,
+      aiModel: saved.model ?? defaults.model,
+    });
+    setTestResult(null);
+  };
 
   // 切换 provider 时刷新"是否已配"
   useEffect(() => {
@@ -3686,55 +3833,73 @@ function AI() {
             padding: "12px 16px",
           }}
         >
-          {AI_PROVIDERS.map((p) => (
-            <button
-              type="button"
-              key={p.id}
-              onClick={() => setAi({ aiProvider: p.id as typeof provider })}
-              style={{
-                position: "relative",
-                padding: "9px 12px",
-                background:
-                  provider === p.id ? "var(--accent-glow)" : "var(--bg-pane-2)",
-                border:
-                  "1px solid " +
-                  (provider === p.id ? "var(--accent)" : "var(--border)"),
-                borderRadius: 9,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <div
-                style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}
+          {AI_PROVIDERS.map((p) => {
+            const savedKey = providerConfigs[p.id]?.model || providerConfigs[p.id]?.endpoint;
+            return (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => switchProvider(p.id)}
+                title={`${p.name} · ${p.defaultEndpoint || "自定义 endpoint"}`}
+                style={{
+                  position: "relative",
+                  padding: "9px 12px",
+                  background:
+                    provider === p.id ? "var(--accent-glow)" : "var(--bg-pane-2)",
+                  border:
+                    "1px solid " +
+                    (provider === p.id ? "var(--accent)" : "var(--border)"),
+                  borderRadius: 9,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
               >
-                {p.n}
-              </div>
-              <div
-                style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}
-              >
-                {p.sub}
-              </div>
-              {provider === p.id && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 8,
-                    color: "var(--accent)",
-                    fontWeight: 700,
-                  }}
+                <div
+                  style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}
                 >
-                  ✓
-                </span>
-              )}
-            </button>
-          ))}
+                  {p.name}
+                </div>
+                <div
+                  style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}
+                >
+                  {p.sub}
+                </div>
+                {savedKey && provider !== p.id && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 8,
+                      fontSize: 9,
+                      color: "var(--text-3)",
+                    }}
+                    title="已为此提供方记住配置"
+                  >
+                    ·已记住
+                  </span>
+                )}
+                {provider === p.id && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 8,
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="settings-card">
         <div className="settings-card-h">
-          {AI_PROVIDERS.find((p) => p.id === provider)?.n} 配置
+          {def?.name ?? provider} 配置
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -3760,8 +3925,8 @@ function AI() {
               <HelpTip text="非 Ollama 提供方的 Key 存入系统钥匙串；前端不会持久化明文。" />
             </div>
             <div className="settings-help">
-              {provider === "ollama"
-                ? "本地 Ollama 可留空"
+              {def?.keyOptional
+                ? "本地服务可留空"
                 : keyConfigured
                 ? "已存储"
                 : "未配置"}
@@ -3775,13 +3940,7 @@ function AI() {
               if (keyDraft) saveKey();
             }}
             placeholder={
-              keyConfigured
-                ? "已保存 · 输入新值替换"
-                : provider === "anthropic"
-                ? "sk-ant-…"
-                : provider === "openai"
-                ? "sk-…"
-                : "API Key"
+              keyConfigured ? "已保存 · 输入新值替换" : def?.keyPlaceholder ?? "API Key"
             }
             style={{
               padding: "5px 10px",
@@ -3804,16 +3963,12 @@ function AI() {
           <input
             type="text"
             value={endpoint}
-            onChange={(e) => setAi({ aiEndpoint: e.target.value })}
-            placeholder={
-              provider === "anthropic"
-                ? "https://api.anthropic.com"
-                : provider === "openai"
-                ? "https://api.openai.com/v1"
-                : provider === "ollama"
-                ? "http://127.0.0.1:11434/v1"
-                : "https://..."
-            }
+            onChange={(e) => {
+              const v = e.target.value;
+              setAi({ aiEndpoint: v });
+              persistProviderField({ endpoint: v });
+            }}
+            placeholder={def?.defaultEndpoint || "https://..."}
             style={{
               padding: "5px 10px",
               background: "var(--bg-input)",
@@ -3830,21 +3985,38 @@ function AI() {
           <div className="settings-row-l">
             <div className="settings-label">默认模型</div>
           </div>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setAi({ aiModel: e.target.value })}
-            style={{
-              padding: "5px 10px",
-              background: "var(--bg-input)",
-              border: "0.5px solid var(--border-strong)",
-              borderRadius: 6,
-              width: 220,
-              fontSize: 12,
-              color: "var(--text)",
-              fontFamily: "var(--font-mono)",
-            }}
-          />
+          {def ? (
+            <AIModelPicker
+              provider={def}
+              endpoint={endpoint}
+              value={model}
+              onChange={(v) => {
+                setAi({ aiModel: v });
+                persistProviderField({ model: v });
+              }}
+            />
+          ) : (
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => {
+                const v = e.target.value;
+                setAi({ aiModel: v });
+                persistProviderField({ model: v });
+              }}
+              placeholder="model id"
+              style={{
+                padding: "5px 10px",
+                background: "var(--bg-input)",
+                border: "0.5px solid var(--border-strong)",
+                borderRadius: 6,
+                width: 220,
+                fontSize: 12,
+                color: "var(--text)",
+                fontFamily: "var(--font-mono)",
+              }}
+            />
+          )}
         </div>
         <div
           className="settings-row"
@@ -5544,190 +5716,604 @@ function ImportExport() {
   );
 }
 
-type UpdateState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "uptodate" }
-  | { kind: "available"; version: string; notes?: string }
-  | { kind: "downloading"; version: string; progress: number; total: number }
-  | { kind: "ready"; version: string }
-  | { kind: "error"; message: string };
+// ─── Web Clipper / RSS / 移动端 ──────────────────────────────────
+// 三块新增分区：壳 + 真实开关。需要后端管道（扩展推送 / RSS 拉取 / mDNS+P2P 握手）
+// 的能力暂未接，通过 inline banner 明确告知用户当前状态。
+
+const CLIPPER_BROWSERS: ReadonlyArray<{
+  id: string;
+  label: string;
+  sub: string;
+  url: string;
+}> = [
+  {
+    id: "chrome",
+    label: "Chrome",
+    sub: "Chrome Web Store",
+    url: "https://chrome.google.com/webstore",
+  },
+  {
+    id: "edge",
+    label: "Edge",
+    sub: "Edge Add-ons",
+    url: "https://microsoftedge.microsoft.com/addons",
+  },
+  {
+    id: "firefox",
+    label: "Firefox",
+    sub: "Mozilla Add-ons",
+    url: "https://addons.mozilla.org",
+  },
+  {
+    id: "safari",
+    label: "Safari",
+    sub: "App Store · Safari Extensions",
+    url: "https://apps.apple.com",
+  },
+];
+
+function WebClipper() {
+  const htmlToMd = useSettings((s) => s.clipperHtmlToMd);
+  const readability = useSettings((s) => s.clipperReadability);
+  const aiSummary = useSettings((s) => s.clipperAiSummary);
+  const pdfSnapshot = useSettings((s) => s.clipperPdfSnapshot);
+  const setPreference = useSettings((s) => s.setPreference);
+
+  return (
+    <>
+      <h2 className="settings-h">Web Clipper</h2>
+      <p className="settings-sub">
+        浏览器扩展把网页抓回 markio 时按下面的偏好处理。扩展端单独分发，桌面端这里只配置接收行为。
+      </p>
+
+      <div
+        className="settings-help"
+        style={{
+          padding: "10px 12px",
+          background: "var(--bg-pane)",
+          border: "0.5px solid var(--border)",
+          borderRadius: 8,
+          marginBottom: 16,
+        }}
+      >
+        ⚠️ 扩展端 → 桌面端的推送通道未接，下方开关已存好；扩展上架后即生效。
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">扩展安装</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: 8,
+            padding: "8px 0",
+          }}
+        >
+          {CLIPPER_BROWSERS.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              className="about-foot-card"
+              onClick={() => void openExternal(b.url)}
+            >
+              <div className="t">{b.label}</div>
+              <div className="s">{b.sub}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">收藏行为</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">HTML → Markdown</div>
+            <div className="settings-help">用 turndown 类规则把网页转为 .md，再落到收件箱目录</div>
+          </div>
+          <Toggle on={htmlToMd} onChange={(v) => setPreference("clipperHtmlToMd", v)} />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">Readability 抽取正文</div>
+            <div className="settings-help">先用 readability 算法剥掉导航 / 广告 / 评论再保存</div>
+          </div>
+          <Toggle on={readability} onChange={(v) => setPreference("clipperReadability", v)} />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">AI 摘要</div>
+            <div className="settings-help">保存时调用当前 AI 提供方生成一句话摘要，写进 frontmatter</div>
+          </div>
+          <Toggle on={aiSummary} onChange={(v) => setPreference("clipperAiSummary", v)} />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">附带 PDF 快照</div>
+            <div className="settings-help">在 attachments/ 下额外保留原页 PDF，链接挂在文件 frontmatter</div>
+          </div>
+          <Toggle on={pdfSnapshot} onChange={(v) => setPreference("clipperPdfSnapshot", v)} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+const RSS_INTERVAL_OPTIONS = [
+  { value: "manual", label: "手动" },
+  { value: "15m", label: "15 分钟" },
+  { value: "1h", label: "1 小时" },
+  { value: "4h", label: "4 小时" },
+  { value: "1d", label: "1 天" },
+] as const satisfies readonly SelectOption<
+  "manual" | "15m" | "1h" | "4h" | "1d"
+>[];
+
+function RssFeeds() {
+  const feeds = useSettings((s) => s.rssFeeds);
+  const interval = useSettings((s) => s.rssFetchInterval);
+  const aiSummary = useSettings((s) => s.rssAiSummary);
+  const setPreference = useSettings((s) => s.setPreference);
+  const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  const [refreshingAll, setRefreshingAll] = useState(false);
+
+  const addFeed = async () => {
+    const url = await promptDialog({
+      title: "添加 RSS 源",
+      message: "输入 RSS / Atom 源的完整 URL（http(s)://...）",
+      defaultValue: "https://",
+      confirmLabel: "添加",
+    });
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    const title = await promptDialog({
+      title: "源标题",
+      message: "为这个源起一个显示名（便于辨认）",
+      defaultValue: new URL(url).hostname,
+      confirmLabel: "保存",
+    });
+    if (!title) return;
+    const id = `feed_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    setPreference("rssFeeds", [
+      ...feeds,
+      { id, url, title, addedAt: Date.now() },
+    ]);
+  };
+
+  const removeFeed = async (id: string, title: string) => {
+    const ok = await confirmDialog({
+      title: "删除订阅",
+      message: `不再订阅 ${title}？已下载的条目不会被清理。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    setPreference(
+      "rssFeeds",
+      feeds.filter((f) => f.id !== id),
+    );
+  };
+
+  /** 拉取单个 feed：调 Rust GET，对比 seenGuids 算新出现条目数。 */
+  const refreshFeed = async (id: string) => {
+    const f = feeds.find((x) => x.id === id);
+    if (!f) return;
+    setBusyIds((s) => new Set(s).add(id));
+    try {
+      const r = await api.rssFetch(f.url);
+      const seen = new Set(f.seenGuids ?? []);
+      const fresh = r.items.filter((it) => !seen.has(it.guid)).length;
+      const nextGuids = r.items
+        .map((it) => it.guid)
+        .filter(Boolean)
+        .slice(0, 50);
+      // 不要在闭包里用 feeds（已变陈旧），从 store 重新取
+      const cur = useSettings.getState().rssFeeds;
+      const updated = cur.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              lastFetchedAt: Date.now(),
+              seenGuids: nextGuids,
+              unread: (x.unread ?? 0) + fresh,
+              lastError: undefined,
+            }
+          : x,
+      );
+      setPreference("rssFeeds", updated);
+    } catch (e) {
+      const cur = useSettings.getState().rssFeeds;
+      setPreference(
+        "rssFeeds",
+        cur.map((x) =>
+          x.id === id ? { ...x, lastError: (e as Error).message, lastFetchedAt: Date.now() } : x,
+        ),
+      );
+    } finally {
+      setBusyIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const refreshAll = async () => {
+    setRefreshingAll(true);
+    try {
+      for (const f of feeds) {
+        await refreshFeed(f.id);
+      }
+    } finally {
+      setRefreshingAll(false);
+    }
+  };
+
+  const markFeedRead = (id: string) => {
+    const cur = useSettings.getState().rssFeeds;
+    setPreference(
+      "rssFeeds",
+      cur.map((x) => (x.id === id ? { ...x, unread: 0 } : x)),
+    );
+  };
+
+  return (
+    <>
+      <h2 className="settings-h">RSS 订阅</h2>
+      <p className="settings-sub">
+        在 markio 内汇总信息流。点「刷新」或「全部刷新」拉取最新条目；条目元数据在本地，正文留给浏览器。
+      </p>
+
+      <div className="settings-card">
+        <div className="settings-card-h" style={{ display: "flex", alignItems: "center" }}>
+          <span>订阅 ({feeds.length})</span>
+          {feeds.length > 0 && (
+            <button
+              className="settings-btn"
+              style={{ marginLeft: "auto", padding: "3px 9px", fontSize: 11 }}
+              onClick={() => void refreshAll()}
+              disabled={refreshingAll}
+            >
+              {refreshingAll ? "刷新中…" : "全部刷新"}
+            </button>
+          )}
+        </div>
+        {feeds.length === 0 ? (
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label" style={{ color: "var(--text-3)" }}>
+                还没有订阅源
+              </div>
+              <div className="settings-help">点右上「添加」开始</div>
+            </div>
+            <button className="settings-btn primary" onClick={() => void addFeed()}>
+              添加订阅
+            </button>
+          </div>
+        ) : (
+          <>
+            {feeds.map((f) => {
+              const busy = busyIds.has(f.id);
+              return (
+                <div className="settings-row" key={f.id}>
+                  <div className="settings-row-l">
+                    <div className="settings-label">
+                      {f.title}
+                      {(f.unread ?? 0) > 0 && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 10,
+                            padding: "1px 6px",
+                            background: "var(--accent-glow)",
+                            color: "var(--accent)",
+                            borderRadius: 999,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {f.unread} 新
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="settings-help"
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: 380,
+                      }}
+                      title={f.url}
+                    >
+                      {f.lastError ? (
+                        <span style={{ color: "#dc2626" }}>✗ {f.lastError}</span>
+                      ) : f.lastFetchedAt ? (
+                        <>
+                          {new Date(f.lastFetchedAt).toLocaleString()} · {f.url}
+                        </>
+                      ) : (
+                        f.url
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button
+                      className="settings-btn"
+                      onClick={() => void refreshFeed(f.id)}
+                      disabled={busy}
+                      title="立即拉取"
+                    >
+                      {busy ? "…" : "刷新"}
+                    </button>
+                    <button
+                      className="settings-btn"
+                      onClick={() => {
+                        markFeedRead(f.id);
+                        void openExternal(f.url);
+                      }}
+                      title="在浏览器打开源 URL"
+                    >
+                      打开
+                    </button>
+                    <button
+                      className="settings-btn"
+                      onClick={() => void removeFeed(f.id, f.title)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+              <button className="settings-btn primary" onClick={() => void addFeed()}>
+                添加订阅
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">拉取与摘要</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">拉取频率</div>
+            <div className="settings-help">fetcher 接好后按此频率后台拉取（手动 = 只在你点刷新时拉）</div>
+          </div>
+          <SelectBtn
+            value={interval}
+            options={RSS_INTERVAL_OPTIONS}
+            onChange={(v) => setPreference("rssFetchInterval", v)}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">AI 摘要</div>
+            <div className="settings-help">每条新条目调用当前 AI 提供方生成 1 句话摘要</div>
+          </div>
+          <Toggle on={aiSummary} onChange={(v) => setPreference("rssAiSummary", v)} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+const MOBILE_DEVICE_KINDS: Array<{
+  value: "iphone" | "ipad" | "android" | "mac" | "windows" | "other";
+  label: string;
+}> = [
+  { value: "iphone", label: "iPhone" },
+  { value: "ipad", label: "iPad" },
+  { value: "android", label: "Android" },
+  { value: "mac", label: "Mac" },
+  { value: "windows", label: "Windows" },
+  { value: "other", label: "其它" },
+];
+
+function MobileDevices() {
+  const p2p = useSettings((s) => s.mobileP2pEnabled);
+  const devices = useSettings((s) => s.mobileDevices);
+  const setPreference = useSettings((s) => s.setPreference);
+  const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
+
+  const addDevice = async () => {
+    const name = await promptDialog({
+      title: "登记新设备",
+      message: "起一个易识别的名字（如「我的 iPhone」「公司 Mac」）",
+      defaultValue: "新设备",
+      confirmLabel: "登记",
+    });
+    if (!name) return;
+    const id = `dev_${Date.now().toString(36)}`;
+    setPreference("mobileDevices", [
+      ...devices,
+      { id, name, kind: "iphone", pairedAt: Date.now() },
+    ]);
+  };
+
+  const removeDevice = async (id: string, name: string) => {
+    const ok = await confirmDialog({
+      title: "解除配对",
+      message: `${name} 将不再出现在已配对列表里。`,
+      confirmLabel: "解除",
+      danger: true,
+    });
+    if (!ok) return;
+    setPreference(
+      "mobileDevices",
+      devices.filter((d) => d.id !== id),
+    );
+  };
+
+  const setKind = (id: string, kind: typeof MOBILE_DEVICE_KINDS[number]["value"]) => {
+    setPreference(
+      "mobileDevices",
+      devices.map((d) => (d.id === id ? { ...d, kind } : d)),
+    );
+  };
+
+  return (
+    <>
+      <h2 className="settings-h">移动端 / 设备</h2>
+      <p className="settings-sub">
+        在 iPhone / iPad / 其它桌面之间共享当前仓库。配对清单本地存；P2P 握手后端开发中。
+      </p>
+
+      <div
+        className="settings-help"
+        style={{
+          padding: "10px 12px",
+          background: "var(--bg-pane)",
+          border: "0.5px solid var(--border)",
+          borderRadius: 8,
+          marginBottom: 16,
+        }}
+      >
+        ⚠️ macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；
+        mDNS + WS 握手后端开发中。当前可登记设备清单，握手通道上线后即可激活。
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">P2P 直连</div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">局域网内直连</div>
+            <div className="settings-help">
+              通过 mDNS 自动发现局域网内的 markio 实例，传输不经云端
+            </div>
+          </div>
+          <Toggle on={p2p} onChange={(v) => setPreference("mobileP2pEnabled", v)} />
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card-h">已配对设备 ({devices.length})</div>
+        {devices.length === 0 ? (
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label" style={{ color: "var(--text-3)" }}>
+                还没有配对任何设备
+              </div>
+              <div className="settings-help">点右侧「登记」开始</div>
+            </div>
+            <button className="settings-btn primary" onClick={() => void addDevice()}>
+              登记设备
+            </button>
+          </div>
+        ) : (
+          <>
+            {devices.map((d) => (
+              <div className="settings-row" key={d.id}>
+                <div className="settings-row-l">
+                  <div className="settings-label">{d.name}</div>
+                  <div className="settings-help">
+                    配对于 {new Date(d.pairedAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <SelectBtn
+                    value={d.kind}
+                    options={MOBILE_DEVICE_KINDS.map((k) => ({
+                      value: k.value,
+                      label: k.label,
+                    }))}
+                    onChange={(v) => setKind(d.id, v)}
+                  />
+                  <button className="settings-btn" onClick={() => void removeDevice(d.id, d.name)}>
+                    解除
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+              <button className="settings-btn primary" onClick={() => void addDevice()}>
+                登记设备
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
 
 function About() {
   const { t } = useTranslation();
   const [version, setVersion] = useState<string>("");
-  const [update, setUpdate] = useState<UpdateState>({ kind: "idle" });
-  const theme = useSettings((s) => s.theme);
-  const isDarkTheme = THEMES.find((t) => t.id === theme)?.isDark ?? false;
   const autoCheck = useSettings((s) => s.autoCheckUpdates);
   const setPreference = useSettings((s) => s.setPreference);
+  const [openDialog, setOpenDialog] = useState<null | "update" | "changelog" | "feedback">(null);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("?"));
   }, []);
 
-  const checkForUpdates = async () => {
-    setUpdate({ kind: "checking" });
-    try {
-      const u = await check();
-      if (!u) {
-        setUpdate({ kind: "uptodate" });
-        return;
-      }
-      setUpdate({ kind: "available", version: u.version, notes: u.body });
-      let downloaded = 0;
-      let contentLength = 0;
-      await u.downloadAndInstall((event) => {
-        if (event.event === "Started") {
-          contentLength = event.data.contentLength ?? 0;
-          setUpdate({
-            kind: "downloading",
-            version: u.version,
-            progress: 0,
-            total: contentLength,
-          });
-        } else if (event.event === "Progress") {
-          downloaded += event.data.chunkLength;
-          setUpdate({
-            kind: "downloading",
-            version: u.version,
-            progress: downloaded,
-            total: contentLength,
-          });
-        } else if (event.event === "Finished") {
-          setUpdate({ kind: "ready", version: u.version });
-        }
-      });
-    } catch (e) {
-      setUpdate({ kind: "error", message: String(e) });
-    }
-  };
-
-  const restartNow = async () => {
-    try {
-      await relaunch();
-    } catch (e) {
-      setUpdate({ kind: "error", message: String(e) });
-    }
-  };
-
-  const renderStatus = () => {
-    switch (update.kind) {
-      case "checking":
-        return (
-          <span style={{ color: "var(--text-3)" }}>
-            {t("settings.about.statusChecking")}
-          </span>
-        );
-      case "uptodate":
-        return (
-          <span style={{ color: "var(--text-3)" }}>
-            {t("settings.about.statusUpToDate")}
-          </span>
-        );
-      case "available":
-        return (
-          <span style={{ color: "var(--accent)" }}>
-            {t("settings.about.statusAvailable", { version: update.version })}
-          </span>
-        );
-      case "downloading": {
-        const pct =
-          update.total > 0
-            ? Math.round((update.progress / update.total) * 100)
-            : 0;
-        return (
-          <span style={{ color: "var(--accent)" }}>
-            {t("settings.about.statusDownloading", {
-              version: update.version,
-              pct,
-            })}
-          </span>
-        );
-      }
-      case "ready":
-        return (
-          <span style={{ color: "var(--accent)" }}>
-            {t("settings.about.statusReady", { version: update.version })}
-          </span>
-        );
-      case "error":
-        return <span style={{ color: "#dc2626" }}>{update.message}</span>;
-      default:
-        return null;
-    }
-  };
-
-  const checking = update.kind === "checking" || update.kind === "downloading";
+  // 4 张底部链接卡：用户协议 / 隐私 / 开源许可 / 数据导出 —— 全部走 openExternal /
+  // 现有 api，没有引入新的依赖。许可与导出指向仓库内的源文件，给用户一个可追的入口。
+  const footerCards: Array<{
+    t: string;
+    s: string;
+    onClick: () => void;
+  }> = [
+    {
+      t: "用户协议",
+      s: "使用条款 · 开源 MIT",
+      onClick: () => void openExternal("https://github.com/chenqi92/Markio/blob/main/LICENSE"),
+    },
+    {
+      t: "隐私",
+      s: "本地优先 · 不上报数据",
+      onClick: () => void openExternal("https://github.com/chenqi92/Markio#privacy"),
+    },
+    {
+      t: "开源许可",
+      s: "查看依赖与三方协议",
+      onClick: () => void openExternal("https://github.com/chenqi92/Markio/blob/main/package.json"),
+    },
+    {
+      t: "数据导出",
+      s: "打开崩溃日志目录",
+      onClick: () => void api.crashOpenDir().catch(() => undefined),
+    },
+  ];
 
   return (
     <>
       <SectionHeader id="about" />
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          padding: "20px 0",
-        }}
-      >
-        <img
-          className="settings-app-icon"
-          src={isDarkTheme ? "/brand/icon-dark-256.png" : "/brand/icon-light-256.png"}
-          alt="markio"
-          draggable={false}
-        />
+      <div className="about-hero">
+        <div className="about-mark" aria-hidden />
         <div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>markio</div>
-          <div style={{ color: "var(--text-3)", marginTop: 2 }}>
-            {version || "0.1.0"} · {t("settings.about.tagline")}
+          <div className="about-hero-name">markio</div>
+          <div className="about-hero-ver">
+            v{version || "0.1.0"}
           </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {update.kind === "ready" ? (
-              <button className="settings-btn primary" onClick={restartNow}>
-                {t("settings.about.restart")}
-              </button>
-            ) : (
-              <button
-                className="settings-btn primary"
-                disabled={checking}
-                onClick={checkForUpdates}
-              >
-                {checking ? t("settings.about.checking") : t("settings.about.checkUpdate")}
-              </button>
-            )}
+          <div className="about-hero-tag">{t("settings.about.tagline")}</div>
+          <div className="about-hero-actions">
             <button
-              className="settings-btn"
-              type="button"
-              onClick={() => {
-                void openExternal("https://github.com/chenqi92/Markio/releases");
-              }}
+              className="settings-btn primary"
+              onClick={() => setOpenDialog("update")}
             >
+              {t("settings.about.checkUpdate")}
+            </button>
+            <button className="settings-btn" onClick={() => setOpenDialog("changelog")}>
               {t("settings.about.releaseNotes")}
             </button>
             <button
               className="settings-btn"
-              type="button"
-              onClick={() => {
-                void api.crashOpenDir().catch(() => undefined);
-              }}
+              onClick={() => void api.crashOpenDir().catch(() => undefined)}
               title={t("settings.about.crashLogTitle")}
             >
               {t("settings.about.crashLog")}
             </button>
-            <button
-              className="settings-btn"
-              type="button"
-              onClick={() => {
-                void openExternal("https://github.com/chenqi92/Markio/issues/new");
-              }}
-            >
+            <button className="settings-btn" onClick={() => setOpenDialog("feedback")}>
               {t("settings.about.feedback")}
             </button>
-            {renderStatus()}
           </div>
         </div>
       </div>
+
       <div className="settings-card">
         <div className="settings-card-h">{t("settings.about.updatesCard")}</div>
         <div className="settings-row">
@@ -5742,6 +6328,35 @@ function About() {
         </div>
       </div>
       <CrashWebhookCard />
+
+      <div className="about-foot-grid">
+        {footerCards.map((c) => (
+          <button type="button" key={c.t} className="about-foot-card" onClick={c.onClick}>
+            <div className="t">{c.t}</div>
+            <div className="s">{c.s}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="about-thanks">
+        感谢 React / CodeMirror 6 / Tauri / pulldown-cmark / lezer 等开源项目，以及所有提交 issue / PR 的伙伴。
+      </div>
+
+      {openDialog === "update" && (
+        <UpdateDialog onClose={() => setOpenDialog(null)} />
+      )}
+      {openDialog === "changelog" && (
+        <ChangelogDialog
+          currentVersion={version}
+          onClose={() => setOpenDialog(null)}
+        />
+      )}
+      {openDialog === "feedback" && (
+        <FeedbackDialog
+          appVersion={version}
+          onClose={() => setOpenDialog(null)}
+        />
+      )}
     </>
   );
 }

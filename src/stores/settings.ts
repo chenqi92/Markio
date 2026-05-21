@@ -6,6 +6,7 @@ import type { CommandId } from "@/lib/shortcuts";
 import { tauriStorage } from "@/lib/tauriStorage";
 import type { Locale } from "@/i18n";
 import { applyFonts } from "@/lib/fonts";
+import type { AIProviderId } from "@/lib/ai-providers";
 
 function defaultLocale(): Locale {
   if (typeof localStorage !== "undefined") {
@@ -98,7 +99,17 @@ type PreferenceKey =
   | "dropboxClientId"
   | "gdriveClientId"
   | "customThemeId"
-  | "bubbleTrigger";
+  | "bubbleTrigger"
+  | "aiProviderConfigs"
+  | "clipperHtmlToMd"
+  | "clipperReadability"
+  | "clipperAiSummary"
+  | "clipperPdfSnapshot"
+  | "rssFetchInterval"
+  | "rssAiSummary"
+  | "rssFeeds"
+  | "mobileP2pEnabled"
+  | "mobileDevices";
 
 export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
 
@@ -193,13 +204,53 @@ interface SettingsState {
   exportPdfMargin: "standard" | "narrow" | "wide";
   /** 导出 HTML 时是否把远端图片内嵌为 data URL（离线可看） */
   htmlExportInlineImages: boolean;
-  aiProvider: "anthropic" | "openai" | "deepseek" | "ollama" | "google" | "custom";
+  aiProvider: AIProviderId;
   /** 是否已配置 API Key（真实值在 OS 钥匙串里，不进 localStorage） */
   aiKeyConfigured: boolean;
   aiEndpoint: string;
   aiModel: string;
   aiTemperature: number;
   aiMaxTokens: number;
+  /** 每个 provider 上次用过的 endpoint / model（Key 在系统钥匙串里）。
+   *  切 provider 时 Settings 会从这里恢复，所以 OpenAI / DeepSeek / NVIDIA 之间
+   *  来回切不会丢配置。 */
+  aiProviderConfigs: Partial<Record<AIProviderId, { endpoint?: string; model?: string }>>;
+
+  /** Web Clipper：浏览器扩展把网页抓回 markio 时怎么处理。
+   *  扩展端本身在 Chrome / Edge / Firefox / Safari 商店分发；这里是 markio 桌面端
+   *  收到推送后的行为偏好。后端管道未接，先把开关存好。 */
+  clipperHtmlToMd: boolean;
+  clipperReadability: boolean;
+  clipperAiSummary: boolean;
+  clipperPdfSnapshot: boolean;
+
+  /** RSS 订阅源 + 拉取频率 + 是否走 AI 摘要。fetcher（Rust 端）暂未接，先做 CRUD。 */
+  rssFetchInterval: "manual" | "15m" | "1h" | "4h" | "1d";
+  rssAiSummary: boolean;
+  rssFeeds: Array<{
+    id: string;
+    url: string;
+    title: string;
+    addedAt: number;
+    lastFetchedAt?: number;
+    /** 上一次拉取里出现过的 GUID（capped 至 50 条），用于本地算未读 */
+    seenGuids?: string[];
+    /** 上次拉取相对于 seenGuids 新出现的条目数；点开浏览后被设回 0 */
+    unread?: number;
+    /** 上次拉取的错误信息；成功后清空 */
+    lastError?: string;
+  }>;
+
+  /** 移动端 / 设备配对：UI 壳 + 已配对设备清单。
+   *  P2P 直连开关存好；实际握手 (mDNS + WebRTC / WS) 后端未接。
+   *  macOS 上启用前要在 Info.plist 加 NSLocalNetworkUsageDescription。 */
+  mobileP2pEnabled: boolean;
+  mobileDevices: Array<{
+    id: string;
+    name: string;
+    kind: "iphone" | "ipad" | "android" | "mac" | "windows" | "other";
+    pairedAt: number;
+  }>;
   /** AI 回答时是否把当前 .md 文件内容塞进 system prompt */
   aiUseCurrentFile: boolean;
   /** AI 回答时是否在仓库做关键词检索并把片段塞进 system prompt */
@@ -282,6 +333,7 @@ interface SettingsState {
       aiMaxTokens: number;
       aiUseCurrentFile: boolean;
       aiUseWorkspace: boolean;
+      aiProviderConfigs: SettingsState["aiProviderConfigs"];
     }>,
   ) => void;
 }
@@ -347,6 +399,16 @@ export const useSettings = create<SettingsState>()(
       aiModel: "claude-haiku-4-5",
       aiTemperature: 0.7,
       aiMaxTokens: 4096,
+      aiProviderConfigs: {},
+      clipperHtmlToMd: true,
+      clipperReadability: true,
+      clipperAiSummary: false,
+      clipperPdfSnapshot: false,
+      rssFetchInterval: "1h",
+      rssAiSummary: false,
+      rssFeeds: [],
+      mobileP2pEnabled: false,
+      mobileDevices: [],
       aiUseCurrentFile: true,
       aiUseWorkspace: false,
       ragEnabled: false,

@@ -52,6 +52,9 @@ const PinnedPlanBar = lazy(() =>
 const Settings = lazy(() =>
   import("../settings/Settings").then((m) => ({ default: m.Settings })),
 );
+const BlockMenu = lazy(() =>
+  import("../popovers/BlockMenu").then((m) => ({ default: m.BlockMenu })),
+);
 
 export function AppShell() {
   const sidebarOpen = useUI((s) => s.sidebarOpen);
@@ -68,6 +71,8 @@ export function AppShell() {
   const openExportSheet = useUI((s) => s.openExportSheet);
   const multiCopyOpen = useUI((s) => s.multiCopyOpen);
   const openMultiCopy = useUI((s) => s.openMultiCopy);
+  const blockMenuAt = useUI((s) => s.blockMenuAt);
+  const setBlockMenuAt = useUI((s) => s.setBlockMenuAt);
   const openCommand = useUI((s) => s.openCommand);
   const openGlobalSearch = useUI((s) => s.openGlobalSearch);
   const openSettings = useUI((s) => s.openSettings);
@@ -97,7 +102,11 @@ export function AppShell() {
         }
       >
         <TitleBar />
-        {aiOpen ? (
+        {settingsOpen ? (
+          <Suspense fallback={null}>
+            <Settings onClose={() => openSettings(false)} />
+          </Suspense>
+        ) : aiOpen ? (
           <Suspense fallback={null}>
             <AIPanel onClose={() => openAi(false)} />
           </Suspense>
@@ -133,7 +142,6 @@ export function AppShell() {
         {globalSearchOpen && (
           <GlobalSearch onClose={() => openGlobalSearch(false)} />
         )}
-        {settingsOpen && <Settings onClose={() => openSettings(false)} />}
         {wechatOpen && <WeChatSheet onClose={() => openWechat(false)} />}
         {quickCaptureOpen && (
           <QuickCapture onClose={() => openQuickCapture(false)} />
@@ -142,6 +150,13 @@ export function AppShell() {
           <ExportSheet onClose={() => openExportSheet(false)} />
         )}
         {multiCopyOpen && <MultiCopySheet onClose={() => openMultiCopy(false)} />}
+        {blockMenuAt && (
+          <BlockMenu
+            x={blockMenuAt.x}
+            y={blockMenuAt.y}
+            onClose={() => setBlockMenuAt(null)}
+          />
+        )}
         {pinnedPlanPath && <PinnedPlanBar />}
       </Suspense>
       <ToastHost />

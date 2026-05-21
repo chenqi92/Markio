@@ -30,6 +30,7 @@ export type CommandId =
   | "app.viewWysiwyg"
   | "app.viewPreview"
   | "app.quickCapture"
+  | "app.blockMenu"
   | "app.escape";
 
 export interface CommandDef {
@@ -47,6 +48,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "app.findInFile", label: "在文档内查找", group: "导航", defaultBinding: "Mod+F" },
   { id: "app.toggleFocus", label: "切换专注模式", group: "导航", defaultBinding: "Mod+." },
   { id: "app.quickCapture", label: "快速捕捉", group: "导航", defaultBinding: "Alt+Space" },
+  { id: "app.blockMenu", label: "块操作菜单", group: "编辑", defaultBinding: "Mod+Shift+." },
   { id: "app.escape", label: "关闭浮层 (Escape)", group: "导航", defaultBinding: "Escape" },
 
   // 视图

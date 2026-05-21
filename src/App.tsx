@@ -573,6 +573,15 @@ export default function App() {
       "app.viewPreview": () => setMode("preview"),
       "app.quickCapture": () =>
         useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen),
+      "app.blockMenu": () => {
+        // 把菜单弹在当前光标位置（fall back 到窗口中心）
+        import("./lib/editor-bridge").then(({ selectionCoords }) => {
+          const c = selectionCoords();
+          useUI.getState().setBlockMenuAt(
+            c ? { x: c.x, y: c.y + 18 } : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+          );
+        });
+      },
       "app.escape": () => {
         openCommand(false);
         openFind(false);
@@ -583,6 +592,7 @@ export default function App() {
         useUI.getState().openGlobalSearch(false);
         useUI.getState().openQuickCapture(false);
         useUI.getState().openExportSheet(false);
+        useUI.getState().setBlockMenuAt(null);
       },
     };
 

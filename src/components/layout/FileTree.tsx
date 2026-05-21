@@ -10,10 +10,12 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { writeText } from "@/lib/clipboard";
 import { useFileIcons } from "@/stores/fileIcons";
+import { useFileMeta, FILE_COLOR_PALETTE } from "@/stores/fileMeta";
 import { api, parseError, pickDirectory } from "@/lib/api";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
+import { FilePropertiesDialog } from "../popovers/FilePropertiesDialog";
 import type { FileEntry } from "@/types";
 
 export function FileTree() {
@@ -40,6 +42,7 @@ export function FileTree() {
     y: number;
     path: string;
   } | null>(null);
+  const [propertiesFor, setPropertiesFor] = useState<FileEntry | null>(null);
   const mdCount = useMemo(() => (tree ? countMd(tree) : 0), [tree]);
 
   if (!ws) {
@@ -232,6 +235,10 @@ export function FileTree() {
             setCtx(null);
             setIconPicker({ x: x2, y: y2, path: p });
           }}
+          onShowProperties={(n) => {
+            setCtx(null);
+            setPropertiesFor(n);
+          }}
         />
       )}
       {iconPicker && (
@@ -240,6 +247,13 @@ export function FileTree() {
           y={iconPicker.y}
           path={iconPicker.path}
           onClose={() => setIconPicker(null)}
+        />
+      )}
+      {propertiesFor && ws && (
+        <FilePropertiesDialog
+          node={propertiesFor}
+          workspacePath={ws.path}
+          onClose={() => setPropertiesFor(null)}
         />
       )}
     </>
@@ -408,6 +422,7 @@ const TreeRow = memo(function TreeRow({
   const ws = useWorkspace((s) => s.activeWorkspace());
   const openFile = useTabs((s) => s.openFile);
   const customIcon = useFileIcons((s) => s.icons[node.path]);
+  const meta = useFileMeta((s) => s.byPath[node.path]) ?? {};
 
   const isActive = activePath === node.path;
   const onClick = async () => {
@@ -445,7 +460,36 @@ const TreeRow = memo(function TreeRow({
           <Icon name="file" size={13} />
         )}
       </span>
-      <span className="lbl">{node.name}</span>
+      <span
+        className="lbl"
+        style={meta.color ? { color: meta.color, fontWeight: 500 } : undefined}
+      >
+        {node.name}
+      </span>
+      {meta.bookmark && (
+        <span
+          className="tree-meta-pin"
+          title="已收藏"
+          aria-hidden
+          style={{ color: "var(--accent)", marginLeft: 4, fontSize: 10 }}
+        >
+          ★
+        </span>
+      )}
+      {meta.marks && meta.marks.length > 0 && (
+        <span
+          className="tree-meta-marks"
+          title={meta.marks.join(" / ")}
+          style={{
+            marginLeft: 4,
+            fontSize: 9,
+            color: "var(--text-3)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          ·{meta.marks.length}
+        </span>
+      )}
       {node.truncated && (
         <span className="badge warn" title="此目录已达到显示上限，仍可用全局搜索定位其中的文件">
           截断
@@ -461,149 +505,360 @@ function TreeContextMenu({
   node,
   onClose,
   onChangeIcon,
+  onShowProperties,
 }: {
   x: number;
   y: number;
   node: FileEntry;
   onClose: () => void;
   onChangeIcon: (path: string, x: number, y: number) => void;
+  onShowProperties: (node: FileEntry) => void;
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const loadDir = useWorkspace((s) => s.loadDir);
   const setToast = useUI((s) => s.setToast);
+  const openHistory = useUI((s) => s.openHistory);
   const openFile = useTabs((s) => s.openFile);
+  const openPath = useTabs((s) => s.openPath);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
   const closeTabsForPath = useTabsForPath();
+  const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
+  const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
+  const setColor = useFileMeta((s) => s.setColor);
+  const addMark = useFileMeta((s) => s.addMark);
+  const moveFileMeta = useFileMeta((s) => s.movePath);
 
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
     setTimeout(() => setToast(null), 1800);
   };
+  const errToast = (msg: string) => {
+    setToast({ stage: "error", message: msg });
+    setTimeout(() => setToast(null), 2500);
+  };
 
-  const baseItems: CtxItem[] = [];
-  if (!node.isDir) {
-    baseItems.push({
+  // 把"显示但不可用"的菜单项也放在 menu 里，让 23 项分组结构稳定；
+  // 没拼通的能力（标签 / 颜色 / 收藏 / 移动至 / 公开发布 / 导出 / 属性 / 复制剪切）
+  // 暂时不进 menu，避免空跑误操作。等对应模块（P4 publish、P10 advanced 等）落地再补。
+  const isFile = !node.isDir;
+  const isDir = node.isDir;
+  const dirOfNode = isDir ? node.path : parentPath(node.path);
+
+  const items: CtxItem[] = [];
+
+  // 组 1：打开
+  if (isFile) {
+    items.push({
       label: "在新标签页打开",
       icon: "external",
+      kbd: "↵",
       onClick: () => {
         if (ws) openFile(ws.id, node.path);
       },
     });
-    baseItems.push({ sep: true });
   }
-  const items: CtxItem[] = [
-    ...baseItems,
-    {
-      label: "在 Finder 中显示",
-      icon: "folder-open",
-      onClick: async () => {
-        try {
-          await api.reveal(node.path);
-        } catch (e) {
-          setToast({ stage: "error", message: `打开失败：${(e as Error).message}` });
-          setTimeout(() => setToast(null), 2500);
-        }
+  if (isDir) {
+    items.push({
+      label: "在此目录搜索",
+      icon: "search",
+      onClick: () => {
+        // 全局搜索面板没有 scope 选项，先开搜索；后续 P10 AdvancedSearch 再补 scope
+        useUI.getState().openGlobalSearch(true);
       },
+    });
+  }
+
+  // 组 2：收藏 + 元数据
+  items.push({ sep: true });
+  items.push({
+    label: fileMeta.bookmark ? "取消收藏" : "加入收藏",
+    icon: "pin",
+    onClick: () => toggleBookmark(node.path),
+  });
+  items.push({
+    label: "更改图标…",
+    icon: "palette",
+    onClick: () => onChangeIcon(node.path, x, y),
+  });
+  // 颜色子菜单：6 个调色板 + 清除
+  items.push({
+    label: fileMeta.color
+      ? `颜色 · 当前 ${FILE_COLOR_PALETTE.find((c) => c.id === fileMeta.color)?.label ?? "自定义"}`
+      : "标颜色…",
+    icon: "palette",
+    onClick: async () => {
+      // 用 prompt 输入色号或预设名（保留极简，无嵌套 picker）
+      const label = await promptDialog({
+        title: "标颜色",
+        message:
+          "输入颜色名或 #hex：" +
+          FILE_COLOR_PALETTE.filter((c) => c.id)
+            .map((c) => c.label)
+            .join(" / ") +
+          " 或空清除",
+        defaultValue: fileMeta.color ?? "",
+        confirmLabel: "应用",
+      });
+      if (label === null) return;
+      const v = label.trim();
+      if (!v) {
+        setColor(node.path, undefined);
+        return;
+      }
+      const preset = FILE_COLOR_PALETTE.find((c) => c.label === v);
+      setColor(node.path, preset?.id ?? v);
     },
-    {
-      label: "复制路径",
-      icon: "copy",
+  });
+  items.push({
+    label: "添加标记…",
+    icon: "edit",
+    onClick: async () => {
+      const mark = await promptDialog({
+        title: "添加标记",
+        message: "用户自定义标记（区别于内容里的 #tag）",
+        defaultValue: "",
+        confirmLabel: "添加",
+      });
+      if (mark?.trim()) addMark(node.path, mark.trim());
+    },
+  });
+
+  // 组 3：编辑
+  items.push({ sep: true });
+  items.push({
+    label: "重命名…",
+    icon: "edit",
+    kbd: "F2",
+    onClick: async () => {
+      const next = await promptDialog({
+        title: "重命名",
+        message: "输入新的文件或文件夹名称。",
+        defaultValue: node.name,
+        confirmLabel: "重命名",
+      });
+      if (!next || next === node.name) return;
+      const parent = parentPath(node.path);
+      const to = `${parent}/${next}`;
+      try {
+        await api.rename(node.path, to);
+        flash("已重命名");
+        if (ws) {
+          void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
+          await loadDir(ws.id, parent);
+        }
+      } catch (e) {
+        errToast(`重命名失败：${(e as Error).message}`);
+      }
+    },
+  });
+  items.push({
+    label: "复制路径",
+    icon: "copy",
+    kbd: "⌘⌥C",
+    onClick: async () => {
+      try {
+        await writeText(node.path);
+        flash("已复制路径");
+      } catch {
+        /* ignore */
+      }
+    },
+  });
+  if (isFile) {
+    items.push({
+      label: "复制 Markdown 链接",
+      icon: "link",
+      kbd: "⌘⇧M",
       onClick: async () => {
+        const base = node.name.replace(/\.(md|markdown|mdown|mkd|txt)$/i, "");
+        const rel = ws ? node.path.replace(ws.path, "").replace(/^[\\/]/, "") : node.path;
+        const md = `[${base}](${rel})`;
         try {
-          await writeText(node.path);
-          flash("已复制路径");
+          await writeText(md);
+          flash("已复制 Markdown 链接");
         } catch {
           /* ignore */
         }
       },
+    });
+  }
+
+  // 移动至…：选目标目录后通过 rename(srcPath, targetDir/name) 完成移动；
+  // 同步迁移 fileMeta（书签 / 颜色 / 标记）到新路径，避免元数据丢失。
+  items.push({
+    label: "移动至…",
+    icon: "folder-open",
+    onClick: async () => {
+      if (!ws) return;
+      const target = await pickDirectory();
+      if (!target) return;
+      const norm = target.replace(/[\\/]+$/, "");
+      // 不允许把节点移到自己内部
+      if (node.isDir && (norm === node.path || norm.startsWith(node.path + "/") || norm.startsWith(node.path + "\\"))) {
+        errToast("目标目录在此节点内");
+        return;
+      }
+      // 不允许目标 = 当前所在目录（原地不动）
+      const curParent = parentPath(node.path);
+      if (norm === curParent.replace(/[\\/]+$/, "")) {
+        errToast("已在该目录下");
+        return;
+      }
+      const dest = `${norm}/${node.name}`;
+      try {
+        await api.rename(node.path, dest);
+        moveFileMeta(node.path, dest);
+        flash("已移动");
+        await loadDir(ws.id, curParent);
+        await loadDir(ws.id, norm);
+      } catch (e) {
+        errToast(`移动失败：${(e as Error).message}`);
+      }
     },
-    {
-      label: "更改图标…",
-      icon: "palette",
-      onClick: () => onChangeIcon(node.path, x, y),
-    },
-    { sep: true },
-    {
-      label: "重命名…",
-      icon: "edit",
+  });
+
+  // 组 4：创建（只在目录上）
+  if (isDir) {
+    items.push({ sep: true });
+    items.push({
+      label: "在此新建笔记…",
+      icon: "file",
+      kbd: "⌘N",
       onClick: async () => {
-        const next = await promptDialog({
-          title: "重命名",
-          message: "输入新的文件或文件夹名称。",
-          defaultValue: node.name,
-          confirmLabel: "重命名",
+        const name = await promptDialog({
+          title: "新建笔记",
+          message: "输入文件名；未包含 .md 时自动追加。",
+          defaultValue: "未命名",
+          confirmLabel: "创建",
         });
-        if (!next || next === node.name) return;
-        const parent = node.path.replace(/[\\/][^\\/]+$/, "");
-        const to = `${parent}/${next}`;
+        if (!name || !ws) return;
+        const fname = name.endsWith(".md") ? name : `${name}.md`;
+        const target = `${dirOfNode}/${fname}`;
         try {
-          await api.rename(node.path, to);
-          flash("已重命名");
-          if (ws) {
-            void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
-            await loadDir(ws.id, parentPath(node.path));
-          }
+          await api.createNew(target, `# ${fname.replace(/\.md$/i, "")}\n\n`);
+          await loadDir(ws.id, dirOfNode);
+          await openFile(ws.id, target);
+          flash("已新建");
         } catch (e) {
-          setToast({
-            stage: "error",
-            message: `重命名失败：${(e as Error).message}`,
-          });
-          setTimeout(() => setToast(null), 2500);
+          const pe = parseError(e);
+          if (pe.code === "ALREADY_EXISTS") {
+            errToast("同名文件已存在");
+          } else {
+            errToast(`创建失败：${pe.message}`);
+          }
         }
       },
-    },
-    {
-      label: node.isDir ? "移到回收站…" : "移到回收站",
-      icon: "trash",
-      danger: true,
+    });
+    items.push({
+      label: "新建子文件夹…",
+      icon: "folder",
       onClick: async () => {
-        if (!ws) return;
+        const name = await promptDialog({
+          title: "新建文件夹",
+          message: "输入文件夹名称。",
+          defaultValue: "新文件夹",
+          confirmLabel: "创建",
+        });
+        if (!name || !ws) return;
+        const target = `${dirOfNode}/${name}`;
         try {
-          await api.trashMove(ws.path, node.path);
-          closeTabsForPath(node.path);
+          await api.mkdir(target);
+          await loadDir(ws.id, dirOfNode);
+          flash("已新建");
+        } catch (e) {
+          errToast(`创建失败：${(e as Error).message}`);
+        }
+      },
+    });
+  }
+
+  // 组 5：工具
+  items.push({ sep: true });
+  items.push({
+    label: "在 Finder 中显示",
+    icon: "folder-open",
+    onClick: async () => {
+      try {
+        await api.reveal(node.path);
+      } catch (e) {
+        errToast(`打开失败：${(e as Error).message}`);
+      }
+    },
+  });
+  if (isFile) {
+    items.push({
+      label: "历史版本",
+      icon: "clock",
+      kbd: "⌘Y",
+      onClick: async () => {
+        if (ws) {
+          try {
+            await openPath(node.path);
+          } catch {
+            /* 文件可能已不存在 */
+          }
+        }
+        openHistory(true);
+      },
+    });
+  }
+
+  // 组 6：属性
+  items.push({ sep: true });
+  items.push({
+    label: "属性…",
+    icon: "info",
+    kbd: "⌘I",
+    onClick: () => onShowProperties(node),
+  });
+
+  // 组 7：危险
+  items.push({ sep: true });
+  items.push({
+    label: node.isDir ? "移到回收站…" : "移到回收站",
+    icon: "trash",
+    kbd: "⌫",
+    danger: true,
+    onClick: async () => {
+      if (!ws) return;
+      try {
+        await api.trashMove(ws.path, node.path);
+        closeTabsForPath(node.path);
+        void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
+        flash(node.isDir ? "文件夹已移到回收站" : "已移到回收站");
+        await loadDir(ws.id, parentPath(node.path));
+      } catch (e) {
+        errToast(`移到回收站失败：${(e as Error).message}`);
+      }
+    },
+  });
+  items.push({
+    label: "永久删除…",
+    icon: "trash",
+    kbd: "⇧⌫",
+    danger: true,
+    onClick: async () => {
+      const ok = await confirmDialog({
+        title: "永久删除",
+        message: `永久删除 ${node.name}？无法从回收站恢复。`,
+        confirmLabel: "永久删除",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await api.remove(node.path);
+        closeTabsForPath(node.path);
+        if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
-          flash(node.isDir ? "文件夹已移到回收站" : "已移到回收站");
           await loadDir(ws.id, parentPath(node.path));
-        } catch (e) {
-          setToast({
-            stage: "error",
-            message: `移到回收站失败：${(e as Error).message}`,
-          });
-          setTimeout(() => setToast(null), 2500);
         }
-      },
+        flash("已永久删除");
+      } catch (e) {
+        errToast(`删除失败：${(e as Error).message}`);
+      }
     },
-    {
-      label: "永久删除…",
-      icon: "trash",
-      danger: true,
-      onClick: async () => {
-        const ok = await confirmDialog({
-          title: "永久删除",
-          message: `永久删除 ${node.name}？无法从回收站恢复。`,
-          confirmLabel: "永久删除",
-          danger: true,
-        });
-        if (!ok) return;
-        try {
-          await api.remove(node.path);
-          closeTabsForPath(node.path);
-          if (ws) {
-            void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
-            await loadDir(ws.id, parentPath(node.path));
-          }
-          flash("已永久删除");
-        } catch (e) {
-          setToast({
-            stage: "error",
-            message: `删除失败：${(e as Error).message}`,
-          });
-          setTimeout(() => setToast(null), 2500);
-        }
-      },
-    },
-  ];
+  });
 
   return <ContextMenu x={x} y={y} items={items} onClose={onClose} />;
 }

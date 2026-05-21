@@ -558,6 +558,32 @@ export const api = {
       outputTokens?: number;
     }>("ai_chat", { req }),
 
+  /** 拉取指定 provider 的最新模型列表（联网调用对应官方 /models 接口）。
+   *  apiKey 留空则后端自动从系统钥匙串补 ai:${provider}。 */
+  aiListModels: (provider: string, endpoint?: string, apiKey?: string) =>
+    invoke<
+      Array<{
+        id: string;
+        label?: string;
+        group?: string;
+        contextLength?: number;
+      }>
+    >("ai_list_models", { provider, endpoint, apiKey }),
+
+  /** 抓 RSS / Atom feed，返回最近 N 条元数据 (标题 / 链接 / 时间 / 摘要)。
+   *  正文不抓，避免 paywall + 反爬麻烦；用户点链接由 openExternal 跳浏览器。 */
+  rssFetch: (url: string) =>
+    invoke<{
+      feedTitle?: string;
+      items: Array<{
+        title: string;
+        link: string;
+        pubDate?: string;
+        summary?: string;
+        guid: string;
+      }>;
+    }>("rss_fetch", { url }),
+
   /** 关键词检索：从仓库里抽 query 相关片段（含周边 ±3 行）作 AI 上下文 */
   aiRetrieve: (workspace: string, query: string, k = 5) =>
     invoke<

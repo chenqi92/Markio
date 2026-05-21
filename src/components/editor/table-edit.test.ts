@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyTableAction,
+  applyTableActionToText,
   clearTableRect,
   moveTableCell,
   parseTabularText,
@@ -129,5 +130,19 @@ describe("table editing", () => {
     expect(applyTableAction(dataView, { type: "sortDesc" })).toBe(true);
     const sorted = dataView.dispatch.mock.calls[0][0].changes.insert;
     expect(sorted.indexOf("| A | 10 |")).toBeLessThan(sorted.indexOf("| B | 2 |"));
+  });
+
+  it("applies preview table actions without an editor view", () => {
+    const source = ["before", table, "after"].join("\n\n");
+
+    expect(
+      applyTableActionToText(source, 0, { row: 1, col: 1 }, { type: "insertColRight" }),
+    ).toContain("| A | B |   |");
+
+    const deleted = applyTableActionToText(source, 0, { row: 1, col: 0 }, { type: "deleteRow" });
+    expect(deleted).toContain("| A | B |");
+    expect(deleted).not.toContain("| 1 | 2 |");
+    expect(deleted).toContain("before");
+    expect(deleted).toContain("after");
   });
 });

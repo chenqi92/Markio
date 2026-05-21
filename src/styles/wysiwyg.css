@@ -187,20 +187,25 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  margin-right: 6px;
+  margin: 0 7px 0 1px;
   border-radius: 4px;
   border: 1.5px solid var(--border-strong);
   background: var(--bg-input);
-  vertical-align: -3px;
-  font-size: 11px;
-  font-weight: 700;
-  color: white;
+  vertical-align: -2px;
   cursor: pointer;
   transition: all 120ms;
 }
 .cm-md-task.checked {
   background: var(--accent);
   border-color: var(--accent);
+}
+.cm-md-task.checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
 }
 .cm-md-task:hover {
   border-color: var(--accent);

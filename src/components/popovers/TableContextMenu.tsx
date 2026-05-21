@@ -19,10 +19,28 @@ interface Props {
   rows: number;
   cols: number;
   rect: TableSelectionRect | null;
+  tableIndex?: number;
+  onAction?: (
+    tableIndex: number | undefined,
+    row: number,
+    col: number,
+    action: TableAction,
+  ) => boolean;
   onClose: () => void;
 }
 
-export function TableContextMenu({ x, y, row, col, rows, cols, rect, onClose }: Props) {
+export function TableContextMenu({
+  x,
+  y,
+  row,
+  col,
+  rows,
+  cols,
+  rect,
+  tableIndex,
+  onAction,
+  onClose,
+}: Props) {
   const left =
     typeof window === "undefined"
       ? x
@@ -57,6 +75,10 @@ export function TableContextMenu({ x, y, row, col, rows, cols, rect, onClose }: 
   const focus = () => getEditor()?.focus();
 
   const run = (action: TableAction) => {
+    if (onAction?.(tableIndex, row, col, action)) {
+      onClose();
+      return;
+    }
     const view = getEditor();
     if (!view) return;
     applyTableAction(view, action);

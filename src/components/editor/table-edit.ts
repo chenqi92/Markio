@@ -566,6 +566,140 @@ export type TableAction =
   | { type: "selectCol" }
   | { type: "align"; value: "left" | "center" | "right" | null };
 
+function parseTableText(text: string): {
+  cells: string[][];
+  aligns: Array<"left" | "center" | "right" | null>;
+} | null {
+  const rawLines = text.split(/\r?\n/).filter((line) => /^\s*\|/.test(line));
+  if (rawLines.length < 2 || !isSeparatorRow(rawLines[1])) return null;
+  const headerCells = splitRow(rawLines[0]);
+  const colCount = headerCells.length;
+  const aligns: Array<"left" | "center" | "right" | null> =
+    splitRow(rawLines[1]).map(parseAlign);
+  while (aligns.length < colCount) aligns.push(null);
+
+  const cells: string[][] = [headerCells];
+  for (let i = 2; i < rawLines.length; i++) {
+    const row = splitRow(rawLines[i]);
+    while (row.length < colCount) row.push("");
+    cells.push(row);
+  }
+  return { cells, aligns };
+}
+
+export function applyTableActionToText(
+  source: string,
+  tableIndex: number,
+  cursor: TableCellCoord,
+  action: TableAction,
+): string | null {
+  const tables = findAllTablesInText(source);
+  const table = tables[tableIndex];
+  if (!table) return null;
+  if (
+    action.type === "selectCell" ||
+    action.type === "selectTable" ||
+    action.type === "selectRow" ||
+    action.type === "selectCol"
+  ) {
+    return null;
+  }
+
+  const parsed = parseTableText(source.slice(table.from, table.to));
+  if (!parsed) return null;
+  const cells = parsed.cells.map((r) => r.slice());
+  const aligns = parsed.aligns.slice();
+  const colCount = aligns.length;
+  const row = Math.max(0, Math.min(cells.length - 1, cursor.row));
+  const col = Math.max(0, Math.min(colCount - 1, cursor.col));
+
+  switch (action.type) {
+    case "insertRowAbove":
+      cells.splice(row, 0, Array(colCount).fill(""));
+      break;
+    case "insertRowBelow":
+      cells.splice(row + 1, 0, Array(colCount).fill(""));
+      break;
+    case "duplicateRow":
+      cells.splice(row + 1, 0, cells[row].slice());
+      break;
+    case "moveRowUp":
+      if (row <= 1) return null;
+      swapItems(cells, row, row - 1);
+      break;
+    case "moveRowDown":
+      if (row === 0 || row >= cells.length - 1) return null;
+      swapItems(cells, row, row + 1);
+      break;
+    case "insertColLeft":
+      for (const r of cells) r.splice(col, 0, "");
+      aligns.splice(col, 0, null);
+      break;
+    case "insertColRight":
+      for (const r of cells) r.splice(col + 1, 0, "");
+      aligns.splice(col + 1, 0, null);
+      break;
+    case "duplicateCol":
+      for (const r of cells) r.splice(col + 1, 0, r[col] ?? "");
+      aligns.splice(col + 1, 0, aligns[col] ?? null);
+      break;
+    case "moveColLeft":
+      if (col <= 0) return null;
+      for (const r of cells) swapItems(r, col, col - 1);
+      swapItems(aligns, col, col - 1);
+      break;
+    case "moveColRight":
+      if (col >= colCount - 1) return null;
+      for (const r of cells) swapItems(r, col, col + 1);
+      swapItems(aligns, col, col + 1);
+      break;
+    case "deleteRow":
+      if (cells.length <= 1 || row === 0) return null;
+      cells.splice(row, 1);
+      break;
+    case "deleteCol":
+      if (colCount <= 1) return null;
+      for (const r of cells) r.splice(col, 1);
+      aligns.splice(col, 1);
+      break;
+    case "clearCell":
+      cells[row][col] = "";
+      break;
+    case "clearRow":
+      cells[row] = cells[row].map(() => "");
+      break;
+    case "clearCol":
+      for (const r of cells) r[col] = "";
+      break;
+    case "fillDown": {
+      const value = cells[row][col] ?? "";
+      for (let r = Math.max(1, row + 1); r < cells.length; r++) {
+        cells[r][col] = value;
+      }
+      break;
+    }
+    case "sortAsc":
+    case "sortDesc": {
+      const header = cells[0];
+      const body = cells.slice(1);
+      const dir = action.type === "sortAsc" ? 1 : -1;
+      body.sort((a, b) => compareTableValues(a[col] ?? "", b[col] ?? "") * dir);
+      cells.splice(0, cells.length, header, ...body);
+      break;
+    }
+    case "format": {
+      const next = buildPrettyTable(cells, aligns);
+      return source.slice(0, table.from) + next + source.slice(table.to);
+    }
+    case "align":
+      aligns[col] = action.value;
+      break;
+  }
+
+  const next = buildTable(cells, aligns);
+  return source.slice(0, table.from) + next + source.slice(table.to);
+}
+
 function swapItems<T>(items: T[], a: number, b: number) {
   const temp = items[a];
   items[a] = items[b];

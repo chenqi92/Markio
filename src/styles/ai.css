@@ -1213,6 +1213,17 @@
   background: var(--text); color: var(--bg-window);
   border-color: var(--text);
 }
+.ai-top-close {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 120ms;
+}
+.ai-top-close:hover { background: var(--bg-elev); color: var(--text); }
 
 /* ─── AIContextDrawer ─────────────────────────────────────────── */
 .ai-ctx {

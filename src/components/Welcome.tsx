@@ -157,6 +157,7 @@ export function Welcome() {
 
   return (
     <div className="welcome">
+      <div className="welcome-inner">
       {logoErr ? (
         <div className="logo">m</div>
       ) : (
@@ -295,6 +296,7 @@ export function Welcome() {
         >
           {t("welcome.viewMore")}
         </a>
+      </div>
       </div>
     </div>
   );

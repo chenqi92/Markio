@@ -22,6 +22,7 @@ export function TitleBar() {
   const openQuickCapture = useUI((s) => s.openQuickCapture);
   const openAi = useUI((s) => s.openAi);
   const aiOpen = useUI((s) => s.aiOpen);
+  const settingsOpen = useUI((s) => s.settingsOpen);
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspace((s) => s.activeWorkspace());
   const tabTitle = useTabs((s) => {
@@ -105,25 +106,31 @@ export function TitleBar() {
         )}
       </div>
       <div className="title-actions" data-no-drag>
-        <button
-          type="button"
-          className="tb-quick-cap"
-          title="快速捕获 ⌥Space"
-          onClick={() => openQuickCapture(true)}
-        >
-          <span className="bolt" aria-hidden>⚡</span>
-          <span>捕获</span>
-        </button>
-        <button
-          type="button"
-          className={"tb-ai-top" + (aiOpen ? " active" : "")}
-          title={shortcutText(aiOpen ? "返回编辑器 ⌘J" : "AI 助手 ⌘J")}
-          onClick={() => openAi(!aiOpen)}
-        >
-          <span className="orb" aria-hidden>{aiOpen ? "←" : "✦"}</span>
-          <span>{aiOpen ? "编辑器" : "AI"}</span>
-        </button>
-        <div className="tb-divider" aria-hidden />
+        {/* AI / 设置模式下隐藏快速捕获 + AI 切换按钮；AI 关闭按钮放在 AIPanel 顶部右侧
+         * (跟 Settings 一致的模式)。这里只保留同步 / 主题 / 设置三个图标按钮。 */}
+        {!aiOpen && !settingsOpen && (
+          <>
+            <button
+              type="button"
+              className="tb-quick-cap"
+              title="快速捕获 ⌥Space"
+              onClick={() => openQuickCapture(true)}
+            >
+              <span className="bolt" aria-hidden>⚡</span>
+              <span>捕获</span>
+            </button>
+            <button
+              type="button"
+              className="tb-ai-top"
+              title={shortcutText("AI 助手 ⌘J")}
+              onClick={() => openAi(true)}
+            >
+              <Icon name="sparkle" size={11} />
+              <span>AI</span>
+            </button>
+            <div className="tb-divider" aria-hidden />
+          </>
+        )}
         <button className="icon-btn" title="同步" onClick={onSyncClick}>
           <Icon name="sync" size={15} />
         </button>

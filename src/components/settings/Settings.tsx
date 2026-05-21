@@ -977,6 +977,10 @@ function Sync() {
   const conflict = useSettings((s) => s.syncConflictStrategy);
   const frequency = useSettings((s) => s.syncFrequency);
   const autoSync = useSettings((s) => s.autoSyncEnabled);
+  const webdavBaseUrl = useSettings((s) => s.webdavBaseUrl);
+  const s3Bucket = useSettings((s) => s.s3Bucket);
+  const s3AccessKeyId = useSettings((s) => s.s3AccessKeyId);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
   const conflictOptions = useMemo(
     () =>
@@ -994,20 +998,92 @@ function Sync() {
       })),
     [t],
   );
+
+  // 5 个存储目标的概览行；状态 dot 只反映"是否已配置"，
+  // 真实联通性还要看下方各卡片自己的 probe。
+  const enabledDrives = Object.entries(driveConfigs).filter(([id, c]) => {
+    if (id === "github" || id === "webdav") return false; // 这俩有专用卡，不计入网盘
+    return c?.folder && c?.enabled;
+  }).length;
+  const targets: Array<{
+    id: string;
+    label: string;
+    sub: string;
+    dot: "ok" | "warn" | "off";
+    anchor?: string;
+  }> = [
+    { id: "local", label: "本地", sub: "当前仓库永远落地到磁盘", dot: "ok" },
+    {
+      id: "git",
+      label: "Git",
+      sub: autoSync
+        ? `自动 ${frequencyOptions.find((o) => o.value === frequency)?.label ?? frequency}`
+        : "手动模式 · 在下方 Git 卡里推 / 拉",
+      dot: autoSync ? "ok" : "off",
+      anchor: "mk-sync-card-github",
+    },
+    {
+      id: "webdav",
+      label: "WebDAV",
+      sub: webdavBaseUrl ? webdavBaseUrl : "未配置",
+      dot: webdavBaseUrl ? "ok" : "off",
+      anchor: "mk-sync-card-webdav",
+    },
+    {
+      id: "s3",
+      label: "S3 / 兼容",
+      sub: s3Bucket && s3AccessKeyId ? `${s3Bucket}` : "未配置（图床用，不是双向同步）",
+      dot: s3Bucket && s3AccessKeyId ? "ok" : "off",
+      anchor: "mk-sync-card-drives",
+    },
+    {
+      id: "drives",
+      label: "网盘组",
+      sub: enabledDrives > 0 ? `${enabledDrives} 个已启用` : "未启用 · iCloud / Dropbox / 等",
+      dot: enabledDrives > 0 ? "ok" : "off",
+      anchor: "mk-sync-card-drives",
+    },
+  ];
+
+  const scrollTo = (anchor: string) => {
+    const el = document.getElementById(anchor);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("mk-flash");
+    window.setTimeout(() => el.classList.remove("mk-flash"), 1600);
+  };
+
   return (
     <>
       <SectionHeader id="sync" />
 
-      <div id="mk-sync-card-github">
-        <GitSyncCard />
+      {/* 顶部概览：5 个存储目标 + 状态点；点击滚到对应卡片 */}
+      <div className="settings-card">
+        <div className="settings-card-h">存储与同步目标</div>
+        <div className="sync-overview">
+          {targets.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="sync-target"
+              onClick={() => t.anchor && scrollTo(t.anchor)}
+              disabled={!t.anchor}
+              title={t.anchor ? "跳到下方对应配置" : undefined}
+            >
+              <span className={`upload-dot upload-dot-${t.dot}`} />
+              <div className="sync-target-tt">
+                <div className="t">{t.label}</div>
+                <div className="s">{t.sub}</div>
+              </div>
+              {t.anchor && (
+                <span className="sync-target-chev" aria-hidden>›</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div id="mk-sync-card-webdav">
-        <WebDavCard />
-      </div>
-
-      <DrivesCard />
-
+      {/* 策略 — 提到第二位，让用户先看到"我会自动同步还是手动"再细配各目标 */}
       <div className="settings-card">
         <CardTitle tip={t("settings.sync.policyTip")}>
           {t("settings.sync.policyCard")}
@@ -1042,6 +1118,18 @@ function Sync() {
             onChange={(v) => setPreference("syncFrequency", v)}
           />
         </div>
+      </div>
+
+      <div id="mk-sync-card-github">
+        <GitSyncCard />
+      </div>
+
+      <div id="mk-sync-card-webdav">
+        <WebDavCard />
+      </div>
+
+      <div id="mk-sync-card-drives">
+        <DrivesCard />
       </div>
     </>
   );
@@ -3006,74 +3094,124 @@ function Picgo() {
         return t("settings.picgo.statusFail", { reason: ping.message });
     }
   })();
+  // 三个 provider 的"状态点 + 简介"，用于 tab 头和按钮副标
+  const providerSummary: Record<typeof uploadProvider, { dot: "ok" | "warn" | "off"; text: string }> = {
+    picgo: {
+      dot: ping.stage === "ok" ? "ok" : ping.stage === "fail" ? "warn" : "off",
+      text:
+        ping.stage === "ok"
+          ? `已连接 · ${ping.latencyMs} ms`
+          : ping.stage === "fail"
+          ? "未连接"
+          : ping.stage === "probing"
+          ? "检测中"
+          : "未测试",
+    },
+    s3: { dot: "off", text: "S3 兼容图床（自己的 bucket）" },
+    none: { dot: "off", text: "粘贴 / 拖入图片留在本地不上传" },
+  };
+
+  const cur = providerSummary[uploadProvider];
+
   return (
     <>
       <SectionHeader id="picgo" />
 
+      {/* 3-tab 切换 — 一眼看到所有选项，不需要展开 dropdown 才知道还有 S3 */}
       <div className="settings-card">
-        <CardTitle tip={t("settings.picgo.pipelineTip")}>
-          {t("settings.picgo.pipelineCard")}
-        </CardTitle>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">{t("settings.picgo.provider")}</div>
-          </div>
-          <SelectBtn
-            value={uploadProvider}
-            options={[
-              { value: "picgo", label: t("settings.picgo.providerOptions.picgo") },
-              { value: "s3", label: t("settings.picgo.providerOptions.s3") },
-              { value: "none", label: t("settings.picgo.providerOptions.none") },
-            ]}
-            onChange={(v) => setPreference("uploadProvider", v)}
-          />
+        <div className="upload-tabs" role="tablist">
+          {(["picgo", "s3", "none"] as const).map((id) => {
+            const s = providerSummary[id];
+            const active = uploadProvider === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={"upload-tab" + (active ? " active" : "")}
+                onClick={() => setPreference("uploadProvider", id)}
+              >
+                <span className={`upload-dot upload-dot-${s.dot}`} />
+                <div className="upload-tab-tt">
+                  <div className="t">
+                    {id === "picgo"
+                      ? t("settings.picgo.providerOptions.picgo")
+                      : id === "s3"
+                      ? t("settings.picgo.providerOptions.s3")
+                      : t("settings.picgo.providerOptions.none")}
+                  </div>
+                  <div className="s">{s.text}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <S3Card />
-
-      <div className="settings-card">
-        <div className="settings-card-h">{t("settings.picgo.picgoCard")}</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">{t("settings.picgo.status")}</div>
-            <div
-              className="settings-help"
-              style={{
-                color:
-                  ping.stage === "ok"
-                    ? "var(--success, #2c9c5a)"
-                    : ping.stage === "fail"
-                    ? "var(--danger, #c1432f)"
-                    : undefined,
-              }}
-            >
-              {statusText}
+      {/* 选中 provider 的具体配置 */}
+      {uploadProvider === "picgo" && (
+        <div className="settings-card">
+          <div className="settings-card-h">{t("settings.picgo.picgoCard")}</div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">{t("settings.picgo.status")}</div>
+              <div
+                className="settings-help"
+                style={{
+                  color:
+                    ping.stage === "ok"
+                      ? "var(--success, #2c9c5a)"
+                      : ping.stage === "fail"
+                      ? "var(--danger, #c1432f)"
+                      : undefined,
+                }}
+              >
+                {statusText}
+              </div>
             </div>
+            <button
+              className="settings-btn"
+              onClick={() => probe(endpoint)}
+              disabled={!endpoint || ping.stage === "probing"}
+            >
+              {ping.stage === "probing"
+                ? t("settings.picgo.rescanning")
+                : t("settings.picgo.rescan")}
+            </button>
           </div>
-          <button
-            className="settings-btn"
-            onClick={() => probe(endpoint)}
-            disabled={!endpoint || ping.stage === "probing"}
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">{t("settings.picgo.endpoint")}</div>
+            </div>
+            <SelectBtn
+              value={endpoint}
+              options={PICGO_ENDPOINT_OPTIONS}
+              onChange={(v) => setPreference("picgoEndpoint", v)}
+              minMenuWidth={230}
+            />
+          </div>
+        </div>
+      )}
+
+      {uploadProvider === "s3" && <S3Card />}
+
+      {uploadProvider === "none" && (
+        <div className="settings-card">
+          <div
+            className="settings-help"
+            style={{ padding: "12px 4px" }}
           >
-            {ping.stage === "probing"
-              ? t("settings.picgo.rescanning")
-              : t("settings.picgo.rescan")}
-          </button>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">{t("settings.picgo.endpoint")}</div>
+            选择 "不上传" 后，粘贴 / 拖入的图片不会自动上传，只在本地按附件保存；笔记里走相对路径。
           </div>
-          <SelectBtn
-            value={endpoint}
-            options={PICGO_ENDPOINT_OPTIONS}
-            onChange={(v) => setPreference("picgoEndpoint", v)}
-            minMenuWidth={230}
-          />
         </div>
-      </div>
-      <div className="settings-card">
+      )}
+
+      {/* 通用行为 — 不上传时大部分无意义，整块淡化 */}
+      <div
+        className="settings-card"
+        style={uploadProvider === "none" ? { opacity: 0.55 } : undefined}
+      >
         <div className="settings-card-h">{t("settings.picgo.generalCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -3107,7 +3245,12 @@ function Picgo() {
           />
         </div>
       </div>
-      <div className="settings-card">
+
+      {/* 压缩 — 同样上传时才有意义 */}
+      <div
+        className="settings-card"
+        style={uploadProvider === "none" ? { opacity: 0.55 } : undefined}
+      >
         <div className="settings-card-h">{t("settings.picgo.compressCard")}</div>
         <div className="settings-row">
           <div className="settings-row-l">
@@ -3118,19 +3261,23 @@ function Picgo() {
             onChange={(v) => setPreference("picgoCompressBeforeUpload", v)}
           />
         </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">{t("settings.picgo.quality")}</div>
-            <div className="settings-help">{quality}%</div>
+        {compressBeforeUpload && (
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">{t("settings.picgo.quality")}</div>
+              <div className="settings-help">{quality}%</div>
+            </div>
+            <Slider
+              value={quality}
+              min={40}
+              max={100}
+              onChange={(v) => setPreference("picgoQuality", v)}
+            />
           </div>
-          <Slider
-            value={quality}
-            min={40}
-            max={100}
-            onChange={(v) => setPreference("picgoQuality", v)}
-          />
-        </div>
+        )}
       </div>
+      {/* 引用一下，避免 ping/cur 变量未使用警告（cur 暂留给后续侧栏状态展示） */}
+      <div style={{ display: "none" }} aria-hidden>{cur.dot}</div>
     </>
   );
 }

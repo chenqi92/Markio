@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon } from "./ui/Icon";
 import { useSettings } from "@/stores/settings";
 import { isDarkTheme } from "@/themes";
 import { api, parseError, pickDirectory, pickFile } from "@/lib/api";
@@ -205,7 +206,9 @@ export function Welcome() {
               onClick={() => void useTemplate(tpl)}
               title={tpl.sub}
             >
-              <span className="welcome-tpl-ico">{tpl.icon}</span>
+              <span className="welcome-tpl-ico">
+                <Icon name={tpl.icon} size={16} />
+              </span>
               <div className="welcome-tpl-tt">
                 <div className="t">{tpl.title}</div>
                 <div className="s">{tpl.sub}</div>
@@ -220,7 +223,7 @@ export function Welcome() {
         <div className="welcome-section-h">{t("welcome.import")}</div>
         <div className="welcome-import-row">
           <button type="button" className="welcome-import" onClick={() => void importFromFile()}>
-            <span className="welcome-tpl-ico">📂</span>
+            <span className="welcome-tpl-ico"><Icon name="file" size={16} /></span>
             <div className="welcome-tpl-tt">
               <div className="t">{t("welcome.importFile")}</div>
               <div className="s">{t("welcome.importFileSub")}</div>
@@ -231,7 +234,7 @@ export function Welcome() {
             className="welcome-import"
             onClick={() => void importFromClipboard()}
           >
-            <span className="welcome-tpl-ico">📋</span>
+            <span className="welcome-tpl-ico"><Icon name="copy" size={16} /></span>
             <div className="welcome-tpl-tt">
               <div className="t">{t("welcome.importClip")}</div>
               <div className="s">{t("welcome.importClipSub")}</div>
@@ -242,7 +245,7 @@ export function Welcome() {
             className="welcome-import"
             onClick={() => void importFromUrl()}
           >
-            <span className="welcome-tpl-ico">🌐</span>
+            <span className="welcome-tpl-ico"><Icon name="link" size={16} /></span>
             <div className="welcome-tpl-tt">
               <div className="t">{t("welcome.importUrl")}</div>
               <div className="s">{t("welcome.importUrlSub")}</div>

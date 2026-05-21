@@ -522,6 +522,11 @@
  * 与 AIPanel 同样占据整个 body 区域；TitleBar / StatusBar 保留可见。
  * ─────────────────────────────────────────────────────────────── */
 .settings-workspace {
+  /* 这些变量原本只定义在 .settings-window 弹窗上；嵌入式覆盖页要自己声明一份，
+   * 否则 .select-btn / .kbd / .settings-btn 的尺寸都会塌掉 */
+  --settings-label-size: 13px;
+  --settings-help-size: 11.5px;
+  --settings-control-size: 30px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -675,11 +680,16 @@
 .settings-nav2-foot-l .t { font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-nav2-foot-l .s { font-size: 10.5px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* main：覆盖原 .settings-card 卡片样式为"无卡片"无圆角排版 */
+/* main：覆盖原 .settings-card 卡片样式为"无卡片"无圆角排版。
+ * grid-template-columns 把右侧灰白空间收起来——内容居中，行可读宽度封到 880。 */
 .settings-main2 {
-  padding: 32px 48px 80px;
-  max-width: 880px;
+  padding: 32px clamp(24px, 5%, 64px) 80px;
   overflow-y: auto;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 880px);
+  justify-content: center;
+  align-content: start;
 }
 .settings-main2 .settings-h {
   font-size: 26px; font-weight: 700;
@@ -724,6 +734,61 @@
 .settings-main2 .settings-row:last-child { border-bottom: 0; }
 .settings-main2 .settings-label { font-size: 13.5px; color: var(--text); font-weight: 500; }
 .settings-main2 .settings-help { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+
+/* 单选行：dot 紧贴 label 放最左，整行可点。在 no-card 模式下要重写布局，
+ * 不能继承 .settings-row 的 flex (会被 .settings-row-l + * { margin-left: auto } 推到最右)。 */
+.settings-main2 .settings-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  margin: 1px 0;
+  border-radius: 8px;
+  border-bottom: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.settings-main2 .settings-choice-row .settings-row-l {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+}
+.settings-main2 .settings-choice-row .settings-choice-dot {
+  order: -1;
+  margin-left: 0;
+}
+.settings-main2 .settings-choice-row:hover { background: var(--bg-hover); }
+.settings-main2 .settings-choice-row.active { background: var(--bg-elev); }
+
+/* kbd chip / select-btn / settings-btn 在没有 .settings-card 背景托住时对比度太弱：
+ * 把背景提到 bg-pane (更深一点)，border 提到 strong；不影响弹窗版样式。 */
+.settings-main2 .kbd-group .kbd {
+  background: var(--bg-pane);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.settings-main2 .select-btn {
+  background: var(--bg-pane);
+}
+.settings-main2 .select-btn:hover,
+.settings-main2 .select-btn.open {
+  background: var(--bg-elev);
+}
+.settings-main2 .settings-btn {
+  background: var(--bg-pane);
+}
+.settings-main2 .settings-btn:hover:not(:disabled) {
+  background: var(--bg-elev);
+}
+
+/* 快捷键行：kbd-group + 3 个按钮应该挨在一起，row 的 gap 16px 在 no-card 下显得散，
+ * 用 margin-left:auto 把右侧操作块整体推到行尾，按钮之间 6px 紧凑布局。 */
+.settings-main2 .settings-row > .kbd-group { margin-left: auto; }
+.settings-main2 .settings-row > .kbd-group + .settings-btn,
+.settings-main2 .settings-row > .settings-btn + .settings-btn {
+  margin-left: 6px;
+}
 
 /* ─── About 页面：64×64 黑色方形 logo + 4 张底部卡片 + 致谢 ──────── */
 .about-hero {

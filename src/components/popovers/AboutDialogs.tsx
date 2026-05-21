@@ -158,7 +158,7 @@ export function UpdateDialog({ onClose }: { onClose: () => void }) {
       )}
       {state.kind === "uptodate" && (
         <div className="about-stage">
-          <div className="about-stage-icon ok">✓</div>
+          <div className="about-stage-icon ok"><Icon name="check" size={22} /></div>
           <div className="about-stage-t">已是最新版本</div>
           <div className="about-stage-s">没有发现新版本</div>
         </div>
@@ -202,14 +202,14 @@ export function UpdateDialog({ onClose }: { onClose: () => void }) {
       )}
       {state.kind === "ready" && (
         <div className="about-stage">
-          <div className="about-stage-icon ok">✓</div>
+          <div className="about-stage-icon ok"><Icon name="check" size={22} /></div>
           <div className="about-stage-t">v{state.version} 已就绪</div>
           <div className="about-stage-s">重启后生效</div>
         </div>
       )}
       {state.kind === "error" && (
         <div className="about-stage">
-          <div className="about-stage-icon err">!</div>
+          <div className="about-stage-icon err"><Icon name="alert" size={22} /></div>
           <div className="about-stage-t">检查失败</div>
           <div className="about-stage-s">{state.message}</div>
         </div>
@@ -373,7 +373,7 @@ export function FeedbackDialog({
     return (
       <ModalShell title="反馈已发送" onClose={onClose} width={420}>
         <div className="about-stage">
-          <div className="about-stage-icon ok">✓</div>
+          <div className="about-stage-icon ok"><Icon name="check" size={22} /></div>
           <div className="about-stage-t">已为你打开 GitHub 提交页</div>
           <div className="about-stage-s">在浏览器中确认内容并点提交。</div>
         </div>

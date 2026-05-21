@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../ui/Icon";
 import { api } from "@/lib/api";
 import {
   clearCached,
@@ -17,7 +18,7 @@ interface Props {
 }
 
 /**
- * AI 模型选择器：输入框永远是真值（手填模型 id 也算数），右边一个 🔄 拉取
+ * AI 模型选择器：输入框永远是真值（手填模型 id 也算数），右边一个"拉取"
  * 按钮 + 一个 v 下拉按钮。下拉里是搜索框 + 分组（聚合站走 vendor/ 前缀分组）
  * + 内置预设兜底（拉不到时也能选）。结果按 provider 缓存 24h 到 localStorage。
  */
@@ -164,7 +165,7 @@ export function AIModelPicker({ provider, endpoint, value, onChange }: Props) {
           className="settings-btn"
           style={{ padding: "5px 8px", fontSize: 11 }}
         >
-          {loading ? "拉取中…" : "🔄 拉取"}
+          {loading ? "拉取中…" : <><Icon name="sync" size={11} /> 拉取</>}
         </button>
         <button
           type="button"
@@ -262,7 +263,7 @@ export function AIModelPicker({ provider, endpoint, value, onChange }: Props) {
                   color: "var(--text-3)",
                 }}
               >
-                {remote ? "没有匹配项" : "尚未拉取 · 点 🔄 联网获取"}
+                {remote ? "没有匹配项" : "尚未拉取 · 点上方拉取按钮联网获取"}
               </div>
             ) : (
               groups.map(([g, items]) => (

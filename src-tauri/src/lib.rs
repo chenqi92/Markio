@@ -2099,6 +2099,26 @@ fn secret_get(_account: String) -> Result<Option<String>, String> {
     Err("出于安全考虑，不允许从前端读取密钥明文".to_string())
 }
 
+/// 在 keychain 内复制条目：把 from 账户的明文取出，写到 to 账户。
+/// 明文不离开 Rust 进程。两个账户都必须在 is_allowed_secret_account 白名单里。
+/// 用途：RAG embedding 想复用 AI 助手某个 provider 的 key 时调用。
+#[tauri::command]
+fn secret_copy(from: String, to: String) -> Result<bool, String> {
+    validate_secret_account(&from)?;
+    validate_secret_account(&to)?;
+    if from == to {
+        return Ok(true);
+    }
+    match secrets::get(&from) {
+        Ok(Some(value)) => {
+            secrets::set(&to, &value).map_err(|e| format!("写入失败：{e}"))?;
+            Ok(true)
+        }
+        Ok(None) => Ok(false),
+        Err(e) => Err(format!("读取来源密钥失败：{e}")),
+    }
+}
+
 #[tauri::command]
 fn secret_has(account: String) -> Result<bool, String> {
     validate_secret_account(&account)?;
@@ -3564,6 +3584,7 @@ pub fn run() {
             fs_trash_purge,
             secret_set,
             secret_get,
+            secret_copy,
             secret_has,
             secret_delete,
             ai_chat,

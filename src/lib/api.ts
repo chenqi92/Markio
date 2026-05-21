@@ -457,6 +457,10 @@ export const api = {
   secretSet: (account: string, value: string) =>
     invoke<void>("secret_set", { account, value }),
   secretHas: (account: string) => invoke<boolean>("secret_has", { account }),
+  /** keychain 内复制：把 from 的明文写到 to。明文不出 Rust 进程。
+   *  返回 false = from 不存在；true = 已复制。 */
+  secretCopy: (from: string, to: string) =>
+    invoke<boolean>("secret_copy", { from, to }),
   secretDelete: (account: string) =>
     invoke<void>("secret_delete", { account }),
 

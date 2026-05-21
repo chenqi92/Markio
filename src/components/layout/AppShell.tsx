@@ -165,6 +165,9 @@ export function AppShell() {
           {
             fontSize,
             ["--sidebar-w" as never]: `${sidebarWidth}px`,
+            // 把"正文字号"也暴露成 CSS 变量，让 .preview (markdown.css) 用 var(--prose-fs)
+            // 替换硬编码 16px / 17px / 14.5px，否则拖 slider 只动 slider 自己
+            ["--prose-fs" as never]: `${fontSize}px`,
           } as React.CSSProperties
         }
       >

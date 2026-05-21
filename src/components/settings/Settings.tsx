@@ -900,10 +900,11 @@ function Editor() {
   );
 }
 
+/** 网盘组列表：github 和 webdav 已经在上方各自的 GitSyncCard / WebDavCard 里
+ *  独立成卡，这里不再列以免用户在网盘组里点 github 跳到上方 git 卡，造成
+ *  "为什么 github 在网盘组里" 的困惑 (用户截图反馈)。 */
 const DRIVES = [
   { id: "icloud", name: "iCloud Drive", logo: "/brand/sync/icloud.svg", color: "#0a84ff", status: "未连接" },
-  { id: "github", name: "GitHub", logo: "/brand/sync/github.svg", color: "#1f1f23", status: "未连接" },
-  { id: "webdav", name: "WebDAV", icon: "cloud" as IconName, color: "#a05a14", status: "未连接" },
   { id: "s3", name: "AWS S3 / 兼容", icon: "database" as IconName, color: "#ff9900", status: "未连接" },
   { id: "drop", name: "Dropbox", logo: "/brand/sync/dropbox.svg", color: "#0061ff", status: "未连接" },
   { id: "drive", name: "Google Drive", logo: "/brand/sync/googledrive.svg", color: "#34c759", status: "未连接" },
@@ -1002,12 +1003,17 @@ function Sync() {
     [t],
   );
 
-  // 5 个存储目标的概览行；状态 dot 只反映"是否已配置"，
-  // 真实联通性还要看下方各卡片自己的 probe。
+  // 4 个存储目标的概览行；状态 dot 只反映"是否已配置"，
+  // 真实联通性还要看下方各卡片自己的 probe。S3 是网盘组里的一项，不单独列。
   const enabledDrives = Object.entries(driveConfigs).filter(([id, c]) => {
     if (id === "github" || id === "webdav") return false; // 这俩有专用卡，不计入网盘
     return c?.folder && c?.enabled;
   }).length;
+  // s3 在网盘组里有 drawer，但其实写入用 s3Bucket/s3AccessKeyId 两个全局 settings；
+  // 概览展示 "S3 已配置" 计入网盘组的数量。
+  const s3Configured = !!(s3Bucket && s3AccessKeyId);
+  const totalDriveCount = enabledDrives + (s3Configured ? 1 : 0);
+
   const targets: Array<{
     id: string;
     label: string;
@@ -1033,17 +1039,13 @@ function Sync() {
       anchor: "mk-sync-card-webdav",
     },
     {
-      id: "s3",
-      label: "S3 / 兼容",
-      sub: s3Bucket && s3AccessKeyId ? `${s3Bucket}` : "未配置（图床用，不是双向同步）",
-      dot: s3Bucket && s3AccessKeyId ? "ok" : "off",
-      anchor: "mk-sync-card-drives",
-    },
-    {
       id: "drives",
-      label: "网盘组",
-      sub: enabledDrives > 0 ? `${enabledDrives} 个已启用` : "未启用 · iCloud / Dropbox / 等",
-      dot: enabledDrives > 0 ? "ok" : "off",
+      label: "网盘 / 对象存储",
+      sub:
+        totalDriveCount > 0
+          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive`
+          : "未启用 · iCloud / S3 / Dropbox / GDrive",
+      dot: totalDriveCount > 0 ? "ok" : "off",
       anchor: "mk-sync-card-drives",
     },
   ];
@@ -6529,8 +6531,22 @@ function About() {
     getVersion().then(setVersion).catch(() => setVersion("?"));
   }, []);
 
-  // 4 张底部链接卡：用户协议 / 隐私 / 开源许可 / 数据导出 —— 全部走 openExternal /
-  // 现有 api，没有引入新的依赖。许可与导出指向仓库内的源文件，给用户一个可追的入口。
+  const setToast = useUI((s) => s.setToast);
+  const flashToast = (stage: "done" | "error", message: string) => {
+    setToast({ stage, message });
+    window.setTimeout(() => setToast(null), 2400);
+  };
+
+  // 4 张底部链接卡：用户协议 / 隐私 / 开源许可 / 数据导出。
+  // 每个点击都包一层 try/catch + 弹 toast 反馈，避免 openExternal 失败时用户什么都看不到。
+  const openLink = async (url: string, label: string) => {
+    try {
+      await openExternal(url);
+      flashToast("done", `已在浏览器打开 ${label}`);
+    } catch (e) {
+      flashToast("error", `打开失败：${(e as Error).message}`);
+    }
+  };
   const footerCards: Array<{
     t: string;
     s: string;
@@ -6539,22 +6555,30 @@ function About() {
     {
       t: "用户协议",
       s: "使用条款 · 开源 MIT",
-      onClick: () => void openExternal("https://github.com/chenqi92/Markio/blob/main/LICENSE"),
+      onClick: () => void openLink("https://github.com/chenqi92/Markio/blob/main/LICENSE", "LICENSE"),
     },
     {
       t: "隐私",
       s: "本地优先 · 不上报数据",
-      onClick: () => void openExternal("https://github.com/chenqi92/Markio#privacy"),
+      onClick: () => void openLink("https://github.com/chenqi92/Markio#privacy", "隐私说明"),
     },
     {
       t: "开源许可",
       s: "查看依赖与三方协议",
-      onClick: () => void openExternal("https://github.com/chenqi92/Markio/blob/main/package.json"),
+      onClick: () =>
+        void openLink("https://github.com/chenqi92/Markio/blob/main/package.json", "package.json"),
     },
     {
       t: "数据导出",
       s: "打开崩溃日志目录",
-      onClick: () => void api.crashOpenDir().catch(() => undefined),
+      onClick: async () => {
+        try {
+          await api.crashOpenDir();
+          flashToast("done", "已在文件管理器中打开日志目录");
+        } catch (e) {
+          flashToast("error", `打开失败：${(e as Error).message}`);
+        }
+      },
     },
   ];
 

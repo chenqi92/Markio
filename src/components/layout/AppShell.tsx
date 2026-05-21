@@ -56,6 +56,49 @@ const BlockMenu = lazy(() =>
   import("../popovers/BlockMenu").then((m) => ({ default: m.BlockMenu })),
 );
 
+/** Settings / AIPanel 切入时 lazy chunk 还没下载完，body 区会出现一片白；
+ *  给一个轻量骨架：复用 .settings-workspace 的外壳 + 顶栏 + 左 nav 占位条，
+ *  视觉上不会跳。AI 模式骨架也类似但更轻。 */
+function SettingsSkeleton() {
+  return (
+    <div className="settings-workspace" aria-busy="true">
+      <div className="settings-topbar">
+        <div className="settings-topbar-l">
+          <div className="settings-mark" aria-hidden />
+          <div className="settings-topbar-tt">
+            <div className="sk-line" style={{ width: 64 }} />
+            <div className="sk-line sk-dim" style={{ width: 180, marginTop: 4 }} />
+          </div>
+        </div>
+      </div>
+      <div className="settings-body2">
+        <aside className="settings-nav2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="sk-line" style={{ height: 14, margin: "8px 6px" }} />
+          ))}
+        </aside>
+        <div className="settings-main2" />
+      </div>
+    </div>
+  );
+}
+
+function AiSkeleton() {
+  return (
+    <div className="ai-workspace" aria-busy="true">
+      <div className="ai-top">
+        <div className="ai-top-l">
+          <div className="ai-glow" />
+          <div>
+            <div className="sk-line" style={{ width: 56 }} />
+            <div className="sk-line sk-dim" style={{ width: 220, marginTop: 4 }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell() {
   const sidebarOpen = useUI((s) => s.sidebarOpen);
   const sidebarWidth = useUI((s) => s.sidebarWidth);
@@ -90,6 +133,30 @@ export function AppShell() {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
   }, [activeWorkspaceId, refreshTree]);
 
+  // 预热 Settings + AIPanel chunk：用户首次切换时 lazy import 已经 in-flight 或好了，
+  // 不再出现空白中间态。idle callback 推后，不影响初次绘制。
+  useEffect(() => {
+    const idle =
+      typeof window !== "undefined" &&
+      typeof (window as Window & { requestIdleCallback?: (cb: IdleRequestCallback) => number }).requestIdleCallback ===
+        "function"
+        ? (window as Window & { requestIdleCallback: (cb: IdleRequestCallback) => number }).requestIdleCallback
+        : (cb: () => void) => window.setTimeout(cb, 800);
+    const handle = idle(() => {
+      void import("../settings/Settings");
+      void import("../popovers/AIPanel");
+    });
+    return () => {
+      const cancel =
+        typeof window !== "undefined" &&
+        typeof (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback ===
+          "function"
+          ? (window as Window & { cancelIdleCallback: (h: number) => void }).cancelIdleCallback
+          : (h: number) => window.clearTimeout(h);
+      cancel(handle as number);
+    };
+  }, []);
+
   return (
     <div className="markio-root">
       <div
@@ -103,11 +170,11 @@ export function AppShell() {
       >
         <TitleBar />
         {settingsOpen ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<SettingsSkeleton />}>
             <Settings onClose={() => openSettings(false)} />
           </Suspense>
         ) : aiOpen ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<AiSkeleton />}>
             <AIPanel onClose={() => openAi(false)} />
           </Suspense>
         ) : (

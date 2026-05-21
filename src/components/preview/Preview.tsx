@@ -7,7 +7,10 @@ import {
   topLineFromScroll,
   type LineAnchor,
 } from "@/lib/scrollSync";
-import { registerPane as registerScrollPane } from "@/lib/splitScrollSync";
+import {
+  registerPane as registerScrollPane,
+  syncPreviewToSource,
+} from "@/lib/splitScrollSync";
 import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
@@ -80,6 +83,31 @@ function escapeHtml(input: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function markdownTaskLines(source: string): Array<{ line: number; checked: boolean }> {
+  return source.split(/\r?\n/).reduce<Array<{ line: number; checked: boolean }>>(
+    (out, text, index) => {
+      const m = text.match(/^\s*[-*+]\s+\[([ xX])\]/);
+      if (m) out.push({ line: index + 1, checked: m[1].toLowerCase() === "x" });
+      return out;
+    },
+    [],
+  );
+}
+
+function toggleMarkdownTaskLine(source: string, lineNumber: number): string | null {
+  const lines = source.split(/\r?\n/);
+  const line = lines[lineNumber - 1];
+  if (line == null) return null;
+  const next = line.replace(
+    /^(\s*[-*+]\s+\[)([ xX])(\])/,
+    (_match, before: string, mark: string, after: string) =>
+      `${before}${mark.toLowerCase() === "x" ? " " : "x"}${after}`,
+  );
+  if (next === line) return null;
+  lines[lineNumber - 1] = next;
+  return lines.join("\n");
+}
+
 /**
  * Render markdown by delegating to the Rust backend (pulldown-cmark + syntect),
  * then inject the resulting HTML. The frontend only paints; parsing/highlighting
@@ -100,6 +128,8 @@ export function Preview({
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [html, setHtml] = useState("");
+  const sourceRef = useRef(source);
+  const onSourceChangeRef = useRef(onSourceChange);
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
   const findQuery = useUI((s) => s.findQuery);
@@ -116,6 +146,11 @@ export function Preview({
 
   const fm = useMemo(() => parseFrontmatter(source), [source]);
   const viewKind = fm.data.view?.toLowerCase();
+
+  useEffect(() => {
+    sourceRef.current = source;
+    onSourceChangeRef.current = onSourceChange;
+  }, [source, onSourceChange]);
 
   useEffect(() => {
     if (activeWorkspace) {
@@ -410,6 +445,7 @@ export function Preview({
     const rebuildAnchors = () => {
       if (cancelled || !container) return;
       anchorsRef.current = buildPreviewAnchors(container);
+      if (syncScroll) syncPreviewToSource();
     };
     const scheduleRebuild = () => {
       if (rebuildPending) window.clearTimeout(rebuildPending);
@@ -445,7 +481,7 @@ export function Preview({
       resizeObserver?.disconnect();
       if (rebuildPending) window.clearTimeout(rebuildPending);
     };
-  }, [html, theme, applyScrollTarget, vaultFiles]);
+  }, [html, theme, applyScrollTarget, vaultFiles, syncScroll]);
 
   // Find 高亮：扫描文字节点，包 <mark class="find-hit">。
   // 当前命中项单独切换，避免“下一处”时重扫整篇预览。
@@ -706,7 +742,38 @@ export function Preview({
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
+    const tasks = markdownTaskLines(source);
+    el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(
+      (input, index) => {
+        const task = tasks[index];
+        if (!task) return;
+        input.disabled = false;
+        input.dataset.sourceLine = String(task.line);
+        input.checked = task.checked;
+        input.setAttribute(
+          "aria-label",
+          task.checked ? "标记为未完成" : "标记为完成",
+        );
+      },
+    );
+  }, [html, source]);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
     const handler = (e: MouseEvent) => {
+      const checkbox = (e.target as HTMLElement).closest<HTMLInputElement>(
+        'input[type="checkbox"][data-source-line]',
+      );
+      if (checkbox) {
+        e.preventDefault();
+        e.stopPropagation();
+        const line = Number(checkbox.dataset.sourceLine);
+        if (!Number.isFinite(line)) return;
+        const next = toggleMarkdownTaskLine(sourceRef.current, line);
+        if (next != null) onSourceChangeRef.current?.(next);
+        return;
+      }
       const a = (e.target as HTMLElement).closest("a");
       if (!a) return;
       if (a.classList.contains("wikilink")) {

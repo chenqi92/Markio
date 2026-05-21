@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   registerPane,
   resetSplitScrollSync,
+  syncPreviewToSource,
   type PaneHandle,
 } from "./splitScrollSync";
 
@@ -54,6 +55,51 @@ describe("splitScrollSync", () => {
     src.state.topLine = 42.5;
     srcEl.dispatchEvent(new Event("scroll"));
     expect(dst.getCallsTopLine()).toEqual([42.5]);
+  });
+
+  it("aligns preview from current source position after both panes register", () => {
+    vi.useFakeTimers();
+    const srcEl = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcEl, dstEl);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    src.state.topLine = 33;
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    vi.runAllTimers();
+    expect(dst.getCallsTopLine()).toEqual([33]);
+  });
+
+  it("can actively re-sync preview after anchors are rebuilt", () => {
+    vi.useFakeTimers();
+    const srcEl = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcEl, dstEl);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    vi.runAllTimers();
+    src.state.topLine = 44;
+    syncPreviewToSource();
+    vi.runAllTimers();
+    expect(dst.getCallsTopLine()).toContain(44);
+  });
+
+  it("listens to additional scroll elements", () => {
+    const srcEl = document.createElement("div");
+    const srcOuter = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcOuter, srcEl, dstEl);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    src.pane.eventEls = [srcOuter];
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    src.state.topLine = 66;
+    srcOuter.dispatchEvent(new Event("scroll"));
+    expect(dst.getCallsTopLine()).toContain(66);
   });
 
   it("preview scroll forwards top line to source", () => {

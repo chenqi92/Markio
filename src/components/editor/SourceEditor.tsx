@@ -216,8 +216,10 @@ export const SourceEditor = memo(function SourceEditor({
       registerScrollPane("source", null);
       return;
     }
+    const outerScroll = view.scrollDOM.closest<HTMLElement>(".editor-pane");
     registerScrollPane("source", {
       el: view.scrollDOM,
+      eventEls: outerScroll ? [outerScroll] : undefined,
       getTopLine: () => {
         try {
           const top = view.scrollDOM.scrollTop;
@@ -242,12 +244,19 @@ export const SourceEditor = memo(function SourceEditor({
           Math.min(view.state.doc.lines, Math.floor(line)),
         );
         const docLine = view.state.doc.line(lineNo);
-        const block = view.lineBlockAt(docLine.from);
+        view.dispatch({
+          effects: EditorView.scrollIntoView(docLine.from, { y: "start" }),
+        });
         const frac = Math.max(0, line - lineNo);
-        const next = block.top + (frac > 0 ? frac * block.height : 0);
-        if (!Number.isFinite(next)) return false;
-        if (Math.abs(el.scrollTop - next) < 1) return true;
-        el.scrollTop = next;
+        if (frac > 0) {
+          window.requestAnimationFrame(() => {
+            const block = view.lineBlockAt(docLine.from);
+            const next = block.top + frac * block.height;
+            if (Number.isFinite(next) && Math.abs(el.scrollTop - next) >= 1) {
+              el.scrollTop = next;
+            }
+          });
+        }
         return true;
       },
       getRatio: () => {

@@ -21,9 +21,11 @@ import { api } from "@/lib/api";
 import { getEditor, replaceRange } from "@/lib/editor-bridge";
 import {
   applyTableAction,
+  applyTableActionToText,
   detectTable,
   findAllTablesInText,
   tableCellSourcePos,
+  type TableAction,
   type TableSelectionRect,
 } from "./table-edit";
 import { EditorSelection } from "@codemirror/state";
@@ -145,6 +147,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     rows: number;
     cols: number;
     rect: TableSelectionRect | null;
+    tableIndex?: number;
   } | null>(null);
   const [ac, setAc] = useState<{
     kind: AcKind;
@@ -580,6 +583,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         rows: info.rows,
         cols: info.cols,
         rect: info.rect,
+        tableIndex: undefined,
       });
     },
     [],
@@ -730,18 +734,31 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const handleTableCellContext = useCallback(
     (info: { tableIndex: number; row: number; col: number; x: number; y: number }) => {
       const view = getEditor();
-      if (!view) return;
-      const tables = findAllTablesInText(view.state.doc.toString());
+      const src = view?.state.doc.toString() ?? tab?.content ?? "";
+      const tables = findAllTablesInText(src);
       const target = tables[info.tableIndex];
       if (!target) return;
-      const pos = tableCellSourcePos(view, target.topLine, info.row, info.col);
-      if (pos == null) return;
-      view.dispatch({
-        selection: EditorSelection.cursor(pos),
-        scrollIntoView: false,
-      });
+      let tinfo: ReturnType<typeof detectTable> | null = null;
+      if (view) {
+        const pos = tableCellSourcePos(view, target.topLine, info.row, info.col);
+        if (pos == null) return;
+        view.dispatch({
+          selection: EditorSelection.cursor(pos),
+          scrollIntoView: false,
+        });
+        tinfo = detectTable(view);
+      }
+      const tableLines = src
+        .slice(target.from, target.to)
+        .split(/\r?\n/)
+        .filter((line) => /^\s*\|/.test(line));
+      const headerCols =
+        tableLines[0]
+          ?.trim()
+          .replace(/^\||\|$/g, "")
+          .split("|").length ?? 1;
+      const rowCount = Math.max(1, tableLines.length - 1);
       // 拿一下当前 table info 用于 menu 标题
-      const tinfo = detectTable(view);
       setBubble(null);
       setSlash(null);
       setTableTb(null);
@@ -750,34 +767,62 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         y: info.y,
         row: tinfo ? Math.max(0, tinfo.cursorRow) : info.row,
         col: tinfo?.cursorCol ?? info.col,
-        rows: tinfo?.cells.length ?? 1,
-        cols: tinfo?.aligns.length ?? 1,
+        rows: tinfo?.cells.length ?? rowCount,
+        cols: tinfo?.aligns.length ?? headerCols,
         rect: null,
+        tableIndex: info.tableIndex,
       });
     },
-    [],
+    [tab?.content],
   );
 
   // Preview 的 "+ 行 / + 列" 快捷按钮：定位到表格末尾对应位置后调用现有 applyTableAction
   const handleTableQuickAdd = useCallback(
     (info: { tableIndex: number; kind: "row" | "col"; after: number }) => {
       const view = getEditor();
-      if (!view) return;
-      const tables = findAllTablesInText(view.state.doc.toString());
+      const src = view?.state.doc.toString() ?? tab?.content ?? "";
+      const tables = findAllTablesInText(src);
       const target = tables[info.tableIndex];
       if (!target) return;
       // 行：定位到最后一行；列：定位到最后一列
       const row = info.kind === "row" ? info.after : 1;
       const col = info.kind === "col" ? info.after : 0;
-      const pos = tableCellSourcePos(view, target.topLine, row, col);
-      if (pos == null) return;
-      view.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: false });
-      applyTableAction(
-        view,
-        info.kind === "row" ? { type: "insertRowBelow" } : { type: "insertColRight" },
-      );
+      const action: TableAction =
+        info.kind === "row" ? { type: "insertRowBelow" } : { type: "insertColRight" };
+      if (view) {
+        const pos = tableCellSourcePos(view, target.topLine, row, col);
+        if (pos == null) return;
+        view.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: false });
+        applyTableAction(view, action);
+        return;
+      }
+      if (!tabId) return;
+      const next = applyTableActionToText(src, info.tableIndex, { row, col }, action);
+      if (next != null) updateContent(tabId, next);
     },
-    [],
+    [tab?.content, tabId, updateContent],
+  );
+
+  const handlePreviewTableAction = useCallback(
+    (tableIndex: number | undefined, row: number, col: number, action: TableAction) => {
+      if (tableIndex == null || !tabId) return false;
+      const view = getEditor();
+      if (view) {
+        const tables = findAllTablesInText(view.state.doc.toString());
+        const target = tables[tableIndex];
+        if (!target) return false;
+        const pos = tableCellSourcePos(view, target.topLine, row, col);
+        if (pos == null) return false;
+        view.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: false });
+        return applyTableAction(view, action);
+      }
+      const src = tab?.content ?? "";
+      const next = applyTableActionToText(src, tableIndex, { row, col }, action);
+      if (next == null) return false;
+      updateContent(tabId, next);
+      return true;
+    },
+    [tab?.content, tabId, updateContent],
   );
 
   const handleSlashTrigger = useCallback((coords: { x: number; y: number }) => {
@@ -928,6 +973,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           rows={tableMenu.rows}
           cols={tableMenu.cols}
           rect={tableMenu.rect}
+          tableIndex={tableMenu.tableIndex}
+          onAction={handlePreviewTableAction}
           onClose={() => setTableMenu(null)}
         />
       )}

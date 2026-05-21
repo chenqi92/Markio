@@ -15,6 +15,8 @@
 export interface PaneHandle {
   /** 真正的 scroll 元素（CM 的 scrollDOM 或 .preview-pane）。 */
   el: HTMLElement;
+  /** 额外监听的滚动元素；用于覆盖外层容器才是真实 scroll target 的布局。 */
+  eventEls?: HTMLElement[];
   /** 取视口顶部对应的（分数）源码行号；anchors / 探针不可用时返回 null。 */
   getTopLine: () => number | null;
   /** 把视口顶部对齐到指定源码行号（分数）。返回 false 表示当前无法按行同步。 */
@@ -67,6 +69,10 @@ function syncFrom(origin: Role) {
   dstSlot.pane.setRatio(src.getRatio());
 }
 
+function scheduleSyncFrom(origin: Role) {
+  setTimeout(() => syncFrom(origin), 0);
+}
+
 export function registerPane(role: Role, pane: PaneHandle | null): void {
   const existing = slots[role];
   if (existing) {
@@ -75,11 +81,27 @@ export function registerPane(role: Role, pane: PaneHandle | null): void {
   }
   if (!pane) return;
   const handler = () => syncFrom(role);
-  pane.el.addEventListener("scroll", handler, { passive: true });
+  const eventEls = Array.from(new Set([pane.el, ...(pane.eventEls ?? [])]));
+  for (const el of eventEls) {
+    el.addEventListener("scroll", handler, { passive: true });
+  }
   slots[role] = {
     pane,
-    detach: () => pane.el.removeEventListener("scroll", handler),
+    detach: () => {
+      for (const el of eventEls) {
+        el.removeEventListener("scroll", handler);
+      }
+    },
   };
+  if (slots.source && slots.preview) {
+    scheduleSyncFrom("source");
+  }
+}
+
+/** 主动用当前源码窗格位置刷新预览；预览异步重排 / 锚点重建后调用。 */
+export function syncPreviewToSource(): void {
+  if (!slots.source || !slots.preview) return;
+  scheduleSyncFrom("source");
 }
 
 /** 测试 / 切到非分屏视图时手动清场。 */

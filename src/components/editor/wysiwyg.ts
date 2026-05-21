@@ -442,8 +442,9 @@ class TaskCheckbox extends WidgetType {
   toDOM(): HTMLElement {
     const el = document.createElement("span");
     el.className = "cm-md-task " + (this.checked ? "checked" : "");
-    el.textContent = this.checked ? "✓" : "";
-    el.setAttribute("aria-hidden", "true");
+    el.setAttribute("role", "checkbox");
+    el.setAttribute("aria-checked", String(this.checked));
+    el.setAttribute("aria-label", this.checked ? "标记为未完成" : "标记为完成");
     return el;
   }
   ignoreEvent() {

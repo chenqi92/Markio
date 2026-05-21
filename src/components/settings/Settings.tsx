@@ -4708,6 +4708,60 @@ function RerankCard() {
   );
 }
 
+/** 已知支持 OpenAI 兼容 /v1/embeddings 协议的提供方预设：选一个就自动填好
+ *  base_url + 推荐模型 + 维度 + 应该到哪个 keychain 账户去取 key。 */
+const EMBEDDING_PRESETS: ReadonlyArray<{
+  /** 对应 AI 助手页 aiProvider 的 id；用于"复用 AI 助手 Key" */
+  aiProviderId: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+  dim: number;
+}> = [
+  {
+    aiProviderId: "openai",
+    label: "OpenAI · text-embedding-3-small (1536)",
+    baseUrl: "https://api.openai.com",
+    model: "text-embedding-3-small",
+    dim: 1536,
+  },
+  {
+    aiProviderId: "siliconflow",
+    label: "SiliconFlow · BAAI/bge-m3 (1024)",
+    baseUrl: "https://api.siliconflow.cn",
+    model: "BAAI/bge-m3",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "zhipu",
+    label: "智谱 GLM · embedding-2 (1024)",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "embedding-2",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "dashscope",
+    label: "通义千问 · text-embedding-v3 (1024)",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "text-embedding-v3",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "mistral",
+    label: "Mistral · mistral-embed (1024)",
+    baseUrl: "https://api.mistral.ai/v1",
+    model: "mistral-embed",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "together",
+    label: "Together · BAAI/bge-base-en-v1.5 (768)",
+    baseUrl: "https://api.together.xyz/v1",
+    model: "BAAI/bge-base-en-v1.5",
+    dim: 768,
+  },
+];
+
 function RagSettings() {
   const provider = useSettings((s) => s.ragProvider);
   const enabled = useSettings((s) => s.ragEnabled);
@@ -4720,6 +4774,7 @@ function RagSettings() {
   const openaiBaseUrl = useSettings((s) => s.ragOpenaiBaseUrl);
   const openaiModel = useSettings((s) => s.ragOpenaiModel);
   const openaiDim = useSettings((s) => s.ragOpenaiDim);
+  const aiProvider = useSettings((s) => s.aiProvider);
   const setPreference = useSettings((s) => s.setPreference);
 
   const [openaiKeyDraft, setOpenaiKeyDraft] = useState("");
@@ -4727,6 +4782,27 @@ function RagSettings() {
   const [savingKey, setSavingKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const confirmDialog = useDialog((s) => s.confirm);
+
+  /** 一键把某个预设的 base_url / model / dim 应用到 OpenAI 兼容设置，并把
+   *  对应 AI 助手的 keychain key (ai:{provider}) 在 Rust 端复制到 embed:openai。
+   *  Key 明文不经过前端。 */
+  const applyPreset = async (preset: typeof EMBEDDING_PRESETS[number]) => {
+    setPreference("ragProvider", "openai");
+    setPreference("ragOpenaiBaseUrl", preset.baseUrl);
+    setPreference("ragOpenaiModel", preset.model);
+    setPreference("ragOpenaiDim", preset.dim);
+    try {
+      const copied = await api.secretCopy(`ai:${preset.aiProviderId}`, "embed:openai");
+      if (copied) {
+        setOpenaiKeyConfigured(true);
+        setMsg(`✓ 已应用 ${preset.label}（已复用 ${preset.aiProviderId} 的 Key）`);
+        return;
+      }
+    } catch {
+      /* keychain 操作失败时静默 fall through */
+    }
+    setMsg(`✓ 已应用 ${preset.label} · 请在下方填入 API Key`);
+  };
 
   // 当前活动 workspace
   const wsLoaded = useWorkspaceForRag();
@@ -4991,6 +5067,34 @@ function RagSettings() {
           </>
         ) : (
           <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <LabelWithTip tip="选一个已知支持 embedding 的提供方，自动填好 Base URL / 模型 / 维度，并尝试复用 AI 助手已存的 Key。Anthropic / Google Gemini / 本地 Ollama 不在这个列表（前者无 embedding API、Gemini 协议不同、Ollama 用本地选项）。">
+                  快速预设
+                </LabelWithTip>
+                <div className="settings-help">
+                  当前 AI 助手是「{aiProvider}」
+                  {EMBEDDING_PRESETS.find((p) => p.aiProviderId === aiProvider)
+                    ? "，可直接一键应用"
+                    : "，不在预设列表（需手填）"}
+                </div>
+              </div>
+              <SelectBtn
+                value=""
+                options={[
+                  { value: "", label: "选一个预设…" },
+                  ...EMBEDDING_PRESETS.map((p) => ({
+                    value: p.aiProviderId,
+                    label: p.label,
+                  })),
+                ]}
+                onChange={(v) => {
+                  const preset = EMBEDDING_PRESETS.find((p) => p.aiProviderId === v);
+                  if (preset) void applyPreset(preset);
+                }}
+                minMenuWidth={320}
+              />
+            </div>
             <div className="settings-row">
               <div className="settings-row-l">
                 <LabelWithTip tip="填写兼容 OpenAI Embedding 协议的服务地址。">

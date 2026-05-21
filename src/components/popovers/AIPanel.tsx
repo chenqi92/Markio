@@ -502,6 +502,15 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             <Icon name="sliders" size={12} />
             <span>上下文</span>
           </button>
+          <button
+            type="button"
+            className="ai-top-close"
+            onClick={onClose}
+            title="返回编辑器 (esc)"
+            aria-label="关闭"
+          >
+            <Icon name="x" size={13} />
+          </button>
         </div>
       </div>
 

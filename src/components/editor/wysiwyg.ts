@@ -17,7 +17,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
-import { cursorInsideRange, detectMathRanges, type MathRange } from "@/lib/math-ranges";
+import { cursorInsideRange, detectMathRanges } from "@/lib/math-ranges";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";

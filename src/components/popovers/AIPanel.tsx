@@ -472,16 +472,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const cancelStream = async () => {
-    // bump 在 await 之前——in-flight 的 chunk 立刻被视为 stale，
-    // 不会再写入 message（避免"取消后还在长字"的视觉 bug）
-    streamTokenRef.current++;
-    const fn = streamCancelRef.current;
-    streamCancelRef.current = null;
-    setBusy(false);
-    if (fn) await fn();
-  };
-
   return (
     <div className="ai-workspace">
       <div className="ai-top">
@@ -707,7 +697,6 @@ function AIInputBar({
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
   const setAi = useSettings((s) => s.setAi);
-  const setToast = useUI((s) => s.setToast);
   const openSettings = useUI((s) => s.openSettings);
   const model = useSettings((s) => s.aiModel);
   const ws = useWorkspace((s) => s.activeWorkspace());

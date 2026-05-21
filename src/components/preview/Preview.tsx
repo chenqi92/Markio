@@ -275,7 +275,6 @@ export function Preview({
     if (!root) return;
 
     const cellRowCol = (
-      table: HTMLTableElement,
       cell: HTMLTableCellElement,
     ): { row: number; col: number } | null => {
       const tr = cell.parentElement;
@@ -325,7 +324,7 @@ export function Preview({
       if (!cell) return;
       const table = cell.closest("table") as HTMLTableElement | null;
       if (!table || !root.contains(table)) return;
-      const rc = cellRowCol(table, cell);
+      const rc = cellRowCol(cell);
       if (!rc) return;
       e.preventDefault();
       h({

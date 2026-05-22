@@ -128,6 +128,7 @@ export function AppShell() {
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const fontSize = useSettings((s) => s.fontSize);
+  const workspaceOverlayOpen = settingsOpen || aiOpen;
 
   useEffect(() => {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
@@ -172,16 +173,15 @@ export function AppShell() {
         }
       >
         <TitleBar />
-        {settingsOpen ? (
-          <Suspense fallback={<SettingsSkeleton />}>
-            <Settings onClose={() => openSettings(false)} />
-          </Suspense>
-        ) : aiOpen ? (
-          <Suspense fallback={<AiSkeleton />}>
-            <AIPanel onClose={() => openAi(false)} />
-          </Suspense>
-        ) : (
-          <div className={classNames("body", !sidebarOpen && "no-sidebar")}>
+        <div className="workspace-stage">
+          <div
+            className={classNames(
+              "body",
+              !sidebarOpen && "no-sidebar",
+              workspaceOverlayOpen && "shell-obscured",
+            )}
+            aria-hidden={workspaceOverlayOpen ? "true" : undefined}
+          >
             {sidebarOpen && <Sidebar />}
             {sidebarOpen && <SidebarResizer />}
             <div className={classNames("main", focusMode && "focus")}>
@@ -203,7 +203,21 @@ export function AppShell() {
               </Suspense>
             </div>
           </div>
-        )}
+          {settingsOpen && (
+            <div className="workspace-overlay">
+              <Suspense fallback={<SettingsSkeleton />}>
+                <Settings onClose={() => openSettings(false)} />
+              </Suspense>
+            </div>
+          )}
+          {!settingsOpen && aiOpen && (
+            <div className="workspace-overlay">
+              <Suspense fallback={<AiSkeleton />}>
+                <AIPanel onClose={() => openAi(false)} />
+              </Suspense>
+            </div>
+          )}
+        </div>
         <StatusBar />
       </div>
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parseImageMarkdown } from "./wysiwyg";
+import {
+  imageWidthFromTitle,
+  setImageMarkdownWidth,
+} from "@/lib/markdown-images";
 
 describe("parseImageMarkdown", () => {
   it("parses bare image", () => {
@@ -34,5 +38,18 @@ describe("parseImageMarkdown", () => {
   it("rejects whitespace-only url", () => {
     // url group requires \S+ — empty / whitespace url does not match
     expect(parseImageMarkdown("![alt](   )")).toBeNull();
+  });
+  it("reads and updates image width metadata in title", () => {
+    expect(imageWidthFromTitle("width=50%")).toBe("50%");
+    expect(imageWidthFromTitle("caption width=320px")).toBe("320px");
+    expect(setImageMarkdownWidth("![pic](https://x.test/a.png)", "50%")).toBe(
+      '![pic](https://x.test/a.png "width=50%")',
+    );
+    expect(
+      setImageMarkdownWidth('![pic](https://x.test/a.png "caption width=50%")', "75%"),
+    ).toBe('![pic](https://x.test/a.png "caption width=75%")');
+    expect(
+      setImageMarkdownWidth('![pic](https://x.test/a.png "caption width=75%")', null),
+    ).toBe('![pic](https://x.test/a.png "caption")');
   });
 });

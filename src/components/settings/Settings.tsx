@@ -221,12 +221,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div className="settings-search-top">
             <Icon name="search" size={12} />
             <input
+              className="settings-search-input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("settings.searchPlaceholder", { defaultValue: "搜索设置…" })}
               aria-label={t("settings.searchPlaceholder", { defaultValue: "搜索设置…" })}
             />
-            <span className="kbd">⌘ ,</span>
+            {query ? (
+              <button
+                type="button"
+                className="settings-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="清空搜索"
+                title="清空搜索"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            ) : (
+              <span className="kbd">⌘,</span>
+            )}
           </div>
           <button
             type="button"

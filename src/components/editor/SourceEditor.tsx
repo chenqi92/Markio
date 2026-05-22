@@ -13,6 +13,7 @@ import { useUI } from "@/stores/ui";
 import { registerEditor } from "@/lib/editor-bridge";
 import { writeText } from "@/lib/clipboard";
 import { markdownCommands } from "@/lib/markdown-commands";
+import { parseImageMarkdown, type ImageParts } from "@/lib/markdown-images";
 import {
   clearTableRect,
   moveTableCell,
@@ -55,6 +56,7 @@ interface Props {
   onEditorContextMenu?: (info: {
     coords: { x: number; y: number };
     pos: number;
+    image?: (ImageParts & { from: number; to: number }) | null;
   }) => void;
   onSlashTrigger?: (coords: { x: number; y: number }) => void;
   onAutocompleteUpdate?: (
@@ -525,9 +527,21 @@ export const SourceEditor = memo(function SourceEditor({
           const pos =
             view.posAtCoords({ x: e.clientX, y: e.clientY }) ??
             view.state.selection.main.head;
+          let image: (ImageParts & { from: number; to: number }) | null = null;
+          const imageHost = target?.closest<HTMLElement>(".cm-md-img-widget");
+          if (imageHost) {
+            const from = view.posAtDOM(imageHost);
+            const len = Number(imageHost.dataset.sourceLength);
+            if (from != null && Number.isFinite(len) && len > 0) {
+              const to = Math.min(view.state.doc.length, from + len);
+              const parts = parseImageMarkdown(view.state.sliceDoc(from, to));
+              if (parts) image = { ...parts, from, to };
+            }
+          }
           onEditorContextMenu({
             coords: { x: e.clientX, y: e.clientY },
             pos,
+            image,
           });
         }
         return;

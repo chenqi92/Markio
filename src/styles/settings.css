@@ -585,28 +585,73 @@
 
 .settings-topbar-r { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .settings-search-top {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px;
-  width: 280px;
-  background: var(--bg-pane);
-  border: 0.5px solid var(--border-strong);
-  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(360px, 34vw);
+  height: 36px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
   color: var(--text-3);
+  transition: border-color var(--tr), box-shadow var(--tr), background var(--tr);
 }
-.settings-search-top input {
-  flex: 1; border: 0; background: transparent;
-  font-size: 12px; color: var(--text); outline: none;
+.settings-search-top:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background: var(--bg-modal, var(--bg-window));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-search-top > svg {
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+.settings-search-top input,
+.settings-workspace .settings-search-top input,
+.settings-workspace .settings-search-top .settings-search-input {
+  flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 13px !important;
+  line-height: 36px;
+  outline: none;
+}
+.settings-workspace .settings-search-top input:focus {
+  border-color: transparent;
+  box-shadow: none;
 }
 .settings-search-top input::placeholder { color: var(--text-3); }
 .settings-search-top .kbd {
   font-family: var(--font-mono);
   font-size: 10px;
-  padding: 1px 5px;
-  background: var(--bg-pane-2);
-  border-radius: 4px;
+  padding: 2px 6px;
+  background: transparent;
+  border-radius: 6px;
   border: 0.5px solid var(--border);
   color: var(--text-3);
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.settings-search-clear {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.settings-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 .settings-close {
   width: 32px; height: 32px;

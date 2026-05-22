@@ -8,7 +8,13 @@ import { EditorSelection } from "@codemirror/state";
 import { markdownCommands } from "@/lib/markdown-commands";
 import { wrapSelection } from "@/lib/editor-bridge";
 import { readText, writeText } from "@/lib/clipboard";
+import {
+  parseImageMarkdown,
+  setImageMarkdownWidth,
+  type ImageParts,
+} from "@/lib/markdown-images";
 import { openExternal } from "@/lib/opener";
+import { useDialog } from "@/stores/dialog";
 import type { CtxItem } from "@/components/popovers/ContextMenu";
 
 export interface EditorContext {
@@ -58,8 +64,10 @@ export function detectContext(view: EditorView, pos: number): EditorContext {
   const imageNode = findEnclosing(view, pos, IMAGE_NAMES);
   if (imageNode) {
     const text = view.state.sliceDoc(imageNode.from, imageNode.to);
-    const m = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-    if (m) image = { alt: m[1], src: m[2], from: imageNode.from, to: imageNode.to };
+    const parts = parseImageMarkdown(text);
+    if (parts) {
+      image = { alt: parts.alt, src: parts.url, from: imageNode.from, to: imageNode.to };
+    }
   }
 
   let inCodeBlock: EditorContext["inCodeBlock"] = null;
@@ -110,8 +118,23 @@ export function detectContext(view: EditorView, pos: number): EditorContext {
 export interface BuildItemsDeps {
   view: EditorView;
   pos: number;
+  image?: (ImageParts & { from: number; to: number }) | null;
   modifierLabel: (mac: string, win: string) => string;
   toast: (msg: string) => void;
+}
+
+function setImageWidth(
+  view: EditorView,
+  image: ImageParts & { from: number; to: number },
+  width: string | null,
+) {
+  const text = view.state.sliceDoc(image.from, image.to);
+  const next = setImageMarkdownWidth(text, width);
+  if (!next || next === text) return;
+  view.dispatch({
+    changes: { from: image.from, to: image.to, insert: next },
+    selection: EditorSelection.cursor(image.from + next.length),
+  });
 }
 
 export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
@@ -121,6 +144,11 @@ export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
     view.dispatch({ selection: EditorSelection.single(pos) });
   }
   const ctx = detectContext(view, pos);
+  const image =
+    deps.image ??
+    (ctx.image
+      ? { alt: ctx.image.alt, url: ctx.image.src, from: ctx.image.from, to: ctx.image.to }
+      : null);
   const items: CtxItem[] = [];
 
   // ─── 剪贴板 ───
@@ -195,8 +223,8 @@ export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
   }
 
   // ─── 图片区域 ───
-  if (ctx.image) {
-    const src = ctx.image.src;
+  if (image) {
+    const src = image.url;
     items.push({
       label: "复制图片地址",
       icon: "copy",
@@ -207,6 +235,39 @@ export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
       icon: "external",
       onClick: () => {
         void openExternal(src);
+      },
+    });
+    items.push({ sep: true });
+    const addWidthItem = (label: string, width: string | null) => {
+      items.push({
+        label,
+        onClick: () => setImageWidth(view, image, width),
+      });
+    };
+    addWidthItem("图片宽度 25%", "25%");
+    addWidthItem("图片宽度 50%", "50%");
+    addWidthItem("图片宽度 75%", "75%");
+    addWidthItem("图片宽度 100%", "100%");
+    addWidthItem("清除图片宽度", null);
+    items.push({
+      label: "自定义图片宽度...",
+      onClick: () => {
+        void useDialog
+          .getState()
+          .prompt({
+            title: "图片宽度",
+            defaultValue: "50%",
+            confirmLabel: "应用",
+          })
+          .then((value) => {
+            if (!value) return;
+            const normalized = value.trim();
+            if (!/^\d{1,4}(px|%)?$/.test(normalized)) {
+              toast("请输入类似 50% 或 320px 的宽度");
+              return;
+            }
+            setImageWidth(view, image, normalized);
+          });
       },
     });
     items.push({ sep: true });
@@ -297,4 +358,3 @@ export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
   while (items.length && items[items.length - 1].sep) items.pop();
   return items;
 }
-

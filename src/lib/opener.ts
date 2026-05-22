@@ -20,14 +20,23 @@ async function getOpener() {
 
 export async function openExternal(url: string): Promise<void> {
   if (!url) return;
+  const fallbackWindow =
+    typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)
+      ? window.open("about:blank", "_blank", "noopener,noreferrer")
+      : null;
   const o = await getOpener();
   if (o) {
     try {
       await o.openUrl(url);
+      fallbackWindow?.close();
       return;
     } catch {
       // fallback
     }
+  }
+  if (fallbackWindow) {
+    fallbackWindow.location.href = url;
+    return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
 }

@@ -39,6 +39,7 @@ import {
   buildPreviewContextItems,
   type PreviewClickInfo,
 } from "@/lib/preview-context-menu";
+import type { ImageParts } from "@/lib/markdown-images";
 import { MathPreview } from "../popovers/MathPreview";
 import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
@@ -617,7 +618,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   //   * 若用户配置 bubbleTrigger=rightClick 且选区里有内容，弹气泡（保留旧行为，方便快速格式化）。
   //   * 其它情况按光标所在区域（链接 / 图片 / 代码块 / 标题 / 选区 / 纯文本）弹一份自适应的 ContextMenu。
   const handleEditorContextMenu = useCallback(
-    (info: { coords: { x: number; y: number }; pos: number }) => {
+    (info: {
+      coords: { x: number; y: number };
+      pos: number;
+      image?: (ImageParts & { from: number; to: number }) | null;
+    }) => {
       setSlash(null);
       setTableMenu(null);
       const view = getEditor();
@@ -632,6 +637,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       const items = buildEditorContextItems({
         view,
         pos: info.pos,
+        image: info.image,
         modifierLabel: (mac, win) =>
           typeof navigator !== "undefined" &&
           navigator.platform.toLowerCase().includes("mac")

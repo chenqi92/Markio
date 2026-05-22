@@ -33,7 +33,7 @@ use serde_json::Value;
 
 use tauri::Emitter;
 
-use ai::{ChatRequest, ChatResponse};
+use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
 use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
@@ -2223,6 +2223,25 @@ fn hydrate_api_key(req: &mut ChatRequest) {
     }
 }
 
+fn validate_ai_endpoint_agent(req: &AgentRequest) -> Result<(), String> {
+    let Some(endpoint) = req.endpoint.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return Ok(());
+    };
+    check_ai_endpoint_host(&req.provider, endpoint)
+}
+
+fn hydrate_api_key_agent(req: &mut AgentRequest) {
+    if req.api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
+        let account = format!("ai:{}", req.provider);
+        if !is_allowed_secret_account(&account) {
+            return;
+        }
+        if let Ok(Some(stored)) = secrets::get(&account) {
+            req.api_key = Some(stored);
+        }
+    }
+}
+
 fn hydrate_rerank_api_key(
     cfg: Option<rag::rerank::RerankConfig>,
 ) -> Option<rag::rerank::RerankConfig> {
@@ -2268,6 +2287,14 @@ async fn ai_chat_stream(
 fn ai_chat_cancel(stream_id: String) -> Result<(), String> {
     ai::cancel_stream(&stream_id);
     Ok(())
+}
+
+#[tauri::command]
+async fn ai_chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
+    let mut req = req;
+    validate_ai_endpoint_agent(&req)?;
+    hydrate_api_key_agent(&mut req);
+    ai::chat_with_tools(req).await
 }
 
 #[tauri::command]
@@ -3590,6 +3617,7 @@ pub fn run() {
             ai_chat,
             ai_chat_stream,
             ai_chat_cancel,
+            ai_chat_with_tools,
             ai_list_models,
             rss_fetch,
             ai_retrieve,

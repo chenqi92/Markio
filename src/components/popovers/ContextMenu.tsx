@@ -23,16 +23,24 @@ export function ContextMenu({
   onClose: () => void;
 }) {
   useEffect(() => {
-    const dismiss = () => onClose();
+    const dismissClick = () => onClose();
+    // 在另一个行/区域上右键时，那个 handler 会先 setState({新菜单}) 并 e.preventDefault()；
+    // 紧接着原生事件继续冒泡到 window，如果这里无条件 onClose，会把 React 刚 schedule
+    // 的新 ctx 又改回 null，新菜单永远不出现。靠 defaultPrevented 区分：被处理过的事件
+    // 说明上游会自己开新菜单，旧菜单只需安静卸载 (新 ctx 替换旧 ctx 自动卸载旧实例)。
+    const dismissCtx = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      onClose();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("click", dismiss);
-    window.addEventListener("contextmenu", dismiss);
+    window.addEventListener("click", dismissClick);
+    window.addEventListener("contextmenu", dismissCtx);
     window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("click", dismiss);
-      window.removeEventListener("contextmenu", dismiss);
+      window.removeEventListener("click", dismissClick);
+      window.removeEventListener("contextmenu", dismissCtx);
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);

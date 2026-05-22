@@ -12,6 +12,7 @@ import { displayPath } from "@/lib/utils";
 import { readText } from "@/lib/clipboard";
 import { NOTE_TEMPLATES, type NoteTemplate } from "@/lib/note-templates";
 import { openExternal } from "@/lib/opener";
+import { ContextMenu } from "./popovers/ContextMenu";
 
 export function Welcome() {
   const { t } = useTranslation();
@@ -27,7 +28,14 @@ export function Welcome() {
   const setToast = useUI((s) => s.setToast);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
+  const removeWorkspace = useWorkspace((s) => s.removeWorkspace);
   const [logoErr, setLogoErr] = useState(false);
+  const [tplCtx, setTplCtx] = useState<
+    { x: number; y: number; tpl: NoteTemplate } | null
+  >(null);
+  const [wsCtx, setWsCtx] = useState<
+    { x: number; y: number; wsId: string; path: string } | null
+  >(null);
 
   useEffect(() => setLogoErr(false), [dark]);
 
@@ -205,6 +213,10 @@ export function Welcome() {
               type="button"
               className="welcome-tpl"
               onClick={() => void useTemplate(tpl)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTplCtx({ x: e.clientX, y: e.clientY, tpl });
+              }}
               title={tpl.sub}
             >
               <span className="welcome-tpl-ico">
@@ -265,6 +277,15 @@ export function Welcome() {
                 type="button"
                 key={w.id}
                 onClick={() => setActive(w.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setWsCtx({
+                    x: e.clientX,
+                    y: e.clientY,
+                    wsId: w.id,
+                    path: w.path,
+                  });
+                }}
                 className="welcome-recent"
               >
                 <div
@@ -298,6 +319,48 @@ export function Welcome() {
         </a>
       </div>
       </div>
+      {tplCtx && (
+        <ContextMenu
+          x={tplCtx.x}
+          y={tplCtx.y}
+          onClose={() => setTplCtx(null)}
+          items={[
+            {
+              label: `用「${tplCtx.tpl.title}」新建`,
+              icon: "plus",
+              onClick: () => void useTemplate(tplCtx.tpl),
+            },
+          ]}
+        />
+      )}
+      {wsCtx && (
+        <ContextMenu
+          x={wsCtx.x}
+          y={wsCtx.y}
+          onClose={() => setWsCtx(null)}
+          items={[
+            {
+              label: "切换到此仓库",
+              icon: "check",
+              onClick: () => setActive(wsCtx.wsId),
+            },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(wsCtx.path);
+              },
+            },
+            { sep: true },
+            {
+              label: "从列表中移除",
+              icon: "trash",
+              danger: true,
+              onClick: () => removeWorkspace(wsCtx.wsId),
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

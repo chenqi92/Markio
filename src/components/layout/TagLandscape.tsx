@@ -7,6 +7,9 @@ import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useDialog } from "@/stores/dialog";
 import { renameTag } from "@/lib/tag-ops";
+import { ContextMenu } from "../popovers/ContextMenu";
+import { writeText } from "@/lib/clipboard";
+import { api } from "@/lib/api";
 
 type SortMode = "refs" | "alpha";
 
@@ -36,6 +39,13 @@ export function TagLandscape() {
   const [filter, setFilter] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "renaming" | "merging">(null);
+  const [ctx, setCtx] = useState<{ x: number; y: number; tag: string } | null>(
+    null,
+  );
+  const [refCtx, setRefCtx] = useState<
+    | { x: number; y: number; path: string; wsId: string }
+    | null
+  >(null);
 
   // 切到本 tab 时确保索引已构建
   useEffect(() => {
@@ -257,6 +267,12 @@ export function TagLandscape() {
                 onClick={() =>
                   setActiveTag((cur) => (cur === e.tag ? null : e.tag))
                 }
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  setActiveTag(e.tag);
+                  setCtx({ x: ev.clientX, y: ev.clientY, tag: e.tag });
+                }}
                 title={`${e.count} 处引用`}
               >
                 #{e.tag}
@@ -318,6 +334,16 @@ export function TagLandscape() {
                     /* ignore */
                   }
                 }}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  setRefCtx({
+                    x: ev.clientX,
+                    y: ev.clientY,
+                    path: r.path,
+                    wsId: r.wsId,
+                  });
+                }}
                 title={r.path}
               >
                 <span className="tag-ref-f">{r.fileName}</span>
@@ -331,6 +357,85 @@ export function TagLandscape() {
             )}
           </div>
         </div>
+      )}
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          onClose={() => setCtx(null)}
+          items={[
+            {
+              label: t("tagLandscape.rename") + "…",
+              icon: "edit",
+              disabled: busy !== null,
+              onClick: () => void doRename(),
+            },
+            {
+              label: t("tagLandscape.merge") + "…",
+              icon: "diagram",
+              disabled: busy !== null,
+              onClick: () => void doMerge(),
+            },
+            {
+              label: t("tagLandscape.filterSearch"),
+              icon: "search",
+              onClick: () => doFilterSearch(),
+            },
+            { sep: true },
+            {
+              label: "复制 #tag",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(`#${ctx.tag}`);
+                  flash("done", "已复制");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+          ]}
+        />
+      )}
+      {refCtx && (
+        <ContextMenu
+          x={refCtx.x}
+          y={refCtx.y}
+          onClose={() => setRefCtx(null)}
+          items={[
+            {
+              label: "打开",
+              icon: "external",
+              onClick: async () => {
+                setActive(refCtx.wsId);
+                try {
+                  await openPath(refCtx.path);
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(refCtx.path);
+              },
+            },
+            {
+              label: "复制路径",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(refCtx.path);
+                  flash("done", "已复制路径");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+          ]}
+        />
       )}
     </div>
   );

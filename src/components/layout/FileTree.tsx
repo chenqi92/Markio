@@ -38,6 +38,7 @@ export function FileTree() {
   );
 
   const [ctx, setCtx] = useState<{ x: number; y: number; node: FileEntry } | null>(null);
+  const [blankCtx, setBlankCtx] = useState<{ x: number; y: number } | null>(null);
   const [iconPicker, setIconPicker] = useState<{
     x: number;
     y: number;
@@ -146,9 +147,65 @@ export function FileTree() {
     );
   }
 
+  const newNoteAtRoot = async () => {
+    if (!ws) return;
+    const name = await promptDialog({
+      title: "新建笔记",
+      message: "输入文件名；未包含 .md 时会自动追加。",
+      defaultValue: "未命名",
+      confirmLabel: "创建",
+    });
+    if (!name) return;
+    const fname = name.endsWith(".md") ? name : `${name}.md`;
+    const path = `${ws.path}/${fname}`;
+    try {
+      await api.createNew(path, `# ${fname.replace(/\.md$/i, "")}\n\n`);
+      await useWorkspace.getState().refreshTree(ws.id);
+      await useTabs.getState().openFile(ws.id, path);
+    } catch (e) {
+      const err = parseError(e);
+      if (err.code === "ALREADY_EXISTS") {
+        const reuse = await confirmDialog({
+          title: "文件已存在",
+          message: `${fname} 已存在。要打开它吗？`,
+          confirmLabel: "打开",
+        });
+        if (reuse) await useTabs.getState().openFile(ws.id, path);
+      } else {
+        await alertDialog({ title: "创建失败", message: err.message });
+      }
+    }
+  };
+  const newFolderAtRoot = async () => {
+    if (!ws) return;
+    const name = await promptDialog({
+      title: "新建文件夹",
+      message: "输入文件夹名称。",
+      defaultValue: "新文件夹",
+      confirmLabel: "创建",
+    });
+    if (!name) return;
+    try {
+      await api.mkdir(`${ws.path}/${name}`);
+      await useWorkspace.getState().refreshTree(ws.id);
+    } catch (e) {
+      await alertDialog({
+        title: "创建失败",
+        message: (e as Error).message,
+      });
+    }
+  };
+  const onBlankContext = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".tree-row, .tree-section, .sec-act")) {
+      return;
+    }
+    e.preventDefault();
+    setBlankCtx({ x: e.clientX, y: e.clientY });
+  };
+
   return (
     <>
-      <div className="tree scroll">
+      <div className="tree scroll" onContextMenu={onBlankContext}>
         <RecentSection />
         <div className="tree-section">
           <span style={{ flex: 1 }}>文件</span>
@@ -158,39 +215,7 @@ export function FileTree() {
             className="sec-act"
             title="新建笔记"
             style={{ opacity: 1 }}
-            onClick={async () => {
-              if (!ws) return;
-              const name = await promptDialog({
-                title: "新建笔记",
-                message: "输入文件名；未包含 .md 时会自动追加。",
-                defaultValue: "未命名",
-                confirmLabel: "创建",
-              });
-              if (!name) return;
-              const fname = name.endsWith(".md") ? name : `${name}.md`;
-              const path = `${ws.path}/${fname}`;
-              try {
-                await api.createNew(path, `# ${fname.replace(/\.md$/i, "")}\n\n`);
-                await useWorkspace.getState().refreshTree(ws.id);
-                await useTabs.getState().openFile(ws.id, path);
-              } catch (e) {
-                const err = parseError(e);
-                if (err.code === "ALREADY_EXISTS") {
-                  const reuse = await confirmDialog({
-                    title: "文件已存在",
-                    message: `${fname} 已存在。要打开它吗？`,
-                    confirmLabel: "打开",
-                  });
-                  if (reuse)
-                    await useTabs.getState().openFile(ws.id, path);
-                } else {
-                  await alertDialog({
-                    title: "创建失败",
-                    message: err.message,
-                  });
-                }
-              }
-            }}
+            onClick={newNoteAtRoot}
           >
             +
           </button>
@@ -240,6 +265,52 @@ export function FileTree() {
             setCtx(null);
             setPropertiesFor(n);
           }}
+        />
+      )}
+      {blankCtx && ws && (
+        <ContextMenu
+          x={blankCtx.x}
+          y={blankCtx.y}
+          onClose={() => setBlankCtx(null)}
+          items={[
+            {
+              label: "在根目录新建笔记…",
+              icon: "file",
+              kbd: "⌘N",
+              onClick: () => {
+                void newNoteAtRoot();
+              },
+            },
+            {
+              label: "在根目录新建文件夹…",
+              icon: "folder",
+              onClick: () => {
+                void newFolderAtRoot();
+              },
+            },
+            { sep: true },
+            {
+              label: "刷新目录树",
+              icon: "history",
+              onClick: () => {
+                void refreshTree(ws.id);
+              },
+            },
+            {
+              label: "在 Finder 中显示仓库",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(ws.path);
+              },
+            },
+            {
+              label: "复制仓库路径",
+              icon: "copy",
+              onClick: () => {
+                void writeText(ws.path);
+              },
+            },
+          ]}
         />
       )}
       {iconPicker && (

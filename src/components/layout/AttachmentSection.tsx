@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { formatBytes } from "@/lib/utils";
+import { writeText } from "@/lib/clipboard";
+import { ContextMenu } from "../popovers/ContextMenu";
 import type { Attachment } from "@/types";
 
 const KIND_ICON: Record<Attachment["kind"], IconName> = {
@@ -51,6 +53,14 @@ export function AttachmentSection() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [ctx, setCtx] = useState<{ x: number; y: number; a: Attachment } | null>(
+    null,
+  );
+
+  const flash = (msg: string) => {
+    setToast({ stage: "done", message: msg });
+    setTimeout(() => setToast(null), 1500);
+  };
 
   useEffect(() => {
     if (!open || !ws) return;
@@ -140,6 +150,11 @@ export function AttachmentSection() {
                 title={`${a.path}\n${formatBytes(a.size)}`}
                 style={{ paddingLeft: 16 }}
                 onClick={() => onReveal(a)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCtx({ x: e.clientX, y: e.clientY, a });
+                }}
               >
                 <span className="chev" style={{ visibility: "hidden" }}>
                   <Icon name="chevron" size={11} />
@@ -164,6 +179,34 @@ export function AttachmentSection() {
             ))
           )}
         </>
+      )}
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          onClose={() => setCtx(null)}
+          items={[
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void onReveal(ctx.a);
+              },
+            },
+            {
+              label: "复制路径",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(ctx.a.path);
+                  flash("已复制路径");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+          ]}
+        />
       )}
     </div>
   );

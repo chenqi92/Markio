@@ -26,6 +26,17 @@ interface Props {
     col: number,
     action: TableAction,
   ) => boolean;
+  onCopyCell?: (
+    tableIndex: number | undefined,
+    row: number,
+    col: number,
+  ) => string | null;
+  onPasteText?: (
+    tableIndex: number | undefined,
+    row: number,
+    col: number,
+    text: string,
+  ) => boolean;
   onClose: () => void;
 }
 
@@ -39,6 +50,8 @@ export function TableContextMenu({
   rect,
   tableIndex,
   onAction,
+  onCopyCell,
+  onPasteText,
   onClose,
 }: Props) {
   const left =
@@ -88,7 +101,22 @@ export function TableContextMenu({
 
   const copySelection = async () => {
     const view = getEditor();
-    if (!view || !rect) return;
+    if (!rect) {
+      const text = onCopyCell?.(tableIndex, row, col);
+      if (text == null) return;
+      await writeText(text);
+      focus();
+      onClose();
+      return;
+    }
+    if (!view) {
+      const text = onCopyCell?.(tableIndex, row, col);
+      if (text == null) return;
+      await writeText(text);
+      onClose();
+      return;
+    }
+    if (!rect) return;
     const text = tableRectClipboardText(view, rect);
     if (text == null) return;
     await writeText(text);
@@ -98,9 +126,12 @@ export function TableContextMenu({
 
   const pasteSelection = async () => {
     const view = getEditor();
-    if (!view) return;
     const text = await readText();
     if (!text) return;
+    if (!view) {
+      if (onPasteText?.(tableIndex, row, col, text)) onClose();
+      return;
+    }
     pasteTableText(
       view,
       text,
@@ -112,7 +143,10 @@ export function TableContextMenu({
 
   const clearSelection = () => {
     const view = getEditor();
-    if (!view) return;
+    if (!view) {
+      if (onAction?.(tableIndex, row, col, { type: "clearCell" })) onClose();
+      return;
+    }
     if (rect) clearTableRect(view, rect);
     else applyTableAction(view, { type: "clearCell" });
     focus();
@@ -128,7 +162,11 @@ export function TableContextMenu({
       <div className="table-context-meta">
         {selectionLabel} · {rows}x{cols}
       </div>
-      <MenuItem icon="copy" label="复制选区" onClick={() => void copySelection()} />
+      <MenuItem
+        icon="copy"
+        label={rect ? "复制选区" : "复制单元格"}
+        onClick={() => void copySelection()}
+      />
       <MenuItem icon="edit" label="粘贴到选区起点" onClick={() => void pasteSelection()} />
       <MenuItem icon="trash" label="清空选区" danger onClick={clearSelection} />
       <div className="ctx-sep" />

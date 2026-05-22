@@ -6,6 +6,8 @@ import {
   moveTableCell,
   parseTabularText,
   pasteTableText,
+  pasteTableTextToText,
+  tableCellTextFromText,
   tableRectClipboardText,
 } from "./table-edit";
 
@@ -144,5 +146,18 @@ describe("table editing", () => {
     expect(deleted).not.toContain("| 1 | 2 |");
     expect(deleted).toContain("before");
     expect(deleted).toContain("after");
+  });
+
+  it("copies and pastes preview table cells without an editor view", () => {
+    const source = ["before", table, "after"].join("\n\n");
+
+    expect(tableCellTextFromText(source, 0, { row: 1, col: 1 })).toBe("2");
+
+    const pasted = pasteTableTextToText(source, 0, { row: 1, col: 0 }, "x\ty\nz\tw");
+    expect(pasted).toContain("| A | B |");
+    expect(pasted).toContain("| x | y |");
+    expect(pasted).toContain("| z | w |");
+    expect(pasted).toContain("before");
+    expect(pasted).toContain("after");
   });
 });

@@ -24,7 +24,9 @@ import {
   applyTableActionToText,
   detectTable,
   findAllTablesInText,
+  pasteTableTextToText,
   tableCellSourcePos,
+  tableCellTextFromText,
   type TableAction,
   type TableSelectionRect,
 } from "./table-edit";
@@ -825,6 +827,27 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     [tab?.content, tabId, updateContent],
   );
 
+  const handlePreviewTableCopy = useCallback(
+    (tableIndex: number | undefined, row: number, col: number) => {
+      if (tableIndex == null) return null;
+      const src = getEditor()?.state.doc.toString() ?? tab?.content ?? "";
+      return tableCellTextFromText(src, tableIndex, { row, col });
+    },
+    [tab?.content],
+  );
+
+  const handlePreviewTablePaste = useCallback(
+    (tableIndex: number | undefined, row: number, col: number, text: string) => {
+      if (tableIndex == null || !tabId) return false;
+      const src = getEditor()?.state.doc.toString() ?? tab?.content ?? "";
+      const next = pasteTableTextToText(src, tableIndex, { row, col }, text);
+      if (next == null) return false;
+      updateContent(tabId, next);
+      return true;
+    },
+    [tab?.content, tabId, updateContent],
+  );
+
   const handleSlashTrigger = useCallback((coords: { x: number; y: number }) => {
     setSlash(coords);
   }, []);
@@ -975,6 +998,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           rect={tableMenu.rect}
           tableIndex={tableMenu.tableIndex}
           onAction={handlePreviewTableAction}
+          onCopyCell={handlePreviewTableCopy}
+          onPasteText={handlePreviewTablePaste}
           onClose={() => setTableMenu(null)}
         />
       )}

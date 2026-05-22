@@ -26,10 +26,12 @@ export function NewMenu({
     setTimeout(() => setToast(null), ttl);
   };
 
+  // 所有入口先 onClose() 再做异步交互。dialog/picker 是模态阻塞的，菜单留着会
+  // 跟 dialog 叠层、抢焦点、还挡输入框（见 #30 截图）。
   const create = async (t: NoteTemplate) => {
+    onClose();
     if (!ws) {
       toast("error", "请先打开一个仓库");
-      onClose();
       return;
     }
     const now = new Date();
@@ -42,10 +44,7 @@ export function NewMenu({
       defaultValue: defaultName,
       confirmLabel: "创建",
     });
-    if (!userName) {
-      onClose();
-      return;
-    }
+    if (!userName) return;
 
     if (t.isFolder) {
       const path = `${ws.path}/${userName}`;
@@ -56,7 +55,6 @@ export function NewMenu({
       } catch (e) {
         toast("error", `创建失败：${parseError(e).message}`, 2500);
       }
-      onClose();
       return;
     }
 
@@ -81,21 +79,20 @@ export function NewMenu({
         toast("error", `创建失败：${err.message}`, 2500);
       }
     }
-    onClose();
   };
 
   const importFile = async () => {
+    onClose();
     const f = await pickFile([
       { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
     ]);
     if (f) await useTabs.getState().openPath(f);
-    onClose();
   };
 
   const importClipboard = async () => {
+    onClose();
     if (!ws) {
       toast("error", "请先打开一个仓库");
-      onClose();
       return;
     }
     let text = "";
@@ -103,12 +100,10 @@ export function NewMenu({
       text = await navigator.clipboard.readText();
     } catch {
       toast("error", "读取剪贴板失败（需授权）", 2500);
-      onClose();
       return;
     }
     if (!text.trim()) {
       toast("error", "剪贴板为空");
-      onClose();
       return;
     }
     const userName = await promptDialog({
@@ -117,10 +112,7 @@ export function NewMenu({
       defaultValue: "剪贴板",
       confirmLabel: "创建",
     });
-    if (!userName) {
-      onClose();
-      return;
-    }
+    if (!userName) return;
     const fname = userName.endsWith(".md") ? userName : `${userName}.md`;
     const path = `${ws.path}/${fname}`;
     try {
@@ -136,18 +128,17 @@ export function NewMenu({
         toast("error", `创建失败：${err.message}`, 2500);
       }
     }
-    onClose();
   };
 
   const importUrl = async () => {
-    toast("error", "URL 抓取功能即将上线", 2000);
     onClose();
+    toast("error", "URL 抓取功能即将上线", 2000);
   };
 
   const openFolder = async () => {
+    onClose();
     const d = await pickDirectory();
     if (d) await useWorkspace.getState().addWorkspace(d);
-    onClose();
   };
 
   return (

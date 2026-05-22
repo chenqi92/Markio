@@ -16,6 +16,7 @@ import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
 import { renderChartsIn } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderDiagramsLazy } from "@/lib/diagrams";
+import { enhanceMarkdownImages } from "@/lib/markdown-images";
 import { renderMathLazy } from "@/lib/math";
 import { renderMermaidLazy } from "@/lib/mermaid";
 import type { VisualBlockHandle } from "@/lib/visualScheduler";
@@ -377,6 +378,7 @@ export function Preview({
     perfMeasure("preview:enhanceCallouts", () => {
       calloutHandle = enhanceCalloutsLazy(root);
     });
+    perfMeasure("preview:enhanceImages", () => enhanceMarkdownImages(root));
 
     // 其余 enhance 在浏览器空闲帧执行，把首屏渲染让给主线程。
     // requestIdleCallback 在 WebView 上偶尔不可用，setTimeout(16) 兜底（一帧后）。

@@ -250,13 +250,49 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .tab-newbtn:hover { background: var(--bg-hover); color: var(--text); }
 
 /* body grid: sidebar / resizer / main */
+.workspace-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .body {
   display: grid;
   grid-template-columns: var(--sidebar-w, 244px) 0 1fr;
   overflow: hidden;
   min-height: 0;
+  height: 100%;
+  transition: filter 160ms ease, opacity 160ms ease;
 }
 .body.no-sidebar { grid-template-columns: 1fr; }
+.body.shell-obscured {
+  pointer-events: none;
+}
+
+.workspace-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 260;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--bg-modal, var(--bg-window));
+  animation: workspace-overlay-in 160ms ease-out;
+}
+
+.workspace-overlay > .settings-workspace,
+.workspace-overlay > .ai-workspace {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-modal, var(--bg-window));
+}
+
+@keyframes workspace-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 /* status bar */
 .statusbar {

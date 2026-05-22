@@ -33,6 +33,11 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { LanguageFn } from "highlight.js";
 import { cursorInsideRange, detectMathRanges } from "@/lib/math-ranges";
+import {
+  applyImageElementSizing,
+  parseImageMarkdown,
+  type ImageParts,
+} from "@/lib/markdown-images";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
@@ -1080,9 +1085,6 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
 
 // ─── Image widget ─────────────────────────────────────────────────────────
 
-const IMAGE_URL_RE =
-  /^!\[([^\]]*)\]\(([^\s)]+)(?:\s+(?:"([^"]*)"|'([^']*)'))?\s*\)/;
-
 /** Allow only safe URL schemes; relative paths fall back to source. */
 function isAbsoluteSafeUrl(url: string): boolean {
   return /^(https?:|data:image\/|file:|asset:|tauri:|markio-asset:|markio-resource:)/i.test(
@@ -1090,21 +1092,7 @@ function isAbsoluteSafeUrl(url: string): boolean {
   );
 }
 
-export interface ImageParts {
-  alt: string;
-  url: string;
-  title?: string;
-}
-
-export function parseImageMarkdown(text: string): ImageParts | null {
-  const m = text.match(IMAGE_URL_RE);
-  if (!m) return null;
-  return {
-    alt: m[1],
-    url: m[2],
-    title: m[3] ?? m[4],
-  };
-}
+export { parseImageMarkdown };
 
 // ─── Callout label widget ─────────────────────────────────────────────────
 
@@ -1219,7 +1207,11 @@ class WikilinkWidget extends WidgetType {
 }
 
 class ImageWidget extends WidgetType {
-  constructor(private readonly parts: ImageParts) {
+  constructor(
+    private readonly parts: ImageParts,
+    private readonly inlinePreview: boolean = false,
+    private readonly sourceLength: number = 0,
+  ) {
     super();
   }
   eq(other: WidgetType): boolean {
@@ -1227,16 +1219,24 @@ class ImageWidget extends WidgetType {
       other instanceof ImageWidget &&
       other.parts.alt === this.parts.alt &&
       other.parts.url === this.parts.url &&
-      other.parts.title === this.parts.title
+      other.parts.title === this.parts.title &&
+      other.inlinePreview === this.inlinePreview &&
+      other.sourceLength === this.sourceLength
     );
   }
   toDOM(): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "cm-md-img-widget";
+    if (this.inlinePreview) wrap.classList.add("cm-md-img-inline-preview");
+    wrap.dataset.src = this.parts.url;
+    wrap.dataset.alt = this.parts.alt;
+    if (this.parts.title) wrap.dataset.title = this.parts.title;
+    if (this.sourceLength > 0) wrap.dataset.sourceLength = String(this.sourceLength);
     const img = document.createElement("img");
     img.src = this.parts.url;
     img.alt = this.parts.alt;
     if (this.parts.title) img.title = this.parts.title;
+    applyImageElementSizing(img, this.parts.title);
     img.loading = "lazy";
     img.draggable = false;
     img.addEventListener("error", () => {
@@ -1628,16 +1628,30 @@ function build(state: EditorState): BuildResult {
         return;
       }
       if (n === "Image") {
-        // 默认渲染图片；光标在 markdown 范围内时显源码可编辑。
-        if (!rangeHasCursor({ from: node.from, to: node.to }, state, true)) {
-          const text = state.doc.sliceString(node.from, node.to);
-          const parts = parseImageMarkdown(text);
-          if (parts && isAbsoluteSafeUrl(parts.url)) {
+        const text = state.doc.sliceString(node.from, node.to);
+        const parts = parseImageMarkdown(text);
+        const canRender = !!parts && isAbsoluteSafeUrl(parts.url);
+        if (rangeHasCursor({ from: node.from, to: node.to }, state, true)) {
+          mark(node.from, node.to, "cm-md-image cm-md-image-active");
+          if (canRender) {
+            decos.push({
+              from: node.to,
+              to: node.to,
+              deco: Decoration.widget({
+                widget: new ImageWidget(parts, true),
+                side: 1,
+              }),
+            });
+          }
+          return false;
+        }
+        // 默认渲染图片；未聚焦时隐藏 markdown 源码。
+        if (canRender) {
             decos.push({
               from: node.from,
               to: node.to,
               deco: Decoration.replace({
-                widget: new ImageWidget(parts),
+                widget: new ImageWidget(parts, false, node.to - node.from),
               }),
             });
             atomic.push({
@@ -1646,10 +1660,9 @@ function build(state: EditorState): BuildResult {
               deco: Decoration.mark({}),
             });
             return;
-          }
         }
         mark(node.from, node.to, "cm-md-image");
-        return;
+        return false;
       }
 
       // ─── 任务列表 ───

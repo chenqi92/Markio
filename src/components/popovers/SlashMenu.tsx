@@ -59,6 +59,16 @@ const ITEMS = (close: () => void): Item[] => {
       },
     },
     {
+      id: "h5",
+      mark: "H5",
+      ttl: "五级标题",
+      sub: "##### 标题",
+      run: () => {
+        finish();
+        markdownCommands.h5();
+      },
+    },
+    {
       id: "todo",
       icon: "check-square",
       ttl: "待办事项",

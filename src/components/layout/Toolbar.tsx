@@ -209,6 +209,9 @@ function FormatRow() {
         <Btn title="四级标题" onClick={markdownCommands.h4}>
           <span className="lvl">H4</span>
         </Btn>
+        <Btn title="五级标题" onClick={markdownCommands.h5}>
+          <span className="lvl">H5</span>
+        </Btn>
       </div>
       <div className="tb-group tb-format">
         <Btn title={shortcutText("加粗 ⌘B")} onClick={markdownCommands.bold}>
@@ -357,15 +360,22 @@ function TableInsertButton() {
         type="button"
         className="tb-btn"
         title="表格"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen((v) => !v)}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onClick={(e) => e.preventDefault()}
       >
         <Icon name="table" size={12} />
       </button>
       {open && (
         <div
           className="table-size-popover"
-          onMouseDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
         >
           <div className="table-size-title">{hover.rows} x {hover.cols}</div>
           <div

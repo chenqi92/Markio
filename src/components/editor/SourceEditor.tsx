@@ -470,8 +470,10 @@ export const SourceEditor = memo(function SourceEditor({
 
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const target = e.target as HTMLElement | null;
+      const target =
+        e.target instanceof HTMLElement ? e.target : e.target instanceof Node ? e.target.parentElement : null;
       if (target?.closest(".cm-gutters")) return;
+      if (target?.closest(".cm-md-table-widget")) return;
       const hit = tableCellFromCoords(view, { x: e.clientX, y: e.clientY });
       if (!hit) {
         tableSelectionRectRef.current = null;
@@ -507,6 +509,9 @@ export const SourceEditor = memo(function SourceEditor({
     };
 
     const handleContextMenu = (e: MouseEvent) => {
+      const target =
+        e.target instanceof HTMLElement ? e.target : e.target instanceof Node ? e.target.parentElement : null;
+      if (target?.closest(".cm-md-table-widget")) return;
       // 1) 表格 cell 优先
       const hit = onTableContextMenu
         ? tableCellFromCoords(view, { x: e.clientX, y: e.clientY })
@@ -755,6 +760,7 @@ const markdownKeymap = Prec.highest(
     { key: "Mod-Alt-2", run: runMarkdownCommand(markdownCommands.h2) },
     { key: "Mod-Alt-3", run: runMarkdownCommand(markdownCommands.h3) },
     { key: "Mod-Alt-4", run: runMarkdownCommand(markdownCommands.h4) },
+    { key: "Mod-Alt-5", run: runMarkdownCommand(markdownCommands.h5) },
     { key: "Mod-Alt-l", run: runMarkdownCommand(markdownCommands.wikiLink) },
     { key: "Mod-Alt-t", run: runMarkdownCommand(markdownCommands.table) },
     { key: "Mod-Alt-Shift-t", run: runMarkdownCommand(markdownCommands.selectionToTable) },

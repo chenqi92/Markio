@@ -17,13 +17,27 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
-import { cursorInsideRange, detectMathRanges, type MathRange } from "@/lib/math-ranges";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
+import type { LanguageFn } from "highlight.js";
+import { cursorInsideRange, detectMathRanges } from "@/lib/math-ranges";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
-import { tableCellSourcePos } from "./table-edit";
 
 type KatexModule = typeof import("katex");
 let katexPromise: Promise<KatexModule> | null = null;
@@ -155,6 +169,282 @@ class VisualFenceWidget extends WidgetType {
   }
 }
 
+function codeLines(raw: string): string[] {
+  const withoutFinalNewline = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  return withoutFinalNewline.length === 0 ? [""] : withoutFinalNewline.split("\n");
+}
+
+function safeLanguageClass(lang: string): string {
+  return lang.trim().toLowerCase().replace(/[^\w-]/g, "");
+}
+
+const HIGHLIGHT_LANGUAGES: Record<string, LanguageFn> = {
+  bash,
+  sh: bash,
+  shell: bash,
+  zsh: bash,
+  css,
+  go,
+  golang: go,
+  java,
+  javascript,
+  js: javascript,
+  json,
+  markdown,
+  md: markdown,
+  python,
+  py: python,
+  rust,
+  rs: rust,
+  sql,
+  typescript,
+  ts: typescript,
+  xml,
+  html: xml,
+  svg: xml,
+  yaml,
+  yml: yaml,
+};
+
+function ensureHighlightLanguage(lang: string): string | null {
+  const normalized = lang.trim().toLowerCase();
+  if (!normalized) return null;
+  const language = HIGHLIGHT_LANGUAGES[normalized];
+  if (!language) return null;
+  if (!hljs.getLanguage(normalized)) hljs.registerLanguage(normalized, language);
+  return normalized;
+}
+
+function highlightCode(source: string, lang: string): string {
+  const normalized = ensureHighlightLanguage(lang);
+  try {
+    if (normalized) {
+      return hljs.highlight(source, { language: normalized, ignoreIllegals: true }).value;
+    }
+  } catch {
+    // fall through to escaped plain text
+  }
+  return source
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function codeFenceRangeFromHost(
+  view: EditorView,
+  host: HTMLElement,
+): { from: number; to: number; source: string } | null {
+  const from = view.posAtDOM(host);
+  const len = Number(host.dataset.sourceLength);
+  if (from == null || !Number.isFinite(len) || len <= 0) return null;
+  const to = Math.min(view.state.doc.length, from + len);
+  if (to <= from) return null;
+  return { from, to, source: view.state.doc.sliceString(from, to) };
+}
+
+function fencedBodyRangeFromSource(
+  from: number,
+  source: string,
+): { from: number; to: number } | null {
+  const firstBreak = source.search(/\r?\n/);
+  if (firstBreak < 0) return null;
+  const breakLength = source[firstBreak] === "\r" ? 2 : 1;
+  const bodyStart = from + firstBreak + breakLength;
+  const closing = source.match(/\r?\n[ \t]*(`{3,}|~{3,})\s*$/);
+  const bodyEnd = closing ? from + source.length - closing[0].length : from + source.length;
+  return { from: bodyStart, to: Math.max(bodyStart, bodyEnd) };
+}
+
+function commitCodeFenceLang(view: EditorView, host: HTMLElement, value: string): boolean {
+  const range = codeFenceRangeFromHost(view, host);
+  if (!range) return false;
+  const firstLine = view.state.doc.lineAt(range.from);
+  const marker = firstLine.text.match(/^(\s*(`{3,}|~{3,}))[ \t]*/);
+  if (!marker) return false;
+  const lang = value.trim();
+  const from = firstLine.from + marker[0].length;
+  const to = firstLine.to;
+  const current = view.state.doc.sliceString(from, to);
+  if (current === lang) return false;
+  view.dispatch({
+    changes: { from, to, insert: lang },
+    userEvent: "input",
+  });
+  return true;
+}
+
+function commitCodeFenceBody(view: EditorView, host: HTMLElement, value: string): boolean {
+  const range = codeFenceRangeFromHost(view, host);
+  if (!range) return false;
+  const body = fencedBodyRangeFromSource(range.from, range.source);
+  if (!body) return false;
+  const next = value.replace(/\r\n/g, "\n").replace(/\n$/, "");
+  const current = view.state.doc.sliceString(body.from, body.to);
+  if (current === next) return false;
+  view.dispatch({
+    changes: { from: body.from, to: body.to, insert: next },
+    userEvent: "input",
+  });
+  return true;
+}
+
+function resizeCodeFenceTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.max(96, textarea.scrollHeight)}px`;
+}
+
+function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: string) {
+  const body = host.querySelector<HTMLElement>(".cm-md-code-body");
+  if (!body || body.querySelector(".cm-md-code-editor")) return;
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "cm-md-code-editor";
+  textarea.spellcheck = false;
+  textarea.value = source;
+  textarea.setAttribute("aria-label", "编辑代码块内容");
+
+  const commit = () => {
+    commitCodeFenceBody(view, host, textarea.value);
+  };
+  textarea.addEventListener("mousedown", (event) => event.stopPropagation());
+  textarea.addEventListener("click", (event) => event.stopPropagation());
+  textarea.addEventListener("input", () => resizeCodeFenceTextarea(textarea));
+  textarea.addEventListener("blur", commit);
+  textarea.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      textarea.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      textarea.value = source;
+      textarea.blur();
+    }
+  });
+
+  body.replaceChildren(textarea);
+  resizeCodeFenceTextarea(textarea);
+  textarea.focus({ preventScroll: true });
+}
+
+function installCodeFenceDomHandlers(
+  view: EditorView,
+  host: HTMLElement,
+  source: string,
+) {
+  const input = host.querySelector<HTMLInputElement>(".cm-md-code-lang-input");
+  const edit = host.querySelector<HTMLButtonElement>(".cm-md-code-edit");
+  const body = host.querySelector<HTMLElement>(".cm-md-code-body");
+
+  if (input) {
+    const commit = () => commitCodeFenceLang(view, host, input.value);
+    input.addEventListener("mousedown", (event) => event.stopPropagation());
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        input.blur();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        input.value = host.dataset.lang ?? "";
+        input.blur();
+      }
+    });
+  }
+
+  edit?.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  edit?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    startCodeFenceBodyEdit(view, host, source);
+  });
+
+  body?.addEventListener("mousedown", (event) => {
+    if (event.target instanceof HTMLTextAreaElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startCodeFenceBodyEdit(view, host, source);
+  });
+}
+
+class CodeFenceWidget extends WidgetType {
+  constructor(
+    private readonly lang: string,
+    private readonly source: string,
+    private readonly sourceLength: number,
+  ) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof CodeFenceWidget &&
+      other.lang === this.lang &&
+      other.source === this.source &&
+      other.sourceLength === this.sourceLength
+    );
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const lang = this.lang.trim();
+    const safeLang = safeLanguageClass(lang);
+    const figure = document.createElement("figure");
+    figure.className = "cm-md-code-widget";
+    figure.dataset.lang = lang;
+    figure.dataset.sourceLength = String(this.sourceLength);
+
+    const head = document.createElement("figcaption");
+    head.className = "cm-md-code-head";
+
+    const input = document.createElement("input");
+    input.className = "cm-md-code-lang-input";
+    input.value = lang;
+    input.placeholder = "plain text";
+    input.spellcheck = false;
+    input.setAttribute("aria-label", "代码块语言");
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "cm-md-code-edit";
+    edit.textContent = "编辑";
+    edit.setAttribute("aria-label", "编辑代码块内容");
+
+    head.append(input, edit);
+
+    const body = document.createElement("div");
+    body.className = "cm-md-code-body";
+    body.title = "点击编辑代码内容";
+
+    const gutter = document.createElement("div");
+    gutter.className = "cm-md-code-gutter";
+    codeLines(this.source).forEach((_, index) => {
+      const line = document.createElement("span");
+      line.textContent = String(index + 1);
+      gutter.append(line);
+    });
+
+    const pre = document.createElement("pre");
+    pre.className = "cm-md-code-pre";
+    const code = document.createElement("code");
+    code.className = `hljs${safeLang ? ` language-${safeLang}` : ""}`;
+    code.innerHTML = DOMPurify.sanitize(highlightCode(this.source, lang), {
+      USE_PROFILES: { html: true },
+    });
+    pre.append(code);
+    body.append(gutter, pre);
+
+    figure.append(head, body);
+    installCodeFenceDomHandlers(view, figure, this.source);
+    return figure;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
 /**
  * Read the fenced-code body for a `n === "FencedCode"` node. The lezer node
  * spans both fences; we strip the first line (```lang) and the trailing
@@ -165,15 +455,15 @@ function extractFencedBody(state: EditorState, from: number, to: number): string
   const bodyStart = Math.min(firstLine.to + 1, state.doc.length);
   if (bodyStart >= to) return "";
   const slice = state.doc.sliceString(bodyStart, to);
-  // strip a trailing ``` line if present
-  const stripped = slice.replace(/\r?\n?[ \t]*```\s*$/, "");
+  // strip a trailing ``` / ~~~ line if present
+  const stripped = slice.replace(/\r?\n?[ \t]*(`{3,}|~{3,})\s*$/, "");
   return stripped;
 }
 
 function extractFenceLang(state: EditorState, from: number): string {
   const firstLine = state.doc.lineAt(from);
-  const m = firstLine.text.match(/^\s*```\s*([\w-]+)/);
-  return m ? m[1] : "";
+  const m = firstLine.text.match(/^\s*(`{3,}|~{3,})\s*([\w-]+)/);
+  return m ? m[2] : "";
 }
 
 // ─── Table widget ───────────────────────────────────────────────────────────
@@ -182,6 +472,80 @@ export interface ParsedTable {
   header: string[];
   aligns: Array<"left" | "center" | "right" | null>;
   rows: string[][];
+}
+
+function tableColumnCount(parsed: ParsedTable): number {
+  return Math.max(1, parsed.header.length, parsed.aligns.length, ...parsed.rows.map((r) => r.length));
+}
+
+function normalizedTable(parsed: ParsedTable): ParsedTable {
+  const cols = tableColumnCount(parsed);
+  const header = parsed.header.slice();
+  while (header.length < cols) header.push("");
+  const aligns = parsed.aligns.slice();
+  while (aligns.length < cols) aligns.push(null);
+  const rows = parsed.rows.map((row) => {
+    const next = row.slice();
+    while (next.length < cols) next.push("");
+    return next;
+  });
+  return { header, aligns, rows };
+}
+
+function buildAlignCell(align: "left" | "center" | "right" | null): string {
+  if (align === "left") return ":---";
+  if (align === "center") return ":---:";
+  if (align === "right") return "---:";
+  return "---";
+}
+
+function buildMarkdownRow(cells: string[]): string {
+  return `| ${cells.map((cell) => cell.trim() || " ").join(" | ")} |`;
+}
+
+export function buildTableSource(parsed: ParsedTable): string {
+  const table = normalizedTable(parsed);
+  return [
+    buildMarkdownRow(table.header),
+    buildMarkdownRow(table.aligns.map(buildAlignCell)),
+    ...table.rows.map(buildMarkdownRow),
+  ].join("\n");
+}
+
+export type WysiwygTableAction =
+  | "insertRowBelow"
+  | "insertColRight"
+  | "deleteRow"
+  | "deleteCol";
+
+export function applyWysiwygTableAction(
+  parsed: ParsedTable,
+  row: number,
+  col: number,
+  action: WysiwygTableAction,
+): ParsedTable {
+  const table = normalizedTable(parsed);
+  const cols = tableColumnCount(table);
+  const safeCol = Math.max(0, Math.min(cols - 1, col));
+  const safeRow = Math.max(0, Math.min(table.rows.length, row));
+  if (action === "insertRowBelow") {
+    const insertAt = safeRow <= 0 ? 0 : Math.min(table.rows.length, safeRow);
+    table.rows.splice(insertAt, 0, Array(cols).fill(""));
+  } else if (action === "insertColRight") {
+    const insertAt = safeCol + 1;
+    table.header.splice(insertAt, 0, "");
+    table.aligns.splice(insertAt, 0, null);
+    for (const bodyRow of table.rows) bodyRow.splice(insertAt, 0, "");
+  } else if (action === "deleteRow") {
+    if (safeRow > 0 && table.rows.length > 0) table.rows.splice(safeRow - 1, 1);
+  } else if (action === "deleteCol") {
+    if (cols > 1) {
+      table.header.splice(safeCol, 1);
+      table.aligns.splice(safeCol, 1);
+      for (const bodyRow of table.rows) bodyRow.splice(safeCol, 1);
+    }
+  }
+  return normalizedTable(table);
 }
 
 export function parseTableSource(src: string): ParsedTable {
@@ -202,38 +566,59 @@ export function parseTableSource(src: string): ParsedTable {
     return null;
   });
   const rows = lines.slice(2).map(splitRow);
-  return { header, aligns, rows };
+  return normalizedTable({ header, aligns, rows });
 }
 
-function buildTableDom(parsed: ParsedTable): HTMLElement {
+function createTableCellEditor(value: string, row: number, col: number, label: string) {
+  const editor = document.createElement("textarea");
+  editor.className = "cm-md-table-cell";
+  editor.spellcheck = false;
+  editor.rows = 1;
+  editor.value = value;
+  editor.dataset.row = String(row);
+  editor.dataset.col = String(col);
+  editor.setAttribute("aria-label", label);
+  return editor;
+}
+
+export function buildTableDom(parsed: ParsedTable): HTMLElement {
+  const table = normalizedTable(parsed);
   const root = document.createElement("div");
   root.className = "cm-md-table-widget";
+  root.setAttribute("contenteditable", "false");
+  root.dataset.activeRow = "1";
+  root.dataset.activeCol = "0";
+  root.dataset.rowCount = String(table.rows.length);
+  root.dataset.colCount = String(table.header.length);
+
   const tbl = document.createElement("table");
 
   const thead = document.createElement("thead");
   const trh = document.createElement("tr");
-  parsed.header.forEach((cell, col) => {
+  table.header.forEach((cell, col) => {
     const th = document.createElement("th");
-    th.textContent = cell;
+    const editor = createTableCellEditor(cell, 0, col, `表头 ${col + 1}`);
     th.dataset.row = "0";
     th.dataset.col = String(col);
-    const align = parsed.aligns[col];
+    const align = table.aligns[col];
     if (align) th.style.textAlign = align;
+    th.appendChild(editor);
     trh.appendChild(th);
   });
   thead.appendChild(trh);
   tbl.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  parsed.rows.forEach((row, rowIdx) => {
+  table.rows.forEach((row, rowIdx) => {
     const tr = document.createElement("tr");
     row.forEach((cell, col) => {
       const td = document.createElement("td");
-      td.textContent = cell;
+      const editor = createTableCellEditor(cell, rowIdx + 1, col, `第 ${rowIdx + 1} 行第 ${col + 1} 列`);
       td.dataset.row = String(rowIdx + 1);
       td.dataset.col = String(col);
-      const align = parsed.aligns[col];
+      const align = table.aligns[col];
       if (align) td.style.textAlign = align;
+      td.appendChild(editor);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -241,6 +626,31 @@ function buildTableDom(parsed: ParsedTable): HTMLElement {
   tbl.appendChild(tbody);
 
   root.appendChild(tbl);
+
+  const addCol = document.createElement("button");
+  addCol.type = "button";
+  addCol.className = "cm-md-table-edge-action cm-md-table-add-col";
+  addCol.dataset.action = "insertColRight";
+  addCol.dataset.edge = "col-end";
+  addCol.textContent = "+";
+  addCol.title = "在末尾新增列";
+  addCol.setAttribute("aria-label", "在末尾新增列");
+  root.appendChild(addCol);
+
+  const addRow = document.createElement("button");
+  addRow.type = "button";
+  addRow.className = "cm-md-table-edge-action cm-md-table-add-row";
+  addRow.dataset.action = "insertRowBelow";
+  addRow.dataset.edge = "row-end";
+  addRow.textContent = "+";
+  addRow.title = "在末尾新增行";
+  addRow.setAttribute("aria-label", "在末尾新增行");
+  root.appendChild(addRow);
+
+  const menu = document.createElement("div");
+  menu.className = "cm-md-table-menu";
+  menu.hidden = true;
+  root.appendChild(menu);
   return root;
 }
 
@@ -251,12 +661,421 @@ class TableWidget extends WidgetType {
   eq(other: WidgetType): boolean {
     return other instanceof TableWidget && other.source === this.source;
   }
-  toDOM(): HTMLElement {
-    return buildTableDom(parseTableSource(this.source));
+  toDOM(view: EditorView): HTMLElement {
+    const dom = buildTableDom(parseTableSource(this.source));
+    dom.dataset.sourceLength = String(this.source.length);
+    installTableDomHandlers(view, dom);
+    return dom;
   }
   ignoreEvent() {
-    return false;
+    return true;
   }
+}
+
+class ListMarkerWidget extends WidgetType {
+  constructor(
+    private readonly label: string,
+    private readonly ordered: boolean,
+  ) {
+    super();
+  }
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof ListMarkerWidget &&
+      other.label === this.label &&
+      other.ordered === this.ordered
+    );
+  }
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = `cm-md-list-marker${this.ordered ? " ordered" : ""}`;
+    span.textContent = this.label;
+    return span;
+  }
+}
+
+function tableRangeFromHost(
+  view: EditorView,
+  host: HTMLElement,
+): { from: number; to: number; source: string } | null {
+  const from = view.posAtDOM(host);
+  const len = Number(host.dataset.sourceLength);
+  if (from == null || !Number.isFinite(len) || len <= 0) return null;
+  const to = Math.min(view.state.doc.length, from + len);
+  if (to <= from) return null;
+  return { from, to, source: view.state.doc.sliceString(from, to) };
+}
+
+function activeTableCell(host: HTMLElement): HTMLElement | null {
+  const row = host.dataset.activeRow ?? "1";
+  const col = host.dataset.activeCol ?? "0";
+  const cells = Array.from(host.querySelectorAll<HTMLElement>(".cm-md-table-cell"));
+  return (
+    cells.find((cell) => cell.dataset.row === row && cell.dataset.col === col) ??
+    cells[0] ??
+    null
+  );
+}
+
+function setActiveTableCell(host: HTMLElement, cell: HTMLElement) {
+  host.dataset.activeRow = cell.dataset.row ?? "1";
+  host.dataset.activeCol = cell.dataset.col ?? "0";
+}
+
+function tableCellText(cell: HTMLElement): string {
+  if (cell instanceof HTMLTextAreaElement) return cell.value.replace(/\r?\n/g, " ").trim();
+  return (cell.textContent ?? "").replace(/\r?\n/g, " ").trim();
+}
+
+function updateParsedTableCell(
+  parsed: ParsedTable,
+  row: number,
+  col: number,
+  value: string,
+): ParsedTable {
+  const table = normalizedTable(parsed);
+  const cols = tableColumnCount(table);
+  const safeCol = Math.max(0, Math.min(cols - 1, col));
+  if (row <= 0) {
+    table.header[safeCol] = value;
+    return normalizedTable(table);
+  }
+  while (table.rows.length < row) table.rows.push(Array(cols).fill(""));
+  table.rows[row - 1][safeCol] = value;
+  return normalizedTable(table);
+}
+
+function commitTableCellEdit(view: EditorView, cell: HTMLElement): boolean {
+  const host = cell.closest<HTMLElement>(".cm-md-table-widget");
+  if (!host) return false;
+  const range = tableRangeFromHost(view, host);
+  if (!range) return false;
+  const row = Number(cell.dataset.row);
+  const col = Number(cell.dataset.col);
+  if (!Number.isFinite(row) || !Number.isFinite(col)) return false;
+  const parsed = parseTableSource(range.source);
+  const next = buildTableSource(updateParsedTableCell(parsed, row, col, tableCellText(cell)));
+  if (next === range.source) return false;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: next },
+    userEvent: "input",
+  });
+  return true;
+}
+
+function selectElementContents(el: HTMLElement) {
+  const range = el.ownerDocument.createRange();
+  range.selectNodeContents(el);
+  const selection = el.ownerDocument.getSelection?.() ?? window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+type CaretDocument = Document & {
+  caretPositionFromPoint?: (
+    x: number,
+    y: number,
+  ) => { offsetNode: Node; offset: number } | null;
+  caretRangeFromPoint?: (x: number, y: number) => Range | null;
+};
+
+function focusTableCell(cell: HTMLElement, event?: MouseEvent) {
+  if (cell instanceof HTMLTextAreaElement) {
+    cell.focus({ preventScroll: true });
+    void event;
+    return;
+  }
+  const doc = cell.ownerDocument as CaretDocument;
+  cell.focus({ preventScroll: true });
+  const selection = doc.getSelection?.() ?? window.getSelection();
+  if (!selection) return;
+
+  let range: Range | null = null;
+  if (event) {
+    const caret = doc.caretPositionFromPoint?.(event.clientX, event.clientY);
+    if (caret && cell.contains(caret.offsetNode)) {
+      range = doc.createRange();
+      range.setStart(caret.offsetNode, caret.offset);
+      range.collapse(true);
+    } else {
+      const fallbackRange = doc.caretRangeFromPoint?.(event.clientX, event.clientY);
+      if (fallbackRange && cell.contains(fallbackRange.startContainer)) {
+        range = fallbackRange;
+      }
+    }
+  }
+
+  if (!range) {
+    range = doc.createRange();
+    range.selectNodeContents(cell);
+    range.collapse(false);
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function hasSelectionInsideTableCell(cell: HTMLElement): boolean {
+  if (cell instanceof HTMLTextAreaElement) {
+    return cell.selectionStart !== cell.selectionEnd;
+  }
+  const selection = cell.ownerDocument.getSelection?.() ?? window.getSelection();
+  if (!selection || selection.isCollapsed) return false;
+  const { anchorNode, focusNode } = selection;
+  return !!anchorNode && !!focusNode && cell.contains(anchorNode) && cell.contains(focusNode);
+}
+
+function resizeTableCellEditor(cell: HTMLElement) {
+  if (!(cell instanceof HTMLTextAreaElement)) return;
+  cell.style.height = "auto";
+  cell.style.height = `${Math.max(24, cell.scrollHeight)}px`;
+}
+
+function eventElementTarget(event: Event): HTMLElement | null {
+  const target = event.target;
+  if (target instanceof HTMLElement) return target;
+  if (target instanceof Node) return target.parentElement;
+  return null;
+}
+
+function focusAdjacentTableCell(cell: HTMLElement, direction: -1 | 1) {
+  const host = cell.closest<HTMLElement>(".cm-md-table-widget");
+  if (!host) return;
+  const cells = Array.from(host.querySelectorAll<HTMLElement>(".cm-md-table-cell"));
+  const current = cells.indexOf(cell);
+  const next = cells[current + direction];
+  if (!next) return;
+  host.dataset.activeRow = next.dataset.row ?? "1";
+  host.dataset.activeCol = next.dataset.col ?? "0";
+  focusTableCell(next);
+  selectElementContents(next);
+}
+
+function applyTableWidgetAction(
+  view: EditorView,
+  host: HTMLElement,
+  row: number,
+  col: number,
+  action: WysiwygTableAction,
+  pendingCell?: HTMLElement | null,
+): boolean {
+  const range = tableRangeFromHost(view, host);
+  if (!range) return false;
+  let parsed = parseTableSource(range.source);
+  if (pendingCell) {
+    const pendingRow = Number(pendingCell.dataset.row);
+    const pendingCol = Number(pendingCell.dataset.col);
+    if (Number.isFinite(pendingRow) && Number.isFinite(pendingCol)) {
+      parsed = updateParsedTableCell(parsed, pendingRow, pendingCol, tableCellText(pendingCell));
+    }
+  }
+  const next = buildTableSource(applyWysiwygTableAction(parsed, row, col, action));
+  if (next === range.source) return false;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: next },
+    userEvent: "input",
+  });
+  return true;
+}
+
+function hideTableMenu(host: HTMLElement) {
+  const menu = host.querySelector<HTMLElement>(".cm-md-table-menu");
+  if (menu) menu.hidden = true;
+}
+
+function tableActionCoordsFromButton(host: HTMLElement, button: HTMLElement) {
+  const active = activeTableCell(host);
+  let row = Number(host.dataset.activeRow ?? active?.dataset.row ?? 1);
+  let col = Number(host.dataset.activeCol ?? active?.dataset.col ?? 0);
+  if (button.dataset.row != null) row = Number(button.dataset.row);
+  if (button.dataset.col != null) col = Number(button.dataset.col);
+  if (button.dataset.edge === "col-end") {
+    col = Math.max(0, Number(host.dataset.colCount ?? 1) - 1);
+  }
+  if (button.dataset.edge === "row-end") {
+    row = Math.max(0, Number(host.dataset.rowCount ?? 0));
+  }
+  const menu = button.closest<HTMLElement>(".cm-md-table-menu");
+  if (menu) {
+    row = Number(menu.dataset.row ?? row);
+    col = Number(menu.dataset.col ?? col);
+  }
+  return { row, col, active };
+}
+
+function runTableButtonAction(view: EditorView, host: HTMLElement, button: HTMLElement): boolean {
+  const action = button.dataset.action as WysiwygTableAction | undefined;
+  if (!action) return false;
+  const { row, col, active } = tableActionCoordsFromButton(host, button);
+  const ok = applyTableWidgetAction(view, host, row, col, action, active);
+  hideTableMenu(host);
+  return ok;
+}
+
+function appendTableMenuButton(
+  menu: HTMLElement,
+  action: WysiwygTableAction,
+  label: string,
+  row: number,
+  col: number,
+) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-md-table-menu-item";
+  button.dataset.action = action;
+  button.dataset.row = String(row);
+  button.dataset.col = String(col);
+  button.textContent = label;
+  menu.appendChild(button);
+}
+
+function showTableMenu(host: HTMLElement, cell: HTMLElement, event: MouseEvent) {
+  const menu = host.querySelector<HTMLElement>(".cm-md-table-menu");
+  if (!menu) return;
+  const row = Number(cell.dataset.row);
+  const col = Number(cell.dataset.col);
+  if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+  menu.replaceChildren();
+  menu.dataset.row = String(row);
+  menu.dataset.col = String(col);
+  if (row <= 0) {
+    appendTableMenuButton(menu, "insertColRight", "右侧插入列", row, col);
+    appendTableMenuButton(menu, "deleteCol", "删除列", row, col);
+  } else {
+    appendTableMenuButton(menu, "insertRowBelow", "下方插入行", row, col);
+    appendTableMenuButton(menu, "deleteRow", "删除行", row, col);
+    appendTableMenuButton(menu, "insertColRight", "右侧插入列", row, col);
+    appendTableMenuButton(menu, "deleteCol", "删除列", row, col);
+  }
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  menu.hidden = false;
+}
+
+function installTableDomHandlers(view: EditorView, host: HTMLElement) {
+  let pointerDown:
+    | {
+        cell: HTMLElement;
+        x: number;
+        y: number;
+      }
+    | null = null;
+  let suppressNextCellClick = false;
+
+  host.addEventListener("focusin", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    setActiveTableCell(host, cell);
+    resizeTableCellEditor(cell);
+    event.stopPropagation();
+  });
+
+  host.addEventListener("focusout", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    commitTableCellEdit(view, cell);
+    event.stopPropagation();
+  });
+
+  host.addEventListener("keydown", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      commitTableCellEdit(view, cell);
+      cell.blur();
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      commitTableCellEdit(view, cell);
+      focusAdjacentTableCell(cell, event.shiftKey ? -1 : 1);
+    }
+  });
+
+  host.addEventListener("mousedown", (event) => {
+    const target = eventElementTarget(event);
+    const tool = target?.closest<HTMLButtonElement>(
+      ".cm-md-table-edge-action[data-action], .cm-md-table-menu-item[data-action]",
+    );
+    if (tool && host.contains(tool)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (cell && host.contains(cell)) {
+      setActiveTableCell(host, cell);
+      hideTableMenu(host);
+      pointerDown = { cell, x: event.clientX, y: event.clientY };
+      event.stopPropagation();
+    }
+  });
+
+  host.addEventListener("mouseup", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    const moved =
+      !pointerDown ||
+      pointerDown.cell !== cell ||
+      Math.abs(pointerDown.x - event.clientX) > 4 ||
+      Math.abs(pointerDown.y - event.clientY) > 4;
+    suppressNextCellClick = moved || hasSelectionInsideTableCell(cell);
+    if (!suppressNextCellClick) {
+      focusTableCell(cell, event);
+    }
+    pointerDown = null;
+    event.stopPropagation();
+  });
+
+  host.addEventListener("click", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    setActiveTableCell(host, cell);
+    if (suppressNextCellClick) {
+      suppressNextCellClick = false;
+    } else if (cell.ownerDocument.activeElement !== cell) {
+      focusTableCell(cell, event);
+    }
+    event.stopPropagation();
+  });
+
+  host.addEventListener("click", (event) => {
+    const target = eventElementTarget(event);
+    const tool = target?.closest<HTMLButtonElement>(
+      ".cm-md-table-edge-action[data-action], .cm-md-table-menu-item[data-action]",
+    );
+    if (!tool || !host.contains(tool)) return;
+    runTableButtonAction(view, host, tool);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  host.addEventListener("contextmenu", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    setActiveTableCell(host, cell);
+    showTableMenu(host, cell, event);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  host.addEventListener("input", (event) => {
+    const target = eventElementTarget(event);
+    const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
+    if (!cell || !host.contains(cell)) return;
+    resizeTableCellEditor(cell);
+    event.stopPropagation();
+  });
 }
 
 // ─── Image widget ─────────────────────────────────────────────────────────
@@ -685,33 +1504,45 @@ function build(state: EditorState): BuildResult {
       }
       // 列表标记（- / * / 1. ）光标不在本行时隐藏；本行时保留以便编辑
       if (n === "ListMark") {
+        const line = state.doc.lineAt(node.from);
         const after = state.doc.sliceString(node.to, node.to + 1);
         const to = after === " " ? node.to + 1 : node.to;
-        hide(node.from, to);
+        const rest = state.doc.sliceString(to, line.to);
+        const isTask = /^\s*\[[ xX]\]/i.test(rest);
+        if (isTask) {
+          hide(node.from, to);
+          return;
+        }
+        const marker = state.doc.sliceString(node.from, node.to).trim();
+        const ordered = /^\d+\./.test(marker);
+        decos.push({
+          from: node.from,
+          to,
+          deco: Decoration.replace({
+            widget: new ListMarkerWidget(ordered ? marker : "•", ordered),
+          }),
+        });
+        atomic.push({ from: node.from, to, deco: Decoration.mark({}) });
         return;
       }
 
       // ─── 表格 ───
       if (n === "Table") {
-        if (!rangeHasCursor({ from: node.from, to: node.to }, state, false)) {
-          const source = state.doc.sliceString(node.from, node.to);
-          decos.push({
-            from: node.from,
-            to: node.to,
-            deco: Decoration.replace({
-              widget: new TableWidget(source),
-              block: true,
-            }),
-          });
-          atomic.push({
-            from: node.from,
-            to: node.to,
-            deco: Decoration.mark({}),
-          });
-          return;
-        }
-        markLines(node.from, node.to, "cm-md-line cm-md-table-line");
-        return;
+        const source = state.doc.sliceString(node.from, node.to);
+        decos.push({
+          from: node.from,
+          to: node.to,
+          deco: Decoration.replace({
+            widget: new TableWidget(source),
+            block: true,
+          }),
+        });
+        atomic.push({
+          from: node.from,
+          to: node.to,
+          deco: Decoration.mark({}),
+        });
+        return false;
       }
       // TableDelimiter 在 lezer-markdown 里有两种用法：
       //   * 单字符 `|`（每行内的 cell 分隔符）—— 此时 to-from === 1，保留显示
@@ -841,22 +1672,20 @@ function build(state: EditorState): BuildResult {
 
       // ─── 代码块 ───
       if (n === "FencedCode") {
-        // 视觉语言（mermaid / dot / chart）：光标不在块内时直接渲染成图。
         const lang = extractFenceLang(state, node.from);
-        const visualKind = detectVisualLang(lang);
-        if (
-          visualKind &&
-          !rangeHasCursor({ from: node.from, to: node.to }, state, false)
-        ) {
+        const cursorInBlock = rangeHasCursor({ from: node.from, to: node.to }, state, false);
+        if (!cursorInBlock) {
           const source = extractFencedBody(state, node.from, node.to);
-          if (source.trim().length > 0) {
+          const visualKind = detectVisualLang(lang);
+          if (!visualKind || source.trim().length > 0) {
+            const widget =
+              visualKind && source.trim().length > 0
+                ? new VisualFenceWidget(visualKind, source)
+                : new CodeFenceWidget(lang, source, node.to - node.from);
             decos.push({
               from: node.from,
               to: node.to,
-              deco: Decoration.replace({
-                widget: new VisualFenceWidget(visualKind, source),
-                block: true,
-              }),
+              deco: Decoration.replace({ widget, block: true }),
             });
             atomic.push({
               from: node.from,
@@ -917,103 +1746,82 @@ const wysiwygField = StateField.define<BuildResult>({
 
 const wysiwygMousedown = EditorView.domEventHandlers({
   mousedown(e, view) {
-      const target = e.target as HTMLElement;
-      // 点击数学公式 widget → 把光标移到公式源码起点，下一次 build 自动还原源码
-      const mathHost = target.closest<HTMLElement>(
-        ".cm-md-math-inline, .cm-md-math-block",
-      );
-      if (mathHost) {
-        const pos = view.posAtDOM(mathHost);
-        if (pos != null) {
-          view.dispatch({ selection: { anchor: pos + 1 } });
-          view.focus();
-          e.preventDefault();
-        }
+    const target = eventElementTarget(e);
+    if (!target) return;
+    // 点击数学公式 widget → 把光标移到公式源码起点，下一次 build 自动还原源码
+    const mathHost = target.closest<HTMLElement>(
+      ".cm-md-math-inline, .cm-md-math-block",
+    );
+    if (mathHost) {
+      const pos = view.posAtDOM(mathHost);
+      if (pos != null) {
+        view.dispatch({ selection: { anchor: pos + 1 } });
+        view.focus();
+        e.preventDefault();
+      }
+      return;
+    }
+    // 点击 wikilink widget：
+    //   - 已解析 + 普通点击 → 打开目标笔记（与 preview 一致）
+    //   - Alt/Option + 点击 OR 未解析 → 把光标移到源码起点编辑
+    const wikiHost = target.closest<HTMLElement>(".cm-md-wikilink");
+    if (wikiHost) {
+      const path = wikiHost.dataset.path;
+      if (path && !e.altKey) {
+        e.preventDefault();
+        void useTabs.getState().openPath(path);
         return;
       }
-      // 点击 wikilink widget：
-      //   - 已解析 + 普通点击 → 打开目标笔记（与 preview 一致）
-      //   - Alt/Option + 点击 OR 未解析 → 把光标移到源码起点编辑
-      const wikiHost = target.closest<HTMLElement>(".cm-md-wikilink");
-      if (wikiHost) {
-        const path = wikiHost.dataset.path;
-        if (path && !e.altKey) {
-          e.preventDefault();
-          void useTabs.getState().openPath(path);
-          return;
-        }
-        const pos = view.posAtDOM(wikiHost);
-        if (pos != null) {
-          view.dispatch({ selection: { anchor: pos + 2 } }); // 跳过 [[
-          view.focus();
-          e.preventDefault();
-        }
-        if (!path) {
-          useUI
-            .getState()
-            .setToast({ stage: "error", message: `未找到笔记：${wikiHost.textContent}` });
-          window.setTimeout(() => useUI.getState().setToast(null), 1800);
-        }
-        return;
+      const pos = view.posAtDOM(wikiHost);
+      if (pos != null) {
+        view.dispatch({ selection: { anchor: pos + 2 } }); // 跳过 [[
+        view.focus();
+        e.preventDefault();
       }
-      // 点击图片 widget → 把光标移到 markdown 源码起点（!）
-      const imgHost = target.closest<HTMLElement>(".cm-md-img-widget");
-      if (imgHost) {
-        const pos = view.posAtDOM(imgHost);
-        if (pos != null) {
-          view.dispatch({ selection: { anchor: pos } });
-          view.focus();
-          e.preventDefault();
-        }
-        return;
+      if (!path) {
+        useUI
+          .getState()
+          .setToast({ stage: "error", message: `未找到笔记：${wikiHost.textContent}` });
+        window.setTimeout(() => useUI.getState().setToast(null), 1800);
       }
-      // 点击 mermaid / dot / chart widget → 把光标移进 fenced code 第二行（源码体）
-      const fencedHost = target.closest<HTMLElement>(".cm-md-fenced-widget");
-      if (fencedHost) {
-        const pos = view.posAtDOM(fencedHost);
-        if (pos != null) {
-          const firstLine = view.state.doc.lineAt(pos);
-          const innerStart = Math.min(firstLine.to + 1, view.state.doc.length);
-          view.dispatch({ selection: { anchor: innerStart } });
-          view.focus();
-          e.preventDefault();
-        }
-        return;
-      }
-      // 点击表格 widget 单元格 → 用 tableCellSourcePos 把光标精确落到该 cell 内容起点
-      const tableCell = target.closest<HTMLElement>(
-        ".cm-md-table-widget td[data-row], .cm-md-table-widget th[data-row]",
-      );
-      if (tableCell) {
-        const tableHost = tableCell.closest<HTMLElement>(".cm-md-table-widget");
-        if (!tableHost) return;
-        const widgetPos = view.posAtDOM(tableHost);
-        if (widgetPos == null) return;
-        const tableTopLine = view.state.doc.lineAt(widgetPos).number;
-        const row = Number(tableCell.dataset.row);
-        const col = Number(tableCell.dataset.col);
-        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
-        const cellPos = tableCellSourcePos(view, tableTopLine, row, col);
-        if (cellPos != null) {
-          view.dispatch({ selection: { anchor: cellPos } });
-          view.focus();
-          e.preventDefault();
-        }
-        return;
-      }
-      // 点击任务复选框时切换 - [ ] / - [x]
-      if (!target.classList?.contains("cm-md-task")) return;
-      const pos = view.posAtDOM(target);
+      return;
+    }
+    // 点击图片 widget → 把光标移到 markdown 源码起点（!）
+    const imgHost = target.closest<HTMLElement>(".cm-md-img-widget");
+    if (imgHost) {
+      const pos = view.posAtDOM(imgHost);
       if (pos == null) return;
-      const line = view.state.doc.lineAt(pos);
-      const text = line.text;
-      const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
-      if (!m) return;
-      const insert = m[2].toLowerCase() === "x" ? " " : "x";
-      const from = line.from + m[1].length;
-      const to = from + 1;
-      view.dispatch({ changes: { from, to, insert } });
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
       e.preventDefault();
+      return;
+    }
+    // 点击 mermaid / dot / chart widget → 把光标移进 fenced code 第二行（源码体）
+    const fencedHost = target.closest<HTMLElement>(".cm-md-fenced-widget");
+    if (fencedHost) {
+      const pos = view.posAtDOM(fencedHost);
+      if (pos != null) {
+        const firstLine = view.state.doc.lineAt(pos);
+        const innerStart = Math.min(firstLine.to + 1, view.state.doc.length);
+        view.dispatch({ selection: { anchor: innerStart } });
+        view.focus();
+        e.preventDefault();
+      }
+      return;
+    }
+    // 点击任务复选框时切换 - [ ] / - [x]
+    if (!target.classList?.contains("cm-md-task")) return;
+    const pos = view.posAtDOM(target);
+    if (pos == null) return;
+    const line = view.state.doc.lineAt(pos);
+    const text = line.text;
+    const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
+    if (!m) return;
+    const insert = m[2].toLowerCase() === "x" ? " " : "x";
+    const from = line.from + m[1].length;
+    const to = from + 1;
+    view.dispatch({ changes: { from, to, insert } });
+    e.preventDefault();
     },
   },
 );

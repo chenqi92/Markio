@@ -1108,29 +1108,99 @@
   justify-content: center;
 }
 
-/* AI 助手消息上方的「引用片段」折叠区 */
+/* AI 助手消息上方的「引用片段」区：始终展开的 Cursor 风格卡片网格 */
 .ai-msg-refs {
-  border: 0.5px solid var(--border);
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-pane) 94%);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  overflow: hidden;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .ai-msg-refs-h {
-  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--text-2);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
+  padding: 0 2px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
-.ai-msg-refs-h:hover { background: var(--bg-hover); color: var(--text); }
-.ai-msg-refs-chev { margin-left: auto; opacity: 0.6; font-size: 10px; }
+.ai-msg-refs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.ai-msg-ref-card {
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color var(--tr), background var(--tr), transform var(--tr);
+  min-width: 0;
+}
+.ai-msg-ref-card:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-pane) 95%);
+  transform: translateY(-1px);
+}
+.ai-msg-ref-card-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  min-width: 0;
+}
+.ai-msg-ref-card-idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ai-msg-ref-card-file {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-msg-ref-card-src {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-glow);
+  color: var(--accent);
+  flex-shrink: 0;
+  text-transform: lowercase;
+}
+.ai-msg-ref-card-head {
+  font-size: 10.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-msg-ref-card-body {
+  font-size: 10.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .ai-msg-refs-list {
   display: flex;

@@ -45,7 +45,6 @@ export function AIAssistantMessage({
   onWikiClick,
   refs,
 }: Props) {
-  const [refsOpen, setRefsOpen] = useState(false);
   const openFile = useTabs((s) => s.openFile);
   const wsForRefs = useWorkspace((s) => s.activeWorkspace());
   const [html, setHtml] = useState<string>("");
@@ -172,47 +171,43 @@ export function AIAssistantMessage({
       <div className="ai-msg-body">
         {refs && refs.length > 0 && (
           <div className="ai-msg-refs">
-            <button
-              type="button"
-              className="ai-msg-refs-h"
-              onClick={() => setRefsOpen((v) => !v)}
-            >
+            <div className="ai-msg-refs-h">
               <Icon name="search" size={11} />
-              <span>引用 {refs.length} 个仓库片段</span>
-              <span className="ai-msg-refs-chev">{refsOpen ? "▾" : "▸"}</span>
-            </button>
-            {refsOpen && (
-              <div className="ai-msg-refs-list">
-                {refs.map((r, i) => {
-                  const file = r.path.split("/").slice(-1)[0] ?? r.path;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      className="ai-msg-ref-item"
-                      onClick={() => {
-                        if (wsForRefs) {
-                          void openFile(wsForRefs.id, r.path);
-                        }
-                      }}
-                      title={r.path}
-                    >
-                      <div className="ai-msg-ref-h">
-                        <span className="ai-msg-ref-file">{file}</span>
-                        <span className="ai-msg-ref-src">{r.source}</span>
-                      </div>
-                      {r.heading && (
-                        <div className="ai-msg-ref-heading">{r.heading}</div>
-                      )}
-                      <div className="ai-msg-ref-body">
-                        {r.body.slice(0, 180)}
-                        {r.body.length > 180 ? "…" : ""}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+              <span>
+                引用 {refs.length} 处仓库内容 · 点击卡片打开原文
+              </span>
+            </div>
+            <div className="ai-msg-refs-grid">
+              {refs.map((r, i) => {
+                const file = r.path.split(/[\\/]/).slice(-1)[0] ?? r.path;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className="ai-msg-ref-card"
+                    onClick={() => {
+                      if (wsForRefs) {
+                        void openFile(wsForRefs.id, r.path);
+                      }
+                    }}
+                    title={r.path}
+                  >
+                    <div className="ai-msg-ref-card-h">
+                      <span className="ai-msg-ref-card-idx">[{i + 1}]</span>
+                      <span className="ai-msg-ref-card-file">{file}</span>
+                      <span className="ai-msg-ref-card-src">{r.source}</span>
+                    </div>
+                    {r.heading && (
+                      <div className="ai-msg-ref-card-head">{r.heading}</div>
+                    )}
+                    <div className="ai-msg-ref-card-body">
+                      {r.body.slice(0, 220).trim()}
+                      {r.body.length > 220 ? "…" : ""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
         <div

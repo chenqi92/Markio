@@ -53,8 +53,16 @@ const MODES: Array<{ id: AIMode; label: string; sub: string; icon: IconName }> =
   { id: "proof", label: "校对", sub: "找错别字、病句、不通顺", icon: "check-square" },
 ];
 
+// 全部 mode 共享的硬性约束：紧凑 / 引用编号 / 不闲聊。
+// 各 mode 自己再补任务侧的风格说明。
+const COMMON_PROMPT_SUFFIX = `\n\n输出约束：
+- 紧凑、信息密度高，去掉"作为 AI"这种废话开场
+- 优先用列表 / 小标题 / 行内代码，避免长段落
+- 用到给定的"仓库相关片段"时，必须在句末用 [^N] 标注引用编号 (N 与片段编号一致)，方便用户跳转
+- 当片段不够 / 与问题无关时，明确说"未在选定范围找到，以下是基于通用知识"，再给通用答案`;
+
 const MODE_SYSTEM: Record<AIMode, string> = {
-  ask: "你是一个写作助手，结合提供的笔记上下文回答问题，回答简洁、直接，遇到 markdown 用 markdown 回复。",
+  ask: "你是写作助手，结合提供的仓库片段回答。优先引用片段原文，不要泛泛而谈。",
   summarize: "你是一个总结助手。读取提供的笔记内容，输出 5–8 条要点 + 一句话核心结论，用 markdown 列表。",
   draft: "你是一个续写助手。沿用提供的笔记的语气与结构，自然衔接续写一段（不超过 400 字）。",
   write: "你是一个长文起草助手。按用户的主题，输出包含 H2 / H3 小节的完整 markdown 草稿。",
@@ -141,6 +149,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const appendChunk = useAISessions((s) => s.appendChunk);
   const patchMessage = useAISessions((s) => s.patchMessage);
   const scope = useAISessions((s) => s.scope);
+  const scopeTag = useAISessions((s) => s.scopeTag);
   const streamCancelRef = useRef<(() => Promise<void>) | null>(null);
   // 每次 send / cancel 都 bump 这个 token。onChunk/onDone/onError 回调里
   // 用闭包记下入口时的 token，不一致则视为 stale 丢弃——避免：
@@ -221,7 +230,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     }
 
     // 组装 system prompt（按 scope）
-    const parts: string[] = [MODE_SYSTEM[aiMode]];
+    const parts: string[] = [MODE_SYSTEM[aiMode] + COMMON_PROMPT_SUFFIX];
     // scope = open: 把所有打开的 tab 内容塞进去；当前 tab 提到最前
     if (scope === "open") {
       const allTabs = useTabs.getState().tabs;
@@ -275,14 +284,41 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       }
     }
     let collectedRefs: AIMsgRef[] = [];
-    let retrievalNote: string | null = null;
-    if ((useWorkspaceCtx || scope !== "open") && ws) {
+    // ─── 按 scope 决定检索范围 ───────────────────────────────────────────
+    // scope = "open"   → 不走仓库检索，已经用 tab 内容当上下文
+    // scope = "manual" → 不走仓库检索，已经用 attachedItems
+    // scope = "folder" → grep 仅在当前文件所在目录
+    // scope = "tag"    → 先按 tag 过滤候选文件，再 grep 取片段
+    // scope = "all"    → grep / RAG 整个仓库（旧行为）
+    // "custom" 是历史名，实际意为手动选择。当前 store 仍把它叫 custom；attachedItems 不为空时跳过自动检索。
+    const skipRetrieval =
+      scope === "open" ||
+      attachedItems.length > 0 ||
+      !useWorkspaceCtx ||
+      !ws;
+
+    if (!skipRetrieval && ws) {
+      // 选 grep 根路径：folder 用当前 tab 的 parent dir；其它默认 ws.path
+      let scopeRoot = ws.path;
+      let scopeLabel = "整个仓库";
+      if (scope === "folder" && tab?.path) {
+        const sep = tab.path.includes("\\") ? "\\" : "/";
+        const parent = tab.path.replace(new RegExp(`${sep === "\\" ? "\\\\" : "/"}[^${sep === "\\" ? "\\\\" : "/"}]+$`), "");
+        if (parent && parent.length >= ws.path.length) {
+          scopeRoot = parent;
+          scopeLabel = `当前文件夹：${parent.split(/[\\/]/).pop() ?? parent}`;
+        }
+      } else if (scope === "tag" && scopeTag) {
+        scopeLabel = `标签 #${scopeTag}`;
+      }
+
       const ragEnabled = useSettings.getState().ragEnabled;
       const ragStatus = useRag.getState().status[ws.id];
       const hasIndex = (ragStatus?.totalChunks ?? 0) > 0;
-      const indexing = ragStatus?.progress?.running ?? false;
+      // 只有 scope = all 时才用 RAG 向量检索（向量库没有 path-prefix 过滤）
       let used = false;
-      if (ragEnabled && hasIndex) {
+      let retrievalNote: string | null = null;
+      if (scope === "all" && ragEnabled && hasIndex) {
         try {
           const hits = await useRag.getState().search(ws.path, text);
           if (hits.length > 0) {
@@ -297,17 +333,17 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               .map((h, i) => {
                 const file = h.path.split("/").slice(-1)[0] ?? h.path;
                 const head = h.heading ? `\n小节：${h.heading}` : "";
-                return `### 片段 ${i + 1} · ${file} (${h.source})${head}\n\n${h.body}`;
+                return `### [${i + 1}] ${file} (${h.source})${head}\n\n${h.body}`;
               })
               .join("\n\n---\n\n");
             parts.push(
-              `仓库相关片段（混合检索：向量 + 关键词 + 引用图）：\n\n${ctx}`,
+              `仓库相关片段（向量 + 关键词混合检索 · 范围：${scopeLabel}）：\n\n${ctx}`,
             );
             used = true;
           }
         } catch (e) {
           console.warn("[ai.send] rag.search failed, fallback to grep", e);
-          retrievalNote = "本地索引检索失败，本次回答暂用关键词检索。";
+          retrievalNote = "向量检索失败，已回退到关键词。";
           reportDiagnostic({
             source: "rag",
             severity: "warning",
@@ -316,16 +352,21 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             workspace: ws.path,
           });
         }
-      } else if (ragEnabled && !hasIndex) {
-        retrievalNote = indexing
-          ? "本地索引正在构建中，本次回答暂用关键词检索。"
-          : "本地索引尚未构建。在右侧侧栏点「构建本地索引」开启向量检索。";
-      } else if (!ragEnabled) {
-        retrievalNote = "当前为关键词检索模式。在右侧侧栏可启用本地索引。";
       }
       if (!used) {
         try {
-          const hits = await api.aiRetrieve(ws.path, text, 5);
+          let hits = await api.aiRetrieve(scopeRoot, text, 8);
+          // tag scope: 在 vault index 里过滤命中文件
+          if (scope === "tag" && scopeTag) {
+            const idxFiles =
+              useVaultIndex.getState().index[ws.path]?.files ?? [];
+            const taggedPaths = new Set(
+              idxFiles
+                .filter((f) => f.tags.includes(scopeTag))
+                .map((f) => f.path),
+            );
+            hits = hits.filter((h) => taggedPaths.has(h.path));
+          }
           if (hits.length > 0) {
             collectedRefs = hits.map((h) => ({
               path: h.path,
@@ -337,15 +378,16 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             const ctx = hits
               .map(
                 (h, i) =>
-                  `### 片段 ${i + 1} · ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
+                  `### [${i + 1}] ${h.name}${h.line ? `:${h.line}` : ""}\n\n${h.snippet}`,
               )
               .join("\n\n---\n\n");
-            const header = retrievalNote
-              ? `${retrievalNote}\n\n仓库相关片段（关键词检索）：`
-              : "仓库相关片段（关键词检索）：";
-            parts.push(`${header}\n\n${ctx}`);
-          } else if (retrievalNote) {
-            parts.push(retrievalNote);
+            parts.push(
+              `仓库相关片段（关键词检索 · 范围：${scopeLabel}）：\n\n${ctx}`,
+            );
+          } else {
+            parts.push(
+              `仓库相关片段：在 ${scopeLabel} 范围内未找到与 "${text.slice(0, 40)}" 匹配的内容。如果回答用通用知识，请明确标注。${retrievalNote ? "\n" + retrievalNote : ""}`,
+            );
           }
         } catch (e) {
           reportDiagnostic({
@@ -355,9 +397,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             detail: e,
             workspace: ws.path,
           });
-          if (retrievalNote) {
-            parts.push(`${retrievalNote}\n关键词检索也失败，未附加仓库片段。`);
-          }
+          parts.push(`关键词检索失败：${(e as Error).message}`);
         }
       }
     }

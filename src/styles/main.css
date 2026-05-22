@@ -157,9 +157,8 @@
   top: 100%; left: 0;
   margin-top: 6px;
   width: 240px;
-  background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
+  box-sizing: border-box;
+  background: var(--bg-modal, var(--bg-elev));
   border: 0.5px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-deep);
@@ -195,45 +194,57 @@
 .new-menu-sep { height: 0.5px; background: var(--border); margin: 5px 4px; }
 
 .new-menu-wide {
-  width: 520px;
-  max-height: 560px;
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 120px));
   overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 4px;
+}
+.new-menu-wide .new-menu-h {
+  padding: 8px 10px 4px;
 }
 .new-menu-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 4px;
-  padding: 0 4px 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 2px 6px 6px;
 }
 .new-tpl-card {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px;
+  min-width: 0;
   background: var(--bg-pane);
   border: 0.5px solid var(--border);
   border-radius: 8px;
   text-align: left;
   cursor: pointer;
-  transition: all var(--tr);
+  transition: background var(--tr), border-color var(--tr), transform var(--tr);
 }
 .new-tpl-card:hover {
   background: var(--bg-elev);
-  border-color: var(--text);
+  border-color: var(--border-strong);
   transform: translateY(-1px);
 }
 .new-tpl-ico {
-  width: 28px; height: 28px;
+  width: 26px; height: 26px;
   background: var(--bg-pane-2);
   border: 0.5px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-2);
   flex-shrink: 0;
 }
 .new-tpl-meta { flex: 1; min-width: 0; }
-.new-tpl-meta .t { font-size: 12px; font-weight: 600; color: var(--text); }
+.new-tpl-meta .t {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .new-tpl-meta .s {
   font-size: 10.5px; color: var(--text-3); margin-top: 1px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.new-menu-wide .new-menu-item {
+  padding: 7px 10px;
 }
 
 /* path crumb */

@@ -12,7 +12,11 @@ import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
 import { getProviderModels } from "@/lib/ai-providers";
-import { runAgent, type AgentMsg } from "@/lib/ai-agent";
+import {
+  runAgent,
+  type AgentMsg,
+  type AgentScopeRestriction,
+} from "@/lib/ai-agent";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
 import { AIPreview } from "./AIPreview";
@@ -442,6 +446,75 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         return;
       }
       agentCancelRef.current = false;
+      // ─── 计算 Agent 的 scope 限制 ─────────────────────────────────────
+      // 与非 Agent 路径的 scope 含义保持一致：
+      // - all      → 无限制 (整个仓库)
+      // - folder   → dir，rootPath = 当前 tab 的 parent dir
+      // - open     → set，allowedPaths = 所有打开 tab 的 path
+      // - tag      → set，allowedPaths = vault index 里带该 #tag 的文件
+      // - custom   → set，allowedPaths = attachedItems 摊平后的文件（含目录展开）
+      let agentScope: AgentScopeRestriction | undefined;
+      if (scope === "folder" && tab?.path) {
+        const sep = tab.path.includes("\\") ? "\\" : "/";
+        const parent = tab.path.replace(
+          new RegExp(`${sep === "\\" ? "\\\\" : "/"}[^${sep === "\\" ? "\\\\" : "/"}]+$`),
+          "",
+        );
+        if (parent && parent.length >= ws.path.length) {
+          agentScope = {
+            kind: "dir",
+            rootPath: parent,
+            label: `当前文件夹 ${parent.split(/[\\/]/).pop() ?? parent}`,
+          };
+        }
+      } else if (scope === "open") {
+        const openPaths = useTabs.getState().tabs.map((t) => t.path);
+        if (openPaths.length > 0) {
+          agentScope = {
+            kind: "set",
+            allowedPaths: openPaths,
+            label: `当前打开的 ${openPaths.length} 个 tab`,
+          };
+        }
+      } else if (scope === "tag" && scopeTag) {
+        const idxFiles =
+          useVaultIndex.getState().index[ws.path]?.files ?? [];
+        const paths = idxFiles
+          .filter((f) => f.tags.includes(scopeTag))
+          .map((f) => f.path);
+        if (paths.length > 0) {
+          agentScope = {
+            kind: "set",
+            allowedPaths: paths,
+            label: `标签 #${scopeTag}`,
+          };
+        }
+      } else if (attachedItems.length > 0) {
+        const idxFiles =
+          useVaultIndex.getState().index[ws.path]?.files ?? [];
+        const flat: string[] = [];
+        for (const item of attachedItems) {
+          if (item.isDir) {
+            const sep = item.path.includes("\\") ? "\\" : "/";
+            const prefix = item.path.endsWith(sep)
+              ? item.path
+              : item.path + sep;
+            for (const f of idxFiles) {
+              if (f.path.startsWith(prefix)) flat.push(f.path);
+            }
+          } else {
+            flat.push(item.path);
+          }
+        }
+        if (flat.length > 0) {
+          agentScope = {
+            kind: "set",
+            allowedPaths: flat,
+            label: `手动选择 ${flat.length} 个文件`,
+          };
+        }
+      }
+
       const trace: string[] = [];
       try {
         const result = await runAgent({
@@ -452,6 +525,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
           temperature,
           system,
           workspacePath: ws.path,
+          scope: agentScope,
           messages: chatMessages as AgentMsg[],
           onToolCall: (call) => {
             if (isStale()) return;

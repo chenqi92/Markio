@@ -45,7 +45,7 @@ export function Welcome() {
   };
 
   // 模板入口：没仓库先拉一个；有仓库就直接在根目录 createNew + openFile。
-  const useTemplate = async (tpl: NoteTemplate) => {
+  const applyTemplate = async (tpl: NoteTemplate) => {
     let ws = activeWs;
     if (!ws) {
       const ok = await confirmDialog({
@@ -109,7 +109,7 @@ export function Welcome() {
   };
 
   const importFromClipboard = async () => {
-    let text = "";
+    let text: string;
     try {
       text = await readText();
     } catch {
@@ -212,7 +212,7 @@ export function Welcome() {
               key={tpl.id}
               type="button"
               className="welcome-tpl"
-              onClick={() => void useTemplate(tpl)}
+              onClick={() => void applyTemplate(tpl)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setTplCtx({ x: e.clientX, y: e.clientY, tpl });
@@ -328,7 +328,7 @@ export function Welcome() {
             {
               label: `用「${tplCtx.tpl.title}」新建`,
               icon: "plus",
-              onClick: () => void useTemplate(tplCtx.tpl),
+              onClick: () => void applyTemplate(tplCtx.tpl),
             },
           ]}
         />

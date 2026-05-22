@@ -2193,8 +2193,7 @@ fn check_ai_endpoint_host(provider: &str, endpoint: &str) -> Result<(), String> 
         "custom" => true,
         other => {
             let list = allowed_hosts_for(other);
-            list.iter()
-                .any(|h| host.as_deref() == Some(*h))
+            list.iter().any(|h| host.as_deref() == Some(*h))
         }
     };
     if allowed {

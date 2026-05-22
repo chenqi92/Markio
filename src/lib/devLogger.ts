@@ -153,7 +153,9 @@ export async function wrapInvoke<T>(
 function patchConsole() {
   const levels = ["log", "info", "warn", "error", "debug"] as const;
   for (const lv of levels) {
+    // eslint-disable-next-line no-console
     const orig = console[lv].bind(console);
+    // eslint-disable-next-line no-console
     console[lv] = (...args: unknown[]) => {
       try {
         enqueue({ level: lv, src: "console", msg: formatArgs(args) });

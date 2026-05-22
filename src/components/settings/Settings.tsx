@@ -95,12 +95,7 @@ const SECTION_GROUPS: ReadonlyArray<{
   },
 ];
 
-const SECTIONS = SECTION_GROUPS.flatMap((g) => g.items) as ReadonlyArray<{
-  id: string;
-  icon: IconName;
-}>;
-
-type SectionId = (typeof SECTIONS)[number]["id"];
+type SectionId = (typeof SECTION_GROUPS)[number]["items"][number]["id"];
 
 /** 在没有 useTranslation 上下文的工具里偶尔需要，普通组件用 useTranslation(). */
 function sectionLabel(t: (k: string) => string, id: SectionId): string {

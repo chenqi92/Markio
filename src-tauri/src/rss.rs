@@ -41,7 +41,10 @@ pub async fn fetch(url: &str) -> Result<RssFetchResult, String> {
         .map_err(|e| format!("构建 HTTP 客户端失败：{e}"))?;
     let resp = client
         .get(url)
-        .header("accept", "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8")
+        .header(
+            "accept",
+            "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+        )
         .send()
         .await
         .map_err(|e| format!("请求失败：{e}"))?;
@@ -223,7 +226,9 @@ fn parse_rss(xml: &str) -> Result<RssFetchResult, String> {
     }
 
     Ok(RssFetchResult {
-        feed_title: feed_title.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        feed_title: feed_title
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
         items,
     })
 }
@@ -365,7 +370,9 @@ fn parse_atom(xml: &str) -> Result<RssFetchResult, String> {
     }
 
     Ok(RssFetchResult {
-        feed_title: feed_title.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        feed_title: feed_title
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
         items,
     })
 }
@@ -419,10 +426,7 @@ mod tests {
         assert_eq!(r.feed_title.as_deref(), Some("Hacker News"));
         assert_eq!(r.items.len(), 2);
         assert_eq!(r.items[0].title, "Post One");
-        assert_eq!(
-            r.items[0].link,
-            "https://news.ycombinator.com/item?id=1"
-        );
+        assert_eq!(r.items[0].link, "https://news.ycombinator.com/item?id=1");
         assert_eq!(r.items[0].summary.as_deref(), Some("Body here"));
     }
 

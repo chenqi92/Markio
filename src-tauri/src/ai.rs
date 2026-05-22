@@ -228,10 +228,9 @@ pub enum AgentTurnResult {
 pub async fn chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
     await_rate_limit(&req.provider).await;
     match req.provider.as_str() {
-        "anthropic" => Err(
-            "Anthropic tool-use 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider"
-                .to_string(),
-        ),
+        "anthropic" => {
+            Err("Anthropic tool-use 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider".to_string())
+        }
         "google" => Err(
             "Google function calling 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider"
                 .to_string(),
@@ -267,7 +266,8 @@ async fn call_openai_compat_with_tools(req: AgentRequest) -> Result<AgentTurnRes
                     let calls_json: Vec<serde_json::Value> = calls
                         .iter()
                         .map(|c| {
-                            let args_str = serde_json::to_string(&c.input).unwrap_or_else(|_| "{}".to_string());
+                            let args_str = serde_json::to_string(&c.input)
+                                .unwrap_or_else(|_| "{}".to_string());
                             serde_json::json!({
                                 "id": c.id,
                                 "type": "function",
@@ -864,10 +864,7 @@ async fn list_models_google(
                 let supports_chat = item
                     .get("supportedGenerationMethods")
                     .and_then(|m| m.as_array())
-                    .map(|a| {
-                        a.iter()
-                            .any(|x| x.as_str() == Some("generateContent"))
-                    })
+                    .map(|a| a.iter().any(|x| x.as_str() == Some("generateContent")))
                     .unwrap_or(false);
                 if !supports_chat {
                     continue;
@@ -924,10 +921,7 @@ async fn list_models_openai_compat(
             builder = builder.bearer_auth(k);
         }
     }
-    let resp = builder
-        .send()
-        .await
-        .map_err(|e| format!("请求失败：{e}"))?;
+    let resp = builder.send().await.map_err(|e| format!("请求失败：{e}"))?;
     let status = resp.status();
     let body = resp
         .text()

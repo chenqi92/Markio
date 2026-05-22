@@ -45,9 +45,9 @@ export function joinPath(...parts: string[]): string {
     .join("/");
 }
 
-export function debounce<T extends (...args: any[]) => void>(fn: T, wait: number): T {
+export function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): T {
   let t: ReturnType<typeof setTimeout> | null = null;
-  return ((...args: any[]) => {
+  return ((...args: Parameters<T>) => {
     if (t) clearTimeout(t);
     t = setTimeout(() => fn(...args), wait);
   }) as T;

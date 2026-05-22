@@ -37,9 +37,6 @@ const isEscaped = (text: string, idx: number): boolean => {
 const isLineStart = (text: string, idx: number): boolean =>
   idx === 0 || text[idx - 1] === "\n";
 
-const isLineEnd = (text: string, idx: number): boolean =>
-  idx === text.length || text[idx] === "\n";
-
 /**
  * Detect all math ranges in `text`. Offsets are absolute (not relative to
  * a slice), so pass the full doc for stable positions.

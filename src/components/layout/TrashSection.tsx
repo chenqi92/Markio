@@ -5,6 +5,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
+import { ContextMenu } from "../popovers/ContextMenu";
 import type { TrashItem } from "@/types";
 
 function daysAgo(ts: number): string {
@@ -23,6 +24,12 @@ export function TrashSection() {
   const confirmDialog = useDialog((s) => s.confirm);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TrashItem[]>([]);
+  const [ctx, setCtx] = useState<{ x: number; y: number; it: TrashItem } | null>(
+    null,
+  );
+  const [headerCtx, setHeaderCtx] = useState<{ x: number; y: number } | null>(
+    null,
+  );
 
   const reload = async () => {
     if (!ws) return;
@@ -107,6 +114,11 @@ export function TrashSection() {
         className="tree-section"
         style={{ marginTop: 10, cursor: "pointer" }}
         onClick={() => setOpen((v) => !v)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setHeaderCtx({ x: e.clientX, y: e.clientY });
+        }}
       >
         <span
           style={{
@@ -143,6 +155,11 @@ export function TrashSection() {
                   className="tree-row trash-row"
                   title={it.original}
                   style={{ opacity: 0.85 }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setCtx({ x: e.clientX, y: e.clientY, it });
+                  }}
                 >
                   <span className="ico" style={{ opacity: 0.65 }}>
                     <Icon name={it.isDir ? "folder" : "file"} size={13} />
@@ -202,6 +219,69 @@ export function TrashSection() {
             </div>
           )}
         </>
+      )}
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          onClose={() => setCtx(null)}
+          items={[
+            {
+              label: "恢复",
+              icon: "history",
+              onClick: () => {
+                void restore(ctx.it);
+              },
+            },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(ctx.it.path);
+              },
+            },
+            { sep: true },
+            {
+              label: "永久删除…",
+              icon: "trash",
+              danger: true,
+              onClick: () => {
+                void purge(ctx.it);
+              },
+            },
+          ]}
+        />
+      )}
+      {headerCtx && (
+        <ContextMenu
+          x={headerCtx.x}
+          y={headerCtx.y}
+          onClose={() => setHeaderCtx(null)}
+          items={[
+            {
+              label: open ? "折叠" : "展开",
+              icon: "chevron",
+              onClick: () => setOpen((v) => !v),
+            },
+            {
+              label: "刷新",
+              icon: "history",
+              onClick: () => {
+                void reload();
+              },
+            },
+            { sep: true },
+            {
+              label: "清空回收站…",
+              icon: "trash",
+              danger: true,
+              disabled: items.length === 0,
+              onClick: () => {
+                void purgeAll();
+              },
+            },
+          ]}
+        />
       )}
     </div>
   );

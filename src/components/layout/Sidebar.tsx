@@ -5,9 +5,11 @@ import { TaskInbox } from "./TaskInbox";
 import { TagLandscape } from "./TagLandscape";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI, type SidebarTab } from "@/stores/ui";
-import { pickDirectory } from "@/lib/api";
+import { api, pickDirectory } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
+import { writeText } from "@/lib/clipboard";
+import { ContextMenu } from "../popovers/ContextMenu";
 
 const SIDEBAR_TABS: ReadonlyArray<{ id: SidebarTab; label: string; icon: IconName }> = [
   { id: "files", label: "文件", icon: "folder" },
@@ -27,6 +29,12 @@ export function Sidebar() {
   const setSidebarTab = useUI((s) => s.setSidebarTab);
 
   const [open, setOpen] = useState(false);
+  const [repoCtx, setRepoCtx] = useState<{ x: number; y: number } | null>(null);
+  const setToast = useUI((s) => s.setToast);
+  const flash = (msg: string) => {
+    setToast({ stage: "done", message: msg });
+    setTimeout(() => setToast(null), 1500);
+  };
 
   const handleAdd = async () => {
     const dir = await pickDirectory();
@@ -45,6 +53,10 @@ export function Sidebar() {
               className="repo-card"
               style={{ width: "100%", textAlign: "left" }}
               onClick={() => setOpen((v) => !v)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setRepoCtx({ x: e.clientX, y: e.clientY });
+              }}
               type="button"
             >
               <div
@@ -254,6 +266,53 @@ export function Sidebar() {
       {sidebarTab === "files" && <FileTree />}
       {sidebarTab === "tasks" && <TaskInbox />}
       {sidebarTab === "tags" && <TagLandscape />}
+
+      {repoCtx && active && (
+        <ContextMenu
+          x={repoCtx.x}
+          y={repoCtx.y}
+          onClose={() => setRepoCtx(null)}
+          items={[
+            {
+              label: "切换仓库…",
+              icon: "chevdown",
+              onClick: () => setOpen(true),
+            },
+            { sep: true },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(active.path);
+              },
+            },
+            {
+              label: "复制仓库路径",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(active.path);
+                  flash("已复制路径");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+            { sep: true },
+            {
+              label: "添加文件夹…",
+              icon: "plus",
+              onClick: handleAdd,
+            },
+            {
+              label: "从列表中移除",
+              icon: "trash",
+              danger: true,
+              onClick: () => removeWorkspace(active.id),
+            },
+          ]}
+        />
+      )}
     </aside>
   );
 }

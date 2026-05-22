@@ -5,7 +5,11 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useFileIcons } from "@/stores/fileIcons";
 import { useDialog } from "@/stores/dialog";
+import { useUI } from "@/stores/ui";
 import { isIconName } from "../ui/Icon";
+import { ContextMenu } from "../popovers/ContextMenu";
+import { api } from "@/lib/api";
+import { writeText } from "@/lib/clipboard";
 
 /**
  * 侧边栏顶部"最近"分区。
@@ -23,7 +27,19 @@ export function RecentSection() {
   );
   const customIcons = useFileIcons((s) => s.icons);
   const confirmDialog = useDialog((s) => s.confirm);
+  const setToast = useUI((s) => s.setToast);
   const [open, setOpen] = useState(true);
+  const [ctx, setCtx] = useState<
+    | { x: number; y: number; path: string; wsId: string; name: string }
+    | null
+  >(null);
+  const [headerCtx, setHeaderCtx] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const flash = (msg: string) => {
+    setToast({ stage: "done", message: msg });
+    setTimeout(() => setToast(null), 1500);
+  };
 
   if (!ws) return null;
   const recents = items
@@ -37,6 +53,11 @@ export function RecentSection() {
         className="tree-section"
         style={{ cursor: "pointer" }}
         onClick={() => setOpen((v) => !v)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setHeaderCtx({ x: e.clientX, y: e.clientY });
+        }}
       >
         <span
           style={{
@@ -80,6 +101,17 @@ export function RecentSection() {
               key={r.path}
               className={"tree-row" + (isActive ? " selected" : "")}
               onClick={() => openFile(r.workspaceId, r.path)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCtx({
+                  x: e.clientX,
+                  y: e.clientY,
+                  path: r.path,
+                  wsId: r.workspaceId,
+                  name: r.name,
+                });
+              }}
               style={{ paddingLeft: 16 }}
               title={r.path}
             >
@@ -97,6 +129,76 @@ export function RecentSection() {
             </div>
           );
         })}
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          onClose={() => setCtx(null)}
+          items={[
+            {
+              label: "打开",
+              icon: "external",
+              onClick: () => openFile(ctx.wsId, ctx.path),
+            },
+            { sep: true },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(ctx.path);
+              },
+            },
+            {
+              label: "复制路径",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(ctx.path);
+                  flash("已复制路径");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+            { sep: true },
+            {
+              label: "从最近列表移除",
+              icon: "x",
+              onClick: () => forget(ctx.path),
+            },
+          ]}
+        />
+      )}
+      {headerCtx && (
+        <ContextMenu
+          x={headerCtx.x}
+          y={headerCtx.y}
+          onClose={() => setHeaderCtx(null)}
+          items={[
+            {
+              label: open ? "折叠" : "展开",
+              icon: "chevron",
+              onClick: () => setOpen((v) => !v),
+            },
+            { sep: true },
+            {
+              label: "清空最近列表…",
+              icon: "trash",
+              danger: true,
+              onClick: async () => {
+                const ok = await confirmDialog({
+                  title: "清空最近列表？",
+                  message:
+                    "将清空当前仓库的最近文件记录，不会删除文件本身。",
+                  confirmLabel: "清空",
+                });
+                if (!ok) return;
+                for (const it of recents) forget(it.path);
+              },
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

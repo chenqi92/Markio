@@ -14,7 +14,7 @@ function makePane(el: HTMLElement): {
   getCallsRatio: () => number[];
   state: { topLine: number | null; ratio: number };
 } {
-  const state: { topLine: number | null; ratio: number } = { topLine: 1, ratio: 0 };
+  const state: { topLine: number | null; ratio: number } = { topLine: 1, ratio: 0.5 };
   const setTopLineCalls: number[] = [];
   const setRatioCalls: number[] = [];
   const pane: PaneHandle = {
@@ -36,6 +36,27 @@ function makePane(el: HTMLElement): {
     getCallsRatio: () => setRatioCalls,
     state,
   };
+}
+
+function setScrollBox(
+  el: HTMLElement,
+  scrollTop: number,
+  scrollHeight = 1000,
+  clientHeight = 500,
+) {
+  Object.defineProperty(el, "scrollTop", {
+    value: scrollTop,
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(el, "scrollHeight", {
+    value: scrollHeight,
+    configurable: true,
+  });
+  Object.defineProperty(el, "clientHeight", {
+    value: clientHeight,
+    configurable: true,
+  });
 }
 
 afterEach(() => {
@@ -127,6 +148,56 @@ describe("splitScrollSync", () => {
     registerPane("preview", dst.pane);
     srcEl.dispatchEvent(new Event("scroll"));
     expect(dst.getCallsRatio()).toEqual([0.5]);
+    expect(dst.getCallsTopLine()).toEqual([]);
+  });
+
+  it("locks both panes to the bottom edge", () => {
+    const srcEl = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcEl, dstEl);
+    setScrollBox(srcEl, 499, 1000, 500);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    src.state.topLine = 90;
+    src.state.ratio = 0.5;
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    srcEl.dispatchEvent(new Event("scroll"));
+    expect(dst.getCallsRatio()).toEqual([1]);
+    expect(dst.getCallsTopLine()).toEqual([]);
+  });
+
+  it("locks both panes to the top edge from the real scroll element", () => {
+    const srcEl = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcEl, dstEl);
+    setScrollBox(srcEl, 0, 1000, 500);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    src.state.topLine = 12;
+    src.state.ratio = 0.5;
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    srcEl.dispatchEvent(new Event("scroll"));
+    expect(dst.getCallsRatio()).toEqual([0]);
+    expect(dst.getCallsTopLine()).toEqual([]);
+  });
+
+  it("uses the additional event element for edge detection", () => {
+    const srcEl = document.createElement("div");
+    const srcOuter = document.createElement("div");
+    const dstEl = document.createElement("div");
+    document.body.append(srcOuter, srcEl, dstEl);
+    setScrollBox(srcOuter, 0, 1200, 500);
+    const src = makePane(srcEl);
+    const dst = makePane(dstEl);
+    src.pane.eventEls = [srcOuter];
+    src.state.topLine = 66;
+    src.state.ratio = 0.5;
+    registerPane("source", src.pane);
+    registerPane("preview", dst.pane);
+    srcOuter.dispatchEvent(new Event("scroll"));
+    expect(dst.getCallsRatio()).toEqual([0]);
     expect(dst.getCallsTopLine()).toEqual([]);
   });
 

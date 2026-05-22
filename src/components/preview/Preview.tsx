@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { enhanceCalloutsLazy, type CalloutEnhanceHandle } from "@/lib/callouts";
 import {
   buildPreviewAnchors,
+  SCROLL_SYNC_VIEWPORT_RATIO,
   scrollPosForLine,
   topLineFromScroll,
   type LineAnchor,
@@ -28,6 +29,10 @@ import { useWorkspace } from "@/stores/workspace";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { findTextRanges } from "@/lib/findText";
 import { openExternal } from "@/lib/opener";
+import {
+  hydrateMarkdownTaskCheckboxes,
+  toggleMarkdownTaskLine,
+} from "@/lib/markdownTasks";
 import {
   inspectPreviewClick,
   type PreviewClickInfo,
@@ -81,31 +86,6 @@ function escapeHtml(input: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function markdownTaskLines(source: string): Array<{ line: number; checked: boolean }> {
-  return source.split(/\r?\n/).reduce<Array<{ line: number; checked: boolean }>>(
-    (out, text, index) => {
-      const m = text.match(/^\s*[-*+]\s+\[([ xX])\]/);
-      if (m) out.push({ line: index + 1, checked: m[1].toLowerCase() === "x" });
-      return out;
-    },
-    [],
-  );
-}
-
-function toggleMarkdownTaskLine(source: string, lineNumber: number): string | null {
-  const lines = source.split(/\r?\n/);
-  const line = lines[lineNumber - 1];
-  if (line == null) return null;
-  const next = line.replace(
-    /^(\s*[-*+]\s+\[)([ xX])(\])/,
-    (_match, before: string, mark: string, after: string) =>
-      `${before}${mark.toLowerCase() === "x" ? " " : "x"}${after}`,
-  );
-  if (next === line) return null;
-  lines[lineNumber - 1] = next;
-  return lines.join("\n");
 }
 
 /**
@@ -444,7 +424,8 @@ export function Preview({
     let rebuildPending = 0;
     const rebuildAnchors = () => {
       if (cancelled || !container) return;
-      anchorsRef.current = buildPreviewAnchors(container);
+      const totalLines = sourceRef.current.split(/\r?\n/).length;
+      anchorsRef.current = buildPreviewAnchors(container, totalLines);
       if (syncScroll) syncPreviewToSource();
     };
     const scheduleRebuild = () => {
@@ -707,16 +688,24 @@ export function Preview({
     }
     registerScrollPane("preview", {
       el,
-      getTopLine: () => {
+      getTopLine: (eventEl) => {
         const anchors = anchorsRef.current;
         if (anchors.length === 0) return null;
-        return topLineFromScroll(anchors, el.scrollTop);
+        const scrollEl = eventEl === el ? eventEl : el;
+        const probeTop =
+          scrollEl.scrollTop + scrollEl.clientHeight * SCROLL_SYNC_VIEWPORT_RATIO;
+        return topLineFromScroll(anchors, probeTop);
       },
       setTopLine: (line) => {
         const anchors = anchorsRef.current;
         if (anchors.length === 0) return false;
-        const next = scrollPosForLine(anchors, line);
-        if (next == null || !Number.isFinite(next)) return false;
+        const target = scrollPosForLine(anchors, line);
+        if (target == null || !Number.isFinite(target)) return false;
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        const next = Math.max(
+          0,
+          Math.min(max, target - el.clientHeight * SCROLL_SYNC_VIEWPORT_RATIO),
+        );
         if (Math.abs(el.scrollTop - next) < 1) return true;
         el.scrollTop = next;
         return true;
@@ -742,25 +731,27 @@ export function Preview({
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    const tasks = markdownTaskLines(source);
-    el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(
-      (input, index) => {
-        const task = tasks[index];
-        if (!task) return;
-        input.disabled = false;
-        input.dataset.sourceLine = String(task.line);
-        input.checked = task.checked;
-        input.setAttribute(
-          "aria-label",
-          task.checked ? "标记为未完成" : "标记为完成",
-        );
-      },
-    );
+    hydrateMarkdownTaskCheckboxes(el, source);
   }, [html, source]);
 
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
+    const toggleTaskCheckbox = (checkbox: HTMLInputElement) => {
+      const line = Number(checkbox.dataset.sourceLine);
+      if (!Number.isFinite(line)) return;
+      const next = toggleMarkdownTaskLine(sourceRef.current, line);
+      if (next == null) return;
+      sourceRef.current = next;
+      const nextLine = next.split(/\r?\n/)[line - 1] ?? "";
+      const checked = /^\s*[-*+]\s+\[[xX]\]/.test(nextLine);
+      checkbox.checked = checked;
+      checkbox.setAttribute(
+        "aria-label",
+        checked ? "标记为未完成" : "标记为完成",
+      );
+      onSourceChangeRef.current?.(next);
+    };
     const handler = (e: MouseEvent) => {
       const checkbox = (e.target as HTMLElement).closest<HTMLInputElement>(
         'input[type="checkbox"][data-source-line]',
@@ -768,10 +759,7 @@ export function Preview({
       if (checkbox) {
         e.preventDefault();
         e.stopPropagation();
-        const line = Number(checkbox.dataset.sourceLine);
-        if (!Number.isFinite(line)) return;
-        const next = toggleMarkdownTaskLine(sourceRef.current, line);
-        if (next != null) onSourceChangeRef.current?.(next);
+        toggleTaskCheckbox(checkbox);
         return;
       }
       const a = (e.target as HTMLElement).closest("a");
@@ -808,8 +796,22 @@ export function Preview({
         void openExternal(href);
       }
     };
-    el.addEventListener("click", handler);
-    return () => el.removeEventListener("click", handler);
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key !== " " && e.key !== "Enter") return;
+      const checkbox = (e.target as HTMLElement | null)?.closest<HTMLInputElement>(
+        'input[type="checkbox"][data-source-line]',
+      );
+      if (!checkbox) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleTaskCheckbox(checkbox);
+    };
+    el.addEventListener("click", handler, true);
+    el.addEventListener("keydown", keyHandler, true);
+    return () => {
+      el.removeEventListener("click", handler, true);
+      el.removeEventListener("keydown", keyHandler, true);
+    };
   }, []);
 
   // 屏蔽 WebView 原生右键菜单（返回 / 刷新 / 另存为 / 打印），用宿主的 ContextMenu 接管

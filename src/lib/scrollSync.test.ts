@@ -76,6 +76,19 @@ describe("scrollRatio", () => {
 });
 
 describe("buildPreviewAnchors", () => {
+  const rect = (top: number, height = 20): DOMRect =>
+    ({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 0,
+      width: 0,
+      height,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
   it("collects [data-line] elements, sorted by line", () => {
     const root = document.createElement("div");
     Object.defineProperty(root, "scrollTop", { value: 0, configurable: true });
@@ -85,18 +98,7 @@ describe("buildPreviewAnchors", () => {
     const make = (line: number, top: number) => {
       const el = document.createElement("p");
       el.setAttribute("data-line", String(line));
-      el.getBoundingClientRect = () =>
-        ({
-          top,
-          bottom: top + 20,
-          left: 0,
-          right: 0,
-          width: 0,
-          height: 20,
-          x: 0,
-          y: top,
-          toJSON: () => ({}),
-        }) as DOMRect;
+      el.getBoundingClientRect = () => rect(top);
       return el;
     };
     // Append out of order to test sort.
@@ -108,6 +110,83 @@ describe("buildPreviewAnchors", () => {
       { line: 1, top: 0 },
       { line: 5, top: 200 },
       { line: 12, top: 600 },
+    ]);
+  });
+
+  it("adds row-level anchors for markdown tables", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "scrollTop", { value: 0, configurable: true });
+    root.getBoundingClientRect = () => rect(0, 0);
+    root.innerHTML = `
+      <table data-line="10">
+        <thead><tr><th>A</th><th>B</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>2</td></tr>
+          <tr><td>3</td><td>4</td></tr>
+        </tbody>
+      </table>
+      <p data-line="20">next</p>
+    `;
+    const table = root.querySelector<HTMLElement>("table")!;
+    const headRow = root.querySelector<HTMLElement>("thead tr")!;
+    const bodyRows = root.querySelectorAll<HTMLElement>("tbody tr");
+    const next = root.querySelector<HTMLElement>("p")!;
+    table.getBoundingClientRect = () => rect(100, 120);
+    headRow.getBoundingClientRect = () => rect(100, 30);
+    bodyRows[0].getBoundingClientRect = () => rect(150, 30);
+    bodyRows[1].getBoundingClientRect = () => rect(190, 30);
+    next.getBoundingClientRect = () => rect(260);
+    document.body.appendChild(root);
+
+    expect(buildPreviewAnchors(root)).toEqual([
+      { line: 10, top: 100 },
+      { line: 12, top: 150 },
+      { line: 13, top: 190 },
+      { line: 20, top: 260 },
+    ]);
+  });
+
+  it("adds a terminal anchor for the document end", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "scrollTop", { value: 0, configurable: true });
+    Object.defineProperty(root, "scrollHeight", { value: 900, configurable: true });
+    root.getBoundingClientRect = () => rect(0, 0);
+    const p = document.createElement("p");
+    p.setAttribute("data-line", "1");
+    p.getBoundingClientRect = () => rect(0);
+    root.append(p);
+    document.body.appendChild(root);
+
+    expect(buildPreviewAnchors(root, 20)).toEqual([
+      { line: 1, top: 0 },
+      { line: 21, top: 900, kind: "terminal" },
+    ]);
+  });
+
+  it("uses headings as primary sync anchors when available", () => {
+    const anchors = [
+      { line: 1, top: 0, kind: "heading" as const },
+      { line: 5, top: 300 },
+      { line: 10, top: 600, kind: "heading" as const },
+      { line: 20, top: 1200, kind: "terminal" as const },
+    ];
+
+    expect(scrollPosForLine(anchors, 5.5)).toBeCloseTo(300, 5);
+    expect(topLineFromScroll(anchors, 300)).toBeCloseTo(5.5, 5);
+  });
+
+  it("marks rendered markdown headings as heading anchors", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "scrollTop", { value: 0, configurable: true });
+    root.getBoundingClientRect = () => rect(0, 0);
+    const h2 = document.createElement("h2");
+    h2.setAttribute("data-line", "8");
+    h2.getBoundingClientRect = () => rect(240);
+    root.append(h2);
+    document.body.appendChild(root);
+
+    expect(buildPreviewAnchors(root)).toEqual([
+      { line: 8, top: 240, kind: "heading" },
     ]);
   });
 

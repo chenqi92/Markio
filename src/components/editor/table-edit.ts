@@ -298,6 +298,57 @@ export function parseTabularText(text: string): string[][] | null {
   return lines.map((line) => line.split("\t").map((cell) => cell.trim()));
 }
 
+export function tableCellTextFromText(
+  source: string,
+  tableIndex: number,
+  cursor: TableCellCoord,
+): string | null {
+  const table = findAllTablesInText(source)[tableIndex];
+  if (!table) return null;
+  const parsed = parseTableText(source.slice(table.from, table.to));
+  if (!parsed) return null;
+  const row = Math.max(0, Math.min(parsed.cells.length - 1, cursor.row));
+  const col = Math.max(0, Math.min(parsed.aligns.length - 1, cursor.col));
+  return parsed.cells[row]?.[col] ?? "";
+}
+
+export function pasteTableTextToText(
+  source: string,
+  tableIndex: number,
+  cursor: TableCellCoord,
+  text: string,
+): string | null {
+  const data = parseTabularText(text);
+  if (!data || data.length === 0) return null;
+  const table = findAllTablesInText(source)[tableIndex];
+  if (!table) return null;
+  const parsed = parseTableText(source.slice(table.from, table.to));
+  if (!parsed) return null;
+
+  const cells = parsed.cells.map((r) => r.slice());
+  const aligns = parsed.aligns.slice();
+  const startRow = Math.max(0, Math.min(cells.length - 1, cursor.row));
+  const startCol = Math.max(0, Math.min(aligns.length - 1, cursor.col));
+  const requiredRows = startRow + data.length;
+  const requiredCols = startCol + Math.max(...data.map((r) => r.length));
+
+  while (cells.length < requiredRows) {
+    cells.push(Array(aligns.length).fill(""));
+  }
+  while (aligns.length < requiredCols) {
+    aligns.push(null);
+    for (const row of cells) row.push("");
+  }
+  for (let r = 0; r < data.length; r++) {
+    for (let c = 0; c < data[r].length; c++) {
+      cells[startRow + r][startCol + c] = data[r][c];
+    }
+  }
+
+  const next = buildTable(cells, aligns);
+  return source.slice(0, table.from) + next + source.slice(table.to);
+}
+
 export function tableClipboardText(view: EditorView, mode: TableClipboardMode): string | null {
   const info = detectTable(view);
   if (!info) return null;

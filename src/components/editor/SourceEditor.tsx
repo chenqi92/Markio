@@ -25,6 +25,7 @@ import {
 } from "./table-edit";
 import { wysiwygMarkdown } from "./wysiwyg";
 import { getMathContext, type MathContext } from "@/lib/math-context";
+import { SCROLL_SYNC_VIEWPORT_RATIO } from "@/lib/scrollSync";
 import { registerPane as registerScrollPane } from "@/lib/splitScrollSync";
 
 interface Props {
@@ -209,28 +210,70 @@ export const SourceEditor = memo(function SourceEditor({
     return () => registerEditor(null);
   }, [view]);
 
-  // 源码侧滚动通过 splitScrollSync 单例总线驱动：注册「读取 / 写入视口顶部
-  // 源码行号」的能力，由总线在另一端 scroll 触发时直接命令式写过来。
+  // 源码侧滚动通过 splitScrollSync 单例总线驱动：注册「读取 / 写入视口
+  // 参考点源码行号」的能力，由总线在另一端 scroll 触发时直接命令式写过来。
   useEffect(() => {
     if (!view || !syncScroll) {
       registerScrollPane("source", null);
       return;
     }
     const outerScroll = view.scrollDOM.closest<HTMLElement>(".editor-pane");
+    const scrollElements = [view.scrollDOM, outerScroll].filter(
+      (el): el is HTMLElement => !!el,
+    );
+    const ratioFor = (el: HTMLElement) => {
+      const max = Math.max(0, el.scrollHeight - el.clientHeight);
+      return max <= 0 ? null : el.scrollTop / max;
+    };
+    const bestRatio = () => {
+      const ratios = scrollElements
+        .map(ratioFor)
+        .filter((ratio): ratio is number => ratio != null && Number.isFinite(ratio));
+      if (ratios.length === 0) return 0;
+      return Math.max(...ratios);
+    };
+    const applyRatio = (ratio: number) => {
+      const clamped = Math.max(0, Math.min(1, ratio));
+      for (const el of scrollElements) {
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (max <= 0) continue;
+        const next = max * clamped;
+        if (Math.abs(el.scrollTop - next) < 1) continue;
+        el.scrollTop = next;
+      }
+    };
     registerScrollPane("source", {
       el: view.scrollDOM,
       eventEls: outerScroll ? [outerScroll] : undefined,
-      getTopLine: () => {
+      getTopLine: (eventEl) => {
         try {
-          const top = view.scrollDOM.scrollTop;
+          const visualEl =
+            eventEl && (eventEl === view.scrollDOM || eventEl === outerScroll)
+              ? eventEl
+              : outerScroll ?? view.scrollDOM;
+          const visualRect = visualEl.getBoundingClientRect();
+          const probeY =
+            visualRect.top + visualEl.clientHeight * SCROLL_SYNC_VIEWPORT_RATIO;
+          const contentRect = view.contentDOM.getBoundingClientRect();
+          const probeX = contentRect.left + 24;
+          const pos = view.posAtCoords({ x: probeX, y: probeY });
+          if (pos != null) {
+            const line = view.state.doc.lineAt(pos);
+            return line.number;
+          }
+          const probeTop =
+            view.scrollDOM.scrollTop +
+            view.scrollDOM.clientHeight * SCROLL_SYNC_VIEWPORT_RATIO;
           const blocks = view.viewportLineBlocks;
           const block =
-            blocks.find((b) => b.top + b.height >= top + 1) ?? blocks[0];
+            blocks.find((b) => b.top + b.height >= probeTop + 1) ??
+            blocks[blocks.length - 1] ??
+            blocks[0];
           if (!block) return null;
           const line = view.state.doc.lineAt(block.from);
           const within =
             block.height > 0
-              ? Math.max(0, Math.min(1, (top - block.top) / block.height))
+              ? Math.max(0, Math.min(1, (probeTop - block.top) / block.height))
               : 0;
           return line.number + within;
         } catch {
@@ -245,31 +288,34 @@ export const SourceEditor = memo(function SourceEditor({
         );
         const docLine = view.state.doc.line(lineNo);
         view.dispatch({
-          effects: EditorView.scrollIntoView(docLine.from, { y: "start" }),
+          effects: EditorView.scrollIntoView(docLine.from, { y: "center" }),
         });
         const frac = Math.max(0, line - lineNo);
-        if (frac > 0) {
-          window.requestAnimationFrame(() => {
+        const applyTarget = () => {
+          try {
             const block = view.lineBlockAt(docLine.from);
-            const next = block.top + frac * block.height;
+            const target =
+              block.top +
+              frac * block.height -
+              el.clientHeight * SCROLL_SYNC_VIEWPORT_RATIO;
+            const max = Math.max(0, el.scrollHeight - el.clientHeight);
+            const next = Math.max(0, Math.min(max, target));
             if (Number.isFinite(next) && Math.abs(el.scrollTop - next) >= 1) {
               el.scrollTop = next;
             }
-          });
-        }
+          } catch {
+            // The scrollIntoView dispatch above is still a valid coarse target.
+          }
+        };
+        applyTarget();
+        window.requestAnimationFrame(applyTarget);
         return true;
       },
       getRatio: () => {
-        const el = view.scrollDOM;
-        const max = Math.max(0, el.scrollHeight - el.clientHeight);
-        return max <= 0 ? 0 : el.scrollTop / max;
+        return bestRatio();
       },
       setRatio: (ratio) => {
-        const el = view.scrollDOM;
-        const max = Math.max(0, el.scrollHeight - el.clientHeight);
-        const next = max * Math.max(0, Math.min(1, ratio));
-        if (Math.abs(el.scrollTop - next) < 1) return;
-        el.scrollTop = next;
+        applyRatio(ratio);
       },
     });
     return () => registerScrollPane("source", null);

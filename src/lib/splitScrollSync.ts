@@ -17,8 +17,8 @@ export interface PaneHandle {
   el: HTMLElement;
   /** 额外监听的滚动元素；用于覆盖外层容器才是真实 scroll target 的布局。 */
   eventEls?: HTMLElement[];
-  /** 取视口顶部对应的（分数）源码行号；anchors / 探针不可用时返回 null。 */
-  getTopLine: () => number | null;
+  /** 取视口参考点对应的（分数）源码行号；anchors / 探针不可用时返回 null。 */
+  getTopLine: (eventEl?: HTMLElement | null) => number | null;
   /** 把视口顶部对齐到指定源码行号（分数）。返回 false 表示当前无法按行同步。 */
   setTopLine: (line: number) => boolean | void;
   /** 兜底：取 scrollTop / (scrollHeight - clientHeight)。 */
@@ -39,6 +39,7 @@ const slots: Record<Role, Slot | null> = { source: null, preview: null };
 let lock: Role | null = null;
 let lockTimer: ReturnType<typeof setTimeout> | null = null;
 const LOCK_MS = 180;
+const EDGE_RATIO_EPSILON = 0.006;
 
 function setLock(role: Role) {
   lock = role;
@@ -53,7 +54,15 @@ function other(role: Role): Role {
   return role === "source" ? "preview" : "source";
 }
 
-function syncFrom(origin: Role) {
+function eventRatio(el: HTMLElement | null | undefined): number | null {
+  if (!el) return null;
+  const max = Math.max(0, el.scrollHeight - el.clientHeight);
+  if (max <= 0) return null;
+  const ratio = el.scrollTop / max;
+  return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
+}
+
+function syncFrom(origin: Role, eventEl?: HTMLElement | null) {
   // origin 自己刚刚被对端写过，scroll 事件回声 → 屏蔽
   if (lock === origin) return;
   const src = slots[origin]?.pane;
@@ -61,7 +70,16 @@ function syncFrom(origin: Role) {
   if (!src || !dstSlot) return;
   // 写对端前先把对端锁住，这样对端 scroll 事件回声就会被上面那行 return 掉
   setLock(other(origin));
-  const line = src.getTopLine();
+  const directRatio = eventRatio(eventEl);
+  if (directRatio != null && directRatio <= EDGE_RATIO_EPSILON) {
+    dstSlot.pane.setRatio(0);
+    return;
+  }
+  if (directRatio != null && directRatio >= 1 - EDGE_RATIO_EPSILON) {
+    dstSlot.pane.setRatio(1);
+    return;
+  }
+  const line = src.getTopLine(eventEl);
   if (line != null && Number.isFinite(line)) {
     const ok = dstSlot.pane.setTopLine(line);
     if (ok !== false) return;
@@ -80,7 +98,11 @@ export function registerPane(role: Role, pane: PaneHandle | null): void {
     slots[role] = null;
   }
   if (!pane) return;
-  const handler = () => syncFrom(role);
+  const handler = (event: Event) => {
+    const eventEl =
+      event.currentTarget instanceof HTMLElement ? event.currentTarget : pane.el;
+    syncFrom(role, eventEl);
+  };
   const eventEls = Array.from(new Set([pane.el, ...(pane.eventEls ?? [])]));
   for (const el of eventEls) {
     el.addEventListener("scroll", handler, { passive: true });

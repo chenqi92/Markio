@@ -363,16 +363,18 @@
 .preview input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
+  box-sizing: border-box;
   width: 16px; height: 16px;
   margin: 0;
   border-radius: 4px;
   border: 1.5px solid var(--border-strong);
   background: var(--bg-input);
-  vertical-align: -2px;
   position: relative;
   cursor: pointer;
   flex: 0 0 auto;
-  margin-top: calc((1.75em - 16px) / 2);
+  margin-top: 0.42em;
+  color: #fff;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 .preview input[type="checkbox"]:checked {
   background: var(--accent); border-color: var(--accent);
@@ -380,8 +382,8 @@
 .preview input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
-  left: 5px;
-  top: 2px;
+  left: 4px;
+  top: 1px;
   width: 4px;
   height: 8px;
   border: solid #fff;
@@ -398,12 +400,19 @@
 }
 .preview li:has(> input[type="checkbox"]) {
   list-style: none;
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   padding-left: 0;
 }
-.preview li:has(> input[type="checkbox"]:checked) { color: var(--text-3); text-decoration: line-through; }
+.preview li:has(> input[type="checkbox"]:checked) { color: var(--text-3); }
+.preview li:has(> input[type="checkbox"]) > input[type="checkbox"] {
+  grid-column: 1;
+}
+.preview li:has(> input[type="checkbox"]) > input[type="checkbox"] + * {
+  grid-column: 2;
+}
 
 /* anchor links */
 .preview .header-anchor {

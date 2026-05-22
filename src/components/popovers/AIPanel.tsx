@@ -668,18 +668,28 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                   );
                 })
               )}
-              {busy && (
-                <div className="ai-msg assistant">
-                  <div className="ai-msg-avatar assistant">
-                    <Icon name="sparkle" size={13} />
-                  </div>
-                  <div className="ai-msg-body">
-                    <span className="ai-dot" />
-                    <span className="ai-dot" />
-                    <span className="ai-dot" />
-                  </div>
-                </div>
-              )}
+              {busy &&
+                // 已经有占位 assistant 在显示流式内容 / 工具 trace 时，再叠一个
+                // 三点 typing 指示器就成了"两条"。只在最后一条不是 assistant
+                // 或者那条 assistant 还没拿到任何文本时显示，避免重复。
+                (() => {
+                  const last = history[history.length - 1];
+                  const showDots =
+                    !last || last.role !== "assistant" || last.text === "";
+                  if (!showDots) return null;
+                  return (
+                    <div className="ai-msg assistant">
+                      <div className="ai-msg-avatar assistant">
+                        <Icon name="sparkle" size={13} />
+                      </div>
+                      <div className="ai-msg-body">
+                        <span className="ai-dot" />
+                        <span className="ai-dot" />
+                        <span className="ai-dot" />
+                      </div>
+                    </div>
+                  );
+                })()}
             </div>
             {previewName && (
               <AIPreview

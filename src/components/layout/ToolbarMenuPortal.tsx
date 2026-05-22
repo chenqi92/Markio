@@ -13,6 +13,7 @@ interface Props {
   anchorRef: RefObject<HTMLElement | null>;
   align?: "left" | "right";
   width?: number;
+  className?: string;
   onClose: () => void;
   children: ReactNode;
 }
@@ -21,6 +22,7 @@ export function ToolbarMenuPortal({
   anchorRef,
   align = "left",
   width,
+  className,
   onClose,
   children,
 }: Props) {
@@ -100,7 +102,11 @@ export function ToolbarMenuPortal({
   if (typeof document === "undefined") return null;
 
   return createPortal(
-    <div ref={menuRef} className="new-menu" style={style}>
+    <div
+      ref={menuRef}
+      className={className ? `new-menu ${className}` : "new-menu"}
+      style={style}
+    >
       {children}
     </div>,
     document.body,

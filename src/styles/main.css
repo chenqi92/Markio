@@ -194,6 +194,48 @@
 .new-menu-item .sub { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
 .new-menu-sep { height: 0.5px; background: var(--border); margin: 5px 4px; }
 
+.new-menu-wide {
+  width: 520px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+.new-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  padding: 0 4px 6px;
+}
+.new-tpl-card {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.new-tpl-card:hover {
+  background: var(--bg-elev);
+  border-color: var(--text);
+  transform: translateY(-1px);
+}
+.new-tpl-ico {
+  width: 28px; height: 28px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.new-tpl-meta { flex: 1; min-width: 0; }
+.new-tpl-meta .t { font-size: 12px; font-weight: 600; color: var(--text); }
+.new-tpl-meta .s {
+  font-size: 10.5px; color: var(--text-3); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* path crumb */
 .crumb {
   display: flex; align-items: center; gap: 4px;

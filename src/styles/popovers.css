@@ -1114,12 +1114,12 @@
   to { transform: translate(-50%, 0); opacity: 1; }
 }
 
-/* ─── Multi-copy sheet ─── */
+/* ─── Multi-copy sheet ───
+ * 跟其它大模态一致用 --bg-modal (不透明)；原来 --bg-window 是半透明，
+ * 弹窗叠在编辑器上文字会透过来。 */
 .mc-sheet {
   width: 560px; max-width: 92vw;
-  background: var(--bg-window);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
+  background: var(--bg-modal, var(--bg-window));
   border: 0.5px solid var(--border-strong);
   border-radius: 16px;
   box-shadow: var(--shadow-deep);

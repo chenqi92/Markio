@@ -1,21 +1,12 @@
 // @vitest-environment happy-dom
-//
-// Pseudo-integration tests for the wysiwyg table widget. happy-dom does not
-// reliably tick CodeMirror's measurement pipeline, so we can't exercise the
-// full "EditorView mounts → widget DOM appears → click moves caret" path
-// here (Playwright would). Instead we verify the two pieces that compose:
-//
-//   1. TableWidget.toDOM() builds the right DOM (cells, data-row, data-col,
-//      alignment, header vs body); this is what the user sees.
-//   2. tableCellSourcePos(view, topLine, row, col) returns the doc position
-//      the click handler dispatches to; this is what makes editing land in
-//      the correct cell. Driven through a real EditorView with no UI deps.
 
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-import { parseTableSource } from "./wysiwyg";
-import { tableCellSourcePos } from "./table-edit";
+import {
+  applyWysiwygTableAction,
+  buildTableDom,
+  buildTableSource,
+  parseTableSource,
+} from "./wysiwyg";
 
 const TABLE =
   "| A | B | C |\n" +
@@ -23,72 +14,62 @@ const TABLE =
   "| 1 | 2 | 3 |\n" +
   "| 4 | 5 | 6 |\n";
 
-describe("TableWidget DOM", () => {
-  // We rebuild the DOM directly the same way TableWidget.toDOM does internally.
-  // Pulled in via parseTableSource so we test the public surface used by the
-  // widget instead of reaching into private classes.
-  it("renders <table> with data-row/data-col on every cell", () => {
-    const parsed = parseTableSource(TABLE);
-    expect(parsed.header).toEqual(["A", "B", "C"]);
-    expect(parsed.aligns).toEqual(["left", "center", "right"]);
-    expect(parsed.rows).toEqual([
-      ["1", "2", "3"],
-      ["4", "5", "6"],
-    ]);
+describe("WYSIWYG table DOM", () => {
+  it("renders editable cells with stable row and column coordinates", () => {
+    const dom = buildTableDom(parseTableSource(TABLE));
+    const cells = Array.from(dom.querySelectorAll<HTMLElement>(".cm-md-table-cell"));
+
+    expect(dom.getAttribute("contenteditable")).toBe("false");
+    expect(cells).toHaveLength(9);
+    expect(cells[0].dataset.row).toBe("0");
+    expect(cells[0].dataset.col).toBe("0");
+    expect(cells[0].tagName).toBe("TEXTAREA");
+    expect((cells[0] as HTMLTextAreaElement).value).toBe("A");
+    expect((cells[4] as HTMLTextAreaElement).value).toBe("2");
+    expect(cells[4].dataset.row).toBe("1");
+    expect(cells[4].dataset.col).toBe("1");
   });
 
-  it("alignment row maps to text-align CSS values", () => {
-    const parsed = parseTableSource(TABLE);
-    // The widget builds DOM from this; verify the parser hands enough info.
-    expect(parsed.aligns[0]).toBe("left");
-    expect(parsed.aligns[1]).toBe("center");
-    expect(parsed.aligns[2]).toBe("right");
+  it("renders edge insertion buttons and a contextual menu host", () => {
+    const dom = buildTableDom(parseTableSource(TABLE));
+    const actions = Array.from(
+      dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-edge-action"),
+    ).map(
+      (button) => button.dataset.action,
+    );
+
+    expect(actions).toEqual(["insertColRight", "insertRowBelow"]);
+    expect(dom.querySelector(".cm-md-table-menu")).not.toBeNull();
+  });
+
+  it("maps alignment row to table cell text alignment", () => {
+    const dom = buildTableDom(parseTableSource(TABLE));
+    const header = Array.from(dom.querySelectorAll<HTMLElement>("th"));
+
+    expect(header[0].style.textAlign).toBe("left");
+    expect(header[1].style.textAlign).toBe("center");
+    expect(header[2].style.textAlign).toBe("right");
   });
 });
 
-describe("tableCellSourcePos round-trip", () => {
-  function makeView(doc: string) {
-    return new EditorView({
-      state: EditorState.create({ doc }),
-    });
-  }
+describe("WYSIWYG table source updates", () => {
+  it("generates markdown for toolbar-driven row insertion", () => {
+    const parsed = parseTableSource(TABLE);
+    const next = applyWysiwygTableAction(parsed, 1, 1, "insertRowBelow");
 
-  it("header cell (row=0) lands on the cell content's first char", () => {
-    const view = makeView(TABLE);
-    // tableTopLine = 1 (CodeMirror is 1-indexed; the header is line 1)
-    const pos = tableCellSourcePos(view, 1, 0, 1);
-    expect(pos).not.toBeNull();
-    expect(TABLE[pos!]).toBe("B");
-    view.destroy();
+    expect(next.rows).toEqual([
+      ["1", "2", "3"],
+      ["", "", ""],
+      ["4", "5", "6"],
+    ]);
+    expect(buildTableSource(next)).toContain("| 1 | 2 | 3 |");
   });
 
-  it("first data row (row=1) is below the separator", () => {
-    const view = makeView(TABLE);
-    const pos = tableCellSourcePos(view, 1, 1, 0);
-    expect(TABLE[pos!]).toBe("1");
-    view.destroy();
-  });
+  it("generates markdown for toolbar-driven column insertion", () => {
+    const parsed = parseTableSource(TABLE);
+    const next = applyWysiwygTableAction(parsed, 1, 1, "insertColRight");
 
-  it("second data row (row=2) finds the right cell", () => {
-    const view = makeView(TABLE);
-    const pos = tableCellSourcePos(view, 1, 2, 1);
-    expect(TABLE[pos!]).toBe("5");
-    view.destroy();
-  });
-
-  it("offset works when the table is preceded by other content", () => {
-    const doc = "para\n\n" + TABLE;
-    const view = makeView(doc);
-    // header now starts at line 3 (1-indexed)
-    const pos = tableCellSourcePos(view, 3, 2, 2);
-    expect(doc[pos!]).toBe("6");
-    view.destroy();
-  });
-
-  it("out-of-bounds column returns null", () => {
-    const view = makeView(TABLE);
-    const pos = tableCellSourcePos(view, 1, 0, 99);
-    expect(pos).toBeNull();
-    view.destroy();
+    expect(next.header).toEqual(["A", "B", "", "C"]);
+    expect(buildTableSource(next)).toContain("| :--- | :---: | --- | ---: |");
   });
 });

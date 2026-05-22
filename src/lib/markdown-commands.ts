@@ -62,6 +62,7 @@ export const markdownCommands = {
   h2: () => prefixLine("## "),
   h3: () => prefixLine("### "),
   h4: () => prefixLine("#### "),
+  h5: () => prefixLine("##### "),
   bold: () => wrapSelection("**", "**", "加粗文字"),
   italic: () => wrapSelection("*", "*", "斜体"),
   strike: () => wrapSelection("~~", "~~", "删除"),

@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { parseTableSource, type ParsedTable } from "./wysiwyg";
+import {
+  applyWysiwygTableAction,
+  buildTableSource,
+  parseTableSource,
+  type ParsedTable,
+} from "./wysiwyg";
 
 const expectShape = (t: ParsedTable, header: string[], rows: string[][]) => {
   expect(t.header).toEqual(header);
@@ -48,5 +53,61 @@ describe("parseTableSource", () => {
     const t = parseTableSource("| A | B |\n|---|---|");
     expect(t.header).toEqual(["A", "B"]);
     expect(t.rows).toEqual([]);
+  });
+});
+
+describe("buildTableSource", () => {
+  it("serializes a normalized markdown table", () => {
+    const src = buildTableSource({
+      header: ["A", "B"],
+      aligns: [null, "right"],
+      rows: [["1", "2"]],
+    });
+    expect(src).toBe("| A | B |\n| --- | ---: |\n| 1 | 2 |");
+  });
+});
+
+describe("applyWysiwygTableAction", () => {
+  const src = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |";
+
+  it("inserts a row below the active body row", () => {
+    const next = applyWysiwygTableAction(parseTableSource(src), 1, 0, "insertRowBelow");
+    expect(next.rows).toEqual([
+      ["1", "2"],
+      ["", ""],
+      ["3", "4"],
+    ]);
+  });
+
+  it("inserts a column to the right of the active column", () => {
+    const next = applyWysiwygTableAction(parseTableSource(src), 1, 0, "insertColRight");
+    expect(next.header).toEqual(["A", "", "B"]);
+    expect(next.rows[0]).toEqual(["1", "", "2"]);
+  });
+
+  it("inserts a column after the last active column", () => {
+    const next = applyWysiwygTableAction(parseTableSource(src), 1, 1, "insertColRight");
+    expect(next.header).toEqual(["A", "B", ""]);
+    expect(next.rows[0]).toEqual(["1", "2", ""]);
+  });
+
+  it("deletes body rows but keeps the header", () => {
+    const next = applyWysiwygTableAction(parseTableSource(src), 2, 0, "deleteRow");
+    expect(next.rows).toEqual([["1", "2"]]);
+    expect(next.header).toEqual(["A", "B"]);
+  });
+
+  it("deletes columns while preserving at least one column", () => {
+    const oneCol = applyWysiwygTableAction(parseTableSource(src), 1, 1, "deleteCol");
+    const stillOneCol = applyWysiwygTableAction(oneCol, 1, 0, "deleteCol");
+    expect(oneCol.header).toEqual(["A"]);
+    expect(stillOneCol.header).toEqual(["A"]);
+  });
+
+  it("deletes the requested last column instead of the first column", () => {
+    const threeCols = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |";
+    const next = applyWysiwygTableAction(parseTableSource(threeCols), 1, 2, "deleteCol");
+    expect(next.header).toEqual(["A", "B"]);
+    expect(next.rows[0]).toEqual(["1", "2"]);
   });
 });

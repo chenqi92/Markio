@@ -104,14 +104,70 @@ function toAbs(workspacePath: string, p: string): string {
   return `${workspacePath}${sep}${p.replace(/^[\\/]+/, "")}`;
 }
 
+/** 路径前缀比较：归一化 \ → /，加 trailing sep 防止 /foo/bar 误中 /foo/barbaz */
+function pathStartsWith(child: string, parent: string): boolean {
+  const c = child.replace(/\\/g, "/").replace(/\/+$/, "");
+  const p = parent.replace(/\\/g, "/").replace(/\/+$/, "");
+  return c === p || c.startsWith(p + "/");
+}
+
+/**
+ * Scope 限制 —— 给 Agent 的工具加一层应用层守卫，与 AIPanel 里非 Agent 路径的
+ * scope 含义保持一致：
+ * - kind="dir"：rootPath 之外的 list_dir / read_file 直接拒绝；grep 把 root 钉死在 rootPath
+ * - kind="set"：只放 allowedPaths 集合内的路径（open / tag / manual）；list_dir 会被告知不可用，建议直接 read_file
+ *
+ * 后端的 ensure_in_workspaces 仍是最后一道防线（仓库外路径连进都进不来），
+ * 这里只是把"在仓库内但 scope 之外"的越界拦在前端。
+ */
+export interface AgentScopeRestriction {
+  kind: "dir" | "set";
+  rootPath?: string;
+  allowedPaths?: string[];
+  label: string;
+}
+
 export async function executeTool(
   call: AgentToolCall,
   workspacePath: string,
+  scope?: AgentScopeRestriction,
 ): Promise<string> {
+  const allowedSet = scope?.allowedPaths
+    ? new Set(scope.allowedPaths.map((p) => p.replace(/\\/g, "/")))
+    : null;
+  const inScope = (abs: string): boolean => {
+    if (!scope) return true;
+    const norm = abs.replace(/\\/g, "/");
+    if (scope.kind === "dir" && scope.rootPath) {
+      return pathStartsWith(norm, scope.rootPath);
+    }
+    if (allowedSet) {
+      return allowedSet.has(norm);
+    }
+    return true;
+  };
+
   try {
     if (call.name === "list_dir") {
       const rel = String(call.input.path ?? "");
-      const abs = toAbs(workspacePath, rel);
+      // set 范围 (open / tag / manual)：目录概念不适用，直接报告允许列表
+      if (scope?.kind === "set" && allowedSet) {
+        if (!rel) {
+          const files = [...allowedSet].slice(0, MAX_DIR_ENTRIES);
+          const tail =
+            allowedSet.size > MAX_DIR_ENTRIES
+              ? `\n... 共 ${allowedSet.size} 项，已截断到前 ${MAX_DIR_ENTRIES}`
+              : "";
+          return `当前 scope 是 ${scope.label}，工具可访问以下 ${allowedSet.size} 个文件 (直接用 read_file 即可):\n${files.join("\n")}${tail}`;
+        }
+        return `Error: 当前 scope = ${scope.label}，list_dir 不可用，请用 read_file 直接读上面列出的某个文件`;
+      }
+      // dir 范围 / 无范围：默认入口
+      const defaultRoot = scope?.rootPath ?? workspacePath;
+      const abs = rel ? toAbs(workspacePath, rel) : defaultRoot;
+      if (!inScope(abs)) {
+        return `Error: 路径 ${abs} 不在当前 scope (${scope?.label}) 内。允许的根：${scope?.rootPath ?? workspacePath}`;
+      }
       const entry = await api.readDir(abs);
       const children = (entry.children ?? []).slice(0, MAX_DIR_ENTRIES);
       if (children.length === 0) return "(空目录)";
@@ -129,6 +185,9 @@ export async function executeTool(
       const p = String(call.input.path ?? "");
       if (!p) return "Error: path 必填";
       const abs = toAbs(workspacePath, p);
+      if (!inScope(abs)) {
+        return `Error: 文件 ${abs} 不在当前 scope (${scope?.label}) 内`;
+      }
       const text = await api.readText(abs);
       if (text.length > MAX_FILE_CHARS) {
         return text.slice(0, MAX_FILE_CHARS) + `\n\n[已截断，原文共 ${text.length} 字符]`;
@@ -143,8 +202,21 @@ export async function executeTool(
         50,
         Math.max(1, Number(call.input.max ?? MAX_GREP_HITS)),
       );
-      const hits = await api.grep(workspacePath, query, max);
-      if (hits.length === 0) return `(无匹配 query=${query})`;
+      // dir 范围：root 钉成 scope root，让 fs_grep 自然只走子树
+      const grepRoot =
+        scope?.kind === "dir" && scope.rootPath
+          ? scope.rootPath
+          : workspacePath;
+      let hits = await api.grep(grepRoot, query, max);
+      // set 范围：grep 仍跑全仓 (没有子集 root)，结果靠 allowedSet 过滤
+      if (scope?.kind === "set" && allowedSet) {
+        hits = hits.filter((h) =>
+          allowedSet.has(h.path.replace(/\\/g, "/")),
+        );
+      }
+      if (hits.length === 0) {
+        return `(无匹配 query=${query}${scope ? ` · scope=${scope.label}` : ""})`;
+      }
       return hits
         .map((h) => `${h.path}:${h.line}: ${h.preview.slice(0, 240)}`)
         .join("\n");
@@ -164,6 +236,8 @@ export interface AgentRunOpts {
   temperature?: number;
   system?: string;
   workspacePath: string;
+  /** scope 限制：dir 钉根 / set 限文件集合。runAgent 会自动追加一段 scope 说明到 system。 */
+  scope?: AgentScopeRestriction;
   /** 初始 messages（通常只含一条 user）。会在循环中追加 assistant / tool。 */
   messages: AgentMsg[];
   /** 工具被模型调用时的回调（UI 显示"正在读 xxx"）。 */
@@ -178,6 +252,19 @@ export interface AgentRunOpts {
   isCancelled?: () => boolean;
 }
 
+function buildScopeHint(scope: AgentScopeRestriction | undefined): string {
+  if (!scope) return "";
+  if (scope.kind === "dir") {
+    return `\n\n工作范围限制：你的 list_dir / read_file / grep 操作只允许在「${scope.label}」(${scope.rootPath}) 内进行。list_dir 传 path="" 即可看到该范围的根目录；超出范围的路径会被拒绝。如果用户的问题在该范围内确实没有相关内容，直接说"未在选定范围找到"，不要再去全仓库里找。`;
+  }
+  const sample = (scope.allowedPaths ?? []).slice(0, 12);
+  const more =
+    (scope.allowedPaths?.length ?? 0) > sample.length
+      ? `\n... 共 ${scope.allowedPaths?.length} 个文件`
+      : "";
+  return `\n\n工作范围限制：当前 scope = ${scope.label}，你只能访问以下 ${scope.allowedPaths?.length} 个文件 (list_dir 不可用，直接 read_file)：\n${sample.join("\n")}${more}`;
+}
+
 export interface AgentRunResult {
   text: string;
   turns: number;
@@ -188,6 +275,7 @@ export interface AgentRunResult {
 
 export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
   const messages = [...opts.messages];
+  const scopedSystem = (opts.system ?? "") + buildScopeHint(opts.scope);
   let toolCallCount = 0;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     if (opts.isCancelled?.()) {
@@ -199,7 +287,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
       model: opts.model,
       maxTokens: opts.maxTokens,
       temperature: opts.temperature,
-      system: opts.system,
+      system: scopedSystem,
       messages,
       tools: AGENT_TOOLS,
     });
@@ -233,7 +321,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
         };
       }
       opts.onToolCall?.(call);
-      const output = await executeTool(call, opts.workspacePath);
+      const output = await executeTool(call, opts.workspacePath, opts.scope);
       opts.onToolDone?.(call, output);
       messages.push({
         role: "tool",

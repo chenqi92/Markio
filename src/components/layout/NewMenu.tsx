@@ -154,7 +154,6 @@ export function NewMenu({
     <ToolbarMenuPortal
       anchorRef={anchorRef}
       onClose={onClose}
-      width={520}
       className="new-menu-wide"
     >
       <div className="new-menu-h">从模板新建</div>

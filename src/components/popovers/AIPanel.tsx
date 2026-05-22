@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
 import { getProviderModels } from "@/lib/ai-providers";
+import { runAgent, type AgentMsg } from "@/lib/ai-agent";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
 import { AIPreview } from "./AIPreview";
@@ -122,6 +123,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const [aiMode, setAIMode] = useState<AIMode>("ask");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // Agent 模式：让模型自己 list_dir / read_file / grep，多轮 tool-use 取回上下文。
+  // 默认关；Anthropic / Google 暂不支持（后端会回明确错误）。
+  const [agentMode, setAgentMode] = useState(false);
+  const agentCancelRef = useRef(false);
   const [attachedItems, setAttachedItems] = useState<AIAttachedItem[]>([]);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [ctxDrawerOpen, setCtxDrawerOpen] = useState(false);
@@ -385,6 +390,75 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
     const chatMessages = msgs.map((m) => ({ role: m.role, content: m.text }));
 
+    // ─── Agent 模式分支 ──────────────────────────────────────────────────
+    // 让模型自己 list_dir / read_file / grep 取上下文。期间用占位 assistant 显示
+    // "📂 grep '本周'" 之类的 tool 状态行；最终文本拿到时一次性 patch 进去。
+    if (agentMode && ws) {
+      if (provider === "anthropic" || provider === "google") {
+        patchMessage(sessionId, assistantId, {
+          text: `Agent 模式暂不支持 ${provider}，请切到 OpenAI 兼容 provider（DeepSeek / Groq / Moonshot / xAI 等）或关闭 Agent。`,
+        });
+        finalize();
+        return;
+      }
+      agentCancelRef.current = false;
+      const trace: string[] = [];
+      try {
+        const result = await runAgent({
+          provider,
+          endpoint: endpoint || undefined,
+          model,
+          maxTokens,
+          temperature,
+          system,
+          workspacePath: ws.path,
+          messages: chatMessages as AgentMsg[],
+          onToolCall: (call) => {
+            if (isStale()) return;
+            const args = JSON.stringify(call.input).slice(0, 80);
+            trace.push(`▸ ${call.name} ${args}`);
+            patchMessage(sessionId, assistantId, {
+              text: trace.join("\n") + "\n\n_思考中…_",
+            });
+          },
+          onToolDone: (call, output) => {
+            if (isStale()) return;
+            const summary =
+              output.length > 200
+                ? `${output.slice(0, 200)}…（共 ${output.length} 字符）`
+                : output;
+            trace[trace.length - 1] +=
+              `\n  ${summary.split("\n").join("\n  ")}`;
+            patchMessage(sessionId, assistantId, {
+              text: trace.join("\n") + "\n\n_思考中…_",
+            });
+          },
+          onFinalText: (text) => {
+            if (isStale()) return;
+            const header =
+              trace.length > 0
+                ? `<details><summary>Agent 调用了 ${trace.length} 次工具</summary>\n\n\`\`\`\n${trace.join("\n")}\n\`\`\`\n\n</details>\n\n`
+                : "";
+            patchMessage(sessionId, assistantId, {
+              text: header + text,
+            });
+          },
+          isCancelled: () => agentCancelRef.current,
+        });
+        if (!isStale() && !result.text) {
+          patchMessage(sessionId, assistantId, { text: "（空响应）" });
+        }
+      } catch (e) {
+        if (!isStale()) {
+          patchMessage(sessionId, assistantId, {
+            text: `Agent 请求失败：${(e as Error).message}`,
+          });
+        }
+      }
+      finalize();
+      return;
+    }
+
     // AI 缓存：完全相同的 (provider, model, system, messages) 直接回放上次响应。
     // 默认关；用户在设置开启后才走，避免改变默认"重新生成"语义。
     const cacheEnabled = useSettings.getState().aiCacheEnabled;
@@ -476,6 +550,8 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     // bump 在 await 之前——in-flight 的 chunk 立刻被视为 stale，
     // 不会再写入 message（避免"取消后还在长字"的视觉 bug）
     streamTokenRef.current++;
+    // Agent loop 跑在前端，不走 ai_chat_cancel；靠 cancel ref 让下一次 loop 检查时跳出
+    agentCancelRef.current = true;
     const fn = streamCancelRef.current;
     streamCancelRef.current = null;
     setBusy(false);
@@ -638,6 +714,9 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             attachedItems={attachedItems}
             setAttachedItems={setAttachedItems}
             modelList={modelList}
+            agentMode={agentMode}
+            setAgentMode={setAgentMode}
+            provider={provider}
           />
         </div>
       </div>
@@ -686,6 +765,10 @@ function estimateTokens(text: string): number {
 
 interface InputBarPropsExt extends InputBarProps {
   setAIMode?: (mode: AIMode) => void;
+  agentMode: boolean;
+  setAgentMode: (next: boolean | ((v: boolean) => boolean)) => void;
+  /** 当前 provider，用来禁用 anthropic / google 的 Agent 开关 */
+  provider: string;
 }
 
 function AIInputBar({
@@ -703,6 +786,9 @@ function AIInputBar({
   attachedItems,
   setAttachedItems,
   modelList,
+  agentMode,
+  setAgentMode,
+  provider,
 }: InputBarPropsExt) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
@@ -1198,6 +1284,25 @@ function AIInputBar({
 
           <div className="ai-input-foot">
             <div className="ai-input-tools">
+              <button
+                type="button"
+                className={"ai-tool chip" + (agentMode ? " active" : "")}
+                onClick={() => {
+                  if (provider === "anthropic" || provider === "google") return;
+                  setAgentMode((v) => !v);
+                }}
+                disabled={provider === "anthropic" || provider === "google"}
+                title={
+                  provider === "anthropic" || provider === "google"
+                    ? "Agent 模式暂未支持此 provider"
+                    : agentMode
+                      ? "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（关）"
+                      : "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（开）"
+                }
+              >
+                <Icon name="bot" size={11} />
+                <span>Agent {agentMode ? "✓" : "⨯"}</span>
+              </button>
               <button
                 type="button"
                 className="ai-tool chip"

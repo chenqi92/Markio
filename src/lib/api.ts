@@ -464,6 +464,36 @@ export const api = {
   secretDelete: (account: string) =>
     invoke<void>("secret_delete", { account }),
 
+  /** Agent 单轮：发 messages + tools，要么返回 text 要么返回 tool_calls。
+   *  循环由 runAgent (src/lib/ai-agent.ts) 在前端管。 */
+  aiAgentTurn: (req: {
+    provider: string;
+    apiKey?: string;
+    endpoint?: string;
+    model: string;
+    maxTokens?: number;
+    temperature?: number;
+    system?: string;
+    messages: Array<unknown>;
+    tools: Array<unknown>;
+  }) =>
+    invoke<
+      | {
+          kind: "text";
+          text: string;
+          model?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+        }
+      | {
+          kind: "tool_calls";
+          calls: Array<{ id: string; name: string; input: Record<string, unknown> }>;
+          model?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+        }
+    >("ai_chat_with_tools", { req }),
+
   aiChatStream: async (
     req: {
       provider: string;

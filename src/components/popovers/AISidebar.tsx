@@ -260,10 +260,10 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
       <div className="rag-cta rag-cta-hint">
         <div className="rag-cta-title">
           <Icon name="info" size={12} />
-          <span>仅关键词检索</span>
+          <span>检索方式：关键词 grep</span>
         </div>
         <div className="rag-cta-sub">
-          启用本地索引可使用向量检索，回答更精准。
+          可选：开启本地向量索引让单次检索更精准；或在输入栏开启 Agent 让 AI 自己读文件。
         </div>
         <div className="rag-cta-actions">
           <button
@@ -274,7 +274,7 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
               void refresh(ws.id, ws.path);
             }}
           >
-            启用本地索引
+            启用向量索引
           </button>
           <button
             type="button"
@@ -338,10 +338,10 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
       <div className="rag-cta rag-cta-warn">
         <div className="rag-cta-title">
           <Icon name="lightbulb" size={12} />
-          <span>本地索引未构建</span>
+          <span>向量索引未构建</span>
         </div>
         <div className="rag-cta-sub">
-          构建后才能用向量检索回答跨笔记问题。
+          可选：构建后单次检索更精准。不构建也能用，AI 会回退到 grep（或开 Agent 模式让 AI 自己读文件）。
         </div>
         <div className="rag-cta-actions">
           <button

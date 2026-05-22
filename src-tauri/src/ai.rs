@@ -144,6 +144,282 @@ pub async fn chat(req: ChatRequest) -> Result<ChatResponse, String> {
     }
 }
 
+// ─── Agent / Tool-use ────────────────────────────────────────────────
+//
+// 让 AI 像 Claude Code / Codex 那样自己决定要读哪个文件、grep 什么关键词。
+// 一轮调用流程：前端发 (messages + tools) → 后端 POST 给 LLM → 返回 text 或
+// tool_calls；如果是 tool_calls，前端执行工具、把结果作为 tool message 追加，
+// 再发下一轮。直到收到 text 为止。前端管 loop（持有 workspacePath，能直接调
+// 既有的 fs_grep / fs_read_text / fs_read_dir）。
+//
+// 当前实现：OpenAI 兼容协议（覆盖 openai / deepseek / groq / moonshot / xai /
+// nvidia / openrouter / together / mistral / siliconflow / zhipu / dashscope /
+// ollama / custom = 14 个 provider）。Anthropic 与 Google 的 tool 协议字段
+// 不一样，后续单独实现，先报明确错误避免静默 fallback。
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTool {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema 描述参数。原样转发给上游 LLM。
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentToolCall {
+    pub id: String,
+    pub name: String,
+    /// 解析过的 JSON 参数；OpenAI 实际传的是 stringified JSON，这里统一成 Value
+    pub input: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
+pub enum AgentMsg {
+    User {
+        content: String,
+    },
+    System {
+        content: String,
+    },
+    Assistant {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_calls: Option<Vec<AgentToolCall>>,
+    },
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRequest {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub endpoint: Option<String>,
+    pub model: String,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+    pub system: Option<String>,
+    pub messages: Vec<AgentMsg>,
+    pub tools: Vec<AgentTool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentTurnResult {
+    Text {
+        text: String,
+        model: Option<String>,
+        input_tokens: Option<u32>,
+        output_tokens: Option<u32>,
+    },
+    ToolCalls {
+        calls: Vec<AgentToolCall>,
+        model: Option<String>,
+        input_tokens: Option<u32>,
+        output_tokens: Option<u32>,
+    },
+}
+
+pub async fn chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
+    await_rate_limit(&req.provider).await;
+    match req.provider.as_str() {
+        "anthropic" => Err(
+            "Anthropic tool-use 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider"
+                .to_string(),
+        ),
+        "google" => Err(
+            "Google function calling 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider"
+                .to_string(),
+        ),
+        _ => call_openai_compat_with_tools(req).await,
+    }
+}
+
+async fn call_openai_compat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
+    let endpoint = req
+        .endpoint
+        .clone()
+        .unwrap_or_else(|| default_openai_compat_endpoint(&req.provider));
+    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    if let Some(sys) = req.system.as_ref() {
+        messages.push(serde_json::json!({ "role": "system", "content": sys }));
+    }
+    for m in req.messages.iter() {
+        match m {
+            AgentMsg::User { content } => {
+                messages.push(serde_json::json!({ "role": "user", "content": content }));
+            }
+            AgentMsg::System { content } => {
+                messages.push(serde_json::json!({ "role": "system", "content": content }));
+            }
+            AgentMsg::Assistant {
+                content,
+                tool_calls,
+            } => {
+                if let Some(calls) = tool_calls {
+                    let calls_json: Vec<serde_json::Value> = calls
+                        .iter()
+                        .map(|c| {
+                            let args_str = serde_json::to_string(&c.input).unwrap_or_else(|_| "{}".to_string());
+                            serde_json::json!({
+                                "id": c.id,
+                                "type": "function",
+                                "function": {
+                                    "name": c.name,
+                                    "arguments": args_str,
+                                }
+                            })
+                        })
+                        .collect();
+                    // OpenAI 协议：assistant 带 tool_calls 时 content 可以为 null，
+                    // 但部分兼容实现要求字段存在；统一传空串。
+                    messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": content.clone().unwrap_or_default(),
+                        "tool_calls": calls_json,
+                    }));
+                } else {
+                    messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": content.clone().unwrap_or_default(),
+                    }));
+                }
+            }
+            AgentMsg::Tool {
+                tool_call_id,
+                content,
+            } => {
+                messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": content,
+                }));
+            }
+        }
+    }
+
+    let tools_json: Vec<serde_json::Value> = req
+        .tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                }
+            })
+        })
+        .collect();
+
+    let mut payload = serde_json::json!({
+        "model": req.model,
+        "messages": messages,
+        "max_tokens": req.max_tokens.unwrap_or(4096),
+    });
+    if !tools_json.is_empty() {
+        payload["tools"] = serde_json::json!(tools_json);
+        // auto: 让模型自己决定是否调工具
+        payload["tool_choice"] = serde_json::json!("auto");
+    }
+    if let Some(t) = req.temperature {
+        payload["temperature"] = serde_json::json!(t);
+    }
+
+    let client = http_chat_client();
+    let mut builder = client.post(&url).header("content-type", "application/json");
+    if let Some(k) = req.api_key.as_ref() {
+        if !k.is_empty() {
+            builder = builder.bearer_auth(k);
+        }
+    }
+    let resp = builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!("API {}: {}", status, truncate(&body, 400)));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+
+    let choice = v
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| "响应缺少 choices".to_string())?;
+    let msg = choice
+        .get("message")
+        .ok_or_else(|| "响应缺少 message".to_string())?;
+
+    let usage = v.get("usage").cloned();
+    let input_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("prompt_tokens"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    let output_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("completion_tokens"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    let model = v
+        .get("model")
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string());
+
+    if let Some(tool_calls) = msg.get("tool_calls").and_then(|tc| tc.as_array()) {
+        if !tool_calls.is_empty() {
+            let calls: Vec<AgentToolCall> = tool_calls
+                .iter()
+                .filter_map(|tc| {
+                    let id = tc.get("id")?.as_str()?.to_string();
+                    let f = tc.get("function")?;
+                    let name = f.get("name")?.as_str()?.to_string();
+                    let args_str = f.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
+                    let input: serde_json::Value =
+                        serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                    Some(AgentToolCall { id, name, input })
+                })
+                .collect();
+            if !calls.is_empty() {
+                return Ok(AgentTurnResult::ToolCalls {
+                    calls,
+                    model,
+                    input_tokens,
+                    output_tokens,
+                });
+            }
+        }
+    }
+
+    let text = msg
+        .get("content")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(AgentTurnResult::Text {
+        text,
+        model,
+        input_tokens,
+        output_tokens,
+    })
+}
+
 async fn call_google(req: ChatRequest) -> Result<ChatResponse, String> {
     let key = req
         .api_key

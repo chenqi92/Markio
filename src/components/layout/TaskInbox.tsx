@@ -6,6 +6,8 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { reportDiagnostic } from "@/stores/diagnostics";
+import { ContextMenu } from "../popovers/ContextMenu";
+import { writeText } from "@/lib/clipboard";
 import {
   parseTask,
   compareTasks,
@@ -51,6 +53,14 @@ export function TaskInbox() {
   const [loading, setLoading] = useState(false);
   const [groupMode, setGroupMode] = useState<GroupMode>("time");
   const [filter, setFilter] = useState("");
+  const [ctx, setCtx] = useState<{ x: number; y: number; it: TaskItem } | null>(
+    null,
+  );
+  const setToast = useUI((s) => s.setToast);
+  const flash = (msg: string) => {
+    setToast({ stage: "done", message: msg });
+    setTimeout(() => setToast(null), 1500);
+  };
 
   const bucketLabel = (b: DueBucket) => t(`taskInbox.timeBucket.${b}`);
   const priorityLabel = (k: TaskPriority | "_") =>
@@ -254,6 +264,11 @@ export function TaskInbox() {
                     type="button"
                     className="ti-item"
                     onClick={() => void openTaskAt(it)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCtx({ x: e.clientX, y: e.clientY, it });
+                    }}
                     title={`${it.path}:${it.line}`}
                   >
                     <span
@@ -292,6 +307,53 @@ export function TaskInbox() {
           ))
         )}
       </div>
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          onClose={() => setCtx(null)}
+          items={[
+            {
+              label: "打开源文件",
+              icon: "external",
+              kbd: "↵",
+              onClick: () => void openTaskAt(ctx.it),
+            },
+            {
+              label: "在 Finder 中显示",
+              icon: "folder-open",
+              onClick: () => {
+                void api.reveal(ctx.it.path);
+              },
+            },
+            { sep: true },
+            {
+              label: "复制任务文本",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(ctx.it.text);
+                  flash("已复制");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+            {
+              label: "复制源路径",
+              icon: "copy",
+              onClick: async () => {
+                try {
+                  await writeText(`${ctx.it.path}:${ctx.it.line}`);
+                  flash("已复制路径");
+                } catch {
+                  /* ignore */
+                }
+              },
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

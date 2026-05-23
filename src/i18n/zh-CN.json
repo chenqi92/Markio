@@ -1,4 +1,21 @@
 {
+  "callout": {
+    "note": "备注",
+    "info": "信息",
+    "tip": "提示",
+    "success": "成功",
+    "question": "问题",
+    "warning": "警告",
+    "danger": "危险",
+    "important": "重要",
+    "todo": "待办",
+    "example": "示例",
+    "bug": "Bug",
+    "quote": "引用",
+    "titlePlaceholder": "（可选标题）",
+    "bodyPlaceholder": "（双击添加正文）",
+    "editBody": "双击编辑"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

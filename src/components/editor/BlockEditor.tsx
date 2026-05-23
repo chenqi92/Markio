@@ -254,6 +254,9 @@ export function BlockEditor({
   onChangeRef.current = onChange;
   const initialValueRef = useRef(value);
   initialValueRef.current = value;
+  // emit 节流：blocksToMarkdownLossy 遍历整个文档 + transform 后处理，
+  // 每个按键都跑会让大文档输入明显卡顿。debounce 到用户停下来一小段再 emit。
+  const emitTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (hydratedKeyRef.current === docKey) return;
@@ -284,6 +287,32 @@ export function BlockEditor({
     };
   }, [docKey, editor]);
 
+  // 卸载时：若还有 pending 的 emit timer，强制立刻 flush 一次，避免最后
+  // 几次按键丢失（用户切 tab / 关闭编辑器时）
+  useEffect(() => {
+    return () => {
+      if (emitTimerRef.current != null) {
+        window.clearTimeout(emitTimerRef.current);
+        emitTimerRef.current = null;
+        try {
+          const snapshot = JSON.parse(
+            JSON.stringify(editor.document),
+          ) as PartialBlock[];
+          const blocks = transformBlocksBeforeSerialize(snapshot);
+          const bodyMd = editor.blocksToMarkdownLossy(blocks);
+          const body = postprocessMarkdown(bodyMd);
+          const md = frontmatterRef.current + body;
+          if (md !== lastEmittedRef.current) {
+            lastEmittedRef.current = md;
+            onChangeRef.current(md);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, [editor]);
+
   const themeMode = useMemo(() => (dark ? "dark" : "light"), [dark]);
 
   return (
@@ -294,12 +323,20 @@ export function BlockEditor({
       slashMenu={false}
       onChange={() => {
         if (isHydratingRef.current) return;
-        void (async () => {
+        // 节流：用户连续输入时每 220ms 才 serialize 一次，避免
+        // blocksToMarkdownLossy + transform 在每个按键上跑导致卡顿
+        if (emitTimerRef.current != null) {
+          window.clearTimeout(emitTimerRef.current);
+        }
+        emitTimerRef.current = window.setTimeout(() => {
+          emitTimerRef.current = null;
           try {
-            const blocks = transformBlocksBeforeSerialize(
-              editor.document as PartialBlock[],
-            );
-            const bodyMd = await editor.blocksToMarkdownLossy(blocks);
+            // deep clone 避免 transform 时 mutate editor.document 内部对象
+            const snapshot = JSON.parse(
+              JSON.stringify(editor.document),
+            ) as PartialBlock[];
+            const blocks = transformBlocksBeforeSerialize(snapshot);
+            const bodyMd = editor.blocksToMarkdownLossy(blocks);
             const body = postprocessMarkdown(bodyMd);
             // 拼回 frontmatter 前缀，让磁盘上的 .md 保持原始 YAML 头
             const md = frontmatterRef.current + body;
@@ -309,7 +346,7 @@ export function BlockEditor({
           } catch {
             // serialize 失败极少见，吞掉避免打断编辑
           }
-        })();
+        }, 220);
       }}
     >
       <MarkioSlashMenu editor={editor} locale={locale} />

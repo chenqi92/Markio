@@ -1,4 +1,21 @@
 {
+  "callout": {
+    "note": "Note",
+    "info": "Info",
+    "tip": "Tip",
+    "success": "Success",
+    "question": "Question",
+    "warning": "Warning",
+    "danger": "Danger",
+    "important": "Important",
+    "todo": "Todo",
+    "example": "Example",
+    "bug": "Bug",
+    "quote": "Quote",
+    "titlePlaceholder": "(optional title)",
+    "bodyPlaceholder": "(double-click to add body)",
+    "editBody": "Double-click to edit"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

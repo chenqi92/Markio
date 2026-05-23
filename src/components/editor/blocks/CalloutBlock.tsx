@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { createReactBlockSpec } from "@blocknote/react";
 
 /**
@@ -16,18 +17,18 @@ import { createReactBlockSpec } from "@blocknote/react";
  * 让 BlockNote 输出 `> ...` 段；之后 postprocess 把首行补成 `> [!type] title`。
  */
 const CALLOUT_TYPES = [
-  { id: "note", label: "Note", color: "#5b8def" },
-  { id: "info", label: "Info", color: "#0ea5e9" },
-  { id: "tip", label: "Tip", color: "#10b981" },
-  { id: "success", label: "Success", color: "#22c55e" },
-  { id: "question", label: "Question", color: "#a855f7" },
-  { id: "warning", label: "Warning", color: "#f59e0b" },
-  { id: "danger", label: "Danger", color: "#ef4444" },
-  { id: "important", label: "Important", color: "#ec4899" },
-  { id: "todo", label: "Todo", color: "#6366f1" },
-  { id: "example", label: "Example", color: "#14b8a6" },
-  { id: "bug", label: "Bug", color: "#ef4444" },
-  { id: "quote", label: "Quote", color: "#94a3b8" },
+  { id: "note", color: "#5b8def" },
+  { id: "info", color: "#0ea5e9" },
+  { id: "tip", color: "#10b981" },
+  { id: "success", color: "#22c55e" },
+  { id: "question", color: "#a855f7" },
+  { id: "warning", color: "#f59e0b" },
+  { id: "danger", color: "#ef4444" },
+  { id: "important", color: "#ec4899" },
+  { id: "todo", color: "#6366f1" },
+  { id: "example", color: "#14b8a6" },
+  { id: "bug", color: "#ef4444" },
+  { id: "quote", color: "#94a3b8" },
 ] as const;
 
 const TYPE_BY_ID = new Map(CALLOUT_TYPES.map((t) => [t.id, t]));
@@ -59,6 +60,7 @@ interface RenderProps {
 }
 
 function CalloutView({ block, editor }: RenderProps) {
+  const { t } = useTranslation();
   const { calloutType, title, body } = block.props;
   const def = calloutDefByType(calloutType) ?? CALLOUT_TYPES[0];
   const [bodyEditing, setBodyEditing] = useState(false);
@@ -104,15 +106,15 @@ function CalloutView({ block, editor }: RenderProps) {
             outline: "none",
           }}
         >
-          {CALLOUT_TYPES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
+          {CALLOUT_TYPES.map((typ) => (
+            <option key={typ.id} value={typ.id}>
+              {t(`callout.${typ.id}`)}
             </option>
           ))}
         </select>
         <input
           value={title}
-          placeholder="（可选标题）"
+          placeholder={t("callout.titlePlaceholder")}
           onChange={(e) =>
             editor.updateBlock(block, { props: { title: e.target.value } })
           }
@@ -169,10 +171,12 @@ function CalloutView({ block, editor }: RenderProps) {
             cursor: "text",
             minHeight: 18,
           }}
-          title="双击编辑"
+          title={t("callout.editBody")}
         >
           {body || (
-            <span style={{ color: "var(--text-3)" }}>（双击添加正文）</span>
+            <span style={{ color: "var(--text-3)" }}>
+              {t("callout.bodyPlaceholder")}
+            </span>
           )}
         </div>
       )}

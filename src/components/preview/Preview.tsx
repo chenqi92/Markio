@@ -137,7 +137,7 @@ export function Preview({
     if (activeWorkspace) {
       void useVaultIndex.getState().ensure(activeWorkspace.path);
     }
-  }, [activeWorkspace?.path]);
+  }, [activeWorkspace]);
 
   const findIndexRef = useRef(findIndex);
   const findCurrentRef = useRef<HTMLElement | null>(null);
@@ -178,7 +178,7 @@ export function Preview({
     if (Math.abs(el.scrollTop - nextTop) < 1) return;
     // lineJump 是一次性写入；分屏总线会把这次 scroll 同步过去
     el.scrollTop = nextTop;
-  }, [scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
+  }, [scrollTarget]);
 
   // 表格装饰 = 两层：
   //   (A) DOM 层：html 变化时把每个 <table> 包到 .md-table-host，挂 + 行 / + 列 按钮（无监听）

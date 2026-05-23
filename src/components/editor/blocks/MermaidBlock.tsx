@@ -62,6 +62,7 @@ interface RenderProps {
 function MermaidView({ block, editor }: RenderProps) {
   const code = block.props.code;
   const [editing, setEditing] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
   const svgRef = useRef<HTMLDivElement>(null);
   const themeId = useSettings((s) => s.theme);
 
@@ -128,22 +129,137 @@ function MermaidView({ block, editor }: RenderProps) {
           }}
         />
       ) : (
-        <div
-          ref={svgRef}
-          onDoubleClick={() => setEditing(true)}
-          style={{
-            padding: 12,
-            background: "var(--bg-pane-2)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            minHeight: 40,
-            cursor: "pointer",
-            textAlign: "center",
-            overflowX: "auto",
-          }}
-          title="双击编辑"
+        <div style={{ position: "relative" }}>
+          <div
+            ref={svgRef}
+            onDoubleClick={() => setEditing(true)}
+            style={{
+              padding: 12,
+              background: "var(--bg-pane-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              minHeight: 40,
+              cursor: "pointer",
+              textAlign: "center",
+              overflowX: "auto",
+            }}
+            title="双击编辑 / 右上角放大"
+          />
+          {code.trim() && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomed(true);
+              }}
+              title="放大查看"
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 8,
+                width: 24,
+                height: 24,
+                padding: 0,
+                background: "var(--bg-elev)",
+                border: "0.5px solid var(--border)",
+                borderRadius: 4,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-2)",
+                opacity: 0.7,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M9 21H3v-6" />
+                <path d="m3 21 11-11" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+      {zoomed && (
+        <ZoomedOverlay
+          code={code}
+          themeId={themeId}
+          onClose={() => setZoomed(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** 全屏放大：重新用 mermaid 渲染一次到独立容器，里面的 SVG 自然撑满。
+ *  Esc / 点击空白处关闭。 */
+function ZoomedOverlay({
+  code,
+  themeId,
+  onClose,
+}: {
+  code: string;
+  themeId: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const mermaid = await getMermaid(themeId);
+        const id = `bn-mmd-zoom-${counter++}`;
+        const { svg } = await mermaid.render(id, code);
+        if (cancelled || !ref.current) return;
+        ref.current.innerHTML = DOMPurify.sanitize(svg, {
+          USE_PROFILES: { svg: true, svgFilters: true },
+        });
+      } catch (err) {
+        if (cancelled || !ref.current) return;
+        ref.current.innerHTML = `<pre style="color:#d44;font-size:12px;">${(err as Error).message}</pre>`;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, themeId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0, 0, 0, 0.78)",
+        zIndex: 10000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 40,
+        cursor: "zoom-out",
+      }}
+      title="点击空白处或 Esc 关闭"
+    >
+      <div
+        ref={ref}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: "92vw",
+          maxHeight: "92vh",
+          overflow: "auto",
+          background: "var(--bg-modal)",
+          borderRadius: 8,
+          padding: 24,
+          cursor: "default",
+        }}
+      />
     </div>
   );
 }

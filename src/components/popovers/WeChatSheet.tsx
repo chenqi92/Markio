@@ -42,7 +42,7 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [tab?.id, tab?.content]);
+  }, [tab]);
 
   const copy = async () => {
     if (!html) return;

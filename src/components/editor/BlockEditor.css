@@ -47,6 +47,19 @@
   background: transparent;
 }
 
+/* 字号跟 markio 分屏模式的预览区一致（默认 16，分屏 14.5），避免 BlockNote
+   默认的偏大字号跟旁边的预览不协调。--prose-fs 由 AppShell 写到 :root。 */
+.bn-mantine .bn-editor {
+  font-size: calc(var(--prose-fs, 16px) - 1px);
+  line-height: 1.65;
+}
+.bn-mantine .bn-editor h1 { font-size: 1.8em; }
+.bn-mantine .bn-editor h2 { font-size: 1.45em; }
+.bn-mantine .bn-editor h3 { font-size: 1.2em; }
+.bn-mantine .bn-editor h4 { font-size: 1.05em; }
+.bn-mantine .bn-editor h5 { font-size: 1em; }
+.bn-mantine .bn-editor h6 { font-size: 0.92em; color: var(--text-2); }
+
 /* placeholder（空段落的灰字提示）跟主题 text-3 一致 */
 .bn-mantine .bn-inline-content[data-placeholder]::before {
   color: var(--text-3);
@@ -55,4 +68,9 @@
 /* 选区颜色 */
 .bn-mantine .bn-editor ::selection {
   background: var(--bg-selected);
+}
+
+/* tag chip 在 heading 里也要 baseline 对齐 */
+.bn-mantine .bn-tag {
+  vertical-align: baseline;
 }

@@ -33,6 +33,32 @@ const CALLOUT_TYPES = [
 
 const TYPE_BY_ID = new Map(CALLOUT_TYPES.map((t) => [t.id, t]));
 
+/** 别名 → 主类型，跟 markio preview 的 callouts.ts 对齐 */
+const CALLOUT_ALIASES: Record<string, string> = {
+  hint: "tip",
+  caution: "warning",
+  attention: "warning",
+  error: "danger",
+  check: "success",
+  done: "success",
+  help: "question",
+  faq: "question",
+  abstract: "note",
+  summary: "note",
+  tldr: "note",
+};
+
+/** 把任何（含别名的）类型字符串 normalize 成主类型 id；非法返回 null */
+function normalizeCalloutType(raw: string): string | null {
+  const lower = raw.toLowerCase();
+  if (TYPE_BY_ID.has(lower as (typeof CALLOUT_TYPES)[number]["id"])) return lower;
+  const aliased = CALLOUT_ALIASES[lower];
+  if (aliased && TYPE_BY_ID.has(aliased as (typeof CALLOUT_TYPES)[number]["id"])) {
+    return aliased;
+  }
+  return null;
+}
+
 export function calloutDefByType(type: string) {
   return TYPE_BY_ID.get(type as (typeof CALLOUT_TYPES)[number]["id"]);
 }
@@ -75,6 +101,7 @@ function CalloutView({ block, editor }: RenderProps) {
         borderLeft: `3px solid ${def.color}`,
         borderRadius: 6,
         padding: "10px 12px",
+        marginBlock: 8,
         display: "flex",
         flexDirection: "column",
         gap: 6,
@@ -210,12 +237,10 @@ export function tryParseCalloutFromQuote(
 ): { type: string; title: string; body: string } | null {
   const m = plainQuoteText.match(/^\[!([a-zA-Z][\w-]*)\][+-]?\s*(.*?)(\n[\s\S]*)?$/);
   if (!m) return null;
-  const rawType = m[1].toLowerCase();
-  if (!TYPE_BY_ID.has(rawType as (typeof CALLOUT_TYPES)[number]["id"])) {
-    return null;
-  }
+  const type = normalizeCalloutType(m[1]);
+  if (!type) return null;
   return {
-    type: rawType,
+    type,
     title: m[2]?.trim() ?? "",
     body: (m[3] ?? "").replace(/^\n/, ""),
   };

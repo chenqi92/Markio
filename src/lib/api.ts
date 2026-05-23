@@ -728,7 +728,7 @@ export const api = {
     invoke<void>("git_checkout", { workspace, branch, create }),
   gitResolveConflict: (
     workspace: string,
-    strategy: "ours" | "theirs" | "abort",
+    strategy: "ours" | "theirs" | "newest" | "abort",
     files: string[],
   ) =>
     invoke<void>("git_resolve_conflict", { workspace, strategy, files }),
@@ -980,6 +980,9 @@ export const api = {
 
   /** 只读文件内容，不登记保存基线；写入必须走 open/createNew + save。 */
   readText: (path: string) => invoke<string>("fs_read_text", { path }),
+  /** 读取本地文件为 base64，供云盘二进制安全上传使用。 */
+  readFileBase64: (path: string) =>
+    invoke<string>("fs_read_file_base64", { path }),
 
   // dev 期日志投递（release 端 Rust 侧是 no-op）
   devLogAppend: (

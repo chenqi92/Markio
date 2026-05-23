@@ -384,7 +384,7 @@ export const SourceEditor = memo(function SourceEditor({
     // lineJump 一次性写源码 scrollTop；分屏总线会捕获这次 scroll 并按"源码视口顶
     // 部对应行号"同步预览侧，正是我们想要的（跳到第 N 行 → 预览也滚到第 N 行）
     el.scrollTop = next;
-  }, [view, scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
+  }, [view, scrollTarget]);
 
   useEffect(() => {
     if (!view) return;

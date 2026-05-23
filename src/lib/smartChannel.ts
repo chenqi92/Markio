@@ -29,6 +29,7 @@ export type SmartChannelModelSource =
 
 export interface SmartChannelHit {
   path: string;
+  workspace?: string;
   heading: string;
   snippet: string;
   score: number;
@@ -108,7 +109,13 @@ export function getSmartChannelUsage(): { date: string; used: number; limit: num
   return { date: rec.date, used: rec.used, limit };
 }
 
-function incrementSmartChannelUsage(): { used: number; limit: number; allowed: boolean } {
+function hasSmartChannelQuota(): { used: number; limit: number; allowed: boolean } {
+  const limit = useSettings.getState().smartChannelDailyLimit;
+  const usage = getSmartChannelUsage();
+  return { used: usage.used, limit, allowed: usage.used < limit };
+}
+
+function incrementSmartChannelUsage(): { used: number; limit: number } {
   const limit = useSettings.getState().smartChannelDailyLimit;
   const today = todayKey();
   let used = 0;
@@ -121,7 +128,6 @@ function incrementSmartChannelUsage(): { used: number; limit: number; allowed: b
   } catch {
     /* ignore */
   }
-  if (used >= limit) return { used, limit, allowed: false };
   used += 1;
   try {
     localStorage.setItem(
@@ -131,7 +137,7 @@ function incrementSmartChannelUsage(): { used: number; limit: number; allowed: b
   } catch {
     /* ignore */
   }
-  return { used, limit, allowed: true };
+  return { used, limit };
 }
 
 function resolveProviderModel(src: SmartChannelModelSource): {
@@ -166,9 +172,6 @@ async function retrieve(
   query: string,
   maxChunks: number,
 ): Promise<SmartChannelHit[]> {
-  const ws = useWorkspace.getState().activeWorkspace();
-  if (!ws && scope !== "currentFile") return [];
-
   if (scope === "currentFile") {
     const tab = useTabs.getState().activeTab();
     if (!tab) return [];
@@ -181,6 +184,7 @@ async function retrieve(
       if (p.toLowerCase().includes(lower)) {
         hits.push({
           path: tab.path,
+          workspace: useWorkspace.getState().activeWorkspace()?.path,
           heading: `段落 #${i + 1}`,
           snippet: p.slice(0, 600),
           score: 1,
@@ -191,73 +195,147 @@ async function retrieve(
     return hits;
   }
 
-  if (!ws) return [];
+  const workspaceState = useWorkspace.getState();
+  const active = workspaceState.activeWorkspace();
+  const targets =
+    scope === "allWorkspaces"
+      ? workspaceState.workspaces.filter((w) => !workspaceState.isUnavailable(w.path))
+      : active
+        ? [active]
+        : [];
+  if (targets.length === 0) return [];
 
   const settings = useSettings.getState();
-  // 优先走向量索引
-  if (settings.ragEnabled) {
+
+  const retrieveWorkspace = async (
+    workspacePath: string,
+    workspaceName: string,
+  ): Promise<SmartChannelHit[]> => {
+    // 历史仓库在启动时不会全部注册；跨仓库检索前先按需注册。
     try {
-      const cfg: RagEmbedConfig =
-        settings.ragProvider === "ollama"
-          ? {
-              provider: "ollama",
-              model: settings.ragOllamaModel,
-              dim: settings.ragOllamaDim,
-              baseUrl: settings.ragOllamaBaseUrl,
-            }
-          : {
-              provider: "openai",
-              model: settings.ragOpenaiModel,
-              dim: settings.ragOpenaiDim,
-              baseUrl: settings.ragOpenaiBaseUrl,
-            };
-      const ragHits: RagHit[] = await api.ragSearch({
-        workspace: ws.path,
-        query,
-        limit: maxChunks,
-        expandLinks: settings.ragExpandLinks,
-        config: cfg,
-      });
-      if (ragHits.length > 0) {
-        return ragHits.map((h) => ({
-          path: h.path,
-          heading: h.heading,
-          snippet: h.body,
-          score: h.score,
-          source: "rag",
-        }));
-      }
+      await api.workspaceRegister(workspacePath);
     } catch (e) {
       reportDiagnostic({
         source: "smart-channel",
         severity: "warning",
-        message: "智能通道向量检索失败，已退回关键词检索",
+        message: "智能通道仓库注册失败，已跳过该仓库",
         detail: e,
-        workspace: ws.path,
+        workspace: workspacePath,
       });
+      return [];
     }
-  }
 
-  // 关键词检索兜底
-  try {
-    const grepHits = await api.aiRetrieve(ws.path, query, maxChunks);
-    return grepHits.map((h) => ({
-      path: h.path,
-      heading: h.line ? `第 ${h.line} 行` : "",
-      snippet: h.snippet,
-      score: 0,
-      source: "grep",
-    }));
-  } catch (e) {
-    reportDiagnostic({
-      source: "smart-channel",
-      severity: "warning",
-      message: "智能通道关键词检索失败",
-      detail: e,
-      workspace: ws.path,
-    });
-    return [];
-  }
+    const attachmentHits = async (remaining: number): Promise<SmartChannelHit[]> => {
+      if (!settings.smartChannelIncludeAttachments || remaining <= 0) return [];
+      try {
+        const queryLower = query.toLowerCase();
+        const attachments = await api.listAttachments(workspacePath, 200);
+        return attachments
+          .filter((a) => a.name.toLowerCase().includes(queryLower))
+          .slice(0, remaining)
+          .map((a) => ({
+            path: a.path,
+            workspace: workspacePath,
+            heading: "附件",
+            snippet: `附件：${a.name}\n类型：${a.kind}\n大小：${Math.round(a.size / 1024)} KB\n仓库：${workspaceName}`,
+            score: 0,
+            source: "attachment",
+          }));
+      } catch (e) {
+        reportDiagnostic({
+          source: "smart-channel",
+          severity: "warning",
+          message: "智能通道附件元信息检索失败",
+          detail: e,
+          workspace: workspacePath,
+        });
+        return [];
+      }
+    };
+
+    // 优先走向量索引
+    if (settings.ragEnabled) {
+      try {
+        const cfg: RagEmbedConfig =
+          settings.ragProvider === "ollama"
+            ? {
+                provider: "ollama",
+                model: settings.ragOllamaModel,
+                dim: settings.ragOllamaDim,
+                baseUrl: settings.ragOllamaBaseUrl,
+              }
+            : {
+                provider: "openai",
+                model: settings.ragOpenaiModel,
+                dim: settings.ragOpenaiDim,
+                baseUrl: settings.ragOpenaiBaseUrl,
+              };
+        const ragHits: RagHit[] = await api.ragSearch({
+          workspace: workspacePath,
+          query,
+          limit: maxChunks,
+          expandLinks: settings.ragExpandLinks,
+          config: cfg,
+        });
+        if (ragHits.length > 0) {
+          const hits = ragHits.map((h) => ({
+            path: h.path,
+            workspace: workspacePath,
+            heading: h.heading,
+            snippet: h.body,
+            score: h.score,
+            source: "rag",
+          }));
+          return [
+            ...hits,
+            ...(await attachmentHits(Math.max(0, maxChunks - hits.length))),
+          ];
+        }
+      } catch (e) {
+        reportDiagnostic({
+          source: "smart-channel",
+          severity: "warning",
+          message: "智能通道向量检索失败，已退回关键词检索",
+          detail: e,
+          workspace: workspacePath,
+        });
+      }
+    }
+
+    // 关键词检索兜底
+    try {
+      const grepHits = await api.aiRetrieve(workspacePath, query, maxChunks);
+      const hits = grepHits.map((h) => ({
+        path: h.path,
+        workspace: workspacePath,
+        heading: h.line ? `第 ${h.line} 行` : "",
+        snippet: h.snippet,
+        score: 0,
+        source: "grep",
+      }));
+      return [
+        ...hits,
+        ...(await attachmentHits(Math.max(0, maxChunks - hits.length))),
+      ];
+    } catch (e) {
+      reportDiagnostic({
+        source: "smart-channel",
+        severity: "warning",
+        message: "智能通道关键词检索失败",
+        detail: e,
+        workspace: workspacePath,
+      });
+      return [];
+    }
+  };
+
+  const batches = await Promise.all(
+    targets.map((w) => retrieveWorkspace(w.path, w.name)),
+  );
+  return batches
+    .flat()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxChunks);
 }
 
 export async function smartChannelQuery(
@@ -267,7 +345,7 @@ export async function smartChannelQuery(
   if (!s.smartChannelEnabled) {
     throw new Error("智能通道未启用，请到 设置 → 智能通道 中开启。");
   }
-  const quota = incrementSmartChannelUsage();
+  const quota = hasSmartChannelQuota();
   if (!quota.allowed) {
     throw new Error(
       `今日智能通道调用已达上限（${quota.limit} 次），明天再来或在设置中调高上限。`,
@@ -284,8 +362,9 @@ export async function smartChannelQuery(
   const ctxBlock = refs
     .map((h, i) => {
       const file = h.path.split("/").slice(-1)[0] ?? h.path;
+      const workspace = h.workspace ? `\n仓库：${h.workspace}` : "";
       const heading = h.heading ? `\n小节：${h.heading}` : "";
-      return `### 片段 ${i + 1} · ${file}（${h.source}）${heading}\n${h.snippet}`;
+      return `### 片段 ${i + 1} · ${file}（${h.source}）${workspace}${heading}\n${h.snippet}`;
     })
     .join("\n\n---\n\n");
 
@@ -307,12 +386,13 @@ export async function smartChannelQuery(
     system: systemParts.join("\n\n"),
     messages: [{ role: "user", content: req.query }],
   });
+  incrementSmartChannelUsage();
 
   const ws = useWorkspace.getState().activeWorkspace();
   return {
     answer: result.text,
     refs,
-    workspace: ws?.path,
+    workspace: scope === "allWorkspaces" ? "allWorkspaces" : ws?.path,
     model: result.model ?? model,
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,

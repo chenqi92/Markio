@@ -80,7 +80,7 @@ export function AttachmentSection() {
     return () => {
       cancelled = true;
     };
-  }, [open, ws?.id, ws?.path]);
+  }, [open, ws]);
 
   if (!ws) return null;
 

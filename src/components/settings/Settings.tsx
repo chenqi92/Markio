@@ -12,6 +12,9 @@ import {
   UpdateDialog,
   ChangelogDialog,
   FeedbackDialog,
+  LicenseDialog,
+  PrivacyDialog,
+  OssDialog,
 } from "../popovers/AboutDialogs";
 import { Icon, type IconName } from "../ui/Icon";
 import { Toggle, Slider, SelectBtn, type SelectOption } from "../ui/controls";
@@ -21,7 +24,7 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useCustomThemes } from "@/stores/customThemes";
 import { useDialog } from "@/stores/dialog";
-import { THEMES } from "@/themes";
+import { THEMES, isDarkTheme } from "@/themes";
 import { api, pickDirectory, pickFile, type RagStatus } from "@/lib/api";
 import { displayPath } from "@/lib/utils";
 import * as aiCache from "@/lib/aiCache";
@@ -52,6 +55,34 @@ import {
   type AIProviderId,
 } from "@/lib/ai-providers";
 import { AIModelPicker } from "./AIModelPicker";
+
+function fileNameFromPath(path: string): string {
+  return path.split(/[\\/]/).pop() || "untitled";
+}
+
+function contentTypeFromPath(path: string): string {
+  const ext = fileNameFromPath(path).split(".").pop()?.toLowerCase();
+  const map: Record<string, string> = {
+    md: "text/markdown",
+    markdown: "text/markdown",
+    txt: "text/plain",
+    json: "application/json",
+    pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    csv: "text/csv",
+    html: "text/html",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    zip: "application/zip",
+  };
+  return ext ? map[ext] ?? "application/octet-stream" : "application/octet-stream";
+}
 
 /** 设置导航分组：参考 mdview-design 把分区按用途分到 通用 / 工作流 / 集成 / 其他。
  *  顺序决定 UI 渲染顺序；nav 在每段第一项前插入分组标题。 */
@@ -171,6 +202,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const { t } = useTranslation();
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace());
+  const theme = useSettings((s) => s.theme);
+  const brandIcon = isDarkTheme(theme)
+    ? "/brand/icon-dark-256.png"
+    : "/brand/icon-light-256.png";
 
   // Esc 关闭 —— App 层也注册了 app.escape，但当焦点在 settings 输入框里时
   // App 层 keydown 会被 input 吞掉，所以本组件兜底再监听一次。
@@ -205,7 +240,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
     <div className="settings-workspace" role="dialog" aria-label={t("settings.title")}>
       <div className="settings-topbar">
         <div className="settings-topbar-l">
-          <div className="settings-mark" aria-hidden />
+          <div className="settings-mark" aria-hidden>
+            <img src={brandIcon} alt="" draggable={false} />
+          </div>
           <div className="settings-topbar-tt">
             <div className="settings-topbar-t">{t("settings.title")}</div>
             <div className="settings-topbar-s">
@@ -1012,6 +1049,19 @@ function Sync() {
       })),
     [t],
   );
+  const autoSyncActive = autoSync && frequency !== "manual";
+  const setAutoSyncEnabled = (enabled: boolean) => {
+    if (enabled && frequency === "manual") {
+      setPreference("syncFrequency", "30s");
+    }
+    setPreference("autoSyncEnabled", enabled);
+  };
+  const setSyncFrequency = (value: typeof frequency) => {
+    setPreference("syncFrequency", value);
+    if (value === "manual" && autoSync) {
+      setPreference("autoSyncEnabled", false);
+    }
+  };
 
   // 4 个存储目标的概览行；状态 dot 只反映"是否已配置"，
   // 真实联通性还要看下方各卡片自己的 probe。S3 是网盘组里的一项，不单独列。
@@ -1035,10 +1085,10 @@ function Sync() {
     {
       id: "git",
       label: "Git",
-      sub: autoSync
+      sub: autoSyncActive
         ? `自动 ${frequencyOptions.find((o) => o.value === frequency)?.label ?? frequency}`
         : "手动模式 · 在下方 Git 卡里推 / 拉",
-      dot: autoSync ? "ok" : "off",
+      dot: autoSyncActive ? "ok" : "off",
       anchor: "mk-sync-card-github",
     },
     {
@@ -1109,7 +1159,7 @@ function Sync() {
           </div>
           <Toggle
             on={autoSync}
-            onChange={(v) => setPreference("autoSyncEnabled", v)}
+            onChange={setAutoSyncEnabled}
           />
         </div>
         <div className="settings-row">
@@ -1130,7 +1180,7 @@ function Sync() {
           <SelectBtn
             value={frequency}
             options={frequencyOptions}
-            onChange={(v) => setPreference("syncFrequency", v)}
+            onChange={setSyncFrequency}
           />
         </div>
       </div>
@@ -1467,7 +1517,15 @@ function S3DriveDrawer() {
       const probeKey = `.markio/probe-${Date.now()}.txt`;
       const body = btoa("markio s3 connection probe");
       await api.s3PutObject(cfgPayload(), probeKey, body, "text/plain");
-      setMsg({ kind: "ok", text: t("settings.sync.drive.testOk") });
+      try {
+        await api.s3DeleteObject(cfgPayload(), probeKey);
+        setMsg({ kind: "ok", text: t("settings.sync.drive.testOk") });
+      } catch (cleanupError) {
+        setMsg({
+          kind: "ok",
+          text: `${t("settings.sync.drive.testOk")}；探针文件清理失败：${String(cleanupError)}`,
+        });
+      }
     } catch (e) {
       setMsg({
         kind: "err",
@@ -1836,8 +1894,7 @@ function DropboxDriveDrawer() {
     setBusy("upload");
     setMsg(null);
     try {
-      const txt = await api.readText(localFile);
-      const bodyBase64 = btoa(unescape(encodeURIComponent(txt)));
+      const bodyBase64 = await api.readFileBase64(localFile);
       await api.dropboxUpload(uploadPath.trim(), bodyBase64);
       setMsg({ kind: "ok", text: `已上传 ${localFile} → ${uploadPath}` });
     } catch (e) {
@@ -2135,10 +2192,15 @@ function GDriveDriveDrawer() {
     setBusy("upload");
     setMsg(null);
     try {
-      const txt = await api.readText(localFile);
-      const bodyBase64 = btoa(unescape(encodeURIComponent(txt)));
-      const name = localFile.split(/[\\/]/).pop() || "untitled";
-      const id = await api.gdriveUpload(name, null, null, bodyBase64, "text/markdown");
+      const bodyBase64 = await api.readFileBase64(localFile);
+      const name = fileNameFromPath(localFile);
+      const id = await api.gdriveUpload(
+        name,
+        null,
+        null,
+        bodyBase64,
+        contentTypeFromPath(localFile),
+      );
       setMsg({ kind: "ok", text: `已上传 ${name} (id=${id})` });
     } catch (e) {
       setMsg({ kind: "err", text: String(e) });
@@ -2868,7 +2930,7 @@ function Shortcuts() {
   return (
     <>
       <SectionHeader id="shortcuts" />
-      <div className="settings-row" style={{ justifyContent: "flex-end" }}>
+      <div className="shortcuts-toolbar">
         <button
           className="settings-btn"
           onClick={() => {
@@ -2905,10 +2967,7 @@ function Shortcuts() {
                 </div>
                 <div className="kbd-group">
                   {isRecording ? (
-                    <span
-                      className="kbd"
-                      style={{ minWidth: 120, textAlign: "center" }}
-                    >
+                    <span className="kbd kbd-recording">
                       {t("settings.shortcuts.pressNewKey")}
                     </span>
                   ) : binding ? (
@@ -3457,11 +3516,9 @@ function WxAssistant() {
             }}
           />
         </div>
-        <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
+        <div className="settings-row settings-row-action">
           <div className="settings-row-l">
-            <div className="settings-label" style={{ color: "var(--accent)" }}>
-              发送测试
-            </div>
+            <div className="settings-label">发送测试</div>
             <div className="settings-help">
               {testMsg ?? "向上面的 webhook 推一条 [markio] 测试消息。"}
             </div>
@@ -3512,11 +3569,9 @@ function WxAssistant() {
             }}
           />
         </div>
-        <div className="settings-row" style={{ background: "var(--bg-pane-2)" }}>
+        <div className="settings-row settings-row-action">
           <div className="settings-row-l">
-            <div className="settings-label" style={{ color: "var(--accent)" }}>
-              立即发送一次摘要
-            </div>
+            <div className="settings-label">立即发送一次摘要</div>
             <div className="settings-help">
               {digestMsg ??
                 (lastDigestSent
@@ -4165,14 +4220,9 @@ function AI() {
             />
           )}
         </div>
-        <div
-          className="settings-row"
-          style={{ background: "var(--bg-pane-2)" }}
-        >
+        <div className="settings-row settings-row-action">
           <div className="settings-row-l">
-            <div className="settings-label" style={{ color: "var(--accent)" }}>
-              测试连接
-            </div>
+            <div className="settings-label">测试连接</div>
             <div className="settings-help">
               {testResult ?? "发送一次 ping 请求验证 Key 与 Endpoint"}
             </div>
@@ -6535,7 +6585,13 @@ function About() {
   const [version, setVersion] = useState<string>("");
   const autoCheck = useSettings((s) => s.autoCheckUpdates);
   const setPreference = useSettings((s) => s.setPreference);
-  const [openDialog, setOpenDialog] = useState<null | "update" | "changelog" | "feedback">(null);
+  const theme = useSettings((s) => s.theme);
+  const brandIcon = isDarkTheme(theme)
+    ? "/brand/icon-dark-512.png"
+    : "/brand/icon-light-512.png";
+  const [openDialog, setOpenDialog] = useState<
+    null | "update" | "changelog" | "feedback" | "license" | "privacy" | "oss"
+  >(null);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion("?"));
@@ -6548,15 +6604,7 @@ function About() {
   };
 
   // 4 张底部链接卡：用户协议 / 隐私 / 开源许可 / 数据导出。
-  // 每个点击都包一层 try/catch + 弹 toast 反馈，避免 openExternal 失败时用户什么都看不到。
-  const openLink = async (url: string, label: string) => {
-    try {
-      await openExternal(url);
-      flashToast("done", `已在浏览器打开 ${label}`);
-    } catch (e) {
-      flashToast("error", `打开失败：${(e as Error).message}`);
-    }
-  };
+  // 前三张走内置 modal（离线可看 + 不依赖外链有效性）；数据导出仍调用本机打开崩溃目录。
   const footerCards: Array<{
     t: string;
     s: string;
@@ -6565,18 +6613,17 @@ function About() {
     {
       t: "用户协议",
       s: "使用条款 · 开源 MIT",
-      onClick: () => void openLink("https://github.com/chenqi92/Markio/blob/main/LICENSE", "LICENSE"),
+      onClick: () => setOpenDialog("license"),
     },
     {
       t: "隐私",
       s: "本地优先 · 不上报数据",
-      onClick: () => void openLink("https://github.com/chenqi92/Markio#privacy", "隐私说明"),
+      onClick: () => setOpenDialog("privacy"),
     },
     {
       t: "开源许可",
-      s: "查看依赖与三方协议",
-      onClick: () =>
-        void openLink("https://github.com/chenqi92/Markio/blob/main/package.json", "package.json"),
+      s: "查看主要依赖与三方协议",
+      onClick: () => setOpenDialog("oss"),
     },
     {
       t: "数据导出",
@@ -6596,7 +6643,9 @@ function About() {
     <>
       <SectionHeader id="about" />
       <div className="about-hero">
-        <div className="about-mark" aria-hidden />
+        <div className="about-mark" aria-hidden>
+          <img src={brandIcon} alt="" draggable={false} />
+        </div>
         <div>
           <div className="about-hero-name">markio</div>
           <div className="about-hero-ver">
@@ -6669,6 +6718,15 @@ function About() {
           appVersion={version}
           onClose={() => setOpenDialog(null)}
         />
+      )}
+      {openDialog === "license" && (
+        <LicenseDialog onClose={() => setOpenDialog(null)} />
+      )}
+      {openDialog === "privacy" && (
+        <PrivacyDialog onClose={() => setOpenDialog(null)} />
+      )}
+      {openDialog === "oss" && (
+        <OssDialog onClose={() => setOpenDialog(null)} />
       )}
     </>
   );

@@ -28,6 +28,11 @@ import {
   expandTagsInInlineContent,
   collapseTagsInInlineContent,
 } from "./blocks/TagInline";
+import {
+  MathInlineContent,
+  expandInlineMathInInlineContent,
+  collapseInlineMathInInlineContent,
+} from "./blocks/MathInline";
 import { MarkioSlashMenu, WikilinkSuggestionMenu } from "./BlockEditorMenus";
 import type { Locale } from "@/i18n";
 
@@ -69,6 +74,7 @@ const markioSchema = BlockNoteSchema.create({
     ...defaultInlineContentSpecs,
     wikilink: WikilinkInlineContent,
     tag: TagInlineContent,
+    mathInline: MathInlineContent,
   },
 });
 
@@ -191,12 +197,13 @@ function transformBlocksAfterParse(blocks: PartialBlock[]): PartialBlock[] {
       content?: unknown;
       children?: PartialBlock[];
     };
-    // 在所有 block 的 inline content 里把 `[[xxx]]` / `#tag` 拆成对应的
-    // inline content 节点。顺序：先 wikilink（避免 `[[#tag]]` 被 tag 抢），
-    // 再在剩下的 text 节点里扫 tag。
+    // 在所有 block 的 inline content 里把 `[[xxx]]` / `#tag` / `$x$`
+    // 拆成对应的 inline content 节点。顺序：先 wikilink（避免 `[[#tag]]`
+    // 被 tag 抢），再 tag，最后 inline math。
     if (bb.content != null) {
-      const afterWiki = expandWikilinksInInlineContent(bb.content);
-      bb.content = expandTagsInInlineContent(afterWiki) as typeof bb.content;
+      const a = expandWikilinksInInlineContent(bb.content);
+      const b = expandTagsInInlineContent(a);
+      bb.content = expandInlineMathInInlineContent(b) as typeof bb.content;
     }
     if (bb.type === "codeBlock" && typeof bb.props?.language === "string") {
       const lang = bb.props.language.toLowerCase();
@@ -267,8 +274,9 @@ function transformBlocksBeforeSerialize(blocks: PartialBlock[]): PartialBlock[] 
     };
     // 自定义 inline content → 还原成纯文本，让 BlockNote 正常 serialize
     if (bb.content != null) {
-      const noTags = collapseTagsInInlineContent(bb.content);
-      bb.content = collapseWikilinksInInlineContent(noTags);
+      const a = collapseInlineMathInInlineContent(bb.content);
+      const b = collapseTagsInInlineContent(a);
+      bb.content = collapseWikilinksInInlineContent(b);
     }
     if (bb.type === "mermaid") {
       const code = (bb.props?.code as string) ?? "";

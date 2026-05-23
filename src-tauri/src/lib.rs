@@ -467,6 +467,23 @@ fn fs_read_text(state: tauri::State<'_, AppState>, path: String) -> Result<Strin
 }
 
 #[tauri::command]
+fn fs_read_file_base64(path: String) -> Result<String, String> {
+    let canon = std::fs::canonicalize(&path).map_err(|e| format!("读取文件失败：{e}"))?;
+    let meta = std::fs::metadata(&canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
+    if !meta.is_file() {
+        return Err("读取文件失败：目标不是文件".to_string());
+    }
+    if meta.len() > MAX_SYNC_BODY_BYTES as u64 {
+        return Err(format!(
+            "文件超过上传大小限制：最大 {} MB",
+            MAX_SYNC_BODY_BYTES / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(&canon).map_err(|e| format!("读取文件失败：{e}"))?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
 fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     // 文件可能已被外部删除（用户在 Finder 删了再点 close），validate_path 走的
     // ensure_in_workspaces 已支持"文件不存在但父目录在 workspace"。
@@ -3647,6 +3664,7 @@ pub fn run() {
             fs_read_tree,
             fs_read_dir,
             fs_read_text,
+            fs_read_file_base64,
             fs_open,
             fs_close,
             fs_save,

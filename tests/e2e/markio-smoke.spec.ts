@@ -38,7 +38,9 @@ test("opens a vault, edits with conflict recovery, and jumps from global search"
   expect(saved).toContain("E2E edit marker");
 
   await page.keyboard.press("ControlOrMeta+Shift+F");
-  await page.getByPlaceholder(/搜索/).fill("search token");
+  const globalSearch = page.locator(".cmdk.gs-wide");
+  await expect(globalSearch).toBeVisible();
+  await globalSearch.locator(".cmdk-search input").fill("search token");
   await expect(page.locator(".cmdk-item").filter({ hasText: "Daily.md" })).toBeVisible();
   await page.locator(".cmdk-item").filter({ hasText: "Daily.md" }).first().click();
 
@@ -76,23 +78,32 @@ test("split mode keeps source and preview scroll positions in sync", async ({
     .toBeGreaterThan(40);
 
   await source.evaluate((el) => {
-    el.scrollTop = 2400;
-    el.dispatchEvent(new Event("scroll"));
+    const outer = el.closest<HTMLElement>(".editor-pane");
+    for (const target of [outer, el].filter(Boolean) as HTMLElement[]) {
+      target.scrollTop = 2400;
+      target.dispatchEvent(new Event("scroll"));
+    }
   });
   await expect
     .poll(() => preview.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(300);
 
-  await page.waitForTimeout(250);
-  const before = await source.evaluate((el) => el.scrollTop);
+  await page.waitForTimeout(800);
+  const before = await source.evaluate((el) => {
+    const outer = el.closest<HTMLElement>(".editor-pane");
+    return Math.max(el.scrollTop, outer?.scrollTop ?? 0);
+  });
   await preview.evaluate((el) => {
-    el.scrollTop = 3600;
+    el.scrollTop = 0;
     el.dispatchEvent(new Event("scroll"));
   });
   await expect
     .poll(async () => {
-      const current = await source.evaluate((el) => el.scrollTop);
-      return Math.abs(current - before);
+      const current = await source.evaluate((el) => {
+        const outer = el.closest<HTMLElement>(".editor-pane");
+        return Math.max(el.scrollTop, outer?.scrollTop ?? 0);
+      });
+      return before - current;
     })
     .toBeGreaterThan(200);
 });

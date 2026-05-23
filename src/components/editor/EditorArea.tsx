@@ -213,7 +213,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         current?.target.nonce === target.target.nonce ? null : current,
       );
     }, 1000);
-  }, [tab?.path, lineJump, clearLineJump]);
+  }, [tab, lineJump, clearLineJump]);
 
   useEffect(
     () => () => {

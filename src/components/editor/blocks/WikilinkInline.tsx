@@ -56,34 +56,38 @@ function WikilinkView({ inlineContent }: RenderProps) {
       contentEditable={false}
       onClick={onClick}
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 3,
-        padding: "0 6px",
+        // 用普通 inline 而不是 inline-flex，让 chip 跟周围文本基线对齐
+        // （在 heading 等大字号文本里 inline-flex 会让 chip 偏低）
+        display: "inline",
+        padding: "1px 6px",
         margin: "0 1px",
         borderRadius: 4,
         background: "var(--accent-glow, rgba(10, 132, 255, 0.18))",
         color: "var(--accent)",
-        fontSize: "0.95em",
+        fontSize: "0.92em",
         cursor: "pointer",
         userSelect: "none",
         verticalAlign: "baseline",
-        lineHeight: 1.4,
         textDecoration: "none",
+        whiteSpace: "nowrap",
       }}
       title={`打开 ${target}`}
     >
       {/* 链接图标 + 笔记名；不再重复显示 [[ ]] 标记，磁盘上的 markdown 仍是 `[[xxx]]` */}
       <svg
-        width="10"
-        height="10"
+        width="0.85em"
+        height="0.85em"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ opacity: 0.75, flexShrink: 0 }}
+        style={{
+          opacity: 0.7,
+          verticalAlign: "-0.1em",
+          marginRight: 3,
+        }}
         aria-hidden
       >
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />

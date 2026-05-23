@@ -413,15 +413,36 @@
   transform: translate(-50%, -50%);
 }
 
-.kbd-group { display: inline-flex; gap: 4px; }
+.kbd-group { display: inline-flex; gap: 4px; align-items: center; }
 .kbd-group .kbd {
   font-family: var(--font-mono); font-size: 11px;
-  padding: 2px 7px;
+  padding: 0 8px;
   background: var(--bg-pane-2);
   border: 0.5px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-2);
-  min-width: 20px; text-align: center;
+  min-width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.kbd-group .kbd.kbd-recording {
+  min-width: 140px;
+  height: 30px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: kbdRecPulse 1.4s ease-in-out infinite;
+}
+@keyframes kbdRecPulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 8%, transparent); }
 }
 
 .settings-btn {
@@ -564,20 +585,22 @@
 .settings-topbar-l { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .settings-topbar-tt { min-width: 0; }
 .settings-mark {
-  width: 30px; height: 30px;
-  border-radius: 7px;
-  background: var(--text);
-  position: relative;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.settings-mark::before, .settings-mark::after {
-  content: ""; position: absolute;
-  background: var(--bg-window);
-  border-radius: 1px;
-  left: 7px; right: 7px;
+.settings-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
-.settings-mark::before { top: 9px; height: 2px; }
-.settings-mark::after  { top: 14px; height: 2px; opacity: 0.6; }
 .settings-topbar-t { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; line-height: 1.2; }
 .settings-topbar-s { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
@@ -851,26 +874,56 @@
   margin-left: 6px;
 }
 
+/* 快捷键页顶部「全部恢复默认」按钮的承载行：用独立容器避开 settings-row 的下边框，
+ * 同时压一个底部 margin，让按钮和紧随其后的 settings-card 边框留出呼吸感。 */
+.settings-main2 .shortcuts-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 14px;
+  border-bottom: 0;
+}
+
+/* 「测试连接 / 发送测试 / 立即发送一次摘要」这种位于卡片末尾的动作行：
+ * 之前用 bg-pane-2 高亮 + accent 色 label，跟整体的纯净排版冲突。
+ * 改用 label 的常规字色 + 一个略微抬升的左侧 accent 细条作为视觉锚点。 */
+.settings-main2 .settings-row-action {
+  position: relative;
+}
+.settings-main2 .settings-row-action::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.55;
+  transform: translateY(-50%);
+}
+
 /* ─── About 页面：64×64 黑色方形 logo + 4 张底部卡片 + 致谢 ──────── */
 .about-hero {
   display: flex; align-items: center; gap: 18px;
   padding: 16px 0 22px;
 }
 .about-mark {
-  width: 64px; height: 64px;
-  border-radius: 14px;
-  background: var(--text);
-  position: relative;
+  width: 72px; height: 72px;
+  border-radius: 18px;
+  overflow: hidden;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.about-mark::before, .about-mark::after {
-  content: ""; position: absolute;
-  left: 14px; right: 14px;
-  background: var(--bg-window);
-  border-radius: 2px;
+.about-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
-.about-mark::before { top: 22px; height: 4px; }
-.about-mark::after  { top: 32px; height: 4px; opacity: 0.55; }
 
 .about-hero-name { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .about-hero-ver { font-size: 12px; color: var(--text-3); margin-top: 4px; }
@@ -1023,7 +1076,7 @@
 .about-cl { display: flex; flex-direction: column; gap: 20px; }
 .about-cl-row {
   display: grid;
-  grid-template-columns: 120px 1fr;
+  grid-template-columns: 110px minmax(0, 1fr);
   gap: 18px;
   padding-bottom: 18px;
   border-bottom: 0.5px solid var(--border);
@@ -1033,6 +1086,7 @@
   display: flex; flex-direction: column; gap: 4px;
   font-size: 12px;
   align-items: flex-start;
+  min-width: 0;
 }
 .about-cl-ver { font-weight: 700; color: var(--text); font-family: var(--font-mono); font-size: 13px; }
 .about-cl-date { color: var(--text-3); font-size: 11px; }
@@ -1045,36 +1099,81 @@
 }
 .about-cl-tag.cur { background: var(--text); color: var(--bg-modal, var(--bg-window)); }
 .about-cl-tag.major { background: var(--accent-glow); color: var(--accent); }
-.about-cl-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-/* 每个 section 用 grid 把 chip 锁在第 1 列固定 50px 宽，正文在第 2 列；
- * 之前用 flex + flex-shrink 在长文本下偶尔会让 chip 跟下一段文字视觉重叠。 */
+.about-cl-main {
+  display: flex; flex-direction: column; gap: 14px;
+  min-width: 0;
+}
+/* chip 自然宽度 + 横向 padding；用 flex 替代之前的 grid (固定 50px 的 chip 列在
+ * 中文标点 + 长 chip 文本下会把正文挤成单字纵列)。 */
 .about-cl-section {
-  display: grid;
-  grid-template-columns: 50px 1fr;
+  display: flex;
+  align-items: flex-start;
   gap: 10px;
-  align-items: start;
+  min-width: 0;
 }
 .about-cl-section ul {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  padding-left: 16px;
+  padding-left: 18px;
   font-size: 12px;
   line-height: 1.65;
   color: var(--text-2);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .about-cl-section ul li { margin-bottom: 4px; }
 .about-cl-chip {
+  flex-shrink: 0;
+  align-self: flex-start;
   font-size: 10px;
-  padding: 2px 0;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
   font-weight: 700;
-  text-align: center;
-  width: 100%;
-  margin-top: 4px;
   letter-spacing: 0.04em;
+  line-height: 1.2;
+  margin-top: 2px;
+  white-space: nowrap;
 }
 .about-cl-chip.added { background: rgba(34,197,94,0.15); color: #16a34a; }
 .about-cl-chip.changed { background: rgba(59,130,246,0.15); color: #2563eb; }
 .about-cl-chip.fixed { background: rgba(234,88,12,0.15); color: #ea580c; }
+
+/* 隐私 / 开源许可 等内置文本类对话框 */
+.about-privacy {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.about-oss-list {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.about-oss-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+.about-oss-item:last-child { border-bottom: 0; }
+.about-oss-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.about-oss-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.about-oss-sub { font-size: 11px; color: var(--text-3); }
+.about-oss-lic {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  color: var(--text-3);
+}
 
 /* 反馈对话框 */
 .about-fb-kinds {

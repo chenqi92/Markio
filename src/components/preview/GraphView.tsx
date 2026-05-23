@@ -66,8 +66,8 @@ export function GraphView({ title }: { title?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws?.path]);
 
-  const nodes = graph?.nodes ?? [];
-  const edges = graph?.edges ?? [];
+  const nodes = useMemo(() => graph?.nodes ?? [], [graph?.nodes]);
+  const edges = useMemo(() => graph?.edges ?? [], [graph?.edges]);
   const radius = Math.max(180, 30 + nodes.length * 6);
   const view = radius * 2 + 60;
 

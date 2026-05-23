@@ -119,7 +119,7 @@ export function Outline({
       .finally(() => {
         if (seq === linksSeqRef.current) setLoadingLinks(false);
       });
-  }, [tab, filePath, ws?.path]);
+  }, [tab, filePath, ws]);
 
   const openPath = useTabs((s) => s.openPath);
 

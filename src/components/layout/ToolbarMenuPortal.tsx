@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -36,7 +37,7 @@ export function ToolbarMenuPortal({
     zIndex: 1200,
   });
 
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const anchor = anchorRef.current;
     if (!anchor) return;
 
@@ -65,11 +66,11 @@ export function ToolbarMenuPortal({
       visibility: "visible",
       zIndex: 1200,
     });
-  };
+  }, [align, anchorRef, width]);
 
   useLayoutEffect(() => {
     updatePosition();
-  }, [align, width]);
+  }, [updatePosition]);
 
   useEffect(() => {
     const dismiss = (e: PointerEvent) => {
@@ -97,7 +98,7 @@ export function ToolbarMenuPortal({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef, onClose]);
+  }, [anchorRef, onClose, updatePosition]);
 
   if (typeof document === "undefined") return null;
 

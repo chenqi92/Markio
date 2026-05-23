@@ -47,7 +47,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (ws) void ensureVaultIndex(ws.path);
-  }, [ws?.path, ensureVaultIndex]);
+  }, [ws, ensureVaultIndex]);
   const setMode = useUI((s) => s.setMode);
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openSettings = useUI((s) => s.openSettings);

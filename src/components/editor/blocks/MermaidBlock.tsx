@@ -192,8 +192,8 @@ function MermaidView({ block, editor }: RenderProps) {
   );
 }
 
-/** 全屏放大：重新用 mermaid 渲染一次到独立容器，里面的 SVG 自然撑满。
- *  Esc / 点击空白处关闭。 */
+/** 全屏放大：重新渲染 SVG 到独立容器，支持滚轮缩放 + 拖动平移。
+ *  Esc / 点击空白处 / 右上角 ✕ 关闭。 */
 function ZoomedOverlay({
   code,
   themeId,
@@ -204,6 +204,12 @@ function ZoomedOverlay({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -215,6 +221,13 @@ function ZoomedOverlay({
         ref.current.innerHTML = DOMPurify.sanitize(svg, {
           USE_PROFILES: { svg: true, svgFilters: true },
         });
+        // 让 SVG 撑满父容器作为缩放基准
+        const svgEl = ref.current.querySelector("svg");
+        if (svgEl) {
+          svgEl.setAttribute("width", "100%");
+          svgEl.setAttribute("height", "100%");
+          svgEl.style.display = "block";
+        }
       } catch (err) {
         if (cancelled || !ref.current) return;
         ref.current.innerHTML = `<pre style="color:#d44;font-size:12px;">${(err as Error).message}</pre>`;
@@ -224,45 +237,158 @@ function ZoomedOverlay({
       cancelled = true;
     };
   }, [code, themeId]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      else if (e.key === "0") {
+        setScale(1);
+        setTx(0);
+        setTy(0);
+      } else if (e.key === "+" || e.key === "=") {
+        setScale((s) => Math.min(s * 1.2, 8));
+      } else if (e.key === "-" || e.key === "_") {
+        setScale((s) => Math.max(s / 1.2, 0.2));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = -e.deltaY;
+    setScale((s) => {
+      const factor = delta > 0 ? 1.1 : 1 / 1.1;
+      return Math.max(0.2, Math.min(8, s * factor));
+    });
+  };
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { x: e.clientX, y: e.clientY, tx, ty };
+  };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    setTx(dragRef.current.tx + (e.clientX - dragRef.current.x));
+    setTy(dragRef.current.ty + (e.clientY - dragRef.current.y));
+  };
+  const stopDrag = () => {
+    dragRef.current = null;
+  };
+
+  const reset = () => {
+    setScale(1);
+    setTx(0);
+    setTy(0);
+  };
+
   return (
     <div
       onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.78)",
+        background: "rgba(0, 0, 0, 0.85)",
         zIndex: 10000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 40,
         cursor: "zoom-out",
+        userSelect: "none",
       }}
       title="点击空白处或 Esc 关闭"
     >
+      {/* 缩放舞台：撑满 overlay，监听 wheel / mousedown */}
       <div
-        ref={ref}
+        ref={stageRef}
+        onClick={(e) => e.stopPropagation()}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={stopDrag}
+        onMouseLeave={stopDrag}
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          cursor: dragRef.current ? "grabbing" : "grab",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          ref={ref}
+          style={{
+            transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
+            transformOrigin: "center center",
+            transition: dragRef.current ? "none" : "transform 80ms ease-out",
+            background: "var(--bg-modal)",
+            borderRadius: 8,
+            padding: 24,
+            maxWidth: "80vw",
+            maxHeight: "80vh",
+            pointerEvents: "auto",
+            willChange: "transform",
+          }}
+        />
+      </div>
+      {/* 控制条：右上角缩放比例 + 重置 + 关闭 */}
+      <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: "92vw",
-          maxHeight: "92vh",
-          overflow: "auto",
-          background: "var(--bg-modal)",
-          borderRadius: 8,
-          padding: 24,
-          cursor: "default",
+          position: "absolute",
+          top: 16,
+          right: 16,
+          display: "inline-flex",
+          gap: 6,
+          padding: "6px 8px",
+          background: "rgba(0, 0, 0, 0.5)",
+          borderRadius: 6,
+          color: "#fff",
+          fontSize: 11,
+          alignItems: "center",
         }}
-      />
+      >
+        <button type="button" onClick={() => setScale((s) => Math.max(0.2, s / 1.2))} style={zoomBtn} title="缩小 -">−</button>
+        <span style={{ minWidth: 38, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(scale * 100)}%</span>
+        <button type="button" onClick={() => setScale((s) => Math.min(8, s * 1.2))} style={zoomBtn} title="放大 +">+</button>
+        <button type="button" onClick={reset} style={zoomBtn} title="重置 0">⟲</button>
+        <button type="button" onClick={onClose} style={zoomBtn} title="关闭 Esc">✕</button>
+      </div>
+      {/* 底部提示 */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute",
+          bottom: 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          color: "#aaa",
+          fontSize: 11,
+          background: "rgba(0, 0, 0, 0.5)",
+          padding: "4px 10px",
+          borderRadius: 4,
+        }}
+      >
+        滚轮缩放 · 拖动平移 · +/- 缩放 · 0 重置 · Esc 关闭
+      </div>
     </div>
   );
 }
+
+const zoomBtn: React.CSSProperties = {
+  width: 24,
+  height: 24,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "transparent",
+  border: "1px solid rgba(255,255,255,0.2)",
+  color: "#fff",
+  cursor: "pointer",
+  borderRadius: 4,
+  fontSize: 13,
+  padding: 0,
+};
 
 export const MermaidReactBlock = createReactBlockSpec(
   {

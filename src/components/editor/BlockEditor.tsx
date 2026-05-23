@@ -17,6 +17,81 @@ import {
 } from "shiki";
 
 /**
+ * 把 BlockNote 内置代码块的 `<select>` 替换成 `<input list>` —— 让用户能
+ * 直接打字输入任意语言名（不限于下拉里的 280 种），shiki 不认识的就当
+ * plain text 渲染，但用户的源码里 ` ```xxx ` 围栏标识保留正确。
+ *
+ * 共享一个全局 datalist，第一次挂载时创建。
+ */
+function ensureLangDatalist() {
+  let dl = document.getElementById("bn-code-lang-list") as HTMLDataListElement | null;
+  if (dl) return;
+  dl = document.createElement("datalist");
+  dl.id = "bn-code-lang-list";
+  for (const info of bundledLanguagesInfo) {
+    const opt = document.createElement("option");
+    opt.value = info.id;
+    opt.label = info.name;
+    dl.appendChild(opt);
+  }
+  document.body.appendChild(dl);
+}
+
+function replaceCodeBlockSelect(select: HTMLSelectElement) {
+  if (select.dataset.markioReplaced === "1") return;
+  select.dataset.markioReplaced = "1";
+  // 隐藏原 select 但保留在 DOM 里（BlockNote 内部还要读它的 value）
+  select.style.display = "none";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.setAttribute("list", "bn-code-lang-list");
+  input.placeholder = "language…";
+  input.value = select.value;
+  input.className = "bn-code-lang-input";
+  input.spellcheck = false;
+
+  const commit = () => {
+    const val = input.value.trim();
+    if (!val) return;
+    // 没有对应 <option> 就动态加一个，否则 select.value 会被忽略
+    if (!Array.from(select.options).some((o) => o.value === val)) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.text = val;
+      select.appendChild(opt);
+    }
+    if (select.value !== val) {
+      select.value = val;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+  input.addEventListener("change", commit);
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commit();
+      input.blur();
+    }
+  });
+  select.parentElement?.insertBefore(input, select);
+}
+
+function installCodeBlockLangInput(root: HTMLElement): () => void {
+  ensureLangDatalist();
+  const scan = () => {
+    root
+      .querySelectorAll<HTMLSelectElement>("[data-content-type='codeBlock'] select")
+      .forEach(replaceCodeBlockSelect);
+  };
+  scan();
+  const obs = new MutationObserver(scan);
+  obs.observe(root, { childList: true, subtree: true });
+  return () => obs.disconnect();
+}
+
+/**
  * 自己拼 codeBlockOptions：用 shiki 的 bundle-full 提供 280+ 语言列表
  * + lazy load grammar（vite 会按 dynamic import 自动拆 chunk，runtime
  * 只下载用户真正用到的那个 lang）。
@@ -444,9 +519,17 @@ export function BlockEditor({
     };
   }, [editor]);
 
+  // 把 BlockNote 内置代码块的 <select> 替换成可输入的 <input list>
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!rootRef.current) return;
+    return installCodeBlockLangInput(rootRef.current);
+  }, []);
+
   const themeMode = useMemo(() => (dark ? "dark" : "light"), [dark]);
 
   return (
+    <div ref={rootRef} style={{ width: "100%", height: "100%" }}>
     <BlockNoteView
       editor={editor}
       theme={themeMode}
@@ -494,5 +577,6 @@ export function BlockEditor({
       <MarkioSlashMenu editor={editor} locale={locale} />
       <WikilinkSuggestionMenu editor={editor} />
     </BlockNoteView>
+    </div>
   );
 }

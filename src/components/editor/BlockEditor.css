@@ -98,3 +98,21 @@
   box-shadow: 0 0 0 1.5px var(--accent-glow);
   border-radius: 4px;
 }
+
+/* 代码块语言：把默认 <select> 替成 input + datalist，允许任意输入 */
+.bn-mantine .bn-editor input.bn-code-lang-input {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 130px;
+  height: 22px;
+  line-height: 18px;
+}
+.bn-mantine .bn-editor input.bn-code-lang-input:focus {
+  border-color: var(--accent);
+}

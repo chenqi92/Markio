@@ -114,6 +114,19 @@
   font-size: 13px; line-height: 1.6;
   position: relative;
 }
+/* 强力兜底：不论 syntect / 任何注入样式给 .hljs 加了什么 background-color
+   都覆盖回主题色板（之前 light 主题下出现过 pre.hljs 显示成纯黑底） */
+.preview pre.hljs,
+.preview pre.hljs code,
+.preview .code-block pre.hljs,
+.preview .code-block pre.hljs code {
+  background: var(--code-bg) !important;
+  color: var(--text);
+}
+.preview .code-block pre.hljs,
+.preview .code-block pre.hljs code {
+  background: transparent !important;
+}
 .preview pre::before {
   content: attr(data-lang);
   position: absolute; top: 8px; right: 12px;

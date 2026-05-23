@@ -121,6 +121,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
   const themeId = useSettings((s) => s.theme);
+  const locale = useSettings((s) => s.locale);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
@@ -925,6 +926,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               docKey={tab.id}
               onChange={handleContentChange}
               dark={isDarkTheme(themeId)}
+              locale={locale}
             />
           </div>
         </Suspense>

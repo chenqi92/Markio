@@ -7,6 +7,7 @@ import {
   defaultInlineContentSpecs,
   type PartialBlock,
 } from "@blocknote/core";
+import { en as bnEn, zh as bnZh } from "@blocknote/core/locales";
 import "@blocknote/mantine/style.css";
 // markio 主题 CSS override
 import "./BlockEditor.css";
@@ -22,6 +23,8 @@ import {
   expandWikilinksInInlineContent,
   collapseWikilinksInInlineContent,
 } from "./blocks/WikilinkInline";
+import { MarkioSlashMenu, WikilinkSuggestionMenu } from "./BlockEditorMenus";
+import type { Locale } from "@/i18n";
 
 interface Props {
   /** 初次解析用的 markdown source。后续不再监听 value 变化，避免
@@ -32,6 +35,8 @@ interface Props {
   onChange: (next: string) => void;
   /** 当前主题是否暗色 —— 传给 BlockNoteView 让它自己切 data-mantine-color-scheme。 */
   dark?: boolean;
+  /** UI locale，跟随 markio 设置。换 locale 会重 create editor。 */
+  locale?: Locale;
 }
 
 /**
@@ -200,8 +205,18 @@ function transformBlocksBeforeSerialize(blocks: PartialBlock[]): PartialBlock[] 
   });
 }
 
-export function BlockEditor({ value, docKey, onChange, dark }: Props) {
-  const editor = useCreateBlockNote({ schema: markioSchema });
+export function BlockEditor({
+  value,
+  docKey,
+  onChange,
+  dark,
+  locale = "en",
+}: Props) {
+  const dictionary = useMemo(() => (locale === "zh-CN" ? bnZh : bnEn), [locale]);
+  const editor = useCreateBlockNote(
+    { schema: markioSchema, dictionary },
+    [dictionary],
+  );
   const hydratedKeyRef = useRef<string | null>(null);
   const hydrationIdRef = useRef<number>(0);
   const isHydratingRef = useRef<boolean>(false);
@@ -242,6 +257,8 @@ export function BlockEditor({ value, docKey, onChange, dark }: Props) {
     <BlockNoteView
       editor={editor}
       theme={themeMode}
+      // 关闭默认 slash menu，自己挂一个能注入 markio 扩展块的版本
+      slashMenu={false}
       onChange={() => {
         if (isHydratingRef.current) return;
         void (async () => {
@@ -259,6 +276,9 @@ export function BlockEditor({ value, docKey, onChange, dark }: Props) {
           }
         })();
       }}
-    />
+    >
+      <MarkioSlashMenu editor={editor} locale={locale} />
+      <WikilinkSuggestionMenu editor={editor} />
+    </BlockNoteView>
   );
 }

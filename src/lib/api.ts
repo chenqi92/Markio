@@ -11,7 +11,11 @@ import type {
   GrepHit,
   OutlineItem,
   RenderResult,
+  AgentProviderInfo,
+  AgentRunRequest,
+  NoteFrontmatter,
   Snapshot,
+  TimelineEntry,
   TrashItem,
 } from "@/types";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
@@ -415,6 +419,20 @@ export const api = {
   historyList: (workspace: string, file: string) =>
     invoke<Snapshot[]>("history_list", { workspace, file }),
   historyRead: (path: string) => invoke<string>("history_read", { path }),
+  historyListAll: (workspace: string) =>
+    invoke<TimelineEntry[]>("history_list_all", { workspace }),
+  scanFrontmatter: (workspace: string) =>
+    invoke<NoteFrontmatter[]>("fs_scan_frontmatter", { workspace }),
+  mcpStatus: () =>
+    invoke<{ port: number | null; token: string | null; activeWorkspace: string | null }>(
+      "mcp_status",
+    ),
+  mcpSetActiveWorkspace: (workspace: string | null) =>
+    invoke<void>("mcp_set_active_workspace", { workspace }),
+
+  agentListProviders: () => invoke<AgentProviderInfo[]>("agent_list_providers"),
+  agentRun: (req: AgentRunRequest) => invoke<void>("agent_run", { req }),
+  agentCancel: (sessionId: string) => invoke<void>("agent_cancel", { sessionId }),
 
   backlinks: (workspace: string, file: string, max = 50) =>
     invoke<Backlink[]>("fs_backlinks", { workspace, file, max }),

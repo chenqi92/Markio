@@ -52,6 +52,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openSettings = useUI((s) => s.openSettings);
   const openFind = useUI((s) => s.openFind);
+  const openPulse = useUI((s) => s.openPulse);
+  const openAgent = useUI((s) => s.openAgent);
   const setTheme = useSettings((s) => s.setTheme);
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const openFile = useTabs((s) => s.openFile);
@@ -144,6 +146,22 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: () => openSettings(true),
       },
       {
+        id: "pulse",
+        group: "视图",
+        l1: "打开时间线",
+        l2: "按时间浏览仓库所有历史快照",
+        ico: "clock",
+        run: () => openPulse(true),
+      },
+      {
+        id: "agent",
+        group: "AI",
+        l1: "本地 Agent…",
+        l2: "spawn 本地 claude / codex / gemini CLI 操作 vault",
+        ico: "bot",
+        run: () => openAgent(true),
+      },
+      {
         id: "smart-channel-query",
         group: "AI",
         l1: "通过智能通道查询当前仓库",
@@ -191,6 +209,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       saveActive,
       addWorkspace,
       openSettings,
+      openPulse,
+      openAgent,
       promptDialog,
       setTheme,
     ],

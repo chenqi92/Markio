@@ -181,6 +181,7 @@
       "wechat": "微信公众号",
       "wxAssistant": "微信助手",
       "smartChannel": "智能通道",
+      "mcp": "MCP server",
       "clipper": "Web Clipper",
       "rss": "RSS 订阅",
       "mobile": "移动端 / 设备",
@@ -213,6 +214,10 @@
       "smartChannel": {
         "h": "智能通道（实验）",
         "sub": "当前通过临时桥接暴露查询能力，正式权限模型和 Tauri command 仍需补齐。"
+      },
+      "mcp": {
+        "h": "MCP server",
+        "sub": "把当前 vault 暴露给 Claude Code / Codex 等外部 AI 工具调用。只监听本机回环（127.0.0.1）。"
       },
       "export": { "h": "导入导出", "sub": "导入会落到 imports 目录并给出简要报告；复杂格式迁移仍可能降级。" },
       "clipper": { "h": "Web Clipper", "sub": "浏览器扩展把网页抓回 markio 时的处理偏好。" },

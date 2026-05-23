@@ -31,6 +31,12 @@ const FindBar = lazy(() =>
 const HistorySheet = lazy(() =>
   import("../popovers/HistorySheet").then((m) => ({ default: m.HistorySheet })),
 );
+const PulseSheet = lazy(() =>
+  import("../popovers/PulseSheet").then((m) => ({ default: m.PulseSheet })),
+);
+const AgentPanel = lazy(() =>
+  import("../popovers/AgentPanel").then((m) => ({ default: m.AgentPanel })),
+);
 const AIPanel = lazy(() =>
   import("../popovers/AIPanel").then((m) => ({ default: m.AIPanel })),
 );
@@ -123,8 +129,14 @@ export function AppShell() {
   const openWechat = useUI((s) => s.openWechat);
   const findOpen = useUI((s) => s.findOpen);
   const historyOpen = useUI((s) => s.historyOpen);
+  const pulseOpen = useUI((s) => s.pulseOpen);
+  const agentOpen = useUI((s) => s.agentOpen);
+  const openAgent = useUI((s) => s.openAgent);
   const pinnedPlanPath = usePinnedPlan((s) => s.path);
   const activeTabId = useTabs((s) => s.activeId);
+  // 用"曾经/此刻还有 tab"判断是否进入 Welcome，避免 activeId 在
+  // 某些路径上瞬时为 null 时 main 区被切回 Welcome（一帧闪烁）。
+  const hasAnyTab = useTabs((s) => s.tabs.length > 0);
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
   const fontSize = useSettings((s) => s.fontSize);
@@ -133,6 +145,17 @@ export function AppShell() {
   useEffect(() => {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
   }, [activeWorkspaceId, refreshTree]);
+
+  // 闪烁 bug 诊断：当 tabs 还非空、activeId 却变 null 时打印调用栈。
+  // 修好之后这段可以删。
+  useEffect(() => {
+    if (!activeTabId && hasAnyTab) {
+      console.warn(
+        "[markio:diag] activeTabId became null while tabs is non-empty",
+        new Error("trace"),
+      );
+    }
+  }, [activeTabId, hasAnyTab]);
 
   // 预热 Settings + AIPanel chunk：用户首次切换时 lazy import 已经 in-flight 或好了，
   // 不再出现空白中间态。idle callback 推后，不影响初次绘制。
@@ -185,7 +208,7 @@ export function AppShell() {
             {sidebarOpen && <Sidebar />}
             {sidebarOpen && <SidebarResizer />}
             <div className={classNames("main", focusMode && "focus")}>
-              {activeTabId ? (
+              {hasAnyTab ? (
                 <>
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
@@ -200,6 +223,7 @@ export function AppShell() {
               <Suspense fallback={null}>
                 {findOpen && <FindBar />}
                 {historyOpen && <HistorySheet />}
+                {pulseOpen && <PulseSheet />}
               </Suspense>
             </div>
           </div>
@@ -216,6 +240,11 @@ export function AppShell() {
                 <AIPanel onClose={() => openAi(false)} />
               </Suspense>
             </div>
+          )}
+          {!settingsOpen && !aiOpen && agentOpen && (
+            <Suspense fallback={null}>
+              <AgentPanel onClose={() => openAgent(false)} />
+            </Suspense>
           )}
         </div>
         <StatusBar />

@@ -60,6 +60,53 @@ export interface Snapshot {
   size: number;
 }
 
+export interface TimelineEntry {
+  snapshotPath: string;
+  sourcePath: string;
+  sourceName: string;
+  timestamp: number;
+  size: number;
+}
+
+export interface NoteFrontmatter {
+  path: string;
+  name: string;
+  fields: Record<string, string[]>;
+}
+
+export type AgentProvider = "claude" | "codex" | "gemini";
+export type AgentPermission = "safe" | "poweruser";
+
+export interface AgentProviderInfo {
+  id: AgentProvider;
+  label: string;
+  available: boolean;
+  binaryPath: string | null;
+}
+
+export interface AgentRunRequest {
+  sessionId: string;
+  provider: AgentProvider;
+  prompt: string;
+  workspace?: string;
+  permission?: AgentPermission;
+}
+
+export type AgentEvent =
+  | { type: "init"; session_id: string | null; provider: AgentProvider; binary: string }
+  | { type: "text_delta"; text: string }
+  | { type: "thinking_delta"; text: string }
+  | { type: "tool_start"; tool: string; input: unknown }
+  | { type: "tool_done"; tool: string; output: unknown; is_error: boolean }
+  | {
+      type: "result";
+      text: string;
+      input_tokens: number | null;
+      output_tokens: number | null;
+    }
+  | { type: "error"; message: string }
+  | { type: "done" };
+
 export interface Backlink {
   path: string;
   name: string;

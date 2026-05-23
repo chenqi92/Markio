@@ -518,6 +518,56 @@ pub fn read_snapshot(path: &str) -> Result<String, String> {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TimelineEntry {
+    pub snapshot_path: String,
+    pub source_path: String,
+    pub source_name: String,
+    pub timestamp: i64,
+    pub size: u64,
+}
+
+/// 扫描整个 workspace 的 .markio/history/，把所有快照按时间倒序返回。
+/// 文件名形如 `{key}__{ts}.md`，key 是相对路径把 `/` 换成 `¦`。
+pub fn list_all_snapshots(workspace: &str) -> Result<Vec<TimelineEntry>, String> {
+    let dir = snapshot_dir(workspace);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let ws_path = PathBuf::from(workspace);
+    let mut out: Vec<TimelineEntry> = Vec::new();
+    for e in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".md") {
+            continue;
+        }
+        let stem = name.trim_end_matches(".md");
+        let Some((key, ts_str)) = stem.rsplit_once("__") else {
+            continue;
+        };
+        let Ok(ts) = ts_str.parse::<i64>() else {
+            continue;
+        };
+        let rel = key.replace('¦', std::path::MAIN_SEPARATOR_STR);
+        let source_path = ws_path.join(&rel).to_string_lossy().to_string();
+        let source_name = Path::new(&rel)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| rel.clone());
+        let size = e.metadata().ok().map(|m| m.len()).unwrap_or(0);
+        out.push(TimelineEntry {
+            snapshot_path: e.path().to_string_lossy().to_string(),
+            source_path,
+            source_name,
+            timestamp: ts,
+            size,
+        });
+    }
+    out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Backlink {
     pub path: String,
     pub name: String,

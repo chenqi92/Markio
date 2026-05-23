@@ -1,8 +1,11 @@
+mod agent_cli;
 mod ai;
 mod custom_themes;
 mod dev_log;
 mod dropbox_ops;
+mod frontmatter;
 mod fs_ops;
+mod mcp;
 mod gdrive_ops;
 mod git_ops;
 mod ignore;
@@ -31,10 +34,10 @@ use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
-use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
+use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 
@@ -1901,6 +1904,82 @@ fn history_read(state: tauri::State<'_, AppState>, path: String) -> Result<Strin
     fs_ops::read_snapshot(&canon.to_string_lossy())
 }
 
+/// 跨 workspace 的全量时间线：返回 .markio/history/ 里所有快照（倒序）。
+#[tauri::command]
+fn history_list_all(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<TimelineEntry>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    fs_ops::list_all_snapshots(&ws.to_string_lossy())
+}
+
+/// 扫描 workspace 全部 md 的 frontmatter，返回每条笔记 → 字段 → 多值。
+#[tauri::command]
+fn fs_scan_frontmatter(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<frontmatter::NoteFrontmatter>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    frontmatter::scan(&ws.to_string_lossy())
+}
+
+// ─── MCP server 状态查询/控制 ─────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpStatus {
+    port: Option<u16>,
+    token: Option<String>,
+    active_workspace: Option<String>,
+}
+
+// ─── 本地 AI Agent CLI ────────────────────────────────────────────
+
+#[tauri::command]
+fn agent_list_providers() -> Vec<agent_cli::ProviderInfo> {
+    agent_cli::detect_providers()
+}
+
+#[tauri::command]
+async fn agent_run(app: tauri::AppHandle, req: agent_cli::AgentRunRequest) -> Result<(), String> {
+    // 不阻塞调用方：spawn 到 tauri runtime
+    tauri::async_runtime::spawn(async move { agent_cli::run(app, req).await });
+    Ok(())
+}
+
+#[tauri::command]
+fn agent_cancel(session_id: String) {
+    agent_cli::cancel_session(&session_id);
+}
+
+#[tauri::command]
+fn mcp_status(runtime: tauri::State<'_, std::sync::Arc<mcp::McpRuntime>>) -> McpStatus {
+    let (port, token, ws) = runtime.snapshot();
+    McpStatus {
+        port,
+        token,
+        active_workspace: ws.map(|p| p.to_string_lossy().to_string()),
+    }
+}
+
+/// 前端在切 vault 时调用，让 mcp server 在没有指定 workspace 时使用这个。
+#[tauri::command]
+fn mcp_set_active_workspace(
+    state: tauri::State<'_, AppState>,
+    runtime: tauri::State<'_, std::sync::Arc<mcp::McpRuntime>>,
+    workspace: Option<String>,
+) -> Result<(), String> {
+    match workspace {
+        Some(p) => {
+            let canon = validate_path(&state, &p)?;
+            runtime.set_active_workspace(Some(canon));
+        }
+        None => runtime.set_active_workspace(None),
+    }
+    Ok(())
+}
+
 // ─── 反链 ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -3554,6 +3633,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .manage(std::sync::Arc::new(mcp::McpRuntime::default()))
         .invoke_handler(tauri::generate_handler![
             md_render,
             md_render_stream,
@@ -3594,6 +3674,13 @@ pub fn run() {
             history_save,
             history_list,
             history_read,
+            history_list_all,
+            fs_scan_frontmatter,
+            mcp_status,
+            mcp_set_active_workspace,
+            agent_list_providers,
+            agent_run,
+            agent_cancel,
             fs_backlinks,
             fs_mentions,
             fs_index_tokens,
@@ -3682,6 +3769,15 @@ pub fn run() {
             window_state::apply_on_startup(app.handle());
             // 启动时如果是双击文件触发的，URL 已经在 CLI args 里（macOS 例外，走下面 Opened 事件）
             forward_cli_open_files(app.handle());
+            // MCP loopback HTTP server：异步启动，启动失败仅打日志。
+            {
+                let runtime = app
+                    .handle()
+                    .state::<std::sync::Arc<mcp::McpRuntime>>()
+                    .inner()
+                    .clone();
+                mcp::spawn(app.handle().clone(), runtime);
+            }
             // markio://open?path=... 深链接：注册回调，把 path 当作 open-from-os 同一事件转发
             {
                 use tauri_plugin_deep_link::DeepLinkExt;

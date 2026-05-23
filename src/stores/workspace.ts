@@ -249,6 +249,11 @@ export const useWorkspace = create<WorkspaceState>()(
 
       setActive: async (id) => {
         set({ activeId: id });
+        const ws = get().workspaces.find((w) => w.id === id);
+        if (ws) {
+          // 通知 MCP server 的 "默认 vault"，外部 AI 没指定 workspace 时用它
+          void api.mcpSetActiveWorkspace(ws.path).catch(() => {});
+        }
         if (!get().treeCache[id]) await get().refreshTree(id);
       },
 

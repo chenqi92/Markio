@@ -87,6 +87,7 @@ const SECTION_GROUPS: ReadonlyArray<{
       { id: "wechat", icon: "message" },
       { id: "wxAssistant", icon: "bot" },
       { id: "smartChannel", icon: "flame" },
+      { id: "mcp", icon: "bot" },
     ],
   },
   {
@@ -310,6 +311,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {section === "wechat" && <WeChat />}
           {section === "wxAssistant" && <WxAssistant />}
           {section === "smartChannel" && <SmartChannelSettings />}
+          {section === "mcp" && <McpServerSettings />}
           {section === "ai" && <AI />}
           {section === "rag" && <RagSettings />}
           {section === "export" && <ImportExport />}
@@ -6734,6 +6736,161 @@ function CrashWebhookCard() {
         >
           {t("settings.about.crashWebhookTest")}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── MCP server ───────────────────────────
+
+function McpServerSettings() {
+  const setToast = useUI((s) => s.setToast);
+  const [status, setStatus] = useState<{
+    port: number | null;
+    token: string | null;
+    activeWorkspace: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showToken, setShowToken] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .mcpStatus()
+      .then((s) => alive && setStatus(s))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const claudeCodeSnippet =
+    status?.port && status?.token
+      ? JSON.stringify(
+          {
+            mcpServers: {
+              markio: {
+                command: "node",
+                args: [
+                  // 用户机器上 markio.app 路径不固定，给个引导占位；
+                  // 装好 mcp-server 之后改成实际绝对路径
+                  "/absolute/path/to/markio/mcp-server/index.js",
+                ],
+                env: {
+                  MARKIO_MCP_PORT: String(status.port),
+                  MARKIO_MCP_TOKEN: status.token,
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )
+      : "";
+
+  const copySnippet = async () => {
+    if (!claudeCodeSnippet) return;
+    await writeText(claudeCodeSnippet);
+    setToast({ stage: "done", message: "Claude Code 配置已复制" });
+    setTimeout(() => setToast(null), 1500);
+  };
+
+  return (
+    <div className="settings-section">
+      <SectionHeader id="mcp" />
+      <div className="settings-card">
+        <CardTitle>状态</CardTitle>
+        {loading ? (
+          <div style={{ color: "var(--text-3)", fontSize: 12 }}>读取中…</div>
+        ) : status?.port ? (
+          <div style={{ display: "grid", gap: 8, fontSize: 12 }}>
+            <div>
+              <span style={{ color: "var(--text-3)" }}>端点：</span>
+              <code>http://127.0.0.1:{status.port}</code>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "var(--text-3)" }}>Token：</span>
+              <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all" }}>
+                {showToken
+                  ? status.token
+                  : status.token
+                    ? `${status.token.slice(0, 8)}…${status.token.slice(-4)}`
+                    : "(无)"}
+              </code>
+              <button
+                type="button"
+                className="settings-btn"
+                style={{ padding: "2px 8px", fontSize: 11 }}
+                onClick={() => setShowToken((v) => !v)}
+              >
+                {showToken ? "隐藏" : "显示"}
+              </button>
+            </div>
+            <div>
+              <span style={{ color: "var(--text-3)" }}>活跃 vault：</span>
+              <code style={{ fontSize: 11 }}>
+                {status.activeWorkspace ?? "(无；将兜底使用唯一已注册仓库)"}
+              </code>
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: "var(--text-3)", fontSize: 12 }}>
+            MCP server 尚未启动（启动失败时请看主进程日志）。
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <CardTitle>Claude Code 配置</CardTitle>
+        <p style={{ fontSize: 12, color: "var(--text-3)", margin: "4px 0 8px" }}>
+          先在 markio 仓库的 <code>mcp-server/</code> 目录里跑 <code>npm install</code>，
+          再把下面 JSON 粘进 Claude Code 的 MCP 配置文件，并把{" "}
+          <code>/absolute/path/to/markio</code> 改成你机器上的实际路径。
+        </p>
+        <pre
+          style={{
+            background: "var(--bg-pane-2)",
+            border: "0.5px solid var(--border)",
+            borderRadius: 8,
+            padding: 12,
+            fontSize: 11,
+            lineHeight: 1.5,
+            overflow: "auto",
+            maxHeight: 280,
+          }}
+        >
+          {claudeCodeSnippet || "(等待 MCP server 就绪…)"}
+        </pre>
+        <button
+          type="button"
+          className="settings-btn"
+          onClick={copySnippet}
+          disabled={!claudeCodeSnippet}
+          style={{ marginTop: 8 }}
+        >
+          复制配置
+        </button>
+      </div>
+
+      <div className="settings-card">
+        <CardTitle>暴露的工具</CardTitle>
+        <ul style={{ fontSize: 12, lineHeight: 1.7, paddingLeft: 18 }}>
+          <li>
+            <code>search_notes(query, limit?)</code> — 全文搜索
+          </li>
+          <li>
+            <code>get_note(path)</code> — 读取笔记内容
+          </li>
+          <li>
+            <code>list_notes(limit?)</code> — 列出全部笔记
+          </li>
+          <li>
+            <code>open_note(path)</code> — 在 markio UI 中打开
+          </li>
+          <li>
+            <code>get_vault_info()</code> — 当前 / 全部 vault
+          </li>
+        </ul>
       </div>
     </div>
   );

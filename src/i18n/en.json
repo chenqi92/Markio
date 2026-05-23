@@ -181,6 +181,7 @@
       "wechat": "WeChat",
       "wxAssistant": "WeChat Assistant",
       "smartChannel": "Smart Channel",
+      "mcp": "MCP server",
       "clipper": "Web Clipper",
       "rss": "RSS Feeds",
       "mobile": "Mobile / Devices",
@@ -213,6 +214,10 @@
       "smartChannel": {
         "h": "Smart Channel (Experimental)",
         "sub": "Currently exposed through a temporary bridge; formal permissions and Tauri commands still need to be added."
+      },
+      "mcp": {
+        "h": "MCP server",
+        "sub": "Expose the current vault to external AI tools (Claude Code / Codex) as an MCP server. Listens on 127.0.0.1 only."
       },
       "export": { "h": "Import / Export", "sub": "Imports land under imports/ with a short report; complex migrations may still degrade formatting." },
       "clipper": { "h": "Web Clipper", "sub": "How markio handles pages pushed from browser extensions." },

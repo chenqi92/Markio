@@ -58,7 +58,7 @@ function WikilinkView({ inlineContent }: RenderProps) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 2,
+        gap: 3,
         padding: "0 6px",
         margin: "0 1px",
         borderRadius: 4,
@@ -69,10 +69,27 @@ function WikilinkView({ inlineContent }: RenderProps) {
         userSelect: "none",
         verticalAlign: "baseline",
         lineHeight: 1.4,
+        textDecoration: "none",
       }}
-      title={`打开 [[${target}]]`}
+      title={`打开 ${target}`}
     >
-      [[{target}]]
+      {/* 链接图标 + 笔记名；不再重复显示 [[ ]] 标记，磁盘上的 markdown 仍是 `[[xxx]]` */}
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ opacity: 0.75, flexShrink: 0 }}
+        aria-hidden
+      >
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </svg>
+      {target}
     </span>
   );
 }

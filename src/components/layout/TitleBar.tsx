@@ -116,7 +116,7 @@ export function TitleBar() {
               title="快速捕获 ⌥Space"
               onClick={() => openQuickCapture(true)}
             >
-              <span className="bolt" aria-hidden>⚡</span>
+              <Icon name="bolt" size={11} />
               <span>捕获</span>
             </button>
             <button

@@ -330,8 +330,16 @@ export const api = {
     expectedMtime: number | undefined,
     expectedHash?: string,
     force = false,
+    snapshotOnSave = true,
   ) =>
-    invoke<FileSig>("fs_save", { path, content, expectedMtime, expectedHash, force }),
+    invoke<FileSig>("fs_save", {
+      path,
+      content,
+      expectedMtime,
+      expectedHash,
+      force,
+      snapshotOnSave,
+    }),
   /** 新建：若已存在直接 Err "ALREADY_EXISTS:<path>" */
   createNew: (path: string, content: string) =>
     invoke<FileSig>("fs_create_new", { path, content }),
@@ -930,6 +938,7 @@ export const api = {
       dest: string;
       files: number;
       warnings: string[];
+      reportPath?: string | null;
     }>("import_run", { provider, source, workspace }),
 
   /** macOS Apple Notes 导入：不需要 source，调系统 Notes.app。首次会弹系统权限对话框。 */
@@ -939,6 +948,7 @@ export const api = {
       dest: string;
       files: number;
       warnings: string[];
+      reportPath?: string | null;
     }>("import_apple_notes", { workspace }),
 
   // RAG 向量索引 / 混合检索

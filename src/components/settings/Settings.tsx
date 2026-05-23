@@ -5740,6 +5740,14 @@ type ImportProvider =
 
 type ImportBusyProvider = ImportProvider | "apple-notes";
 
+interface ImportReportState {
+  provider: string;
+  dest: string;
+  files: number;
+  warnings: string[];
+  reportPath?: string | null;
+}
+
 const IMPORT_PROVIDER_MAP: Record<string, ImportProvider | null> = {
   notion: "notion",
   obsidian: "obsidian",
@@ -5783,6 +5791,20 @@ function importWarningSuffix(warnings: string[]): string {
   return `（警告：${preview}${more}）`;
 }
 
+function importReportText(report: ImportReportState): string {
+  const lines = [
+    `来源：${report.provider}`,
+    `目标：${report.dest}`,
+    `文件数：${report.files}`,
+    `警告数：${report.warnings.length}`,
+  ];
+  if (report.reportPath) lines.push(`报告：${report.reportPath}`);
+  if (report.warnings.length > 0) {
+    lines.push("", "警告：", ...report.warnings.map((w) => `- ${w}`));
+  }
+  return lines.join("\n");
+}
+
 function ImportExport() {
   const { t } = useTranslation();
   const pdfTheme = useSettings((s) => s.exportPdfTheme);
@@ -5812,6 +5834,7 @@ function ImportExport() {
     kind: "ok" | "err" | "info";
     text: string;
   } | null>(null);
+  const [importReport, setImportReport] = useState<ImportReportState | null>(null);
 
   const runImport = async (provider: ImportProvider, useDir: boolean) => {
     if (!activeWorkspace) {
@@ -5827,13 +5850,13 @@ function ImportExport() {
     setImportBusy(provider);
     const name = importProviderName(provider);
     setImportMsg({ kind: "info", text: `${name} 导入中…` });
+    setImportReport(null);
     try {
       const report = await api.importRun(provider, src, activeWorkspace.path);
+      setImportReport(report);
       setImportMsg({
         kind: "ok",
-        text: `${name} 导入完成：${report.files} 个文件 → ${
-          report.dest
-        }${importWarningSuffix(report.warnings)}`,
+        text: `${name} 导入完成：${report.files} 个文件 → ${report.dest}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {
@@ -5849,17 +5872,17 @@ function ImportExport() {
       return;
     }
     setImportBusy("apple-notes");
+    setImportReport(null);
     setImportMsg({
       kind: "info",
       text: "正在通过 osascript 读取 Notes.app…（首次会弹系统授权对话框）",
     });
     try {
       const report = await api.importAppleNotes(activeWorkspace.path);
+      setImportReport(report);
       setImportMsg({
         kind: "ok",
-        text: `Apple Notes 导入完成：${report.files} 篇 → ${
-          report.dest
-        }${importWarningSuffix(report.warnings)}`,
+        text: `Apple Notes 导入完成：${report.files} 篇 → ${report.dest}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {
@@ -6050,6 +6073,53 @@ function ImportExport() {
             }}
           >
             {importMsg.text}
+          </div>
+        )}
+        {importReport && (
+          <div className="import-report">
+            <div className="import-report-h">
+              <div>
+                <div className="import-report-title">导入报告</div>
+                <div className="import-report-sub">
+                  {importReport.files} 个文件 · {importReport.warnings.length} 条警告
+                </div>
+              </div>
+              <div className="import-report-actions">
+                <button
+                  type="button"
+                  className="settings-btn"
+                  onClick={() => void api.reveal(importReport.dest)}
+                >
+                  打开目录
+                </button>
+                {importReport.reportPath && (
+                  <button
+                    type="button"
+                    className="settings-btn"
+                    onClick={() => void api.reveal(importReport.reportPath!)}
+                  >
+                    打开报告
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="settings-btn"
+                  onClick={() => void writeText(importReportText(importReport))}
+                >
+                  复制
+                </button>
+              </div>
+            </div>
+            <div className="import-report-path">{importReport.dest}</div>
+            {importReport.warnings.length > 0 ? (
+              <ul className="import-report-warnings">
+                {importReport.warnings.map((warning, index) => (
+                  <li key={`${index}-${warning}`}>{warning}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="import-report-empty">未产生警告。</div>
+            )}
           </div>
         )}
       </div>

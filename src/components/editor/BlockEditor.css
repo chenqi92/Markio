@@ -47,18 +47,21 @@
   background: transparent;
 }
 
-/* 字号跟 markio 分屏模式的预览区一致（默认 16，分屏 14.5），避免 BlockNote
-   默认的偏大字号跟旁边的预览不协调。--prose-fs 由 AppShell 写到 :root。 */
+/* 字号跟 markio 分屏模式预览（约 14.5px）对齐，避免 BlockNote 默认的偏大字
+   号跟旁边的预览不协调。BlockNote 的 prosemirror 节点用 em 偏好，先把
+   editor 根字号锁定到 14.5px 左右，再用 em 调 heading 比例。 */
 .bn-mantine .bn-editor {
-  font-size: calc(var(--prose-fs, 16px) - 1px);
+  font-size: calc(var(--prose-fs, 16px) - 1.5px);
   line-height: 1.65;
 }
-.bn-mantine .bn-editor h1 { font-size: 1.8em; }
-.bn-mantine .bn-editor h2 { font-size: 1.45em; }
-.bn-mantine .bn-editor h3 { font-size: 1.2em; }
-.bn-mantine .bn-editor h4 { font-size: 1.05em; }
-.bn-mantine .bn-editor h5 { font-size: 1em; }
-.bn-mantine .bn-editor h6 { font-size: 0.92em; color: var(--text-2); }
+/* heading 比例参考 markio 分屏 markdown.css：h1 28 / h2 20 / h3 16；
+   按基准 14.5 折算成 em：≈ 1.9 / 1.38 / 1.1，其余递减 */
+.bn-mantine .bn-editor h1 { font-size: 1.55em; font-weight: 700; }
+.bn-mantine .bn-editor h2 { font-size: 1.3em; font-weight: 700; }
+.bn-mantine .bn-editor h3 { font-size: 1.1em; font-weight: 600; }
+.bn-mantine .bn-editor h4 { font-size: 1em; font-weight: 600; }
+.bn-mantine .bn-editor h5 { font-size: 0.95em; font-weight: 600; }
+.bn-mantine .bn-editor h6 { font-size: 0.9em; font-weight: 600; color: var(--text-2); }
 
 /* placeholder（空段落的灰字提示）跟主题 text-3 一致 */
 .bn-mantine .bn-inline-content[data-placeholder]::before {

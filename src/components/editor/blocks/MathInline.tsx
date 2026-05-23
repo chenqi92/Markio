@@ -107,12 +107,10 @@ export function expandInlineMathInInlineContent(content: unknown): unknown {
     while ((m = re.exec(text)) !== null) {
       const prev = m.index > 0 ? text[m.index - 1] : "";
       const after = text[m.index + m[0].length] ?? "";
-      // 前一字符必须是空白 / 行首；后一字符必须是空白 / 行尾 / 标点
-      const okPrev = prev === "" || /\s/.test(prev);
-      const okAfter =
-        after === "" ||
-        /\s/.test(after) ||
-        /[.,;:!?，。；：！？、)）]]}>]/.test(after);
+      // 前后字符不是字母数字下划线即可 —— 避开 `$100`/`C#`/`md5$hash`，
+      // 但允许任意空白、标点、中文（包括 `：`、`，`、`（` 等）。
+      const okPrev = prev === "" || !/[A-Za-z0-9_]/.test(prev);
+      const okAfter = after === "" || !/[A-Za-z0-9_]/.test(after);
       if (!okPrev || !okAfter) continue;
       pushedAny = true;
       if (m.index > lastIdx) {

@@ -195,12 +195,18 @@ export const useTabs = create<TabsState>((set, get) => ({
       }
     }
     try {
+      let shouldSnapshot = false;
+      if (settings.snapshotOnSave) {
+        const last = lastSnapshotAt.get(tab.path) ?? 0;
+        shouldSnapshot = Date.now() - last > SNAPSHOT_DEDUP_MS;
+      }
       const newSig = await api.save(
         tab.path,
         content,
         sig?.mtime,
         sig?.hash,
         force,
+        shouldSnapshot,
       );
       const ws = useWorkspace
         .getState()
@@ -209,22 +215,8 @@ export const useTabs = create<TabsState>((set, get) => ({
         // 自动保存可能很频繁，后台索引和 token 扫描必须合并触发。
         scheduleRagReindex(ws.path, tab.path);
         scheduleVaultTokenRefresh(ws.path);
-        // 历史快照：每个文件 5 分钟内最多一次，跨自动保存合并
-        if (settings.snapshotOnSave) {
-          const last = lastSnapshotAt.get(tab.path) ?? 0;
-          if (Date.now() - last > SNAPSHOT_DEDUP_MS) {
-            lastSnapshotAt.set(tab.path, Date.now());
-            api.historySave(ws.path, tab.path, content).catch((e) => {
-              console.warn("historySave failed", e);
-              reportDiagnostic({
-                source: "history",
-                severity: "warning",
-                message: "历史快照保存失败",
-                detail: e,
-                workspace: ws.path,
-              });
-            });
-          }
+        if (shouldSnapshot) {
+          lastSnapshotAt.set(tab.path, Date.now());
         }
       }
       set((s) => ({

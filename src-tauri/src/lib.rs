@@ -526,6 +526,7 @@ fn disk_changed_since_baseline(
 /// - `expected_mtime` / `expected_hash` 是调用方打开 / 上次保存时记下的基线
 /// - 调用方基线优先于进程内 opened 表，避免旧标签覆盖新标签保存过的内容
 /// - `force` 表示用户主动覆盖
+/// - `snapshot_on_save` 表示调用方希望本次写入前保存旧版本快照
 /// - 返回新 sig；冲突时返回 Err("CONFLICT:<current_mtime>:<current_hash>")
 #[tauri::command]
 fn fs_save(
@@ -535,6 +536,7 @@ fn fs_save(
     expected_mtime: Option<i64>,
     expected_hash: Option<String>,
     force: Option<bool>,
+    snapshot_on_save: Option<bool>,
 ) -> Result<SigDto, String> {
     let canon = validate_path(&state, &path)?;
     ensure_user_file_path(&state, &canon, "保存")?;
@@ -557,13 +559,15 @@ fn fs_save(
             }
         }
     }
-    if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
+    if snapshot_on_save.unwrap_or(true) {
+        if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
         if let Some(ws) = containing_workspace(&state, &canon)? {
             if let Err(e) =
                 fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
             {
                 eprintln!("[history.save] 保存旧版本失败：{e}");
             }
+        }
         }
     }
     fs_ops::atomic_write(&canon, &content)?;

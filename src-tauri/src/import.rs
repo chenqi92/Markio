@@ -56,6 +56,32 @@ pub struct ImportReport {
     pub dest: String,
     pub files: usize,
     pub warnings: Vec<String>,
+    pub report_path: Option<String>,
+}
+
+fn finalize_report(mut report: ImportReport) -> ImportReport {
+    let report_path = Path::new(&report.dest).join("导入报告.md");
+    let mut body = String::new();
+    body.push_str("# 导入报告\n\n");
+    body.push_str(&format!("- 来源：{}\n", report.provider));
+    body.push_str(&format!("- 目标：{}\n", report.dest));
+    body.push_str(&format!("- 文件数：{}\n", report.files));
+    body.push_str(&format!("- 警告数：{}\n\n", report.warnings.len()));
+    if report.warnings.is_empty() {
+        body.push_str("未产生警告。\n");
+    } else {
+        body.push_str("## 警告\n\n");
+        for warning in &report.warnings {
+            body.push_str("- ");
+            body.push_str(warning);
+            body.push('\n');
+        }
+    }
+    match fs::write(&report_path, body) {
+        Ok(()) => report.report_path = Some(report_path.to_string_lossy().to_string()),
+        Err(e) => push_warning_limited(&mut report.warnings, format!("写入导入报告失败：{e}")),
+    }
+    report
 }
 
 fn sanitize(name: &str) -> String {
@@ -184,12 +210,13 @@ pub fn import_notion(src_zip: &Path, workspace: &Path) -> Result<ImportReport, S
             fs::write(assets.join(&final_name), content).map_err(|e| format!("写资产失败：{e}"))?;
         }
     }
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "notion".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 fn regex_like_strip(name: &str) -> String {
@@ -247,12 +274,13 @@ pub fn import_obsidian(src_dir: &Path, workspace: &Path) -> Result<ImportReport,
     let mut count = 0;
     let warnings: Vec<String> = Vec::new();
     copy_dir_recursive(src_dir, &dest, &mut count)?;
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "obsidian".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 /// Roam Research：支持 Markdown ZIP 导出。JSON 导出需要 block 树转换，
@@ -340,12 +368,13 @@ pub fn import_roam(src_zip: &Path, workspace: &Path) -> Result<ImportReport, Str
         );
     }
 
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "roam".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 /// Logseq graph：选择 graph 根目录，导入 pages / journals 下的 markdown，
@@ -408,12 +437,13 @@ pub fn import_logseq(src_dir: &Path, workspace: &Path) -> Result<ImportReport, S
         );
     }
 
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "logseq".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path, count: &mut usize) -> Result<(), String> {
@@ -646,12 +676,13 @@ pub fn import_bear(src_archive: &Path, workspace: &Path) -> Result<ImportReport,
         fs::write(dest.join(sanitize(&base)), content).map_err(|e| format!("写文件失败：{e}"))?;
         count += 1;
     }
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "bear".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 /// 印象笔记 .enex（XML）→ 一笔记一 markdown。
@@ -712,12 +743,13 @@ pub fn import_evernote(src_enex: &Path, workspace: &Path) -> Result<ImportReport
         }
         buf.clear();
     }
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "evernote".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 /// Apple Notes 导入（macOS 专属）：通过 osascript 走 Apple Events 让 Notes.app
@@ -799,12 +831,13 @@ end run
     if count == 0 {
         warnings.push("没有读到任何笔记（Notes.app 为空或权限未授予）".into());
     }
-    Ok(ImportReport {
+    Ok(finalize_report(ImportReport {
         provider: "apple-notes".to_string(),
         dest: dest.to_string_lossy().to_string(),
         files: count,
         warnings,
-    })
+        report_path: None,
+    }))
 }
 
 #[cfg(not(target_os = "macos"))]

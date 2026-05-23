@@ -23,6 +23,11 @@ import {
   expandWikilinksInInlineContent,
   collapseWikilinksInInlineContent,
 } from "./blocks/WikilinkInline";
+import {
+  TagInlineContent,
+  expandTagsInInlineContent,
+  collapseTagsInInlineContent,
+} from "./blocks/TagInline";
 import { MarkioSlashMenu, WikilinkSuggestionMenu } from "./BlockEditorMenus";
 import type { Locale } from "@/i18n";
 
@@ -54,8 +59,28 @@ const markioSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     wikilink: WikilinkInlineContent,
+    tag: TagInlineContent,
   },
 });
+
+/**
+ * 把开头的 YAML frontmatter（` --- ... --- `）切走。Frontmatter 在 markio
+ * 的 "属性" 侧栏里编辑（PropertyExplorer），BlockNote 模式下不显示，
+ * 避免被当成普通段落/分割线/H2 错渲染。
+ *
+ * 返回 [前置 frontmatter（含两道 ---），剩余 body]。如果没有 frontmatter，
+ * 第一项是空串。
+ */
+function splitFrontmatter(md: string): [string, string] {
+  if (!md.startsWith("---\n") && !md.startsWith("---\r\n")) return ["", md];
+  const body = md.replace(/^---\r?\n/, "");
+  const end = body.search(/\n---\s*(?:\n|$)/);
+  if (end < 0) return ["", md];
+  const headLen = md.length - body.length + end + "\n---".length;
+  // 后面再跟一个换行就一起吃掉，避免 body 开头多空行
+  const after = md[headLen] === "\n" ? headLen + 1 : headLen;
+  return [md.slice(0, after), md.slice(after)];
+}
 
 /**
  * Markdown 预处理：BlockNote 的默认 parser 不识别 `$$...$$` 数学块，
@@ -64,8 +89,6 @@ const markioSchema = BlockNoteSchema.create({
  * 成自定义 math block。
  */
 function preprocessMarkdown(md: string): string {
-  // 匹配独占整行的 $$ 块（避免误吞行内 $x$）
-  // 注意保持非贪婪并允许多行内容
   return md.replace(
     /(^|\n)\$\$\s*\n?([\s\S]*?)\n?\$\$(?=\n|$)/g,
     (_, lead, body) => `${lead}\`\`\`math\n${body.trim()}\n\`\`\``,
@@ -96,9 +119,12 @@ function transformBlocksAfterParse(blocks: PartialBlock[]): PartialBlock[] {
       content?: unknown;
       children?: PartialBlock[];
     };
-    // 在所有 block 的 inline content 里把 `[[xxx]]` 拆成 wikilink inline 节点
+    // 在所有 block 的 inline content 里把 `[[xxx]]` / `#tag` 拆成对应的
+    // inline content 节点。顺序：先 wikilink（避免 `[[#tag]]` 被 tag 抢），
+    // 再在剩下的 text 节点里扫 tag。
     if (bb.content != null) {
-      bb.content = expandWikilinksInInlineContent(bb.content) as typeof bb.content;
+      const afterWiki = expandWikilinksInInlineContent(bb.content);
+      bb.content = expandTagsInInlineContent(afterWiki) as typeof bb.content;
     }
     if (bb.type === "codeBlock" && typeof bb.props?.language === "string") {
       const lang = bb.props.language.toLowerCase();
@@ -167,9 +193,10 @@ function transformBlocksBeforeSerialize(blocks: PartialBlock[]): PartialBlock[] 
       content?: unknown;
       children?: PartialBlock[];
     };
-    // wikilink inline → 还原成 `[[target]]` 文本，让 BlockNote 正常 serialize
+    // 自定义 inline content → 还原成纯文本，让 BlockNote 正常 serialize
     if (bb.content != null) {
-      bb.content = collapseWikilinksInInlineContent(bb.content);
+      const noTags = collapseTagsInInlineContent(bb.content);
+      bb.content = collapseWikilinksInInlineContent(noTags);
     }
     if (bb.type === "mermaid") {
       const code = (bb.props?.code as string) ?? "";
@@ -221,6 +248,8 @@ export function BlockEditor({
   const hydrationIdRef = useRef<number>(0);
   const isHydratingRef = useRef<boolean>(false);
   const lastEmittedRef = useRef<string>("");
+  // 当前文档的 frontmatter 前缀（含 `---\n...\n---\n`），serialize 时拼回
+  const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const initialValueRef = useRef(value);
@@ -230,7 +259,11 @@ export function BlockEditor({
     if (hydratedKeyRef.current === docKey) return;
     const counterRef = hydrationIdRef;
     const myId = ++counterRef.current;
-    const md = preprocessMarkdown(initialValueRef.current);
+    const raw = initialValueRef.current;
+    // 先切掉 frontmatter，存到 ref，BlockNote 只看 body
+    const [frontmatter, body] = splitFrontmatter(raw);
+    frontmatterRef.current = frontmatter;
+    const md = preprocessMarkdown(body);
     void (async () => {
       const parsed = await editor.tryParseMarkdownToBlocks(md);
       if (myId !== counterRef.current) return;
@@ -238,7 +271,7 @@ export function BlockEditor({
       isHydratingRef.current = true;
       try {
         editor.replaceBlocks(editor.document, blocks);
-        lastEmittedRef.current = md;
+        lastEmittedRef.current = raw;
         hydratedKeyRef.current = docKey;
       } finally {
         queueMicrotask(() => {
@@ -266,8 +299,10 @@ export function BlockEditor({
             const blocks = transformBlocksBeforeSerialize(
               editor.document as PartialBlock[],
             );
-            const raw = await editor.blocksToMarkdownLossy(blocks);
-            const md = postprocessMarkdown(raw);
+            const bodyMd = await editor.blocksToMarkdownLossy(blocks);
+            const body = postprocessMarkdown(bodyMd);
+            // 拼回 frontmatter 前缀，让磁盘上的 .md 保持原始 YAML 头
+            const md = frontmatterRef.current + body;
             if (md === lastEmittedRef.current) return;
             lastEmittedRef.current = md;
             onChangeRef.current(md);

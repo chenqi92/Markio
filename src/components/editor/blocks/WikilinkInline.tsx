@@ -56,9 +56,10 @@ function WikilinkView({ inlineContent }: RenderProps) {
       contentEditable={false}
       onClick={onClick}
       style={{
-        // 用普通 inline 而不是 inline-flex，让 chip 跟周围文本基线对齐
-        // （在 heading 等大字号文本里 inline-flex 会让 chip 偏低）
-        display: "inline",
+        // 纯 inline 文字 chip：BlockNote 的 atom inline 外面已经包了一层
+        // ProseMirror NodeView 容器；这里再嵌套 inline-flex 或 svg 会让
+        // 容器高度算错，出现"图标浮在上方一行 + chip 在下方一行"的错位。
+        // 只用 inline + padding + 背景色，避免任何块级元素。
         padding: "1px 6px",
         margin: "0 1px",
         borderRadius: 4,
@@ -73,26 +74,9 @@ function WikilinkView({ inlineContent }: RenderProps) {
       }}
       title={`打开 ${target}`}
     >
-      {/* 链接图标 + 笔记名；不再重复显示 [[ ]] 标记，磁盘上的 markdown 仍是 `[[xxx]]` */}
-      <svg
-        width="0.85em"
-        height="0.85em"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{
-          opacity: 0.7,
-          verticalAlign: "-0.1em",
-          marginRight: 3,
-        }}
-        aria-hidden
-      >
-        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-      </svg>
+      {/* 不再显示 [[ ]] 标记 + 不放 svg；只在文字前加一个轻量符号提示
+       *  这是个链接。磁盘上的 markdown 仍是 `[[xxx]]`，serialize 路径不变。 */}
+      <span style={{ opacity: 0.6, marginRight: 2 }}>↗</span>
       {target}
     </span>
   );

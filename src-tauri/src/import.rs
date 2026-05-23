@@ -942,6 +942,11 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("org-mode")));
+        let report_path = report.report_path.as_ref().expect("report path");
+        assert!(Path::new(report_path).exists());
+        assert!(std::fs::read_to_string(report_path)
+            .unwrap()
+            .contains("org-mode"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -975,6 +980,11 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("JSON")));
+        let report_path = report.report_path.as_ref().expect("report path");
+        assert!(Path::new(report_path).exists());
+        assert!(std::fs::read_to_string(report_path)
+            .unwrap()
+            .contains("JSON"));
 
         let _ = std::fs::remove_dir_all(root);
     }

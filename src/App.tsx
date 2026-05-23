@@ -16,6 +16,7 @@ import { useSession } from "./stores/session";
 import { reportDiagnostic } from "./stores/diagnostics";
 import { installNetworkListeners } from "./stores/network";
 import { installLongTaskObserver } from "./lib/longTaskObserver";
+import { selectionCoords } from "./lib/editor-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -583,12 +584,12 @@ export default function App() {
         useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen),
       "app.blockMenu": () => {
         // 把菜单弹在当前光标位置（fall back 到窗口中心）
-        import("./lib/editor-bridge").then(({ selectionCoords }) => {
-          const c = selectionCoords();
-          useUI.getState().setBlockMenuAt(
+        const c = selectionCoords();
+        useUI
+          .getState()
+          .setBlockMenuAt(
             c ? { x: c.x, y: c.y + 18 } : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
           );
-        });
       },
       "app.escape": () => {
         openCommand(false);

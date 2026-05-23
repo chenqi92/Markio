@@ -77,3 +77,24 @@
 .bn-mantine .bn-tag {
   vertical-align: baseline;
 }
+
+/* BlockNote 的自定义 inline content（wikilink / tag / mathInline）外面
+   包了一层 ProseMirror NodeView 容器 [data-node-type="wikilink"] 等，
+   默认会带 inline-block 排版 + 选中时蓝色空白边距。压平它，避免出现
+   "chip 旁边一个蓝色空白方块"。 */
+.bn-mantine .bn-editor [data-node-type="wikilink"],
+.bn-mantine .bn-editor [data-node-type="tag"],
+.bn-mantine .bn-editor [data-node-type="mathInline"] {
+  display: inline;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+/* 选中时也不显示外层蓝色框 —— chip 内部的 :hover / 自定义样式即可 */
+.bn-mantine .bn-editor [data-node-type="wikilink"].ProseMirror-selectednode,
+.bn-mantine .bn-editor [data-node-type="tag"].ProseMirror-selectednode,
+.bn-mantine .bn-editor [data-node-type="mathInline"].ProseMirror-selectednode {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--accent-glow);
+  border-radius: 4px;
+}

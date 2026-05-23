@@ -902,6 +902,54 @@
   transform: translateY(-50%);
 }
 
+.import-report {
+  margin: 0 16px 14px;
+  padding: 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-pane);
+}
+.import-report-h {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.import-report-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.import-report-sub,
+.import-report-path,
+.import-report-empty {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.import-report-path {
+  margin-top: 8px;
+  word-break: break-all;
+}
+.import-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.import-report-warnings {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.import-report-warnings li + li {
+  margin-top: 4px;
+}
+.import-report-empty {
+  margin-top: 10px;
+}
+
 /* ─── About 页面：64×64 黑色方形 logo + 4 张底部卡片 + 致谢 ──────── */
 .about-hero {
   display: flex; align-items: center; gap: 18px;

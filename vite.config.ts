@@ -47,7 +47,9 @@ export default defineConfig(async () => ({
     exclude: [...configDefaults.exclude, "**/.claude/**"],
   },
   build: {
-    chunkSizeWarningLimit: 1200,
+    // Graphviz is isolated in a lazy @viz-js/viz chunk that currently minifies
+    // to ~1.27 MB. Keep the limit tight enough to still catch new large chunks.
+    chunkSizeWarningLimit: 1300,
     rollupOptions: {
       output: {
         manualChunks(id: string) {
@@ -60,6 +62,23 @@ export default defineConfig(async () => ({
             normalized.includes("/node_modules/scheduler/")
           ) {
             return "react";
+          }
+          if (
+            normalized.includes("/node_modules/@blocknote/") ||
+            normalized.includes("/node_modules/@tiptap/") ||
+            normalized.includes("/node_modules/@handlewithcare/prosemirror-inputrules") ||
+            normalized.includes("/node_modules/prosemirror-") ||
+            normalized.includes("/node_modules/y-prosemirror/") ||
+            normalized.includes("/node_modules/y-protocols/") ||
+            normalized.includes("/node_modules/yjs/")
+          ) {
+            return "block-editor-vendor";
+          }
+          if (
+            normalized.includes("/node_modules/@mantine/") ||
+            normalized.includes("/node_modules/@floating-ui/")
+          ) {
+            return "block-editor-ui";
           }
           if (
             normalized.includes("@codemirror/state") ||

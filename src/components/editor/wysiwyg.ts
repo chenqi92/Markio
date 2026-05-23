@@ -39,6 +39,9 @@ import {
   type ImageParts,
 } from "@/lib/markdown-images";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
+import { renderChartBlock } from "@/lib/charts";
+import { renderGraphvizBlock } from "@/lib/diagrams";
+import { renderMermaidBlock } from "@/lib/mermaid";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
@@ -124,18 +127,15 @@ async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: s
     if (kind === "mermaid") {
       host.classList.add("mermaid-block");
       host.setAttribute("data-mermaid", encoded);
-      const mod = await import("@/lib/mermaid");
-      await mod.renderMermaidBlock(host);
+      await renderMermaidBlock(host);
     } else if (kind === "dot") {
       host.classList.add("graphviz-block");
       host.setAttribute("data-graphviz", encoded);
-      const mod = await import("@/lib/diagrams");
-      await mod.renderGraphvizBlock(host);
+      await renderGraphvizBlock(host);
     } else {
       host.classList.add("chart-block");
       host.setAttribute("data-chart", encoded);
-      const mod = await import("@/lib/charts");
-      mod.renderChartBlock(host);
+      renderChartBlock(host);
     }
   } catch (err) {
     host.classList.add("cm-md-fenced-error");

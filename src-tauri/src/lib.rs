@@ -561,13 +561,13 @@ fn fs_save(
     }
     if snapshot_on_save.unwrap_or(true) {
         if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
-        if let Some(ws) = containing_workspace(&state, &canon)? {
-            if let Err(e) =
-                fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
-            {
-                eprintln!("[history.save] 保存旧版本失败：{e}");
+            if let Some(ws) = containing_workspace(&state, &canon)? {
+                if let Err(e) =
+                    fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
+                {
+                    eprintln!("[history.save] 保存旧版本失败：{e}");
+                }
             }
-        }
         }
     }
     fs_ops::atomic_write(&canon, &content)?;

@@ -5783,14 +5783,6 @@ function importProviderName(provider: ImportProvider): string {
   );
 }
 
-function importWarningSuffix(warnings: string[]): string {
-  if (warnings.length === 0) return "";
-  const preview = warnings.slice(0, 3).join("；");
-  const more =
-    warnings.length > 3 ? `；另有 ${warnings.length - 3} 条未显示` : "";
-  return `（警告：${preview}${more}）`;
-}
-
 function importReportText(report: ImportReportState): string {
   const lines = [
     `来源：${report.provider}`,

@@ -3,11 +3,13 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
   BlockNoteSchema,
+  createCodeBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
   type PartialBlock,
 } from "@blocknote/core";
 import { en as bnEn, zh as bnZh } from "@blocknote/core/locales";
+import { codeBlockOptions } from "@blocknote/code-block";
 import "@blocknote/mantine/style.css";
 // markio 主题 CSS override
 import "./BlockEditor.css";
@@ -66,6 +68,9 @@ interface Props {
 const markioSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
+    // 用 @blocknote/code-block 的 shiki 高亮替换默认 codeBlock：自带
+    // 语言下拉、行高亮主题、复制按钮，覆盖原默认的纯文本代码块
+    codeBlock: createCodeBlockSpec(codeBlockOptions),
     mermaid: MermaidReactBlock(),
     math: MathReactBlock(),
     callout: CalloutReactBlock(),

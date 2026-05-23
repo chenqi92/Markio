@@ -62,9 +62,8 @@ interface Props {
 const MODE_CLASS: Record<ViewMode, string> = {
   source: "source-only",
   split: "split",
-  wysiwyg: "wysiwyg",
+  wysiwyg: "block-only",
   preview: "preview-only",
-  block: "block-only",
 };
 
 const MAX_PASTE_IMAGES = 8;
@@ -101,7 +100,16 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function EditorArea({ onMeta, onAskAi }: Props) {
-  const tab = useTabs((s) => s.activeTab());
+  // 关键：不要写成 `useTabs((s) => s.activeTab())` —— selector 调用 activeTab()
+  // 会让 zustand 每次 store 变都返回新 find() 引用，EditorArea 频繁重渲染，
+  // 叠加上层 lazy + Suspense 在某些时序下会出现一帧 fallback 闪烁。
+  // 改成订阅原子字段 activeId + tabs，再在组件内 useMemo 派生 tab。
+  const activeId = useTabs((s) => s.activeId);
+  const tabsList = useTabs((s) => s.tabs);
+  const tab = useMemo(
+    () => (activeId ? tabsList.find((t) => t.id === activeId) : undefined),
+    [activeId, tabsList],
+  );
   const updateContent = useTabs((s) => s.updateContent);
   const saveTab = useTabs((s) => s.saveTab);
   const workspaces = useWorkspace((s) => s.workspaces);
@@ -893,18 +901,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   if (!tab) {
-    // tab 暂时拿不到（activeId 在状态切换中短暂为 null 等）—— 不要直接 return null，
-    // 否则会让 AppShell 的 main 区出现一帧空白。给个最低限度的占位骨架，
-    // 等下一帧 store 自然收敛回有 tab 的状态。
+    // tab 暂时拿不到（活动 tab id 已变化但 tabs 数组尚未同步等罕见时序），
+    // 返回最小占位骨架，避免父级 Suspense 显示空白。
     return <div className="editor-split" aria-busy="true" />;
   }
 
-  const showSource =
-    renderMode === "source" ||
-    renderMode === "split" ||
-    renderMode === "wysiwyg";
+  const showSource = renderMode === "source" || renderMode === "split";
   const showPreview = renderMode === "preview" || renderMode === "split";
-  const showBlock = renderMode === "block";
+  const showBlock = renderMode === "wysiwyg";
 
   return (
     <div
@@ -938,7 +942,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         >
           <SourceEditor
             value={tab.content}
-            wysiwyg={renderMode === "wysiwyg"}
+            wysiwyg={false}
             onChange={handleContentChange}
             syncScroll={renderMode === "split"}
             scrollTarget={

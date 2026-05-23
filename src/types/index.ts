@@ -17,7 +17,7 @@ export interface FileEntry {
   truncated?: boolean;
 }
 
-export type ViewMode = "source" | "split" | "wysiwyg" | "preview" | "block";
+export type ViewMode = "source" | "split" | "wysiwyg" | "preview";
 
 export interface TabInfo {
   id: string;

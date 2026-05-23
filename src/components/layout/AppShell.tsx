@@ -133,9 +133,9 @@ export function AppShell() {
   const agentOpen = useUI((s) => s.agentOpen);
   const openAgent = useUI((s) => s.openAgent);
   const pinnedPlanPath = usePinnedPlan((s) => s.path);
-  const activeTabId = useTabs((s) => s.activeId);
-  // 用"曾经/此刻还有 tab"判断是否进入 Welcome，避免 activeId 在
-  // 某些路径上瞬时为 null 时 main 区被切回 Welcome（一帧闪烁）。
+  // 用 tabs 数组是否非空判断是否进入 Welcome，而不是 activeId。这样
+  // 在 activeId 短暂为 null（罕见时序）时不会闪一帧 Welcome；同时
+  // EditorArea 内部会用 useMemo 派生 tab，也能稳定。
   const hasAnyTab = useTabs((s) => s.tabs.length > 0);
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
@@ -145,17 +145,6 @@ export function AppShell() {
   useEffect(() => {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
   }, [activeWorkspaceId, refreshTree]);
-
-  // 闪烁 bug 诊断：当 tabs 还非空、activeId 却变 null 时打印调用栈。
-  // 修好之后这段可以删。
-  useEffect(() => {
-    if (!activeTabId && hasAnyTab) {
-      console.warn(
-        "[markio:diag] activeTabId became null while tabs is non-empty",
-        new Error("trace"),
-      );
-    }
-  }, [activeTabId, hasAnyTab]);
 
   // 预热 Settings + AIPanel chunk：用户首次切换时 lazy import 已经 in-flight 或好了，
   // 不再出现空白中间态。idle callback 推后，不影响初次绘制。
@@ -213,7 +202,9 @@ export function AppShell() {
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
-                  <Suspense fallback={null}>
+                  <Suspense
+                    fallback={<div className="editor-split" aria-busy="true" />}
+                  >
                     <EditorArea onAskAi={() => openAi(true)} />
                   </Suspense>
                 </>

@@ -285,7 +285,8 @@
 }
 .editor-split.source-only,
 .editor-split.preview-only,
-.editor-split.wysiwyg { grid-template-columns: 1fr; }
+.editor-split.wysiwyg,
+.editor-split.block-only { grid-template-columns: 1fr; }
 
 .editor-pane, .preview-pane {
   overflow-y: auto; overflow-x: hidden;
@@ -296,7 +297,12 @@
 .editor-split.split .editor-pane { border-right: 0; }
 .editor-split.source-only .editor-pane,
 .editor-split.preview-only .editor-pane,
-.editor-split.wysiwyg .editor-pane { border-right: 0; }
+.editor-split.wysiwyg .editor-pane,
+.editor-split.block-only .editor-pane { border-right: 0; }
+
+/* BlockNote rich editor 占满 block-pane；内部 .bn-container 自身管 padding */
+.editor-pane.block-pane { padding: 0; }
+.editor-pane.block-pane > * { height: 100%; }
 
 /* draggable splitter — a 1px column with a wider invisible hit zone overlapping
    its neighbours; the visible line fades in on hover/focus/active only */

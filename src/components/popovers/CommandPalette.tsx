@@ -99,6 +99,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: () => setMode("preview" as ViewMode),
       },
       {
+        id: "view-block",
+        group: "视图",
+        l1: "切换到 Block 模式（实验）",
+        l2: "Notion 风格 rich editor（BlockNote）",
+        kbd: [shortcutText("⌘"), "5"],
+        ico: "sparkle",
+        run: () => setMode("block" as ViewMode),
+      },
+      {
         id: "focus",
         group: "视图",
         l1: "切换专注模式",

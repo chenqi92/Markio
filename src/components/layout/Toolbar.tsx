@@ -9,11 +9,12 @@ import { markdownCommands } from "@/lib/markdown-commands";
 import { shortcutText } from "@/lib/shortcuts";
 import type { ViewMode } from "@/types";
 
-const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "sparkle" | "eye" }> = [
+const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "sparkle" | "eye" | "wand" }> = [
   { id: "source", label: shortcutText("源码 ⌘1"), icon: "code" },
   { id: "split", label: shortcutText("分屏 ⌘2"), icon: "split" },
   { id: "wysiwyg", label: shortcutText("所见即所得 ⌘3"), icon: "sparkle" },
   { id: "preview", label: shortcutText("阅读 ⌘4"), icon: "eye" },
+  { id: "block", label: shortcutText("Block ⌘5"), icon: "wand" },
 ];
 
 export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {

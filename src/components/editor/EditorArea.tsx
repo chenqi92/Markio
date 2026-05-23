@@ -885,7 +885,10 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   if (!tab) {
-    return null;
+    // tab 暂时拿不到（activeId 在状态切换中短暂为 null 等）—— 不要直接 return null，
+    // 否则会让 AppShell 的 main 区出现一帧空白。给个最低限度的占位骨架，
+    // 等下一帧 store 自然收敛回有 tab 的状态。
+    return <div className="editor-split" aria-busy="true" />;
   }
 
   const showSource =

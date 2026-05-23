@@ -604,10 +604,18 @@
 }
 .cm-md-table-widget th,
 .cm-md-table-widget td {
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border);
   vertical-align: top;
   cursor: text;
+  position: relative;
+}
+.cm-md-table-widget th:focus-within,
+.cm-md-table-widget td:focus-within {
+  /* 整个 td 描一圈蓝边代表"这个 cell 在编辑"，
+     避免 textarea 自己加 inset shadow 浮在 cell 中间像个独立小输入框 */
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  z-index: 1;
 }
 .cm-md-table-cell {
   display: block;
@@ -615,8 +623,10 @@
   width: 100%;
   min-width: 32px;
   min-height: 22px;
-  padding: 1px 2px;
+  padding: 6px 10px;
+  margin: 0;
   border: 0;
+  border-radius: 0;
   outline: none;
   resize: none;
   overflow: hidden;
@@ -628,15 +638,16 @@
   cursor: text;
   user-select: text;
   caret-color: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
 }
 .cm-md-table-cell::selection,
 .cm-md-table-cell *::selection {
   background: var(--bg-selected) !important;
 }
 .cm-md-table-cell:focus {
-  border-radius: 4px;
-  background: var(--bg-pane);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  background: transparent;
+  box-shadow: none;
 }
 .cm-md-table-widget th {
   background: var(--bg-hover);

@@ -9,7 +9,39 @@ import {
   type PartialBlock,
 } from "@blocknote/core";
 import { en as bnEn, zh as bnZh } from "@blocknote/core/locales";
-import { codeBlockOptions } from "@blocknote/code-block";
+import type { CodeBlockOptions } from "@blocknote/core";
+import {
+  createHighlighter,
+  bundledLanguages,
+  bundledLanguagesInfo,
+} from "shiki";
+
+/**
+ * 自己拼 codeBlockOptions：用 shiki 的 bundle-full 提供 280+ 语言列表
+ * + lazy load grammar（vite 会按 dynamic import 自动拆 chunk，runtime
+ * 只下载用户真正用到的那个 lang）。
+ *
+ * 替换 @blocknote/code-block 内置的 47 语言 enum。
+ */
+const codeBlockOptions: CodeBlockOptions = {
+  defaultLanguage: "text",
+  supportedLanguages: Object.fromEntries(
+    bundledLanguagesInfo.map((info) => [
+      info.id,
+      {
+        name: info.name,
+        aliases: info.aliases ?? [],
+      },
+    ]),
+  ),
+  createHighlighter: () =>
+    createHighlighter({
+      themes: ["github-dark", "github-light"],
+      // 用 lazy import map：shiki 会在收到具体 lang 时按需 dynamic import
+      // 对应 grammar，运行期只加载用到的语言文件
+      langs: Object.values(bundledLanguages),
+    }),
+};
 import "@blocknote/mantine/style.css";
 // markio 主题 CSS override
 import "./BlockEditor.css";

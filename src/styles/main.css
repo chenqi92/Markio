@@ -284,7 +284,6 @@
   grid-template-columns: minmax(0, var(--split-source, 50%)) 1px minmax(0, 1fr);
 }
 .editor-split.source-only,
-.editor-split.preview-only,
 .editor-split.wysiwyg,
 .editor-split.block-only { grid-template-columns: 1fr; }
 
@@ -296,7 +295,6 @@
 .editor-pane { border-right: 0.5px solid var(--border); }
 .editor-split.split .editor-pane { border-right: 0; }
 .editor-split.source-only .editor-pane,
-.editor-split.preview-only .editor-pane,
 .editor-split.wysiwyg .editor-pane,
 .editor-split.block-only .editor-pane { border-right: 0; }
 

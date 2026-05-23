@@ -90,15 +90,6 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: () => setMode("wysiwyg" as ViewMode),
       },
       {
-        id: "view-preview",
-        group: "视图",
-        l1: "切换到阅读模式",
-        l2: "只读阅读视图",
-        kbd: [shortcutText("⌘"), "4"],
-        ico: "book",
-        run: () => setMode("preview" as ViewMode),
-      },
-      {
         id: "focus",
         group: "视图",
         l1: "切换专注模式",

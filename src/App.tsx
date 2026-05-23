@@ -579,7 +579,6 @@ export default function App() {
       "app.viewSource": () => setMode("source"),
       "app.viewSplit": () => setMode("split"),
       "app.viewWysiwyg": () => setMode("wysiwyg"),
-      "app.viewPreview": () => setMode("preview"),
       "app.quickCapture": () =>
         useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen),
       "app.blockMenu": () => {

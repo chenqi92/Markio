@@ -1,0 +1,229 @@
+import { useState } from "react";
+import { createReactBlockSpec } from "@blocknote/react";
+
+/**
+ * Callout 自定义 block —— Obsidian 风 `> [!type] Title\n> body`。
+ *
+ * - `props.calloutType` 一类（note / tip / warning / ...）
+ * - `props.title` 第一行标题（可空）
+ * - `props.body` 多行正文（plain text，未支持行内富文本，简单实现）
+ *
+ * 阶段 2 用最简实现：textarea 编辑 body，type 用 select 切。阶段 3 可以
+ * 升级成嵌套 blocks 让 body 支持富文本。
+ *
+ * Round-trip：parse 阶段在 BlockEditor 里把 quote block + 首行 `[!type] title?`
+ * 模式换成 callout block；serialize 阶段反向 —— callout block → quote block
+ * 让 BlockNote 输出 `> ...` 段；之后 postprocess 把首行补成 `> [!type] title`。
+ */
+const CALLOUT_TYPES = [
+  { id: "note", label: "Note", color: "#5b8def" },
+  { id: "info", label: "Info", color: "#0ea5e9" },
+  { id: "tip", label: "Tip", color: "#10b981" },
+  { id: "success", label: "Success", color: "#22c55e" },
+  { id: "question", label: "Question", color: "#a855f7" },
+  { id: "warning", label: "Warning", color: "#f59e0b" },
+  { id: "danger", label: "Danger", color: "#ef4444" },
+  { id: "important", label: "Important", color: "#ec4899" },
+  { id: "todo", label: "Todo", color: "#6366f1" },
+  { id: "example", label: "Example", color: "#14b8a6" },
+  { id: "bug", label: "Bug", color: "#ef4444" },
+  { id: "quote", label: "Quote", color: "#94a3b8" },
+] as const;
+
+const TYPE_BY_ID = new Map(CALLOUT_TYPES.map((t) => [t.id, t]));
+
+export function calloutDefByType(type: string) {
+  return TYPE_BY_ID.get(type as (typeof CALLOUT_TYPES)[number]["id"]);
+}
+
+type CalloutProps = {
+  calloutType: { default: "note" };
+  title: { default: "" };
+  body: { default: "" };
+};
+
+interface RenderProps {
+  block: {
+    id: string;
+    type: "callout";
+    props: { calloutType: string; title: string; body: string };
+  };
+  editor: {
+    updateBlock: (
+      block: { id: string },
+      update: {
+        props: Partial<{ calloutType: string; title: string; body: string }>;
+      },
+    ) => void;
+  };
+}
+
+function CalloutView({ block, editor }: RenderProps) {
+  const { calloutType, title, body } = block.props;
+  const def = calloutDefByType(calloutType) ?? CALLOUT_TYPES[0];
+  const [bodyEditing, setBodyEditing] = useState(false);
+
+  return (
+    <div
+      className="bn-callout-block"
+      contentEditable={false}
+      style={{
+        border: `1px solid ${def.color}40`,
+        background: `${def.color}10`,
+        borderLeft: `3px solid ${def.color}`,
+        borderRadius: 6,
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span
+          style={{
+            display: "inline-block",
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: def.color,
+            flexShrink: 0,
+          }}
+        />
+        <select
+          value={calloutType}
+          onChange={(e) =>
+            editor.updateBlock(block, { props: { calloutType: e.target.value } })
+          }
+          style={{
+            background: "transparent",
+            border: "none",
+            color: def.color,
+            fontWeight: 600,
+            fontSize: 12,
+            cursor: "pointer",
+            outline: "none",
+          }}
+        >
+          {CALLOUT_TYPES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <input
+          value={title}
+          placeholder="（可选标题）"
+          onChange={(e) =>
+            editor.updateBlock(block, { props: { title: e.target.value } })
+          }
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            color: "var(--text)",
+            fontWeight: 600,
+            fontSize: 13,
+            outline: "none",
+            padding: 0,
+          }}
+        />
+      </div>
+      {bodyEditing ? (
+        <textarea
+          value={body}
+          autoFocus
+          spellCheck={false}
+          rows={Math.max(2, body.split("\n").length + 1)}
+          onChange={(e) =>
+            editor.updateBlock(block, { props: { body: e.target.value } })
+          }
+          onBlur={() => setBodyEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setBodyEditing(false);
+            }
+          }}
+          style={{
+            width: "100%",
+            background: "transparent",
+            border: `1px dashed ${def.color}60`,
+            borderRadius: 4,
+            color: "var(--text)",
+            fontFamily: "inherit",
+            fontSize: 13,
+            padding: 6,
+            resize: "vertical",
+            outline: "none",
+            lineHeight: 1.6,
+          }}
+        />
+      ) : (
+        <div
+          onDoubleClick={() => setBodyEditing(true)}
+          style={{
+            whiteSpace: "pre-wrap",
+            color: "var(--text)",
+            fontSize: 13,
+            lineHeight: 1.6,
+            cursor: "text",
+            minHeight: 18,
+          }}
+          title="双击编辑"
+        >
+          {body || (
+            <span style={{ color: "var(--text-3)" }}>（双击添加正文）</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export const CalloutReactBlock = createReactBlockSpec(
+  {
+    type: "callout",
+    propSchema: {
+      calloutType: { default: "note" },
+      title: { default: "" },
+      body: { default: "" },
+    } as const satisfies CalloutProps,
+    content: "none",
+  },
+  {
+    render: CalloutView as unknown as Parameters<
+      typeof createReactBlockSpec
+    >[1]["render"],
+  },
+);
+
+/**
+ * 把一段 markdown 引用块（` > a\n> b ...` 已经把 `>` 去掉了的纯文本）
+ * 解析成 callout 结构。返回 null 表示不是 callout 形式。
+ */
+export function tryParseCalloutFromQuote(
+  plainQuoteText: string,
+): { type: string; title: string; body: string } | null {
+  const m = plainQuoteText.match(/^\[!([a-zA-Z][\w-]*)\][+-]?\s*(.*?)(\n[\s\S]*)?$/);
+  if (!m) return null;
+  const rawType = m[1].toLowerCase();
+  if (!TYPE_BY_ID.has(rawType as (typeof CALLOUT_TYPES)[number]["id"])) {
+    return null;
+  }
+  return {
+    type: rawType,
+    title: m[2]?.trim() ?? "",
+    body: (m[3] ?? "").replace(/^\n/, ""),
+  };
+}
+
+/** 反向：callout 结构 → quote 块的 inline plain text（不带 `> ` 前缀） */
+export function calloutToQuoteText(opts: {
+  type: string;
+  title: string;
+  body: string;
+}): string {
+  const titlePart = opts.title ? ` ${opts.title}` : "";
+  const header = `[!${opts.type}]${titlePart}`;
+  return opts.body ? `${header}\n${opts.body}` : header;
+}

@@ -287,8 +287,7 @@
       "mode": {
         "source": "纯源码",
         "split": "分屏（推荐）",
-        "wysiwyg": "所见即所得",
-        "preview": "纯预览"
+        "wysiwyg": "所见即所得"
       },
       "inputCard": "输入",
       "smartQuotes": "智能引号",

@@ -287,8 +287,7 @@
       "mode": {
         "source": "Source only",
         "split": "Split (recommended)",
-        "wysiwyg": "WYSIWYG",
-        "preview": "Preview only"
+        "wysiwyg": "WYSIWYG"
       },
       "inputCard": "Input",
       "smartQuotes": "Smart quotes",

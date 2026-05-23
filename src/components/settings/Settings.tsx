@@ -736,7 +736,7 @@ function Editor() {
   );
   const modeItems = useMemo(
     () =>
-      (["source", "split", "wysiwyg", "preview"] as const).map((id) => ({
+      (["source", "split", "wysiwyg"] as const).map((id) => ({
         id,
         label: t(`settings.editor.mode.${id}`),
       })),

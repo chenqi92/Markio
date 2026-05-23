@@ -63,7 +63,6 @@ const MODE_CLASS: Record<ViewMode, string> = {
   source: "source-only",
   split: "split",
   wysiwyg: "block-only",
-  preview: "preview-only",
 };
 
 const MAX_PASTE_IMAGES = 8;
@@ -908,7 +907,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   }
 
   const showSource = renderMode === "source" || renderMode === "split";
-  const showPreview = renderMode === "preview" || renderMode === "split";
+  const showPreview = renderMode === "split";
   const showBlock = renderMode === "wysiwyg";
 
   return (

@@ -145,7 +145,7 @@ export const useUI = create<UIState>()(
       // MODE_CLASS[mode] 返回 undefined 让编辑器渲染空壳。
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UIState>;
-        const validModes: ViewMode[] = ["source", "split", "wysiwyg", "preview"];
+        const validModes: ViewMode[] = ["source", "split", "wysiwyg"];
         const validTabs: SidebarTab[] = ["files", "tasks", "tags", "props"];
         return {
           ...current,

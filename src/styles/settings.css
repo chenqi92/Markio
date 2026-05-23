@@ -6,8 +6,6 @@
   width: 880px; max-width: 92vw;
   height: 620px; max-height: 86vh;
   background: var(--bg-window);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 16px;
   box-shadow: var(--shadow-deep);

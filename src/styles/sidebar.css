@@ -86,8 +86,6 @@
   position: absolute;
   top: calc(100% + 6px); left: 12px; right: 12px;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 12px;
   box-shadow: var(--shadow-deep);

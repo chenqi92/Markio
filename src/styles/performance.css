@@ -2,8 +2,6 @@
    Large live blur surfaces make the whole desktop feel laggy on some GPUs. */
 .markio-root,
 .markio-root * {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
 }
 
 .statusbar .pulse,

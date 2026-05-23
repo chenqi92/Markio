@@ -121,6 +121,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
+  const themeId = useSettings((s) => s.theme);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
@@ -920,10 +921,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         <Suspense fallback={<div className="editor-pane" aria-busy="true" />}>
           <div className="editor-pane block-pane">
             <BlockEditor
+              key={tab.id}
               value={tab.content}
               docKey={tab.id}
               onChange={handleContentChange}
-              dark={isDarkTheme(useSettings.getState().theme)}
+              dark={isDarkTheme(themeId)}
             />
           </div>
         </Suspense>

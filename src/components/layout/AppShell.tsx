@@ -1,5 +1,9 @@
 import { lazy, Suspense, useEffect } from "react";
 import { TitleBar } from "./TitleBar";
+// EditorArea 是核心、启动后立刻要用的组件。lazy 它在 dev 模式下首次挂载要
+// 等 vite 编译 80+ms，期间 Suspense fallback (空白 editor-split) 会跟
+// 旁边 Welcome 的空白连成片，看起来像"闪过一帧欢迎页"。直接同步 import。
+import { EditorArea } from "../editor/EditorArea";
 import { Sidebar } from "./Sidebar";
 import { SidebarResizer } from "./SidebarResizer";
 import { TabStrip } from "./TabStrip";
@@ -9,6 +13,13 @@ import { StatusBar } from "./StatusBar";
 import { Welcome } from "../Welcome";
 import { ToastHost } from "../popovers/Toast";
 import { DialogHost } from "../popovers/DialogHost";
+// dev-only 诊断浮窗：默认隐藏，按 ⌘⇧D 切换显示。prod 构建因下面的
+// `import.meta.env.DEV` 短路 + tree-shaking 会被整体剔除。
+const DiagPanel = import.meta.env.DEV
+  ? lazy(() =>
+      import("../popovers/DiagPanel").then((m) => ({ default: m.DiagPanel })),
+    )
+  : null;
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
@@ -18,9 +29,6 @@ import { classNames } from "@/lib/utils";
 
 const CommandPalette = lazy(() =>
   import("../popovers/CommandPalette").then((m) => ({ default: m.CommandPalette })),
-);
-const EditorArea = lazy(() =>
-  import("../editor/EditorArea").then((m) => ({ default: m.EditorArea })),
 );
 const GlobalSearch = lazy(() =>
   import("../popovers/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -202,11 +210,7 @@ export function AppShell() {
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
-                  <Suspense
-                    fallback={<div className="editor-split" aria-busy="true" />}
-                  >
-                    <EditorArea onAskAi={() => openAi(true)} />
-                  </Suspense>
+                  <EditorArea onAskAi={() => openAi(true)} />
                 </>
               ) : (
                 <Welcome />
@@ -265,6 +269,11 @@ export function AppShell() {
       </Suspense>
       <ToastHost />
       <DialogHost />
+      {DiagPanel && (
+        <Suspense fallback={null}>
+          <DiagPanel />
+        </Suspense>
+      )}
     </div>
   );
 }

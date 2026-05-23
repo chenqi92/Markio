@@ -214,17 +214,26 @@ export default function App() {
       const known = new Set(
         useWorkspace.getState().workspaces.map((w) => w.id),
       );
-      // 先恢复非激活的，再恢复激活的（让激活的成为最后一个 setActive 的对象）
+      // 先恢复非激活的（silent: 不切 activeId，避免编辑器频繁 unmount/mount），
+      // 再恢复激活的让它成为最后一个 setActive 的对象。
       const ordered = [...openTabs].sort((a, b) =>
         a.path === activePath ? 1 : b.path === activePath ? -1 : 0,
       );
       for (const t of ordered) {
         if (cancelled) return;
         if (!known.has(t.workspaceId)) continue;
+        const isActiveOne = t.path === activePath;
         try {
-          await useTabs.getState().openPath(t.path);
+          await useTabs.getState().openPath(t.path, { silent: !isActiveOne });
         } catch {
           // 文件可能已被外部删除：跳过即可
+        }
+      }
+      // 兜底：restore 结束后没有 active（activePath 已不存在等），切到第一个 tab
+      if (!cancelled) {
+        const st = useTabs.getState();
+        if (!st.activeId && st.tabs.length > 0) {
+          st.setActive(st.tabs[0].id);
         }
       }
     }, 600);

@@ -1,0 +1,58 @@
+/* ───────────────────────── BlockNote ↔ markio 主题对接 ─────────────────────────
+ *
+ * BlockNote 用一组 `--bn-colors-*` CSS 变量驱动配色，默认在 `.bn-mantine`
+ * 选择器下声明。这里只覆盖跟 markio 主题相关的几组，让背景 / 文字 / 边框 /
+ * 悬停色都跟 markio 当前 vault 主题保持一致；高亮色（== text ==）继续用
+ * BlockNote 自带的彩色板。
+ *
+ * 选择器只用 `.bn-mantine` 单层 class，跟 BlockNote 默认一致，靠 import 顺序
+ * 后置胜出。BlockNote 走 string theme 时不写 inline CSS 变量，所以普通选择器
+ * 就能覆盖，不需要 !important。
+ */
+
+.bn-mantine {
+  /* 编辑区：背景透明吃 markio 的 editor-pane 底色；文字用主色 */
+  --bn-colors-editor-text: var(--text);
+  --bn-colors-editor-background: transparent;
+
+  /* slash menu / side menu / formatting toolbar 弹出层 */
+  --bn-colors-menu-text: var(--text);
+  --bn-colors-menu-background: var(--bg-elev);
+
+  /* tooltip */
+  --bn-colors-tooltip-text: var(--text);
+  --bn-colors-tooltip-background: var(--bg-elev);
+
+  /* hover / 选中 / disabled */
+  --bn-colors-hovered-text: var(--text);
+  --bn-colors-hovered-background: var(--bg-hover);
+  --bn-colors-selected-text: var(--text);
+  --bn-colors-selected-background: var(--bg-selected);
+  --bn-colors-disabled-text: var(--text-4);
+  --bn-colors-disabled-background: var(--bg-pane-2);
+
+  /* 边框、阴影、侧边块菜单按钮颜色 */
+  --bn-colors-border: var(--border);
+  --bn-colors-side-menu: var(--text-3);
+  --bn-shadow-light: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --bn-shadow-medium: 0 4px 18px rgba(0, 0, 0, 0.18);
+
+  /* 字体跟 markio 一致 */
+  --bn-font-family: inherit;
+}
+
+/* BlockNote root 容器自带白底，重写成透明让 markio 的 .block-pane 底色透出来 */
+.bn-mantine .bn-container,
+.bn-mantine .bn-editor {
+  background: transparent;
+}
+
+/* placeholder（空段落的灰字提示）跟主题 text-3 一致 */
+.bn-mantine .bn-inline-content[data-placeholder]::before {
+  color: var(--text-3);
+}
+
+/* 选区颜色 */
+.bn-mantine .bn-editor ::selection {
+  background: var(--bg-selected);
+}

@@ -22,8 +22,8 @@ interface TabsState {
   /** 每个 tab 对应的磁盘签名（mtime + hash），保存时校验 */
   sigs: Record<string, FileSig>;
 
-  openFile: (workspaceId: string, path: string) => Promise<void>;
-  openPath: (path: string) => Promise<void>;
+  openFile: (workspaceId: string, path: string, opts?: { silent?: boolean }) => Promise<void>;
+  openPath: (path: string, opts?: { silent?: boolean }) => Promise<void>;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
   updateContent: (id: string, content: string) => void;
@@ -80,12 +80,13 @@ export const useTabs = create<TabsState>((set, get) => ({
   activeId: null,
   sigs: {},
 
-  openFile: async (workspaceId, path) => {
+  openFile: async (workspaceId, path, opts) => {
+    const silent = opts?.silent === true;
     const exist = get().tabs.find(
       (t) => t.workspaceId === workspaceId && t.path === path,
     );
     if (exist) {
-      set({ activeId: exist.id });
+      if (!silent) set({ activeId: exist.id });
       return;
     }
     let content: string;
@@ -115,13 +116,15 @@ export const useTabs = create<TabsState>((set, get) => ({
     };
     set((s) => ({
       tabs: [...s.tabs, tab],
-      activeId: tab.id,
+      // silent = true 时不切活跃，给 session restore 用，避免每打开一个就
+      // 切一次 active 把编辑器频繁 unmount/mount。
+      activeId: silent ? s.activeId : tab.id,
       sigs: { ...s.sigs, [tab.id]: sig },
     }));
     useRecents.getState().push(workspaceId, path, basename(path));
   },
 
-  openPath: async (path) => {
+  openPath: async (path, opts) => {
     const norm = path.replace(/\\/g, "/");
     const ws = useWorkspace.getState();
     let belong = ws.workspaces.find(
@@ -133,7 +136,7 @@ export const useTabs = create<TabsState>((set, get) => ({
       belong = useWorkspace.getState().workspaces.find((w) => w.id === id);
     }
     if (!belong) return;
-    await get().openFile(belong.id, path);
+    await get().openFile(belong.id, path, opts);
   },
 
   closeTab: (id) =>

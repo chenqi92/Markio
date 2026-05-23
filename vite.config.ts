@@ -30,6 +30,16 @@ export default defineConfig(async () => ({
         "**/.turbo/**",
         "**/.next/**",
         "**/.vite/**",
+        // The app edits vault content during dev. If a test/demo vault lives
+        // under the repo, Vite sees those saves and full-reloads the app,
+        // briefly dropping in-memory tabs before session restore brings them
+        // back. Keep user content out of the dev-server watcher.
+        "**/store-assets/demo-vault/**",
+        "**/*.md",
+        "**/*.markdown",
+        "**/*.mdown",
+        "**/*.mkd",
+        "**/*.txt",
       ],
     },
   },

@@ -235,6 +235,25 @@ export const api = {
       onError?: (message: string) => void;
     },
   ): Promise<() => void> => {
+    const bridge = e2eBridge();
+    if (bridge?.invoke) {
+      try {
+        const rendered = await invoke<RenderResult>(
+          "md_render",
+          basePath ? { source, basePath } : { source },
+        );
+        handlers.onChunk(0, rendered.html);
+        handlers.onDone({
+          outline: rendered.outline,
+          words: rendered.words,
+          readingMinutes: rendered.readingMinutes,
+        });
+      } catch (err) {
+        handlers.onError?.((err as Error)?.message ?? String(err));
+      }
+      return () => undefined;
+    }
+
     const streamId = `md${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
     const channel = `md-stream-${streamId}`;
     let unlisten: UnlistenFn | null = null;

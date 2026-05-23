@@ -38,7 +38,7 @@ test("opens a vault, edits with conflict recovery, and jumps from global search"
   expect(saved).toContain("E2E edit marker");
 
   await page.keyboard.press("ControlOrMeta+Shift+F");
-  await page.getByPlaceholder(/搜索整个仓库/).fill("search token");
+  await page.getByPlaceholder(/搜索/).fill("search token");
   await expect(page.locator(".cmdk-item").filter({ hasText: "Daily.md" })).toBeVisible();
   await page.locator(".cmdk-item").filter({ hasText: "Daily.md" }).first().click();
 

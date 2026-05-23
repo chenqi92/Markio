@@ -5,12 +5,12 @@ mod dev_log;
 mod dropbox_ops;
 mod frontmatter;
 mod fs_ops;
-mod mcp;
 mod gdrive_ops;
 mod git_ops;
 mod ignore;
 mod import;
 mod markdown;
+mod mcp;
 mod oauth;
 pub mod rag;
 mod rss;
@@ -37,7 +37,9 @@ use serde_json::Value;
 use tauri::{Emitter, Manager};
 
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
-use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem};
+use fs_ops::{
+    AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem,
+};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 

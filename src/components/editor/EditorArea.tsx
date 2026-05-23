@@ -925,6 +925,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
               value={tab.content}
               docKey={tab.id}
               onChange={handleContentChange}
+              onMeta={onMetaInternal}
               dark={isDarkTheme(themeId)}
               locale={locale}
             />

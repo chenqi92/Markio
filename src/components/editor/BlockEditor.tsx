@@ -31,6 +31,8 @@ import {
 import { MarkioSlashMenu, WikilinkSuggestionMenu } from "./BlockEditorMenus";
 import type { Locale } from "@/i18n";
 
+import type { OutlineItem } from "@/types";
+
 interface Props {
   /** 初次解析用的 markdown source。后续不再监听 value 变化，避免
    *  BlockNote lossy round-trip 跟外部 updateContent 形成死循环。 */
@@ -42,6 +44,13 @@ interface Props {
   dark?: boolean;
   /** UI locale，跟随 markio 设置。换 locale 会重 create editor。 */
   locale?: Locale;
+  /** 跟 source / split 模式一致的大纲 + 字数回调。anchor 是 BlockNote 的
+   *  block.id，对应 DOM 上的 `[data-id="..."]`。 */
+  onMeta?: (meta: {
+    outline: OutlineItem[];
+    words: number;
+    readingMinutes: number;
+  }) => void;
 }
 
 /**
@@ -62,6 +71,69 @@ const markioSchema = BlockNoteSchema.create({
     tag: TagInlineContent,
   },
 });
+
+/** 从 inline content 数组抽出可读文本（剥掉 wikilink/tag 等的 wrap，
+ *  剩纯文字）。给大纲生成 heading 文本用。 */
+function inlineContentToPlainText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((p) => {
+      if (typeof p === "string") return p;
+      if (!p || typeof p !== "object") return "";
+      const n = p as { type?: string; text?: string; props?: Record<string, unknown> };
+      if (n.type === "text" && typeof n.text === "string") return n.text;
+      if (n.type === "wikilink") return String(n.props?.target ?? "");
+      if (n.type === "tag") return `#${String(n.props?.name ?? "")}`;
+      return "";
+    })
+    .join("");
+}
+
+/** 扫 BlockNote document 的所有 heading 块，生成跟 source/split 模式同型的
+ *  OutlineItem[]。anchor 用 block.id —— BlockNote 在每个 block 容器 DOM 上
+ *  写 data-id={id}，Outline 点击时 querySelector 即可定位。 */
+function extractOutline(blocks: PartialBlock[]): OutlineItem[] {
+  const out: OutlineItem[] = [];
+  const walk = (arr: PartialBlock[]) => {
+    for (const b of arr) {
+      const bb = b as PartialBlock & {
+        id?: string;
+        type?: string;
+        props?: Record<string, unknown>;
+        content?: unknown;
+        children?: PartialBlock[];
+      };
+      if (bb.type === "heading" && bb.id) {
+        const rawLevel = Number(bb.props?.level);
+        const level = Number.isFinite(rawLevel) ? Math.max(1, Math.min(6, rawLevel)) : 1;
+        const text = inlineContentToPlainText(bb.content).trim();
+        out.push({ level, text, anchor: bb.id });
+      }
+      if (bb.children?.length) walk(bb.children);
+    }
+  };
+  walk(blocks);
+  return out;
+}
+
+/** 粗略字数：英文按空白分，中文每字算一。够给 status bar 用。 */
+function countWords(blocks: PartialBlock[]): number {
+  let total = 0;
+  const walk = (arr: PartialBlock[]) => {
+    for (const b of arr) {
+      const bb = b as PartialBlock & { content?: unknown; children?: PartialBlock[] };
+      const text = inlineContentToPlainText(bb.content);
+      // 中文/日文字 + 英文单词
+      const cjk = (text.match(/[一-鿿぀-ヿ가-힯]/g) ?? []).length;
+      const ascii = (text.match(/[A-Za-z0-9]+/g) ?? []).length;
+      total += cjk + ascii;
+      if (bb.children?.length) walk(bb.children);
+    }
+  };
+  walk(blocks);
+  return total;
+}
 
 /**
  * 把开头的 YAML frontmatter（` --- ... --- `）切走。Frontmatter 在 markio
@@ -238,6 +310,7 @@ export function BlockEditor({
   onChange,
   dark,
   locale = "en",
+  onMeta,
 }: Props) {
   const dictionary = useMemo(() => (locale === "zh-CN" ? bnZh : bnEn), [locale]);
   const editor = useCreateBlockNote(
@@ -252,6 +325,8 @@ export function BlockEditor({
   const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onMetaRef = useRef(onMeta);
+  onMetaRef.current = onMeta;
   const initialValueRef = useRef(value);
   initialValueRef.current = value;
   // emit 节流：blocksToMarkdownLossy 遍历整个文档 + transform 后处理，
@@ -276,6 +351,17 @@ export function BlockEditor({
         editor.replaceBlocks(editor.document, blocks);
         lastEmittedRef.current = raw;
         hydratedKeyRef.current = docKey;
+        // hydrate 完立刻吐一次大纲，避免 BlockNote 模式下右栏大纲空一段
+        if (onMetaRef.current) {
+          const snapshot = editor.document as PartialBlock[];
+          const outline = extractOutline(snapshot);
+          const words = countWords(snapshot);
+          onMetaRef.current({
+            outline,
+            words,
+            readingMinutes: Math.max(1, Math.round(words / 500)),
+          });
+        }
       } finally {
         queueMicrotask(() => {
           isHydratingRef.current = false;
@@ -335,6 +421,17 @@ export function BlockEditor({
             const snapshot = JSON.parse(
               JSON.stringify(editor.document),
             ) as PartialBlock[];
+            // 大纲 / 字数：从未 transform 的 snapshot 提取（保留 wikilink/tag
+            // 等结构，方便抽 plain text 时识别 props）
+            if (onMetaRef.current) {
+              const outline = extractOutline(snapshot);
+              const words = countWords(snapshot);
+              onMetaRef.current({
+                outline,
+                words,
+                readingMinutes: Math.max(1, Math.round(words / 500)),
+              });
+            }
             const blocks = transformBlocksBeforeSerialize(snapshot);
             const bodyMd = editor.blocksToMarkdownLossy(blocks);
             const body = postprocessMarkdown(bodyMd);

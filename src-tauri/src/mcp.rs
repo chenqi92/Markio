@@ -151,7 +151,10 @@ async fn list_vaults(
     let (_, token, _) = s.runtime.snapshot();
     check_token(&headers, &token)?;
     let app_state = s.app.state::<AppState>();
-    let inner = app_state.inner.lock().map_err(|e| internal(e.to_string()))?;
+    let inner = app_state
+        .inner
+        .lock()
+        .map_err(|e| internal(e.to_string()))?;
     let mut out: Vec<VaultInfo> = inner
         .workspaces
         .iter()
@@ -210,8 +213,8 @@ async fn rpc_get_note(
     let (_, token, _) = s.runtime.snapshot();
     check_token(&headers, &token)?;
     let path = ensure_in_any_workspace(&s.app, &req.path)?;
-    let content = fs_ops::read_text(&path.to_string_lossy())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let content =
+        fs_ops::read_text(&path.to_string_lossy()).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(NoteResp {
         path: path.to_string_lossy().to_string(),
         content,
@@ -280,7 +283,10 @@ async fn rpc_get_vault_info(
     let (_, token, active) = s.runtime.snapshot();
     check_token(&headers, &token)?;
     let app_state = s.app.state::<AppState>();
-    let inner = app_state.inner.lock().map_err(|e| internal(e.to_string()))?;
+    let inner = app_state
+        .inner
+        .lock()
+        .map_err(|e| internal(e.to_string()))?;
     let mut vaults: Vec<VaultInfo> = inner
         .workspaces
         .iter()
@@ -311,7 +317,10 @@ fn resolve_workspace(
     fallback: Option<&Path>,
 ) -> Result<PathBuf, (StatusCode, String)> {
     let app_state = app.state::<AppState>();
-    let inner = app_state.inner.lock().map_err(|e| internal(e.to_string()))?;
+    let inner = app_state
+        .inner
+        .lock()
+        .map_err(|e| internal(e.to_string()))?;
 
     if let Some(req) = requested {
         let canon = PathBuf::from(req)
@@ -337,23 +346,23 @@ fn resolve_workspace(
     ))
 }
 
-fn ensure_in_any_workspace(
-    app: &AppHandle,
-    path: &str,
-) -> Result<PathBuf, (StatusCode, String)> {
+fn ensure_in_any_workspace(app: &AppHandle, path: &str) -> Result<PathBuf, (StatusCode, String)> {
     let app_state = app.state::<AppState>();
-    let inner = app_state.inner.lock().map_err(|e| internal(e.to_string()))?;
+    let inner = app_state
+        .inner
+        .lock()
+        .map_err(|e| internal(e.to_string()))?;
     crate::state::ensure_in_workspaces(&inner.workspaces, Path::new(path))
         .map_err(|e| (StatusCode::FORBIDDEN, e))
 }
 
 fn collect_notes(root: &Path, limit: usize) -> Vec<NoteSummary> {
     let mut out: Vec<NoteSummary> = Vec::new();
-    walk(root, root, &mut out, 0, limit);
+    walk(root, &mut out, 0, limit);
     out
 }
 
-fn walk(ws: &Path, dir: &Path, out: &mut Vec<NoteSummary>, depth: usize, limit: usize) {
+fn walk(dir: &Path, out: &mut Vec<NoteSummary>, depth: usize, limit: usize) {
     if depth > 12 || out.len() >= limit {
         return;
     }
@@ -375,7 +384,7 @@ fn walk(ws: &Path, dir: &Path, out: &mut Vec<NoteSummary>, depth: usize, limit: 
         };
         let path = entry.path();
         if ft.is_dir() {
-            walk(ws, &path, out, depth + 1, limit);
+            walk(&path, out, depth + 1, limit);
             continue;
         }
         if !ft.is_file() || !name.to_lowercase().ends_with(".md") {

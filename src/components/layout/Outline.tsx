@@ -491,7 +491,14 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
               }
               onClick={(e) => {
                 e.preventDefault();
-                const target = document.getElementById(it.anchor);
+                // 优先按 id 找（preview / split 模式的渲染节点），
+                // 找不到再按 data-id 找（所见即所得 BlockNote 模式 —
+                // 它给每个 block 容器 DOM 写 data-id={block.id}）
+                const target =
+                  document.getElementById(it.anchor) ??
+                  document.querySelector<HTMLElement>(
+                    `[data-id="${CSS.escape(it.anchor)}"]`,
+                  );
                 if (target)
                   target.scrollIntoView({ behavior: "smooth", block: "start" });
               }}

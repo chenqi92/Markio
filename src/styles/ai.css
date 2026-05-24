@@ -11,18 +11,14 @@
   z-index: 70;
   animation: aiIn 280ms cubic-bezier(.2, .8, .2, 1);
 }
-/* 工作区底层渐变装饰：之前右下角硬编码了 rgba(189,147,249,0.12) Dracula 紫，
- * 在暖色主题下（米白+米黄）打出来跟左上的蓝 accent-glow 一冷一暖，整块面板看
- * 起来"蓝+黄"不协调。改成两条都从主题 token 派生（accent-glow + accent-2
- * 同样 12% 透明度），不再跟主题相撞；并把强度整体降到 0.55 让纸张感占主导。 */
+/* 用主题同色系（--bg-deep）的低饱和辐射做对角 wash，柔化侧边栏 / 主区 /
+ * 输入栏三段拼接的硬色差，自动跟随主题（暖主题暖渐变、暗主题暗渐变）。 */
 .ai-workspace::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(circle at 30% 0%, var(--accent-glow), transparent 60%),
-              radial-gradient(circle at 70% 100%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 60%);
-  opacity: 0.55;
+  background: radial-gradient(circle at 25% 0%, color-mix(in srgb, var(--bg-deep) 45%, transparent), transparent 60%),
+              radial-gradient(circle at 75% 100%, color-mix(in srgb, var(--bg-deep) 35%, transparent), transparent 60%);
   z-index: 0;
 }
-
 .ai-workspace-body {
   flex: 1; min-height: 0;
   display: grid;
@@ -34,7 +30,7 @@
 
 .ai-sidebar {
   display: flex; flex-direction: column;
-  background: var(--bg-pane-2);
+  background: transparent;
   border-right: 0.5px solid var(--border);
   min-width: 0;
   overflow: hidden;
@@ -601,8 +597,7 @@
   z-index: 2;
   flex-shrink: 0;
   padding: 12px clamp(20px, 6%, 80px) 12px;
-  border-top: 0.5px solid var(--border);
-  background: var(--bg-pane);
+  background: transparent;
 }
 
 /* 输入框上方的快速操作 chips */

@@ -1,5 +1,6 @@
 mod agent_cli;
 mod ai;
+mod commands;
 mod custom_themes;
 mod dev_log;
 mod dropbox_ops;
@@ -21,6 +22,15 @@ mod watcher;
 mod webdav_ops;
 mod window_state;
 
+use commands::{
+    agent::{agent_cancel, agent_list_providers, agent_run},
+    history::{history_list, history_list_all, history_read, history_save},
+    mcp::{mcp_set_active_workspace, mcp_status},
+    rss::rss_fetch,
+    secret::{secret_copy, secret_delete, secret_get, secret_has, secret_set},
+    theme::{theme_delete, theme_dir_path, theme_import, theme_list, theme_read},
+};
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -37,9 +47,7 @@ use serde_json::Value;
 use tauri::{Emitter, Manager};
 
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
-use fs_ops::{
-    AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem,
-};
+use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 
@@ -129,7 +137,7 @@ const MAX_CRASH_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_CRASH_LOG_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_CRASH_READ_BYTES: u64 = 512 * 1024;
 
-fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
     let inner = state
         .inner
         .lock()
@@ -158,7 +166,7 @@ fn containing_workspace(state: &AppState, target: &Path) -> Result<Option<PathBu
         .cloned())
 }
 
-fn workspace_for_path(state: &AppState, target: &Path) -> Result<PathBuf, String> {
+pub(crate) fn workspace_for_path(state: &AppState, target: &Path) -> Result<PathBuf, String> {
     containing_workspace(state, target)?.ok_or_else(|| "路径不在任何已注册仓库中".to_string())
 }
 
@@ -166,7 +174,11 @@ fn is_internal_path(workspace: &Path, target: &Path) -> bool {
     target.starts_with(workspace.join(".markio"))
 }
 
-fn ensure_user_file_path(state: &AppState, target: &Path, action: &str) -> Result<(), String> {
+pub(crate) fn ensure_user_file_path(
+    state: &AppState,
+    target: &Path,
+    action: &str,
+) -> Result<(), String> {
     let ws = workspace_for_path(state, target)?;
     if target == ws {
         return Err(format!("拒绝{action}：不能操作仓库根目录"));
@@ -186,7 +198,7 @@ fn ensure_same_workspace(state: &AppState, a: &Path, b: &Path) -> Result<PathBuf
     Ok(wa)
 }
 
-fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
+pub(crate) fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
     let history = workspace.join(".markio").join("history");
     if path.starts_with(history) {
         Ok(())
@@ -195,7 +207,11 @@ fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
     }
 }
 
-fn ensure_path_in_workspace(workspace: &Path, file: &Path, action: &str) -> Result<(), String> {
+pub(crate) fn ensure_path_in_workspace(
+    workspace: &Path,
+    file: &Path,
+    action: &str,
+) -> Result<(), String> {
     if file.starts_with(workspace) {
         Ok(())
     } else {
@@ -1417,32 +1433,7 @@ fn crash_read_latest() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&buf).to_string())
 }
 
-// ─── 自定义 CSS 主题 ─────────────────────────────────────────────
-
-#[tauri::command]
-fn theme_list() -> Result<Vec<custom_themes::CustomTheme>, String> {
-    custom_themes::list()
-}
-
-#[tauri::command]
-fn theme_import(source_path: String) -> Result<custom_themes::CustomTheme, String> {
-    custom_themes::import(&source_path)
-}
-
-#[tauri::command]
-fn theme_read(id: String) -> Result<String, String> {
-    custom_themes::read(&id)
-}
-
-#[tauri::command]
-fn theme_delete(id: String) -> Result<(), String> {
-    custom_themes::delete(&id)
-}
-
-#[tauri::command]
-fn theme_dir_path() -> Result<String, String> {
-    custom_themes::dir_path()
-}
+// 自定义 CSS 主题命令已迁移到 commands::theme
 
 fn crash_pending_path() -> PathBuf {
     crash_log_dir().join("crash-pending.json")
@@ -1890,52 +1881,7 @@ async fn export_pandoc(
     .map_err(|e| e.to_string())?
 }
 
-// ─── 历史快照 ───────────────────────────────────────────────────────
-
-#[tauri::command]
-fn history_save(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    file: String,
-    content: String,
-) -> Result<(), String> {
-    let ws = validate_path(&state, &workspace)?;
-    let f = validate_path(&state, &file)?;
-    ensure_path_in_workspace(&ws, &f, "保存历史")?;
-    ensure_user_file_path(&state, &f, "保存历史")?;
-    fs_ops::save_snapshot(&ws.to_string_lossy(), &f.to_string_lossy(), &content)
-}
-
-#[tauri::command]
-fn history_list(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    file: String,
-) -> Result<Vec<Snapshot>, String> {
-    let ws = validate_path(&state, &workspace)?;
-    let f = validate_path(&state, &file)?;
-    ensure_path_in_workspace(&ws, &f, "读取历史")?;
-    ensure_user_file_path(&state, &f, "读取历史")?;
-    fs_ops::list_snapshots(&ws.to_string_lossy(), &f.to_string_lossy())
-}
-
-#[tauri::command]
-fn history_read(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
-    let canon = validate_path(&state, &path)?;
-    let ws = workspace_for_path(&state, &canon)?;
-    ensure_history_path(&ws, &canon)?;
-    fs_ops::read_snapshot(&canon.to_string_lossy())
-}
-
-/// 跨 workspace 的全量时间线：返回 .markio/history/ 里所有快照（倒序）。
-#[tauri::command]
-fn history_list_all(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<Vec<TimelineEntry>, String> {
-    let ws = validate_path(&state, &workspace)?;
-    fs_ops::list_all_snapshots(&ws.to_string_lossy())
-}
+// 历史快照命令已迁移到 commands::history
 
 /// 扫描 workspace 全部 md 的 frontmatter，返回每条笔记 → 字段 → 多值。
 #[tauri::command]
@@ -1947,61 +1893,7 @@ fn fs_scan_frontmatter(
     frontmatter::scan(&ws.to_string_lossy())
 }
 
-// ─── MCP server 状态查询/控制 ─────────────────────────────────────
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct McpStatus {
-    port: Option<u16>,
-    token: Option<String>,
-    active_workspace: Option<String>,
-}
-
-// ─── 本地 AI Agent CLI ────────────────────────────────────────────
-
-#[tauri::command]
-fn agent_list_providers() -> Vec<agent_cli::ProviderInfo> {
-    agent_cli::detect_providers()
-}
-
-#[tauri::command]
-async fn agent_run(app: tauri::AppHandle, req: agent_cli::AgentRunRequest) -> Result<(), String> {
-    // 不阻塞调用方：spawn 到 tauri runtime
-    tauri::async_runtime::spawn(async move { agent_cli::run(app, req).await });
-    Ok(())
-}
-
-#[tauri::command]
-fn agent_cancel(session_id: String) {
-    agent_cli::cancel_session(&session_id);
-}
-
-#[tauri::command]
-fn mcp_status(runtime: tauri::State<'_, std::sync::Arc<mcp::McpRuntime>>) -> McpStatus {
-    let (port, token, ws) = runtime.snapshot();
-    McpStatus {
-        port,
-        token,
-        active_workspace: ws.map(|p| p.to_string_lossy().to_string()),
-    }
-}
-
-/// 前端在切 vault 时调用，让 mcp server 在没有指定 workspace 时使用这个。
-#[tauri::command]
-fn mcp_set_active_workspace(
-    state: tauri::State<'_, AppState>,
-    runtime: tauri::State<'_, std::sync::Arc<mcp::McpRuntime>>,
-    workspace: Option<String>,
-) -> Result<(), String> {
-    match workspace {
-        Some(p) => {
-            let canon = validate_path(&state, &p)?;
-            runtime.set_active_workspace(Some(canon));
-        }
-        None => runtime.set_active_workspace(None),
-    }
-    Ok(())
-}
+// MCP 状态查询 + 本地 AI Agent CLI 命令已迁移到 commands::mcp / commands::agent
 
 // ─── 反链 ───────────────────────────────────────────────────────────
 
@@ -2156,82 +2048,7 @@ fn fs_trash_purge(
     fs_ops::trash_purge(&ws.to_string_lossy(), stored_p)
 }
 
-// ─── 系统钥匙串 ─────────────────────────────────────────────────────
-
-fn is_allowed_secret_account(account: &str) -> bool {
-    matches!(
-        account,
-        "ai:anthropic"
-            | "ai:openai"
-            | "ai:deepseek"
-            | "ai:ollama"
-            | "ai:google"
-            | "ai:custom"
-            | "ai:nvidia"
-            | "ai:xai"
-            | "ai:groq"
-            | "ai:openrouter"
-            | "ai:siliconflow"
-            | "ai:zhipu"
-            | "ai:dashscope"
-            | "ai:moonshot"
-            | "ai:mistral"
-            | "ai:together"
-            | "embed:openai"
-            | "rerank:cohere"
-    )
-}
-
-fn validate_secret_account(account: &str) -> Result<(), String> {
-    if is_allowed_secret_account(account) {
-        Ok(())
-    } else {
-        Err("拒绝访问该密钥账户".to_string())
-    }
-}
-
-#[tauri::command]
-fn secret_set(account: String, value: String) -> Result<(), String> {
-    validate_secret_account(&account)?;
-    secrets::set(&account, &value)
-}
-
-#[tauri::command]
-fn secret_get(_account: String) -> Result<Option<String>, String> {
-    Err("出于安全考虑，不允许从前端读取密钥明文".to_string())
-}
-
-/// 在 keychain 内复制条目：把 from 账户的明文取出，写到 to 账户。
-/// 明文不离开 Rust 进程。两个账户都必须在 is_allowed_secret_account 白名单里。
-/// 用途：RAG embedding 想复用 AI 助手某个 provider 的 key 时调用。
-#[tauri::command]
-fn secret_copy(from: String, to: String) -> Result<bool, String> {
-    validate_secret_account(&from)?;
-    validate_secret_account(&to)?;
-    if from == to {
-        return Ok(true);
-    }
-    match secrets::get(&from) {
-        Ok(Some(value)) => {
-            secrets::set(&to, &value).map_err(|e| format!("写入失败：{e}"))?;
-            Ok(true)
-        }
-        Ok(None) => Ok(false),
-        Err(e) => Err(format!("读取来源密钥失败：{e}")),
-    }
-}
-
-#[tauri::command]
-fn secret_has(account: String) -> Result<bool, String> {
-    validate_secret_account(&account)?;
-    Ok(secrets::has(&account))
-}
-
-#[tauri::command]
-fn secret_delete(account: String) -> Result<(), String> {
-    validate_secret_account(&account)?;
-    secrets::delete(&account)
-}
+// 系统钥匙串命令已迁移到 commands::secret
 
 // ─── AI ─────────────────────────────────────────────────────────────
 
@@ -2315,7 +2132,7 @@ fn validate_ai_endpoint(req: &ChatRequest) -> Result<(), String> {
 fn hydrate_api_key(req: &mut ChatRequest) {
     if req.api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", req.provider);
-        if !is_allowed_secret_account(&account) {
+        if !commands::secret::is_allowed_secret_account(&account) {
             return;
         }
         if let Ok(Some(stored)) = secrets::get(&account) {
@@ -2334,7 +2151,7 @@ fn validate_ai_endpoint_agent(req: &AgentRequest) -> Result<(), String> {
 fn hydrate_api_key_agent(req: &mut AgentRequest) {
     if req.api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", req.provider);
-        if !is_allowed_secret_account(&account) {
+        if !commands::secret::is_allowed_secret_account(&account) {
             return;
         }
         if let Ok(Some(stored)) = secrets::get(&account) {
@@ -2398,11 +2215,7 @@ async fn ai_chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String
     ai::chat_with_tools(req).await
 }
 
-#[tauri::command]
-async fn rss_fetch(url: String) -> Result<rss::RssFetchResult, String> {
-    // 只放行 http/https；Rust 端做了 URL parse + scheme 检查 + body 大小 + 条目数上限
-    rss::fetch(&url).await
-}
+// rss_fetch 命令已迁移到 commands::rss
 
 #[tauri::command]
 async fn ai_list_models(
@@ -2418,7 +2231,7 @@ async fn ai_list_models(
     let mut key = api_key;
     if key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", provider);
-        if is_allowed_secret_account(&account) {
+        if commands::secret::is_allowed_secret_account(&account) {
             if let Ok(Some(stored)) = secrets::get(&account) {
                 key = Some(stored);
             }

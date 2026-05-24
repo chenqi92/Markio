@@ -25,8 +25,8 @@ describe("detectMathRanges — inline", () => {
   it("finds multiple inline maths on one line", () => {
     const r = detectMathRanges("$a$ and $b$");
     expect(r).toHaveLength(2);
-    expect(r[0].source).toBe("a");
-    expect(r[1].source).toBe("b");
+    expect(r[0]!.source).toBe("a");
+    expect(r[1]!.source).toBe("b");
   });
 
   it("does not cross a newline", () => {
@@ -44,16 +44,16 @@ describe("detectMathRanges — block", () => {
     const src = "$$\n\\sum_{i=1}^{n} i = n\n$$\n";
     const r = detectMathRanges(src);
     expect(r).toHaveLength(1);
-    expect(r[0].display).toBe(true);
-    expect(r[0].source).toBe("\\sum_{i=1}^{n} i = n");
-    expect(r[0].from).toBe(0);
+    expect(r[0]!.display).toBe(true);
+    expect(r[0]!.source).toBe("\\sum_{i=1}^{n} i = n");
+    expect(r[0]!.from).toBe(0);
   });
 
   it("finds a block in the middle of a doc", () => {
     const src = "para\n\n$$\nx^2\n$$\n\nafter";
     const r = detectMathRanges(src);
     expect(r).toHaveLength(1);
-    expect(r[0].source).toBe("x^2");
+    expect(r[0]!.source).toBe("x^2");
   });
 
   it("requires $$ on its own line (rejects inline-like)", () => {
@@ -65,7 +65,7 @@ describe("detectMathRanges — block", () => {
     const src = "$$\nfoo\n  $$\n";
     const r = detectMathRanges(src);
     expect(r).toHaveLength(1);
-    expect(r[0].source).toBe("foo");
+    expect(r[0]!.source).toBe("foo");
   });
 
   it("ignores unterminated block", () => {

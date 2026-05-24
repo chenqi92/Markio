@@ -2,7 +2,14 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { FileEntry, Workspace } from "@/types";
 import { api } from "@/lib/api";
-import { basename, colorForName, initialFor, uid } from "@/lib/utils";
+import {
+  basename,
+  colorForName,
+  initialFor,
+  pathKey,
+  samePath,
+  uid,
+} from "@/lib/utils";
 import { tauriStorage } from "@/lib/tauriStorage";
 import { reportDiagnostic } from "./diagnostics";
 
@@ -31,15 +38,6 @@ interface WorkspaceState {
   activeWorkspace: () => Workspace | undefined;
   activeTree: () => FileEntry | undefined;
   isUnavailable: (path: string) => boolean;
-}
-
-function pathKey(path: string): string {
-  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^[a-zA-Z]:\//.test(norm) ? norm.toLowerCase() : norm;
-}
-
-function samePath(a: string, b: string): boolean {
-  return pathKey(a) === pathKey(b);
 }
 
 function mergeLoadedChildren(next: FileEntry, previous?: FileEntry): FileEntry {
@@ -89,6 +87,24 @@ function replaceTreeNode(root: FileEntry, updated: FileEntry): FileEntry {
     if (next !== child) changed = true;
     return next;
   });
+
+  return changed ? { ...root, children } : root;
+}
+
+export function removeTreePath(root: FileEntry, removedPath: string): FileEntry {
+  if (!root.children || samePath(root.path, removedPath)) return root;
+
+  let changed = false;
+  const children: FileEntry[] = [];
+  for (const child of root.children) {
+    if (samePath(child.path, removedPath)) {
+      changed = true;
+      continue;
+    }
+    const next = removeTreePath(child, removedPath);
+    if (next !== child) changed = true;
+    children.push(next);
+  }
 
   return changed ? { ...root, children } : root;
 }
@@ -237,6 +253,15 @@ export const useWorkspace = create<WorkspaceState>()(
           };
         });
         if (ws) {
+          // 清理该 workspace 的 pending 定时器（保存后 RAG 重建 / token 刷新 /
+          // fs-changed 防抖），避免在 workspace 已移除后仍触发回调。
+          // 静态导入会形成循环依赖（tabs / workspace 互相引用），改为动态。
+          void import("./tabs").then((m) =>
+            m.cancelPendingTimersForWorkspace(ws.path),
+          );
+          void import("@/App").then((m) =>
+            m.cancelFsRagTimersForWorkspace(ws.path),
+          );
           try {
             const canon = await api.workspaceUnregister(ws.path);
             get()._registered.delete(canon);
@@ -335,7 +360,25 @@ export const useWorkspace = create<WorkspaceState>()(
           });
         } catch (e) {
           console.error("loadDir failed", path, e);
-          if (!isMissingPathError(e)) {
+          if (isMissingPathError(e)) {
+            if (samePath(path, ws.path)) {
+              set((s) => ({
+                unavailable: { ...s.unavailable, [pathKey(ws.path)]: true },
+                treeCache: { ...s.treeCache, [id]: undefined },
+              }));
+            } else {
+              set((s) => {
+                const current = s.treeCache[id];
+                if (!current) return {};
+                return {
+                  treeCache: {
+                    ...s.treeCache,
+                    [id]: removeTreePath(current, path),
+                  },
+                };
+              });
+            }
+          } else {
             reportDiagnostic({
               source: "workspace",
               severity: "warning",
@@ -343,10 +386,6 @@ export const useWorkspace = create<WorkspaceState>()(
               detail: pathErrorDetail(path, e),
               workspace: ws.path,
             });
-          } else {
-            set((s) => ({
-              unavailable: { ...s.unavailable, [pathKey(ws.path)]: true },
-            }));
           }
         } finally {
           dirLoadInFlight.delete(key);

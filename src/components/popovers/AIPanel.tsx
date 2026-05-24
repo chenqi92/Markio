@@ -198,7 +198,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (modelList.length === 0) return;
     if (!modelList.find((m) => m.id === model)) {
-      setAi({ aiModel: modelList[0].id });
+      setAi({ aiModel: modelList[0]!.id });
     }
   }, [provider, modelList, model, setAi]);
 
@@ -535,7 +535,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               text: trace.join("\n") + "\n\n_思考中…_",
             });
           },
-          onToolDone: (call, output) => {
+          onToolDone: (_call, output) => {
             if (isStale()) return;
             const summary =
               output.length > 200
@@ -660,18 +660,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const _cancelStream = async () => {
-    // bump 在 await 之前——in-flight 的 chunk 立刻被视为 stale，
-    // 不会再写入 message（避免"取消后还在长字"的视觉 bug）
-    streamTokenRef.current++;
-    // Agent loop 跑在前端，不走 ai_chat_cancel；靠 cancel ref 让下一次 loop 检查时跳出
-    agentCancelRef.current = true;
-    const fn = streamCancelRef.current;
-    streamCancelRef.current = null;
-    setBusy(false);
-    if (fn) await fn();
-  };
-
   return (
     <div className="ai-workspace">
       <div className="ai-top">
@@ -764,8 +752,8 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                   // 找到前一条 user 消息作为"重生成"的源
                   let prevUser: string | undefined;
                   for (let i = idx - 1; i >= 0; i--) {
-                    if (history[i].role === "user") {
-                      prevUser = history[i].text;
+                    if (history[i]!.role === "user") {
+                      prevUser = history[i]!.text;
                       break;
                     }
                   }
@@ -1043,9 +1031,9 @@ function AIInputBar({
   ): { start: number; end: number; query: string } | null => {
     let i = cursor - 1;
     while (i >= 0) {
-      const ch = value[i];
+      const ch = value[i]!;
       if (ch === "@") {
-        const prev = i > 0 ? value[i - 1] : "";
+        const prev = i > 0 ? value[i - 1]! : "";
         if (i === 0 || /\s/.test(prev)) {
           return {
             start: i,
@@ -1107,7 +1095,7 @@ function AIInputBar({
     return p.startsWith(prefix) ? p.slice(prefix.length) : p;
   };
 
-  const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0];
+  const currentMode = MODES.find((m) => m.id === aiMode) ?? MODES[0]!;
 
   // 上下文 chip 列表：当前 tab（如果开启）+ scope=open 时其它 tab + @ 添加的文件/文件夹
   const ctxChips = useMemo(() => {

@@ -235,6 +235,25 @@ export const api = {
       onError?: (message: string) => void;
     },
   ): Promise<() => void> => {
+    const bridge = e2eBridge();
+    if (bridge?.invoke) {
+      try {
+        const rendered = await invoke<RenderResult>(
+          "md_render",
+          basePath ? { source, basePath } : { source },
+        );
+        handlers.onChunk(0, rendered.html);
+        handlers.onDone({
+          outline: rendered.outline,
+          words: rendered.words,
+          readingMinutes: rendered.readingMinutes,
+        });
+      } catch (err) {
+        handlers.onError?.((err as Error)?.message ?? String(err));
+      }
+      return () => undefined;
+    }
+
     const streamId = `md${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
     const channel = `md-stream-${streamId}`;
     let unlisten: UnlistenFn | null = null;
@@ -311,8 +330,16 @@ export const api = {
     expectedMtime: number | undefined,
     expectedHash?: string,
     force = false,
+    snapshotOnSave = true,
   ) =>
-    invoke<FileSig>("fs_save", { path, content, expectedMtime, expectedHash, force }),
+    invoke<FileSig>("fs_save", {
+      path,
+      content,
+      expectedMtime,
+      expectedHash,
+      force,
+      snapshotOnSave,
+    }),
   /** 新建：若已存在直接 Err "ALREADY_EXISTS:<path>" */
   createNew: (path: string, content: string) =>
     invoke<FileSig>("fs_create_new", { path, content }),
@@ -709,7 +736,7 @@ export const api = {
     invoke<void>("git_checkout", { workspace, branch, create }),
   gitResolveConflict: (
     workspace: string,
-    strategy: "ours" | "theirs" | "abort",
+    strategy: "ours" | "theirs" | "newest" | "abort",
     files: string[],
   ) =>
     invoke<void>("git_resolve_conflict", { workspace, strategy, files }),
@@ -910,7 +937,9 @@ export const api = {
       provider: string;
       dest: string;
       files: number;
+      skipped?: number;
       warnings: string[];
+      reportPath?: string | null;
     }>("import_run", { provider, source, workspace }),
 
   /** macOS Apple Notes 导入：不需要 source，调系统 Notes.app。首次会弹系统权限对话框。 */
@@ -919,8 +948,26 @@ export const api = {
       provider: string;
       dest: string;
       files: number;
+      skipped?: number;
       warnings: string[];
+      reportPath?: string | null;
     }>("import_apple_notes", { workspace }),
+
+  /** 列出 imports/ 下旧的时间戳目录（增量切换前留下的）。 */
+  importListLegacyDirs: (workspace: string) =>
+    invoke<
+      {
+        path: string;
+        provider: string;
+        stamp: string;
+        sizeBytes: number;
+        fileCount: number;
+      }[]
+    >("import_list_legacy_dirs", { workspace }),
+
+  /** 把单个旧时间戳目录移到 .markio/trash，可恢复。 */
+  importTrashLegacyDir: (workspace: string, path: string) =>
+    invoke<void>("import_trash_legacy_dir", { workspace, path }),
 
   // RAG 向量索引 / 混合检索
   ragStatus: (workspace: string) =>
@@ -961,6 +1008,9 @@ export const api = {
 
   /** 只读文件内容，不登记保存基线；写入必须走 open/createNew + save。 */
   readText: (path: string) => invoke<string>("fs_read_text", { path }),
+  /** 读取本地文件为 base64，供云盘二进制安全上传使用。 */
+  readFileBase64: (path: string) =>
+    invoke<string>("fs_read_file_base64", { path }),
 
   // dev 期日志投递（release 端 Rust 侧是 no-op）
   devLogAppend: (

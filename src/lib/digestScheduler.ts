@@ -23,8 +23,8 @@ function ymd(d: Date = new Date()): string {
 function parseHHmm(s: string): { h: number; m: number } | null {
   const m = s.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
-  const h = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
+  const h = parseInt(m[1]!, 10);
+  const min = parseInt(m[2]!, 10);
   if (h < 0 || h > 23 || min < 0 || min > 59) return null;
   return { h, m: min };
 }

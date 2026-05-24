@@ -6,7 +6,7 @@ export interface MarkdownTaskLine {
 export function markdownTaskLines(source: string): MarkdownTaskLine[] {
   return source.split(/\r?\n/).reduce<MarkdownTaskLine[]>((out, text, index) => {
     const m = text.match(/^\s*[-*+]\s+\[([ xX])\]/);
-    if (m) out.push({ line: index + 1, checked: m[1].toLowerCase() === "x" });
+    if (m) out.push({ line: index + 1, checked: m[1]!.toLowerCase() === "x" });
     return out;
   }, []);
 }

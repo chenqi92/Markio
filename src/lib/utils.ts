@@ -38,6 +38,21 @@ export function dirname(path: string): string {
   return idx > 0 ? norm.slice(0, idx) : "/";
 }
 
+export function pathKey(path: string): string {
+  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[a-zA-Z]:\//.test(norm) ? norm.toLowerCase() : norm;
+}
+
+export function samePath(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
+}
+
+export function pathContains(parent: string, candidate: string): boolean {
+  const p = pathKey(parent);
+  const c = pathKey(candidate);
+  return c === p || c.startsWith(`${p}/`);
+}
+
 export function joinPath(...parts: string[]): string {
   return parts
     .filter(Boolean)
@@ -98,5 +113,5 @@ export function colorForName(name: string): string {
   const palette = ["#0a84ff", "#5b8a6a", "#a05a14", "#bd93f9", "#c43d63", "#34c759", "#ff9500", "#88c0d0"];
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return palette[hash % palette.length];
+  return palette[hash % palette.length]!;
 }

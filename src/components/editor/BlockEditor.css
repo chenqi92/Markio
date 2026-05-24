@@ -1,0 +1,190 @@
+/* ───────────────────────── BlockNote ↔ markio 主题对接 ─────────────────────────
+ *
+ * BlockNote 用一组 `--bn-colors-*` CSS 变量驱动配色，默认在 `.bn-mantine`
+ * 选择器下声明。这里只覆盖跟 markio 主题相关的几组，让背景 / 文字 / 边框 /
+ * 悬停色都跟 markio 当前 vault 主题保持一致；高亮色（== text ==）继续用
+ * BlockNote 自带的彩色板。
+ *
+ * 选择器只用 `.bn-mantine` 单层 class，跟 BlockNote 默认一致，靠 import 顺序
+ * 后置胜出。BlockNote 走 string theme 时不写 inline CSS 变量，所以普通选择器
+ * 就能覆盖，不需要 !important。
+ */
+
+.bn-mantine {
+  /* 编辑区：背景透明吃 markio 的 editor-pane 底色；文字用主色 */
+  --bn-colors-editor-text: var(--text);
+  --bn-colors-editor-background: transparent;
+
+  /* slash menu / side menu / formatting toolbar 弹出层 */
+  --bn-colors-menu-text: var(--text);
+  --bn-colors-menu-background: var(--bg-elev);
+
+  /* tooltip */
+  --bn-colors-tooltip-text: var(--text);
+  --bn-colors-tooltip-background: var(--bg-elev);
+
+  /* hover / 选中 / disabled */
+  --bn-colors-hovered-text: var(--text);
+  --bn-colors-hovered-background: var(--bg-hover);
+  --bn-colors-selected-text: var(--text);
+  --bn-colors-selected-background: var(--bg-selected);
+  --bn-colors-disabled-text: var(--text-4);
+  --bn-colors-disabled-background: var(--bg-pane-2);
+
+  /* 边框、阴影、侧边块菜单按钮颜色 */
+  --bn-colors-border: var(--border);
+  --bn-colors-side-menu: var(--text-3);
+  --bn-shadow-light: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --bn-shadow-medium: 0 4px 18px rgba(0, 0, 0, 0.18);
+
+  /* 字体跟 markio 一致 */
+  --bn-font-family: inherit;
+}
+
+/* BlockNote root 容器自带白底，重写成透明让 markio 的 .block-pane 底色透出来 */
+.bn-mantine .bn-container,
+.bn-mantine .bn-editor {
+  background: transparent;
+}
+
+/* 字号跟 markio 分屏模式预览（约 14.5px）对齐，避免 BlockNote 默认的偏大字
+   号跟旁边的预览不协调。BlockNote 的 prosemirror 节点用 em 偏好，先把
+   editor 根字号锁定到 14.5px 左右，再用 em 调 heading 比例。 */
+.bn-mantine .bn-editor {
+  font-size: calc(var(--prose-fs, 16px) - 1.5px);
+  line-height: 1.65;
+}
+/* heading 比例参考 markio 分屏 markdown.css：h1 28 / h2 20 / h3 16；
+   按基准 14.5 折算成 em：≈ 1.9 / 1.38 / 1.1，其余递减 */
+.bn-mantine .bn-editor h1 { font-size: 1.55em; font-weight: 700; }
+.bn-mantine .bn-editor h2 { font-size: 1.3em; font-weight: 700; }
+.bn-mantine .bn-editor h3 { font-size: 1.1em; font-weight: 600; }
+.bn-mantine .bn-editor h4 { font-size: 1em; font-weight: 600; }
+.bn-mantine .bn-editor h5 { font-size: 0.95em; font-weight: 600; }
+.bn-mantine .bn-editor h6 { font-size: 0.9em; font-weight: 600; color: var(--text-2); }
+
+/* placeholder（空段落的灰字提示）跟主题 text-3 一致 */
+.bn-mantine .bn-inline-content[data-placeholder]::before {
+  color: var(--text-3);
+}
+
+/* 选区颜色 */
+.bn-mantine .bn-editor ::selection {
+  background: var(--bg-selected);
+}
+
+/* tag chip 在 heading 里也要 baseline 对齐 */
+.bn-mantine .bn-tag {
+  vertical-align: baseline;
+}
+
+/* BlockNote 的自定义 inline content（wikilink / tag / mathInline）外面
+   包了一层 ProseMirror NodeView 容器 [data-node-type="wikilink"] 等，
+   默认会带 inline-block 排版 + 选中时蓝色空白边距。压平它，避免出现
+   "chip 旁边一个蓝色空白方块"。 */
+.bn-mantine .bn-editor [data-node-type="wikilink"],
+.bn-mantine .bn-editor [data-node-type="tag"],
+.bn-mantine .bn-editor [data-node-type="mathInline"] {
+  display: inline;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+/* 选中时也不显示外层蓝色框 —— chip 内部的 :hover / 自定义样式即可 */
+.bn-mantine .bn-editor [data-node-type="wikilink"].ProseMirror-selectednode,
+.bn-mantine .bn-editor [data-node-type="tag"].ProseMirror-selectednode,
+.bn-mantine .bn-editor [data-node-type="mathInline"].ProseMirror-selectednode {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--accent-glow);
+  border-radius: 4px;
+}
+
+/* 代码块语言：BlockNote codeBlock 的语言选择器 */
+.bn-mantine .bn-editor select {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 24px 2px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 130px;
+  height: 24px;
+  line-height: 18px;
+  margin: 0 0 4px;
+}
+.bn-mantine .bn-editor select:focus {
+  border-color: var(--accent);
+}
+
+/* 旧实现用 input + datalist，这里保留样式，避免历史块或实验开关回退时裸奔。 */
+.bn-mantine .bn-editor input.bn-code-lang-input {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 130px;
+  height: 22px;
+  line-height: 18px;
+}
+.bn-mantine .bn-editor input.bn-code-lang-input:focus {
+  border-color: var(--accent);
+}
+
+.bn-mantine .bn-preview-embed.preview {
+  max-width: none;
+  margin: 8px 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+  font-family: var(--font-sans);
+}
+
+.bn-mantine .bn-preview-embed.preview .chart-block,
+.bn-mantine .bn-preview-embed.preview .graphviz-block,
+.bn-mantine .bn-preview-embed.preview .plantuml-block {
+  margin: 0;
+}
+
+.bn-mantine .bn-visual-source {
+  width: 100%;
+  min-height: 140px;
+  padding: 10px;
+  border: 0.5px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+}
+
+.bn-mantine .bn-visual-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.bn-mantine .bn-visual-editor select,
+.bn-mantine .bn-visual-editor input {
+  height: 28px;
+  padding: 0 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
+.bn-mantine .bn-visual-editor select:focus,
+.bn-mantine .bn-visual-editor input:focus,
+.bn-mantine .bn-visual-source:focus {
+  border-color: var(--accent);
+}

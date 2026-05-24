@@ -140,6 +140,24 @@ export const useUI = create<UIState>()(
         focusMode: s.focusMode,
         mode: s.mode,
       }),
+      // hydrate 时校验 mode / sidebarTab：老版本可能持久化已下线的值
+      // （比如 "block" 是早期实验后来合并回 "wysiwyg"），未校正会让
+      // MODE_CLASS[mode] 返回 undefined 让编辑器渲染空壳。
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UIState>;
+        const validModes: ViewMode[] = ["source", "split", "wysiwyg"];
+        const validTabs: SidebarTab[] = ["files", "tasks", "tags", "props"];
+        return {
+          ...current,
+          ...p,
+          mode: validModes.includes(p.mode as ViewMode)
+            ? (p.mode as ViewMode)
+            : "split",
+          sidebarTab: validTabs.includes(p.sidebarTab as SidebarTab)
+            ? (p.sidebarTab as SidebarTab)
+            : "files",
+        };
+      },
     },
   ),
 );

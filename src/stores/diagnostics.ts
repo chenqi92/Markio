@@ -53,9 +53,10 @@ export const useDiagnostics = create<DiagnosticsState>((set) => ({
       );
       if (idx >= 0) {
         const next = [...state.items];
+        const existing = next[idx]!;
         next[idx] = {
-          ...next[idx],
-          severity: input.severity ?? next[idx].severity,
+          ...existing,
+          severity: input.severity ?? existing.severity,
           detail,
           timestamp: now,
           seen: false,

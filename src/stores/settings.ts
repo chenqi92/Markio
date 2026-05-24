@@ -37,6 +37,7 @@ type PreferenceKey =
   | "autoListContinuation"
   | "autoSpaceCJK"
   | "snapshotOnSave"
+  | "loadRemoteImages"
   | "showInTray"
   | "picgoPasteUpload"
   | "picgoDragUpload"
@@ -152,6 +153,9 @@ interface SettingsState {
   autoSpaceCJK: boolean;
   /** 每次保存写一份历史快照（可在大纲右侧时间轴查看） */
   snapshotOnSave: boolean;
+  /** 预览渲染时是否直接加载外链 http(s) 图片。默认 false 用占位符兜底，防止
+   *  canary / 像素追踪；用户点击占位符可加载单张图。 */
+  loadRemoteImages: boolean;
   /** 在系统菜单栏 / 任务栏托盘显示 markio 图标 */
   showInTray: boolean;
   syncConflictStrategy: "ask" | "newest" | "local" | "remote";
@@ -361,6 +365,7 @@ export const useSettings = create<SettingsState>()(
       autoListContinuation: true,
       autoSpaceCJK: false,
       snapshotOnSave: true,
+      loadRemoteImages: false,
       showInTray: true,
       syncConflictStrategy: "ask",
       syncFrequency: "30s",

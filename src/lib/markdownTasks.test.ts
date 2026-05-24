@@ -29,12 +29,12 @@ describe("markdown task helpers", () => {
     expect(hydrateMarkdownTaskCheckboxes(root, "- [ ] one\n- [x] two")).toBe(2);
 
     const boxes = root.querySelectorAll<HTMLInputElement>("input");
-    expect(boxes[0].disabled).toBe(false);
-    expect(boxes[0].hasAttribute("disabled")).toBe(false);
-    expect(boxes[0].dataset.sourceLine).toBe("1");
-    expect(boxes[0].checked).toBe(false);
-    expect(boxes[0].classList.contains("md-task-checkbox")).toBe(true);
-    expect(boxes[1].dataset.sourceLine).toBe("2");
-    expect(boxes[1].checked).toBe(true);
+    expect(boxes[0]!.disabled).toBe(false);
+    expect(boxes[0]!.hasAttribute("disabled")).toBe(false);
+    expect(boxes[0]!.dataset.sourceLine).toBe("1");
+    expect(boxes[0]!.checked).toBe(false);
+    expect(boxes[0]!.classList.contains("md-task-checkbox")).toBe(true);
+    expect(boxes[1]!.dataset.sourceLine).toBe("2");
+    expect(boxes[1]!.checked).toBe(true);
   });
 });

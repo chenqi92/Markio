@@ -48,98 +48,88 @@ fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Vec<D
     let mut out = Vec::new();
     let mut total_bytes = 0u64;
     let ignore = IgnoreRules::load(workspace);
-    walk(
+    WalkCtx {
         workspace,
-        workspace,
-        0,
-        &mut out,
         max_files,
         max_total_bytes,
-        &mut total_bytes,
-        &ignore,
-    );
+        ignore: &ignore,
+    }
+    .walk(workspace, 0, &mut out, &mut total_bytes);
     out
 }
 
-fn walk(
-    workspace: &Path,
-    dir: &Path,
-    depth: usize,
-    out: &mut Vec<Doc>,
+struct WalkCtx<'a> {
+    workspace: &'a Path,
     max_files: usize,
     max_total_bytes: u64,
-    total_bytes: &mut u64,
-    ignore: &IgnoreRules,
-) {
-    if depth > 12 || out.len() >= max_files {
-        return;
-    }
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        if out.len() >= max_files {
+    ignore: &'a IgnoreRules,
+}
+
+impl WalkCtx<'_> {
+    fn walk(&self, dir: &Path, depth: usize, out: &mut Vec<Doc>, total_bytes: &mut u64) {
+        if depth > 12 || out.len() >= self.max_files {
             return;
         }
-        let path = e.path();
-        let name_lower = path
-            .file_name()
-            .and_then(OsStr::to_str)
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let ft = match e.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if ft.is_symlink() {
-            continue;
-        }
-        if is_under_nested_code_project(workspace, &path) {
-            continue;
-        }
-        if path
-            .strip_prefix(workspace)
-            .ok()
-            .is_some_and(|rel| ignore.is_ignored(rel, ft.is_dir()))
-        {
-            continue;
-        }
-        if ft.is_dir() {
-            walk(
-                workspace,
-                &path,
-                depth + 1,
-                out,
-                max_files,
-                max_total_bytes,
-                total_bytes,
-                ignore,
-            );
-        } else if ft.is_file() {
-            if !is_md(&name_lower) {
-                continue;
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            if out.len() >= self.max_files {
+                return;
             }
-            let Ok(md) = path.metadata() else { continue };
-            let size = md.len();
-            if size > MAX_INDEX_FILE_SIZE || total_bytes.saturating_add(size) > max_total_bytes {
-                continue;
-            }
-            let Ok(content) = fs::read_to_string(&path) else {
-                continue;
+            let path = e.path();
+            let name_lower = path
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let ft = match e.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
             };
-            *total_bytes = total_bytes.saturating_add(size);
-            let mtime = md
-                .modified()
+            if ft.is_symlink() {
+                continue;
+            }
+            if is_under_nested_code_project(self.workspace, &path) {
+                continue;
+            }
+            if path
+                .strip_prefix(self.workspace)
                 .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let hash = content_hash(content.as_bytes());
-            out.push(Doc {
-                path,
-                mtime,
-                size,
-                hash,
-                content,
-            });
+                .is_some_and(|rel| self.ignore.is_ignored(rel, ft.is_dir()))
+            {
+                continue;
+            }
+            if ft.is_dir() {
+                self.walk(&path, depth + 1, out, total_bytes);
+            } else if ft.is_file() {
+                if !is_md(&name_lower) {
+                    continue;
+                }
+                let Ok(md) = path.metadata() else { continue };
+                let size = md.len();
+                if size > MAX_INDEX_FILE_SIZE
+                    || total_bytes.saturating_add(size) > self.max_total_bytes
+                {
+                    continue;
+                }
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                *total_bytes = total_bytes.saturating_add(size);
+                let mtime = md
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                let hash = content_hash(content.as_bytes());
+                out.push(Doc {
+                    path,
+                    mtime,
+                    size,
+                    hash,
+                    content,
+                });
+            }
         }
     }
 }

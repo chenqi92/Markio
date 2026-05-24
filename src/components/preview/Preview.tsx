@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api } from "@/lib/api";
 import { enhanceCalloutsLazy, type CalloutEnhanceHandle } from "@/lib/callouts";
 import {
@@ -13,12 +20,18 @@ import {
   syncPreviewToSource,
 } from "@/lib/splitScrollSync";
 import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
-import { renderChartsIn } from "@/lib/charts";
+import {
+  mergePreviewVisualSnapshot,
+  restorePreviewVisualBlocks,
+} from "@/lib/previewVisualCache";
+import { patchPreviewDom } from "@/lib/previewDomPatch";
+import { renderChartsLazy } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderDiagramsLazy } from "@/lib/diagrams";
 import { enhanceMarkdownImages } from "@/lib/markdown-images";
 import { renderMathLazy } from "@/lib/math";
 import { renderMermaidLazy } from "@/lib/mermaid";
+import { blockExternalImages } from "@/lib/remoteImageGuard";
 import type { VisualBlockHandle } from "@/lib/visualScheduler";
 import { enhanceWikiLinksLazy, type WikiEnhanceHandle } from "@/lib/wikilinks";
 import type { OutlineItem } from "@/types";
@@ -113,6 +126,9 @@ export function Preview({
   const onSourceChangeRef = useRef(onSourceChange);
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
+  const themeRef = useRef(theme);
+  const visualCacheRef = useRef<Map<string, string>>(new Map());
+  const loadRemoteImages = useSettings((s) => s.loadRemoteImages);
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
   const findCaseSensitive = useUI((s) => s.findCaseSensitive);
@@ -134,10 +150,28 @@ export function Preview({
   }, [source, onSourceChange]);
 
   useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
+
+  const commitPreviewHtml = useCallback((nextHtml: string, restoreVisuals = true) => {
+    if (!restoreVisuals) {
+      setHtml(nextHtml);
+      return;
+    }
+    const themeId = themeRef.current;
+    mergePreviewVisualSnapshot(visualCacheRef.current, contentRef.current, themeId);
+    setHtml(restorePreviewVisualBlocks(nextHtml, visualCacheRef.current, themeId));
+  }, []);
+
+  useLayoutEffect(() => {
+    patchPreviewDom(contentRef.current, html);
+  }, [html]);
+
+  useEffect(() => {
     if (activeWorkspace) {
       void useVaultIndex.getState().ensure(activeWorkspace.path);
     }
-  }, [activeWorkspace?.path]);
+  }, [activeWorkspace]);
 
   const findIndexRef = useRef(findIndex);
   const findCurrentRef = useRef<HTMLElement | null>(null);
@@ -156,7 +190,7 @@ export function Preview({
       return;
     }
     const safeIdx = Math.max(0, Math.min(hits.length - 1, nextIndex));
-    const current = hits[safeIdx];
+    const current = hits[safeIdx]!;
     current.classList.add("current");
     findCurrentRef.current = current;
   }, []);
@@ -178,7 +212,7 @@ export function Preview({
     if (Math.abs(el.scrollTop - nextTop) < 1) return;
     // lineJump 是一次性写入；分屏总线会把这次 scroll 同步过去
     el.scrollTop = nextTop;
-  }, [scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
+  }, [scrollTarget]);
 
   // 表格装饰 = 两层：
   //   (A) DOM 层：html 变化时把每个 <table> 包到 .md-table-host，挂 + 行 / + 列 按钮（无监听）
@@ -256,7 +290,6 @@ export function Preview({
     if (!root) return;
 
     const cellRowCol = (
-      table: HTMLTableElement,
       cell: HTMLTableCellElement,
     ): { row: number; col: number } | null => {
       const tr = cell.parentElement;
@@ -306,7 +339,7 @@ export function Preview({
       if (!cell) return;
       const table = cell.closest("table") as HTMLTableElement | null;
       if (!table || !root.contains(table)) return;
-      const rc = cellRowCol(table, cell);
+      const rc = cellRowCol(cell);
       if (!rc) return;
       e.preventDefault();
       h({
@@ -369,9 +402,18 @@ export function Preview({
     const handles: number[] = [];
     let wikiHandle: WikiEnhanceHandle | null = null;
     let calloutHandle: CalloutEnhanceHandle | null = null;
+    let chartHandle: VisualBlockHandle | null = null;
     let mathHandle: VisualBlockHandle | null = null;
     let mermaidHandle: VisualBlockHandle | null = null;
     let diagramHandle: VisualBlockHandle | null = null;
+    let unblockImages: (() => void) | null = null;
+
+    // 默认拦截 http(s) 图片，避免 canary / 追踪像素。用户在 Settings → 通用
+    // 里把 loadRemoteImages 打开后整体放行（不调本函数）。必须在其它 enhance
+    // 之前跑——否则浏览器已经发出图片请求，再替换 src 也救不回来。
+    if (!loadRemoteImages) {
+      unblockImages = blockExternalImages(root);
+    }
 
     // 影响布局的（callouts 改 ::before、span 包裹）必须立刻——否则用户首屏看到的样式会跳
     // 视口内同步增强（零闪烁）；视口外用 IO 等滚动时再增强。
@@ -399,9 +441,12 @@ export function Preview({
         wikiHandle = enhanceWikiLinksLazy(root, vaultFiles);
       }),
     );
-    // chart / 重活儿放更后一帧，避免首屏阻塞
-    idle(() => perfMeasure("preview:renderCharts", () => renderChartsIn(root)));
-
+    // Charts can be numerous in real notes; schedule them like the heavier
+    // visual blocks so startup never renders a chart-heavy document in one go.
+    perfMeasure("preview:renderCharts", () => {
+      if (cancelled) return;
+      chartHandle = renderChartsLazy(root);
+    });
     // 重 IO（math 编译 / mermaid svg / graphviz）：viewport-first + 串行 idle
     // 调度。Promise.all 并发跑只会让主线程交错执行，反而拉高单帧峰值。
     perfMeasure("preview:renderMath", () => {
@@ -458,13 +503,15 @@ export function Preview({
       }
       wikiHandle?.disconnect();
       calloutHandle?.disconnect();
+      chartHandle?.disconnect();
       mathHandle?.disconnect();
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
       resizeObserver?.disconnect();
+      unblockImages?.();
       if (rebuildPending) window.clearTimeout(rebuildPending);
     };
-  }, [html, theme, applyScrollTarget, vaultFiles, syncScroll]);
+  }, [html, theme, applyScrollTarget, vaultFiles, syncScroll, loadRemoteImages]);
 
   // Find 高亮：扫描文字节点，包 <mark class="find-hit">。
   // 当前命中项单独切换，避免“下一处”时重扫整篇预览。
@@ -577,11 +624,11 @@ export function Preview({
       const outline: OutlineItem[] = [];
       const lines = fm.body.split("\n");
       for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+        const m = lines[i]!.match(/^(#{1,6})\s+(.+?)\s*$/);
         if (m)
           outline.push({
-            level: m[1].length,
-            text: m[2].trim(),
+            level: m[1]!.length,
+            text: m[2]!.trim(),
             anchor: `h-${i}`,
           });
       }
@@ -612,7 +659,7 @@ export function Preview({
           const flushChunks = () => {
             flushTimer = null;
             if (cancelled || seq !== seqRef.current) return;
-            setHtml(chunks.join(""));
+            commitPreviewHtml(chunks.join(""));
           };
           const scheduleFlush = () => {
             if (flushTimer != null) return;
@@ -627,7 +674,7 @@ export function Preview({
             onDone: (info) => {
               if (cancelled || seq !== seqRef.current) return;
               clearFlushTimer();
-              setHtml(chunks.join(""));
+              commitPreviewHtml(chunks.join(""));
               hasRenderedOnceRef.current = true;
               onMetaRef.current?.({
                 outline: info.outline,
@@ -654,7 +701,7 @@ export function Preview({
           api.renderMarkdown(source, basePath),
         );
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
-        setHtml(r.html);
+        commitPreviewHtml(r.html);
         hasRenderedOnceRef.current = true;
         onMetaRef.current?.({
           outline: r.outline,
@@ -677,7 +724,7 @@ export function Preview({
       clearFlushTimer();
       cleanupStream?.();
     };
-  }, [source, basePath, viewKind, fm.body]);
+  }, [source, basePath, viewKind, fm.body, commitPreviewHtml]);
 
   // 预览侧用 splitScrollSync 单例总线接入分屏滚动同步。containerRef 既是 scroll
   // 元素也是 anchors 测量基准。viewKind 切换会换 containerRef 指向的元素（kanban /
@@ -879,7 +926,6 @@ export function Preview({
         ref={contentRef}
         className="preview"
         style={{ fontSize }}
-        dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
   );

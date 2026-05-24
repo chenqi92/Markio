@@ -535,7 +535,26 @@ pub fn checkout(path: &Path, branch: &str, create: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// 冲突恢复：strategy = "ours" / "theirs" 选边，"abort" 整个 merge 终止。
+fn file_commit_time(path: &Path, rev: &str, file: &str) -> Option<i64> {
+    let out = run_git(path, &["log", "-1", "--format=%ct", rev, "--", file]).ok()?;
+    out.trim().parse::<i64>().ok()
+}
+
+fn newest_conflict_flag(path: &Path, file: &str) -> &'static str {
+    let ours = file_commit_time(path, "HEAD", file).unwrap_or(0);
+    let theirs_rev = run_git(path, &["rev-parse", "--verify", "MERGE_HEAD"]).ok();
+    let theirs = theirs_rev
+        .as_deref()
+        .and_then(|rev| file_commit_time(path, rev.trim(), file))
+        .unwrap_or(0);
+    if theirs > ours {
+        "--theirs"
+    } else {
+        "--ours"
+    }
+}
+
+/// 冲突恢复：strategy = "ours" / "theirs" / "newest" 选边，"abort" 整个 merge 终止。
 pub fn resolve_conflict(path: &Path, strategy: &str, files: &[String]) -> Result<(), String> {
     match strategy {
         "abort" => {
@@ -543,17 +562,18 @@ pub fn resolve_conflict(path: &Path, strategy: &str, files: &[String]) -> Result
                 .or_else(|_| run_git(path, &["rebase", "--abort"]))?;
             Ok(())
         }
-        "ours" | "theirs" => {
+        "ours" | "theirs" | "newest" => {
             if files.is_empty() {
                 return Err("resolve_conflict 需要文件列表".to_string());
             }
-            let flag = if strategy == "ours" {
-                "--ours"
-            } else {
-                "--theirs"
-            };
             for f in files {
                 validate_rel_path(f)?;
+                let flag = match strategy {
+                    "ours" => "--ours",
+                    "theirs" => "--theirs",
+                    "newest" => newest_conflict_flag(path, f),
+                    _ => unreachable!("strategy already matched"),
+                };
                 run_git(path, &["checkout", flag, "--", f])?;
                 run_git(path, &["add", "--", f])?;
             }

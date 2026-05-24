@@ -28,7 +28,7 @@ export function parseFrontmatter(source: string): Frontmatter {
     const m = line.match(/^([A-Za-z][\w-]*)\s*:\s*(.*)$/);
     if (m) {
       const [, key, raw] = m;
-      data[key] = raw.trim().replace(/^["']|["']$/g, "");
+      data[key!] = raw!.trim().replace(/^["']|["']$/g, "");
     }
   }
   return { data, body };

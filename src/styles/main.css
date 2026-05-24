@@ -284,8 +284,8 @@
   grid-template-columns: minmax(0, var(--split-source, 50%)) 1px minmax(0, 1fr);
 }
 .editor-split.source-only,
-.editor-split.preview-only,
-.editor-split.wysiwyg { grid-template-columns: 1fr; }
+.editor-split.wysiwyg,
+.editor-split.block-only { grid-template-columns: 1fr; }
 
 .editor-pane, .preview-pane {
   overflow-y: auto; overflow-x: hidden;
@@ -295,8 +295,24 @@
 .editor-pane { border-right: 0.5px solid var(--border); }
 .editor-split.split .editor-pane { border-right: 0; }
 .editor-split.source-only .editor-pane,
-.editor-split.preview-only .editor-pane,
-.editor-split.wysiwyg .editor-pane { border-right: 0; }
+.editor-split.wysiwyg .editor-pane,
+.editor-split.block-only .editor-pane { border-right: 0; }
+
+/* BlockNote rich editor: keep .block-pane as the only scroll container.
+   Forcing every direct child to height:100% leaves the large ProseMirror document
+   overflowing from a fixed-height .bn-root, which makes WebKit wheel scrolling
+   hitch and then jump under load. Let the BlockNote root grow naturally instead. */
+.editor-pane.block-pane {
+  padding: 0;
+  scroll-behavior: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.editor-pane.block-pane > .bn-root {
+  min-height: 100%;
+  height: auto;
+  overflow: visible;
+}
 
 /* draggable splitter — a 1px column with a wider invisible hit zone overlapping
    its neighbours; the visible line fades in on hover/focus/active only */
@@ -374,8 +390,6 @@
   width: 268px;
   display: flex; flex-direction: column;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-soft);

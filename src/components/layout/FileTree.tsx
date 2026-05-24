@@ -353,7 +353,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
   const out: FlatRow[] = [];
   const stack: FlatRow[] = [];
   for (let i = roots.length - 1; i >= 0; i--) {
-    stack.push({ node: roots[i], depth: 0 });
+    stack.push({ node: roots[i]!, depth: 0 });
   }
   while (stack.length > 0) {
     const row = stack.pop()!;
@@ -362,7 +362,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
       const children = row.node.children;
       if (children) {
         for (let i = children.length - 1; i >= 0; i--) {
-          stack.push({ node: children[i], depth: row.depth + 1 });
+          stack.push({ node: children[i]!, depth: row.depth + 1 });
         }
       }
     }
@@ -448,7 +448,7 @@ function VirtualizedTree({
         }}
       >
         {items.map((vi) => {
-          const row = flat[vi.index];
+          const row = flat[vi.index]!;
           return (
             <div
               key={row.node.path}
@@ -592,9 +592,9 @@ function TreeContextMenu({
   const openHistory = useUI((s) => s.openHistory);
   const openFile = useTabs((s) => s.openFile);
   const openPath = useTabs((s) => s.openPath);
+  const closeTabsForPath = useTabs((s) => s.closeTabsForPath);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
-  const closeTabsForPath = useTabsForPath();
   const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
   const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
   const setColor = useFileMeta((s) => s.setColor);
@@ -946,17 +946,4 @@ async function ragUpdateAfterPathRemoval(workspace: string, path: string, isDir:
   } catch {
     /* ignore */
   }
-}
-
-/** 删除文件后顺手关闭已打开的相关 tab */
-function useTabsForPath() {
-  const tabs = useTabs((s) => s.tabs);
-  const closeTab = useTabs((s) => s.closeTab);
-  return (path: string) => {
-    for (const t of tabs) {
-      if (t.path === path || t.path.startsWith(path + "/")) {
-        closeTab(t.id);
-      }
-    }
-  };
 }

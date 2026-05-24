@@ -38,7 +38,9 @@ test("opens a vault, edits with conflict recovery, and jumps from global search"
   expect(saved).toContain("E2E edit marker");
 
   await page.keyboard.press("ControlOrMeta+Shift+F");
-  await page.getByPlaceholder(/搜索整个仓库/).fill("search token");
+  const globalSearch = page.locator(".cmdk.gs-wide");
+  await expect(globalSearch).toBeVisible();
+  await globalSearch.locator(".cmdk-search input").fill("search token");
   await expect(page.locator(".cmdk-item").filter({ hasText: "Daily.md" })).toBeVisible();
   await page.locator(".cmdk-item").filter({ hasText: "Daily.md" }).first().click();
 
@@ -76,23 +78,59 @@ test("split mode keeps source and preview scroll positions in sync", async ({
     .toBeGreaterThan(40);
 
   await source.evaluate((el) => {
-    el.scrollTop = 2400;
-    el.dispatchEvent(new Event("scroll"));
+    const outer = el.closest<HTMLElement>(".editor-pane");
+    for (const target of [outer, el].filter(Boolean) as HTMLElement[]) {
+      target.scrollTop = 2400;
+      target.dispatchEvent(new Event("scroll"));
+    }
   });
   await expect
     .poll(() => preview.evaluate((el) => el.scrollTop))
     .toBeGreaterThan(300);
 
-  await page.waitForTimeout(250);
-  const before = await source.evaluate((el) => el.scrollTop);
+  await page.waitForTimeout(800);
+  const before = await source.evaluate((el) => {
+    const outer = el.closest<HTMLElement>(".editor-pane");
+    return Math.max(el.scrollTop, outer?.scrollTop ?? 0);
+  });
   await preview.evaluate((el) => {
-    el.scrollTop = 3600;
+    el.scrollTop = 0;
     el.dispatchEvent(new Event("scroll"));
   });
   await expect
     .poll(async () => {
-      const current = await source.evaluate((el) => el.scrollTop);
-      return Math.abs(current - before);
+      const current = await source.evaluate((el) => {
+        const outer = el.closest<HTMLElement>(".editor-pane");
+        return Math.max(el.scrollTop, outer?.scrollTop ?? 0);
+      });
+      return before - current;
     })
     .toBeGreaterThan(200);
+});
+
+test("wysiwyg wikilink opens the target note without locking the editor", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "打开文件夹…" }).click();
+
+  await page.evaluate(
+    (path) => {
+      const state = window.__MARKIO_E2E_STATE__;
+      if (!state) throw new Error("E2E state missing");
+      state.mutateFile(path, "# Daily\n\nJump to [[Plan]].\n");
+    },
+    E2E_DAILY_PATH,
+  );
+
+  await page.getByRole("treeitem", { name: /Daily\.md/ }).click();
+  await page.getByTitle(/所见即所得/).click();
+  const link = page.locator(".bn-wikilink", { hasText: "Plan" });
+  await expect(link).toBeVisible();
+
+  await link.click();
+
+  await expect(page.getByText("project search token")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+1");
+  await expect(page.locator(".cm-content")).toBeVisible();
 });

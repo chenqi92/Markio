@@ -3,6 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
@@ -23,6 +27,10 @@
     "version:set": "node scripts/bump-version.mjs"
   },
   "dependencies": {
+    "@blocknote/code-block": "^0.51.2",
+    "@blocknote/core": "^0.51.2",
+    "@blocknote/mantine": "^0.51.2",
+    "@blocknote/react": "^0.51.2",
     "@codemirror/commands": "^6.6.0",
     "@codemirror/lang-markdown": "^6.3.0",
     "@codemirror/language": "^6.10.3",
@@ -64,6 +72,7 @@
     "react-dom": "^19.0.0",
     "react-i18next": "^17.0.7",
     "react-resizable-panels": "^2.1.7",
+    "shiki": "^4.1.0",
     "tailwind-merge": "^2.5.4",
     "zustand": "^5.0.1"
   },
@@ -72,7 +81,6 @@
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.1.0",
-    "@types/cytoscape": "^3.31.0",
     "@types/markdown-it": "^14.1.2",
     "@types/markdown-it-footnote": "^3.0.4",
     "@types/node": "^22.9.0",

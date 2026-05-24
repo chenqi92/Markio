@@ -5,12 +5,12 @@ mod dev_log;
 mod dropbox_ops;
 mod frontmatter;
 mod fs_ops;
-mod mcp;
 mod gdrive_ops;
 mod git_ops;
 mod ignore;
 mod import;
 mod markdown;
+mod mcp;
 mod oauth;
 pub mod rag;
 mod rss;
@@ -37,7 +37,9 @@ use serde_json::Value;
 use tauri::{Emitter, Manager};
 
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
-use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem};
+use fs_ops::{
+    AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TimelineEntry, TrashItem,
+};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 
@@ -465,6 +467,23 @@ fn fs_read_text(state: tauri::State<'_, AppState>, path: String) -> Result<Strin
 }
 
 #[tauri::command]
+fn fs_read_file_base64(path: String) -> Result<String, String> {
+    let canon = std::fs::canonicalize(&path).map_err(|e| format!("读取文件失败：{e}"))?;
+    let meta = std::fs::metadata(&canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
+    if !meta.is_file() {
+        return Err("读取文件失败：目标不是文件".to_string());
+    }
+    if meta.len() > MAX_SYNC_BODY_BYTES as u64 {
+        return Err(format!(
+            "文件超过上传大小限制：最大 {} MB",
+            MAX_SYNC_BODY_BYTES / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(&canon).map_err(|e| format!("读取文件失败：{e}"))?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
 fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     // 文件可能已被外部删除（用户在 Finder 删了再点 close），validate_path 走的
     // ensure_in_workspaces 已支持"文件不存在但父目录在 workspace"。
@@ -507,6 +526,7 @@ fn disk_changed_since_baseline(
 /// - `expected_mtime` / `expected_hash` 是调用方打开 / 上次保存时记下的基线
 /// - 调用方基线优先于进程内 opened 表，避免旧标签覆盖新标签保存过的内容
 /// - `force` 表示用户主动覆盖
+/// - `snapshot_on_save` 表示调用方希望本次写入前保存旧版本快照
 /// - 返回新 sig；冲突时返回 Err("CONFLICT:<current_mtime>:<current_hash>")
 #[tauri::command]
 fn fs_save(
@@ -516,6 +536,7 @@ fn fs_save(
     expected_mtime: Option<i64>,
     expected_hash: Option<String>,
     force: Option<bool>,
+    snapshot_on_save: Option<bool>,
 ) -> Result<SigDto, String> {
     let canon = validate_path(&state, &path)?;
     ensure_user_file_path(&state, &canon, "保存")?;
@@ -538,12 +559,14 @@ fn fs_save(
             }
         }
     }
-    if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
-        if let Some(ws) = containing_workspace(&state, &canon)? {
-            if let Err(e) =
-                fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
-            {
-                eprintln!("[history.save] 保存旧版本失败：{e}");
+    if snapshot_on_save.unwrap_or(true) {
+        if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
+            if let Some(ws) = containing_workspace(&state, &canon)? {
+                if let Err(e) =
+                    fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
+                {
+                    eprintln!("[history.save] 保存旧版本失败：{e}");
+                }
             }
         }
     }
@@ -3164,6 +3187,28 @@ async fn import_apple_notes(
         .map_err(|e| e.to_string())?
 }
 
+/// 列出 workspace/imports 下旧的时间戳目录（增量切换前留下的）。
+#[tauri::command]
+fn import_list_legacy_dirs(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<import::LegacyImportDir>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    import::list_legacy_import_dirs(&ws)
+}
+
+/// 把一个旧时间戳目录移到 .markio/trash（可恢复，不真删）。
+#[tauri::command]
+fn import_trash_legacy_dir(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    path: String,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &workspace)?;
+    let p = std::path::PathBuf::from(&path);
+    import::trash_legacy_import_dir(&ws, &p)
+}
+
 // ─── RAG 向量索引 / 混合检索 ────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3645,6 +3690,7 @@ pub fn run() {
             fs_read_tree,
             fs_read_dir,
             fs_read_text,
+            fs_read_file_base64,
             fs_open,
             fs_close,
             fs_save,
@@ -3750,6 +3796,8 @@ pub fn run() {
             gdrive_delete,
             import_run,
             import_apple_notes,
+            import_list_legacy_dirs,
+            import_trash_legacy_dir,
             rag_status,
             rag_reindex,
             rag_embed_test,

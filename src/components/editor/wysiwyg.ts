@@ -39,6 +39,9 @@ import {
   type ImageParts,
 } from "@/lib/markdown-images";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
+import { renderChartBlock } from "@/lib/charts";
+import { renderGraphvizBlock } from "@/lib/diagrams";
+import { renderMermaidBlock } from "@/lib/mermaid";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
@@ -110,6 +113,11 @@ class MathWidget extends WidgetType {
 
 type VisualLang = "mermaid" | "dot" | "chart";
 
+// Rendering visual fenced blocks inside the editor runs on CodeMirror's startup
+// decoration path. Keep the WYSIWYG editor lightweight; split/preview mode owns
+// the expensive chart/diagram rendering pipeline.
+const WYSIWYG_VISUAL_FENCES_ENABLED = true;
+
 function detectVisualLang(lang: string): VisualLang | null {
   const lower = lang.toLowerCase();
   if (lower === "mermaid") return "mermaid";
@@ -124,18 +132,15 @@ async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: s
     if (kind === "mermaid") {
       host.classList.add("mermaid-block");
       host.setAttribute("data-mermaid", encoded);
-      const mod = await import("@/lib/mermaid");
-      await mod.renderMermaidBlock(host);
+      await renderMermaidBlock(host);
     } else if (kind === "dot") {
       host.classList.add("graphviz-block");
       host.setAttribute("data-graphviz", encoded);
-      const mod = await import("@/lib/diagrams");
-      await mod.renderGraphvizBlock(host);
+      await renderGraphvizBlock(host);
     } else {
       host.classList.add("chart-block");
       host.setAttribute("data-chart", encoded);
-      const mod = await import("@/lib/charts");
-      mod.renderChartBlock(host);
+      renderChartBlock(host);
     }
   } catch (err) {
     host.classList.add("cm-md-fenced-error");
@@ -468,7 +473,7 @@ function extractFencedBody(state: EditorState, from: number, to: number): string
 function extractFenceLang(state: EditorState, from: number): string {
   const firstLine = state.doc.lineAt(from);
   const m = firstLine.text.match(/^\s*(`{3,}|~{3,})\s*([\w-]+)/);
-  return m ? m[2] : "";
+  return m ? m[2]! : "";
 }
 
 // ─── Table widget ───────────────────────────────────────────────────────────
@@ -560,8 +565,8 @@ export function parseTableSource(src: string): ParsedTable {
     const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
     return inner.split("|").map((s) => s.trim());
   };
-  const header = splitRow(lines[0]);
-  const alignRow = splitRow(lines[1]);
+  const header = splitRow(lines[0]!);
+  const alignRow = splitRow(lines[1]!);
   const aligns = alignRow.map((s) => {
     const left = s.startsWith(":");
     const right = s.endsWith(":");
@@ -746,7 +751,7 @@ function updateParsedTableCell(
     return normalizedTable(table);
   }
   while (table.rows.length < row) table.rows.push(Array(cols).fill(""));
-  table.rows[row - 1][safeCol] = value;
+  table.rows[row - 1]![safeCol] = value;
   return normalizedTable(table);
 }
 
@@ -1158,7 +1163,7 @@ function detectWikilinks(state: EditorState): WikilinkInfo[] {
   WIKI_LINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = WIKI_LINK_RE.exec(text))) {
-    const parts = parseWikiLinkBody(m[1]);
+    const parts = parseWikiLinkBody(m[1]!);
     if (!parts) continue;
     const resolved = resolveWikiFile(files, parts.target);
     out.push({
@@ -1463,9 +1468,9 @@ function build(state: EditorState): BuildResult {
           /^(\s*>\s*)\[!([a-zA-Z][\w-]*)\]([+-])?/,
         );
         if (marker) {
-          const rawType = marker[2];
+          const rawType = marker[2]!;
           const type = normalizeCalloutType(rawType);
-          const tokenStart = firstLine.from + marker[1].length;
+          const tokenStart = firstLine.from + marker[1]!.length;
           const tokenEnd = firstLine.from + marker[0].length;
           // 把 [!type] 这段隐藏起来，前面塞一个样式化的标签 widget
           if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, state, true)) {
@@ -1692,7 +1697,7 @@ function build(state: EditorState): BuildResult {
           const visualKind = detectVisualLang(lang);
           if (!visualKind || source.trim().length > 0) {
             const widget =
-              visualKind && source.trim().length > 0
+              WYSIWYG_VISUAL_FENCES_ENABLED && visualKind && source.trim().length > 0
                 ? new VisualFenceWidget(visualKind, source)
                 : new CodeFenceWidget(lang, source, node.to - node.from);
             decos.push({
@@ -1830,8 +1835,8 @@ const wysiwygMousedown = EditorView.domEventHandlers({
     const text = line.text;
     const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
     if (!m) return;
-    const insert = m[2].toLowerCase() === "x" ? " " : "x";
-    const from = line.from + m[1].length;
+    const insert = m[2]!.toLowerCase() === "x" ? " " : "x";
+    const from = line.from + m[1]!.length;
     const to = from + 1;
     view.dispatch({ changes: { from, to, insert } });
     e.preventDefault();

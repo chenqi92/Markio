@@ -31,7 +31,7 @@ export interface SyncWorkflowDeps {
   gitPush: (workspace: string) => Promise<void>;
   gitResolveConflict: (
     workspace: string,
-    strategy: "ours" | "theirs",
+    strategy: "ours" | "theirs" | "newest",
     files: string[],
   ) => Promise<void>;
   sync: () => SyncStoreApi;
@@ -62,17 +62,15 @@ function isNotGitRepoError(message: string): boolean {
 
 function autoSyncMessage(message: string, conflict: boolean, strategy: string): string {
   if (!conflict || strategy === "ask") return message;
-  if (strategy === "newest") {
-    return `${message}\n「最新版本」策略需要人工确认文件内容，自动同步已停在冲突状态。`;
-  }
   return `${message}\n自动同步未能完成「${strategy}」策略，请在 Git 设置中手动确认后解决。`;
 }
 
 function gitResolutionForStrategy(
   strategy: ReturnType<typeof useSettings.getState>["syncConflictStrategy"],
-): "ours" | "theirs" | null {
+): "ours" | "theirs" | "newest" | null {
   if (strategy === "local") return "ours";
   if (strategy === "remote") return "theirs";
+  if (strategy === "newest") return "newest";
   return null;
 }
 
@@ -155,7 +153,12 @@ export async function runSyncWorkflow(
         if (!conflictFiles || !resolution) {
           throw new Error(`git pull 失败：${pullMessage}`, { cause: e });
         }
-        const label = resolution === "ours" ? "保留本地" : "采用远端";
+        const label =
+          resolution === "ours"
+            ? "保留本地"
+            : resolution === "theirs"
+              ? "采用远端"
+              : "采用较新版本";
         sync.setStage("conflict", `按策略自动处理冲突 · ${label}`);
         try {
           await deps.gitResolveConflict(workspace, resolution, conflictFiles);

@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -9,6 +11,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { SourceEditor } from "./SourceEditor";
+
+const BlockEditor = lazy(() =>
+  import("./BlockEditor").then((m) => ({ default: m.BlockEditor })),
+);
 import { Preview } from "../preview/Preview";
 import { BubbleMenu } from "../popovers/BubbleMenu";
 import { SlashMenu } from "../popovers/SlashMenu";
@@ -41,11 +47,13 @@ import {
 } from "@/lib/preview-context-menu";
 import type { ImageParts } from "@/lib/markdown-images";
 import { MathPreview } from "../popovers/MathPreview";
+import { devLog } from "@/lib/devLogger";
 import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
 import type { ScrollTarget } from "@/lib/scrollSync";
+import { isDarkTheme } from "@/themes";
 
 interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
@@ -55,8 +63,7 @@ interface Props {
 const MODE_CLASS: Record<ViewMode, string> = {
   source: "source-only",
   split: "split",
-  wysiwyg: "wysiwyg",
-  preview: "preview-only",
+  wysiwyg: "block-only",
 };
 
 const MAX_PASTE_IMAGES = 8;
@@ -93,7 +100,16 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function EditorArea({ onMeta, onAskAi }: Props) {
-  const tab = useTabs((s) => s.activeTab());
+  // 关键：不要写成 `useTabs((s) => s.activeTab())` —— selector 调用 activeTab()
+  // 会让 zustand 每次 store 变都返回新 find() 引用，EditorArea 频繁重渲染，
+  // 叠加上层 lazy + Suspense 在某些时序下会出现一帧 fallback 闪烁。
+  // 改成订阅原子字段 activeId + tabs，再在组件内 useMemo 派生 tab。
+  const activeId = useTabs((s) => s.activeId);
+  const tabsList = useTabs((s) => s.tabs);
+  const tab = useMemo(
+    () => (activeId ? tabsList.find((t) => t.id === activeId) : undefined),
+    [activeId, tabsList],
+  );
   const updateContent = useTabs((s) => s.updateContent);
   const saveTab = useTabs((s) => s.saveTab);
   const workspaces = useWorkspace((s) => s.workspaces);
@@ -105,10 +121,20 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
+  const themeId = useSettings((s) => s.theme);
+  const locale = useSettings((s) => s.locale);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
   );
+  useEffect(() => {
+    devLog("debug", "editorArea.state", {
+      activeId,
+      tabPath: tab?.path ?? null,
+      mode,
+      contentLength: tab?.content.length ?? 0,
+    });
+  }, [activeId, tab?.path, tab?.content.length, mode]);
   const splitRootRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
@@ -196,7 +222,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         current?.target.nonce === target.target.nonce ? null : current,
       );
     }, 1000);
-  }, [tab?.path, lineJump, clearLineJump]);
+  }, [tab, lineJump, clearLineJump]);
 
   useEffect(
     () => () => {
@@ -885,17 +911,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   if (!tab) {
-    // tab 暂时拿不到（activeId 在状态切换中短暂为 null 等）—— 不要直接 return null，
-    // 否则会让 AppShell 的 main 区出现一帧空白。给个最低限度的占位骨架，
-    // 等下一帧 store 自然收敛回有 tab 的状态。
+    // tab 暂时拿不到（活动 tab id 已变化但 tabs 数组尚未同步等罕见时序），
+    // 返回最小占位骨架，避免父级 Suspense 显示空白。
     return <div className="editor-split" aria-busy="true" />;
   }
 
-  const showSource =
-    renderMode === "source" ||
-    renderMode === "split" ||
-    renderMode === "wysiwyg";
-  const showPreview = renderMode === "preview" || renderMode === "split";
+  const showSource = renderMode === "source" || renderMode === "split";
+  const showPreview = renderMode === "split";
+  const showBlock = renderMode === "wysiwyg";
 
   return (
     <div
@@ -903,6 +926,21 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       className={classNames("editor-split", MODE_CLASS[mode])}
       style={splitStyle}
     >
+      {showBlock && (
+        <Suspense fallback={<div className="editor-pane" aria-busy="true" />}>
+          <div className="editor-pane block-pane">
+            <BlockEditor
+              key={tab.id}
+              value={tab.content}
+              docKey={tab.id}
+              onChange={handleContentChange}
+              onMeta={onMetaInternal}
+              dark={isDarkTheme(themeId)}
+              locale={locale}
+            />
+          </div>
+        </Suspense>
+      )}
       {showSource && (
         <div
           className="editor-pane"
@@ -917,7 +955,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         >
           <SourceEditor
             value={tab.content}
-            wysiwyg={renderMode === "wysiwyg"}
+            wysiwyg={false}
             onChange={handleContentChange}
             syncScroll={renderMode === "split"}
             scrollTarget={

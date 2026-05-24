@@ -1,4 +1,21 @@
 {
+  "callout": {
+    "note": "Note",
+    "info": "Info",
+    "tip": "Tip",
+    "success": "Success",
+    "question": "Question",
+    "warning": "Warning",
+    "danger": "Danger",
+    "important": "Important",
+    "todo": "Todo",
+    "example": "Example",
+    "bug": "Bug",
+    "quote": "Quote",
+    "titlePlaceholder": "(optional title)",
+    "bodyPlaceholder": "(double-click to add body)",
+    "editBody": "Double-click to edit"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -219,7 +236,7 @@
         "h": "MCP server",
         "sub": "Expose the current vault to external AI tools (Claude Code / Codex) as an MCP server. Listens on 127.0.0.1 only."
       },
-      "export": { "h": "Import / Export", "sub": "Imports land under imports/ with a short report; complex migrations may still degrade formatting." },
+      "export": { "h": "Import / Export", "sub": "Incremental import into imports/<provider>/; fingerprints stored in .markio/imports.json — re-importing the same entry is skipped. Complex formats may still degrade." },
       "clipper": { "h": "Web Clipper", "sub": "How markio handles pages pushed from browser extensions." },
       "rss": { "h": "RSS Feeds", "sub": "Aggregate feeds inside markio; subscriptions and refresh interval are stored locally." },
       "mobile": { "h": "Mobile / Devices", "sub": "Share the current workspace between desktop and mobile." },
@@ -287,8 +304,7 @@
       "mode": {
         "source": "Source only",
         "split": "Split (recommended)",
-        "wysiwyg": "WYSIWYG",
-        "preview": "Preview only"
+        "wysiwyg": "WYSIWYG"
       },
       "inputCard": "Input",
       "smartQuotes": "Smart quotes",

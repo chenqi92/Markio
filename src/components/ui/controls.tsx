@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -70,7 +71,7 @@ export function SelectBtn<T extends SelectValue = string>({
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const interactive = options.length > 0 && !!onChange;
 
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const btn = btnRef.current;
     if (!btn) return;
     const rect = btn.getBoundingClientRect();
@@ -90,13 +91,13 @@ export function SelectBtn<T extends SelectValue = string>({
         ? Math.max(viewportGap, rect.top - estimatedHeight - gap)
         : below;
     setPos({ left, top, width });
-  };
+  }, [align, minMenuWidth, options.length]);
 
   useLayoutEffect(() => {
     if (!open) return;
     setActiveIndex(selectedIndex);
     updatePosition();
-  }, [open, selectedIndex]);
+  }, [open, selectedIndex, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +145,7 @@ export function SelectBtn<T extends SelectValue = string>({
       window.removeEventListener("scroll", update, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [activeIndex, open, onChange, options]);
+  }, [activeIndex, open, onChange, options, updatePosition]);
 
   const toggle = () => {
     if (!interactive) {

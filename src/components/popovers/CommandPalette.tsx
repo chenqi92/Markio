@@ -47,7 +47,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (ws) void ensureVaultIndex(ws.path);
-  }, [ws?.path, ensureVaultIndex]);
+  }, [ws, ensureVaultIndex]);
   const setMode = useUI((s) => s.setMode);
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openSettings = useUI((s) => s.openSettings);
@@ -84,19 +84,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         id: "view-wysiwyg",
         group: "视图",
         l1: "切换到所见即所得",
-        l2: "行内渲染（暂以预览替代）",
+        l2: "BlockNote rich editor（Notion 风格）",
         kbd: [shortcutText("⌘"), "3"],
         ico: "sparkle",
         run: () => setMode("wysiwyg" as ViewMode),
-      },
-      {
-        id: "view-preview",
-        group: "视图",
-        l1: "切换到阅读模式",
-        l2: "只读阅读视图",
-        kbd: [shortcutText("⌘"), "4"],
-        ico: "book",
-        run: () => setMode("preview" as ViewMode),
       },
       {
         id: "focus",

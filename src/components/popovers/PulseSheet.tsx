@@ -59,7 +59,7 @@ export function PulseSheet() {
       .then((s) => setEntries(s))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
-  }, [open, ws?.id]);
+  }, [open, ws]);
 
   const grouped = useMemo(() => {
     const now = Date.now();

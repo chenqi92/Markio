@@ -14,7 +14,7 @@ describe("diagnostics store", () => {
       detail: "pull failed",
       workspace: "/repo",
     });
-    const item = useDiagnostics.getState().items[0];
+    const item = useDiagnostics.getState().items[0]!;
     expect(item.source).toBe("sync");
     expect(item.severity).toBe("error");
     expect(item.seen).toBe(false);
@@ -26,12 +26,12 @@ describe("diagnostics store", () => {
     reportDiagnostic({ source: "rag", message: "索引失败", detail: "second" });
     const items = useDiagnostics.getState().items;
     expect(items).toHaveLength(1);
-    expect(items[0].detail).toBe("second");
+    expect(items[0]!.detail).toBe("second");
   });
 
   it("can mark issues as seen", () => {
     reportDiagnostic({ source: "history", message: "快照失败" });
     useDiagnostics.getState().markAllSeen();
-    expect(useDiagnostics.getState().items[0].seen).toBe(true);
+    expect(useDiagnostics.getState().items[0]!.seen).toBe(true);
   });
 });

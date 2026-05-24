@@ -587,87 +587,93 @@ pub fn find_backlinks(workspace: &str, file: &str, max: usize) -> Vec<Backlink> 
     let needle = stem.to_lowercase();
     let mut out: Vec<Backlink> = Vec::new();
 
-    fn visit(
-        root: &Path,
-        dir: &Path,
-        depth: usize,
-        needle: &str,
-        skip: &str,
-        out: &mut Vec<Backlink>,
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    struct BacklinkVisit<'a> {
+        root: &'a Path,
+        needle: &'a str,
+        skip: &'a str,
         max: usize,
-        ignore: &IgnoreRules,
-    ) {
-        if out.len() >= max || depth > MAX_DEPTH {
-            return;
-        }
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        for entry in entries.flatten() {
-            if out.len() >= max {
-                break;
+        ignore: &'a IgnoreRules,
+    }
+    impl BacklinkVisit<'_> {
+        fn visit(&self, dir: &Path, depth: usize, out: &mut Vec<Backlink>) {
+            if out.len() >= self.max || depth > MAX_DEPTH {
+                return;
             }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_hidden(&name) {
-                continue;
-            }
-            let path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
+            let entries = match fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => return,
             };
-            if ft.is_symlink() {
-                continue;
-            }
-            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
-                continue;
-            }
-            if ft.is_dir() {
-                visit(root, &path, depth + 1, needle, skip, out, max, ignore);
-            } else if ft.is_file() && is_markdown(&name) {
-                // 跳过自身
-                if path.to_string_lossy() == skip {
+            for entry in entries.flatten() {
+                if out.len() >= self.max {
+                    break;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_hidden(&name) {
                     continue;
                 }
-                if let Ok(meta) = entry.metadata() {
-                    if meta.len() > MAX_GREP_FILE_SIZE {
-                        continue;
-                    }
-                }
-                let Ok(content) = fs::read_to_string(&path) else {
-                    continue;
+                let path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
                 };
-                let lower = content.to_lowercase();
-                let key = format!("[[{needle}");
-                if !lower.contains(&key) {
+                if ft.is_symlink() {
                     continue;
                 }
-                for (i, line) in content.lines().enumerate() {
-                    let lline = line.to_lowercase();
-                    if !lline.contains(&key) {
+                if ignored_by_rules(self.root, &path, ft.is_dir(), self.ignore) {
+                    continue;
+                }
+                if ft.is_dir() {
+                    self.visit(&path, depth + 1, out);
+                } else if ft.is_file() && is_markdown(&name) {
+                    // 跳过自身
+                    if path.to_string_lossy() == self.skip {
                         continue;
                     }
-                    let preview = if line.chars().count() > 160 {
-                        line.chars().take(160).collect::<String>() + "…"
-                    } else {
-                        line.to_string()
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.len() > MAX_GREP_FILE_SIZE {
+                            continue;
+                        }
+                    }
+                    let Ok(content) = fs::read_to_string(&path) else {
+                        continue;
                     };
-                    out.push(Backlink {
-                        path: path.to_string_lossy().to_string(),
-                        name: name.clone(),
-                        line: (i + 1) as u32,
-                        preview,
-                    });
-                    break; // 一个文件最多 1 条
+                    let lower = content.to_lowercase();
+                    let key = format!("[[{}", self.needle);
+                    if !lower.contains(&key) {
+                        continue;
+                    }
+                    for (i, line) in content.lines().enumerate() {
+                        let lline = line.to_lowercase();
+                        if !lline.contains(&key) {
+                            continue;
+                        }
+                        let preview = if line.chars().count() > 160 {
+                            line.chars().take(160).collect::<String>() + "…"
+                        } else {
+                            line.to_string()
+                        };
+                        out.push(Backlink {
+                            path: path.to_string_lossy().to_string(),
+                            name: name.clone(),
+                            line: (i + 1) as u32,
+                            preview,
+                        });
+                        break; // 一个文件最多 1 条
+                    }
                 }
             }
         }
     }
-
-    let root = Path::new(workspace);
-    let ignore = IgnoreRules::load(root);
-    visit(root, root, 0, &needle, file, &mut out, max, &ignore);
+    BacklinkVisit {
+        root,
+        needle: &needle,
+        skip: file,
+        max,
+        ignore: &ignore,
+    }
+    .visit(root, 0, &mut out);
     out
 }
 
@@ -728,85 +734,91 @@ pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
     let needle = stem.to_lowercase();
     let mut out: Vec<Backlink> = Vec::new();
 
-    fn visit(
-        root: &Path,
-        dir: &Path,
-        depth: usize,
-        needle: &str,
-        skip: &str,
-        out: &mut Vec<Backlink>,
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    struct MentionVisit<'a> {
+        root: &'a Path,
+        needle: &'a str,
+        skip: &'a str,
         max: usize,
-        ignore: &IgnoreRules,
-    ) {
-        if out.len() >= max || depth > MAX_DEPTH {
-            return;
-        }
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        for entry in entries.flatten() {
-            if out.len() >= max {
-                break;
+        ignore: &'a IgnoreRules,
+    }
+    impl MentionVisit<'_> {
+        fn visit(&self, dir: &Path, depth: usize, out: &mut Vec<Backlink>) {
+            if out.len() >= self.max || depth > MAX_DEPTH {
+                return;
             }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_hidden(&name) {
-                continue;
-            }
-            let path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
+            let entries = match fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => return,
             };
-            if ft.is_symlink() {
-                continue;
-            }
-            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
-                continue;
-            }
-            if ft.is_dir() {
-                visit(root, &path, depth + 1, needle, skip, out, max, ignore);
-            } else if ft.is_file() && is_markdown(&name) {
-                if path.to_string_lossy() == skip {
-                    continue;
-                }
-                if let Ok(meta) = entry.metadata() {
-                    if meta.len() > MAX_GREP_FILE_SIZE {
-                        continue;
-                    }
-                }
-                let Ok(content) = fs::read_to_string(&path) else {
-                    continue;
-                };
-                let lower = content.to_lowercase();
-                if !lower.contains(needle) {
-                    continue;
-                }
-                for (i, line) in content.lines().enumerate() {
-                    let lline = line.to_lowercase();
-                    if !line_has_unlinked(&lline, needle) {
-                        continue;
-                    }
-                    let preview = if line.chars().count() > 160 {
-                        line.chars().take(160).collect::<String>() + "…"
-                    } else {
-                        line.to_string()
-                    };
-                    out.push(Backlink {
-                        path: path.to_string_lossy().to_string(),
-                        name: name.clone(),
-                        line: (i + 1) as u32,
-                        preview,
-                    });
+            for entry in entries.flatten() {
+                if out.len() >= self.max {
                     break;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_hidden(&name) {
+                    continue;
+                }
+                let path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if ft.is_symlink() {
+                    continue;
+                }
+                if ignored_by_rules(self.root, &path, ft.is_dir(), self.ignore) {
+                    continue;
+                }
+                if ft.is_dir() {
+                    self.visit(&path, depth + 1, out);
+                } else if ft.is_file() && is_markdown(&name) {
+                    if path.to_string_lossy() == self.skip {
+                        continue;
+                    }
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.len() > MAX_GREP_FILE_SIZE {
+                            continue;
+                        }
+                    }
+                    let Ok(content) = fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    let lower = content.to_lowercase();
+                    if !lower.contains(self.needle) {
+                        continue;
+                    }
+                    for (i, line) in content.lines().enumerate() {
+                        let lline = line.to_lowercase();
+                        if !line_has_unlinked(&lline, self.needle) {
+                            continue;
+                        }
+                        let preview = if line.chars().count() > 160 {
+                            line.chars().take(160).collect::<String>() + "…"
+                        } else {
+                            line.to_string()
+                        };
+                        out.push(Backlink {
+                            path: path.to_string_lossy().to_string(),
+                            name: name.clone(),
+                            line: (i + 1) as u32,
+                            preview,
+                        });
+                        break;
+                    }
                 }
             }
         }
     }
-
-    let root = Path::new(workspace);
-    let ignore = IgnoreRules::load(root);
-    visit(root, root, 0, &needle, file, &mut out, max, &ignore);
+    MentionVisit {
+        root,
+        needle: &needle,
+        skip: file,
+        max,
+        ignore: &ignore,
+    }
+    .visit(root, 0, &mut out);
     out
 }
 
@@ -1031,120 +1043,112 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
     let mut tags: BTreeSet<String> = BTreeSet::new();
     let mut mentions: BTreeSet<String> = BTreeSet::new();
 
-    fn visit(
-        root: &Path,
-        dir: &Path,
-        depth: usize,
-        prev_by_path: &HashMap<String, &VaultFile>,
-        files: &mut Vec<VaultFile>,
-        tags: &mut std::collections::BTreeSet<String>,
-        mentions: &mut std::collections::BTreeSet<String>,
-        ignore: &IgnoreRules,
-    ) {
-        if depth > MAX_DEPTH || files.len() >= VAULT_INDEX_MAX_FILES {
-            return;
-        }
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(e) => {
-                // 桌面端常见：用户把 ~/Downloads 加成仓库后子目录没有读权限。
-                // 之前静默跳过会让人误以为"索引建好了"——这里至少留 trace。
-                eprintln!("[vault-index] 跳过目录 {}：{e}", dir.display());
+    let root = Path::new(workspace);
+    let ignore = IgnoreRules::load(root);
+    struct VaultIndexVisit<'a, 'p> {
+        root: &'a Path,
+        prev_by_path: &'a HashMap<String, &'p VaultFile>,
+        ignore: &'a IgnoreRules,
+    }
+    impl VaultIndexVisit<'_, '_> {
+        fn visit(
+            &self,
+            dir: &Path,
+            depth: usize,
+            files: &mut Vec<VaultFile>,
+            tags: &mut std::collections::BTreeSet<String>,
+            mentions: &mut std::collections::BTreeSet<String>,
+        ) {
+            if depth > MAX_DEPTH || files.len() >= VAULT_INDEX_MAX_FILES {
                 return;
             }
-        };
-        for entry in entries {
-            let entry = match entry {
+            let entries = match fs::read_dir(dir) {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("[vault-index] 跳过 entry @ {}：{e}", dir.display());
-                    continue;
+                    // 桌面端常见：用户把 ~/Downloads 加成仓库后子目录没有读权限。
+                    // 之前静默跳过会让人误以为"索引建好了"——这里至少留 trace。
+                    eprintln!("[vault-index] 跳过目录 {}：{e}", dir.display());
+                    return;
                 }
             };
-            if files.len() >= VAULT_INDEX_MAX_FILES {
-                return;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_hidden(&name) {
-                continue;
-            }
-            let path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("[vault-index] file_type 失败 {}：{e}", path.display());
-                    continue;
-                }
-            };
-            if ft.is_symlink() {
-                continue;
-            }
-            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
-                continue;
-            }
-            if ft.is_dir() {
-                visit(
-                    root,
-                    &path,
-                    depth + 1,
-                    prev_by_path,
-                    files,
-                    tags,
-                    mentions,
-                    ignore,
-                );
-            } else if ft.is_file() && is_markdown(&name) {
-                let stem = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let path_str = path.to_string_lossy().to_string();
-                let meta = entry.metadata().ok();
-                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-                let mtime = modified_ms(&path);
-
-                let (file_tags, file_mentions) = if let Some(old) = prev_by_path.get(&path_str) {
-                    if old.mtime == mtime && old.size == size {
-                        (old.tags.clone(), old.mentions.clone())
-                    } else {
-                        extract_file_tokens(&path, size)
+            for entry in entries {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("[vault-index] 跳过 entry @ {}：{e}", dir.display());
+                        continue;
                     }
-                } else {
-                    extract_file_tokens(&path, size)
                 };
-
-                for t in &file_tags {
-                    tags.insert(t.clone());
+                if files.len() >= VAULT_INDEX_MAX_FILES {
+                    return;
                 }
-                for m in &file_mentions {
-                    mentions.insert(m.clone());
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_hidden(&name) {
+                    continue;
                 }
+                let path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("[vault-index] file_type 失败 {}：{e}", path.display());
+                        continue;
+                    }
+                };
+                if ft.is_symlink() {
+                    continue;
+                }
+                if ignored_by_rules(self.root, &path, ft.is_dir(), self.ignore) {
+                    continue;
+                }
+                if ft.is_dir() {
+                    self.visit(&path, depth + 1, files, tags, mentions);
+                } else if ft.is_file() && is_markdown(&name) {
+                    let stem = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let path_str = path.to_string_lossy().to_string();
+                    let meta = entry.metadata().ok();
+                    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                    let mtime = modified_ms(&path);
 
-                files.push(VaultFile {
-                    path: path_str,
-                    name,
-                    stem,
-                    mtime,
-                    size,
-                    tags: file_tags,
-                    mentions: file_mentions,
-                });
+                    let (file_tags, file_mentions) =
+                        if let Some(old) = self.prev_by_path.get(&path_str) {
+                            if old.mtime == mtime && old.size == size {
+                                (old.tags.clone(), old.mentions.clone())
+                            } else {
+                                extract_file_tokens(&path, size)
+                            }
+                        } else {
+                            extract_file_tokens(&path, size)
+                        };
+
+                    for t in &file_tags {
+                        tags.insert(t.clone());
+                    }
+                    for m in &file_mentions {
+                        mentions.insert(m.clone());
+                    }
+
+                    files.push(VaultFile {
+                        path: path_str,
+                        name,
+                        stem,
+                        mtime,
+                        size,
+                        tags: file_tags,
+                        mentions: file_mentions,
+                    });
+                }
             }
         }
     }
-
-    let root = Path::new(workspace);
-    let ignore = IgnoreRules::load(root);
-    visit(
+    VaultIndexVisit {
         root,
-        root,
-        0,
-        &prev_by_path,
-        &mut files,
-        &mut tags,
-        &mut mentions,
-        &ignore,
-    );
+        prev_by_path: &prev_by_path,
+        ignore: &ignore,
+    }
+    .visit(root, 0, &mut files, &mut tags, &mut mentions);
 
     files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
@@ -1583,116 +1587,102 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
     let mut hits: Vec<GrepHit> = Vec::new();
     let mut counted = 0usize;
 
-    fn visit(
-        root: &Path,
-        dir: &Path,
-        depth: usize,
-        needle: &str,
-        hits: &mut Vec<GrepHit>,
-        counted: &mut usize,
+    let root_path = Path::new(root);
+    let ignore = IgnoreRules::load(root_path);
+    struct GrepVisit<'a> {
+        root: &'a Path,
+        needle: &'a str,
         max_results: usize,
-        ignore: &IgnoreRules,
-    ) {
-        if hits.len() >= max_results || depth > MAX_DEPTH || *counted > MAX_ENTRIES {
-            return;
-        }
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        for entry in entries.flatten() {
-            if hits.len() >= max_results {
-                break;
+        ignore: &'a IgnoreRules,
+    }
+    impl GrepVisit<'_> {
+        fn visit(&self, dir: &Path, depth: usize, hits: &mut Vec<GrepHit>, counted: &mut usize) {
+            if hits.len() >= self.max_results || depth > MAX_DEPTH || *counted > MAX_ENTRIES {
+                return;
             }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_hidden(&name) {
-                continue;
-            }
-            let path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
+            let entries = match fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => return,
             };
-            if ft.is_symlink() {
-                continue;
-            }
-            if ignored_by_rules(root, &path, ft.is_dir(), ignore) {
-                continue;
-            }
-            if ft.is_dir() {
-                visit(
-                    root,
-                    &path,
-                    depth + 1,
-                    needle,
-                    hits,
-                    counted,
-                    max_results,
-                    ignore,
-                );
-            } else if ft.is_file() && is_markdown(&name) {
-                *counted += 1;
-                if *counted > MAX_GREP_FILES {
-                    return;
+            for entry in entries.flatten() {
+                if hits.len() >= self.max_results {
+                    break;
                 }
-                let lname = name.to_lowercase();
-                if lname.contains(needle) {
-                    hits.push(GrepHit {
-                        path: path.to_string_lossy().to_string(),
-                        name: name.clone(),
-                        line: 0,
-                        preview: String::new(),
-                    });
-                    if hits.len() >= max_results {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_hidden(&name) {
+                    continue;
+                }
+                let path = entry.path();
+                let ft = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if ft.is_symlink() {
+                    continue;
+                }
+                if ignored_by_rules(self.root, &path, ft.is_dir(), self.ignore) {
+                    continue;
+                }
+                if ft.is_dir() {
+                    self.visit(&path, depth + 1, hits, counted);
+                } else if ft.is_file() && is_markdown(&name) {
+                    *counted += 1;
+                    if *counted > MAX_GREP_FILES {
                         return;
                     }
-                }
-                // 跳过过大文件，避免吃内存
-                if let Ok(meta) = entry.metadata() {
-                    if meta.len() > MAX_GREP_FILE_SIZE {
-                        continue;
-                    }
-                }
-                if let Ok(content) = fs::read_to_string(&path) {
-                    let lower = content.to_lowercase();
-                    if let Some(idx) = lower.find(needle) {
-                        let line_no = content[..idx].matches('\n').count() as u32 + 1;
-                        let line_start = content[..idx].rfind('\n').map(|x| x + 1).unwrap_or(0);
-                        let line_end = content[idx..]
-                            .find('\n')
-                            .map(|x| idx + x)
-                            .unwrap_or(content.len());
-                        let mut preview = content[line_start..line_end].trim().to_string();
-                        if preview.chars().count() > 160 {
-                            preview = preview.chars().take(160).collect::<String>() + "…";
-                        }
+                    let lname = name.to_lowercase();
+                    if lname.contains(self.needle) {
                         hits.push(GrepHit {
                             path: path.to_string_lossy().to_string(),
                             name: name.clone(),
-                            line: line_no,
-                            preview,
+                            line: 0,
+                            preview: String::new(),
                         });
-                        if hits.len() >= max_results {
+                        if hits.len() >= self.max_results {
                             return;
+                        }
+                    }
+                    // 跳过过大文件，避免吃内存
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.len() > MAX_GREP_FILE_SIZE {
+                            continue;
+                        }
+                    }
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        let lower = content.to_lowercase();
+                        if let Some(idx) = lower.find(self.needle) {
+                            let line_no = content[..idx].matches('\n').count() as u32 + 1;
+                            let line_start = content[..idx].rfind('\n').map(|x| x + 1).unwrap_or(0);
+                            let line_end = content[idx..]
+                                .find('\n')
+                                .map(|x| idx + x)
+                                .unwrap_or(content.len());
+                            let mut preview = content[line_start..line_end].trim().to_string();
+                            if preview.chars().count() > 160 {
+                                preview = preview.chars().take(160).collect::<String>() + "…";
+                            }
+                            hits.push(GrepHit {
+                                path: path.to_string_lossy().to_string(),
+                                name: name.clone(),
+                                line: line_no,
+                                preview,
+                            });
+                            if hits.len() >= self.max_results {
+                                return;
+                            }
                         }
                     }
                 }
             }
         }
     }
-
-    let root_path = Path::new(root);
-    let ignore = IgnoreRules::load(root_path);
-    visit(
-        root_path,
-        root_path,
-        0,
-        &needle,
-        &mut hits,
-        &mut counted,
+    GrepVisit {
+        root: root_path,
+        needle: &needle,
         max_results,
-        &ignore,
-    );
+        ignore: &ignore,
+    }
+    .visit(root_path, 0, &mut hits, &mut counted);
     hits
 }
 

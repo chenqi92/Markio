@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
@@ -159,7 +159,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }, 220);
     return () => clearTimeout(t);
-  }, [q, ws?.path, scope, workspaces]);
+  }, [q, ws, scope, workspaces]);
 
   // 三个 toggle 共同决定的客户端筛选正则
   const filterRegex = useMemo<RegExp | null>(() => {
@@ -259,14 +259,14 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
 
   useEffect(() => setSel(0), [filtered.length]);
 
-  const openHit = async (h: HitWithMeta) => {
+  const openHit = useCallback(async (h: HitWithMeta) => {
     if (h.wsId !== ws?.id) setActive(h.wsId);
     await openFile(h.wsId, h.path);
     if (h.line > 0) jumpToLine(h.path, h.line);
     setFindQuery(q.trim());
     openFind(true);
     onClose();
-  };
+  }, [jumpToLine, onClose, openFile, openFind, q, setActive, setFindQuery, ws?.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -286,7 +286,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, sel, onClose]);
+  }, [filtered, sel, onClose, openHit]);
 
   useEffect(() => {
     itemRefs.current[sel]?.scrollIntoView({ block: "nearest" });

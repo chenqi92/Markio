@@ -69,7 +69,7 @@ export const useFileMeta = create<FileMetaState>()(
         set((s) => {
           if (!s.byPath[from]) return s;
           const next = { ...s.byPath };
-          next[to] = next[from];
+          next[to] = next[from]!;
           delete next[from];
           return { byPath: next };
         }),

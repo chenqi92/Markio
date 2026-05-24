@@ -1,5 +1,9 @@
 import { lazy, Suspense, useEffect } from "react";
 import { TitleBar } from "./TitleBar";
+// EditorArea 是核心、启动后立刻要用的组件。lazy 它在 dev 模式下首次挂载要
+// 等 vite 编译 80+ms，期间 Suspense fallback (空白 editor-split) 会跟
+// 旁边 Welcome 的空白连成片，看起来像"闪过一帧欢迎页"。直接同步 import。
+import { EditorArea } from "../editor/EditorArea";
 import { Sidebar } from "./Sidebar";
 import { SidebarResizer } from "./SidebarResizer";
 import { TabStrip } from "./TabStrip";
@@ -9,6 +13,13 @@ import { StatusBar } from "./StatusBar";
 import { Welcome } from "../Welcome";
 import { ToastHost } from "../popovers/Toast";
 import { DialogHost } from "../popovers/DialogHost";
+// dev-only 诊断浮窗：默认隐藏，按 ⌘⇧D 切换显示。prod 构建因下面的
+// `import.meta.env.DEV` 短路 + tree-shaking 会被整体剔除。
+const DiagPanel = import.meta.env.DEV
+  ? lazy(() =>
+      import("../popovers/DiagPanel").then((m) => ({ default: m.DiagPanel })),
+    )
+  : null;
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
@@ -18,9 +29,6 @@ import { classNames } from "@/lib/utils";
 
 const CommandPalette = lazy(() =>
   import("../popovers/CommandPalette").then((m) => ({ default: m.CommandPalette })),
-);
-const EditorArea = lazy(() =>
-  import("../editor/EditorArea").then((m) => ({ default: m.EditorArea })),
 );
 const GlobalSearch = lazy(() =>
   import("../popovers/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -133,9 +141,9 @@ export function AppShell() {
   const agentOpen = useUI((s) => s.agentOpen);
   const openAgent = useUI((s) => s.openAgent);
   const pinnedPlanPath = usePinnedPlan((s) => s.path);
-  const activeTabId = useTabs((s) => s.activeId);
-  // 用"曾经/此刻还有 tab"判断是否进入 Welcome，避免 activeId 在
-  // 某些路径上瞬时为 null 时 main 区被切回 Welcome（一帧闪烁）。
+  // 用 tabs 数组是否非空判断是否进入 Welcome，而不是 activeId。这样
+  // 在 activeId 短暂为 null（罕见时序）时不会闪一帧 Welcome；同时
+  // EditorArea 内部会用 useMemo 派生 tab，也能稳定。
   const hasAnyTab = useTabs((s) => s.tabs.length > 0);
   const activeWorkspaceId = useWorkspace((s) => s.activeId);
   const refreshTree = useWorkspace((s) => s.refreshTree);
@@ -145,17 +153,6 @@ export function AppShell() {
   useEffect(() => {
     if (activeWorkspaceId) refreshTree(activeWorkspaceId);
   }, [activeWorkspaceId, refreshTree]);
-
-  // 闪烁 bug 诊断：当 tabs 还非空、activeId 却变 null 时打印调用栈。
-  // 修好之后这段可以删。
-  useEffect(() => {
-    if (!activeTabId && hasAnyTab) {
-      console.warn(
-        "[markio:diag] activeTabId became null while tabs is non-empty",
-        new Error("trace"),
-      );
-    }
-  }, [activeTabId, hasAnyTab]);
 
   // 预热 Settings + AIPanel chunk：用户首次切换时 lazy import 已经 in-flight 或好了，
   // 不再出现空白中间态。idle callback 推后，不影响初次绘制。
@@ -213,9 +210,7 @@ export function AppShell() {
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
-                  <Suspense fallback={null}>
-                    <EditorArea onAskAi={() => openAi(true)} />
-                  </Suspense>
+                  <EditorArea onAskAi={() => openAi(true)} />
                 </>
               ) : (
                 <Welcome />
@@ -274,6 +269,11 @@ export function AppShell() {
       </Suspense>
       <ToastHost />
       <DialogHost />
+      {DiagPanel && (
+        <Suspense fallback={null}>
+          <DiagPanel />
+        </Suspense>
+      )}
     </div>
   );
 }

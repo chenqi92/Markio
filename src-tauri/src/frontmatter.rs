@@ -25,7 +25,9 @@ pub struct NoteFrontmatter {
 ///     - b
 /// 不支持嵌套对象、多行 |、>、锚点等高级语法。够 frontmatter-as-tags 用。
 fn parse_frontmatter(source: &str) -> Option<BTreeMap<String, Vec<String>>> {
-    let body = source.strip_prefix("---\n").or_else(|| source.strip_prefix("---\r\n"))?;
+    let body = source
+        .strip_prefix("---\n")
+        .or_else(|| source.strip_prefix("---\r\n"))?;
     let end = body.find("\n---")?;
     let block = &body[..end];
 
@@ -58,7 +60,7 @@ fn parse_frontmatter(source: &str) -> Option<BTreeMap<String, Vec<String>>> {
         // 新顶层 key，先把上一个 list flush 掉
         if let Some(k) = cur_key.take() {
             if !cur_list.is_empty() {
-                out.entry(k).or_default().extend(cur_list.drain(..));
+                out.entry(k).or_default().append(&mut cur_list);
             }
         }
 
@@ -66,7 +68,12 @@ fn parse_frontmatter(source: &str) -> Option<BTreeMap<String, Vec<String>>> {
             continue;
         };
         let key = key.trim().to_string();
-        if key.is_empty() || !key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+        if key.is_empty()
+            || !key
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
             continue;
         }
         let value = value.trim();
@@ -127,16 +134,11 @@ pub fn scan(workspace: &str) -> Result<Vec<NoteFrontmatter>, String> {
         return Err("仓库路径无效".into());
     }
     let mut out: Vec<NoteFrontmatter> = Vec::new();
-    walk(&ws, &ws, &mut out, 0)?;
+    walk(&ws, &mut out, 0)?;
     Ok(out)
 }
 
-fn walk(
-    ws: &Path,
-    dir: &Path,
-    out: &mut Vec<NoteFrontmatter>,
-    depth: usize,
-) -> Result<(), String> {
+fn walk(dir: &Path, out: &mut Vec<NoteFrontmatter>, depth: usize) -> Result<(), String> {
     if depth > 12 {
         return Ok(());
     }
@@ -155,7 +157,7 @@ fn walk(
             Err(_) => continue,
         };
         if ft.is_dir() {
-            walk(ws, &path, out, depth + 1)?;
+            walk(&path, out, depth + 1)?;
             continue;
         }
         if !ft.is_file() {
@@ -202,7 +204,10 @@ mod tests {
         let src = "---\ntitle: Hello\ntags: [a, b, \"c d\"]\nstatus: todo\n---\nbody";
         let fm = parse_frontmatter(src).unwrap();
         assert_eq!(fm["title"], vec!["Hello".to_string()]);
-        assert_eq!(fm["tags"], vec!["a".to_string(), "b".to_string(), "c d".to_string()]);
+        assert_eq!(
+            fm["tags"],
+            vec!["a".to_string(), "b".to_string(), "c d".to_string()]
+        );
         assert_eq!(fm["status"], vec!["todo".to_string()]);
     }
 

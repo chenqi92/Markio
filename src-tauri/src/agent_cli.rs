@@ -4,10 +4,10 @@
 //! 同一组事件流（Init / TextDelta / ThinkingDelta / ToolStart / ToolDone /
 //! Result / Error / Done），前端只需要处理一种事件流，不用关心是哪个 CLI。
 
+use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -306,7 +306,8 @@ async fn run_claude(
     req: &AgentRunRequest,
     cancel: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let binary = which_binary("claude").ok_or_else(|| "claude CLI 未找到，请确认已安装并在 PATH 里".to_string())?;
+    let binary = which_binary("claude")
+        .ok_or_else(|| "claude CLI 未找到，请确认已安装并在 PATH 里".to_string())?;
     let mut cmd = Command::new(&binary);
     cmd.arg("--print")
         .arg("--output-format")
@@ -322,7 +323,8 @@ async fn run_claude(
     match permission {
         PermissionMode::Safe => {
             // 只读：限制成 read-only 工具集
-            cmd.arg("--allowed-tools").arg("Read,Glob,Grep,WebFetch,WebSearch");
+            cmd.arg("--allowed-tools")
+                .arg("Read,Glob,Grep,WebFetch,WebSearch");
         }
         PermissionMode::PowerUser => {
             cmd.arg("--permission-mode").arg("acceptEdits");
@@ -497,7 +499,9 @@ async fn run_generic(
         emit(
             app,
             &req.session_id,
-            AgentEvent::TextDelta { text: format!("{line}\n") },
+            AgentEvent::TextDelta {
+                text: format!("{line}\n"),
+            },
         );
     }
     let _ = child.wait().await;

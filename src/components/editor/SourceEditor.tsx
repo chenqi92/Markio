@@ -384,7 +384,7 @@ export const SourceEditor = memo(function SourceEditor({
     // lineJump 一次性写源码 scrollTop；分屏总线会捕获这次 scroll 并按"源码视口顶
     // 部对应行号"同步预览侧，正是我们想要的（跳到第 N 行 → 预览也滚到第 N 行）
     el.scrollTop = next;
-  }, [view, scrollTarget?.nonce, scrollTarget?.ratio, scrollTarget?.line]);
+  }, [view, scrollTarget]);
 
   useEffect(() => {
     if (!view) return;
@@ -730,17 +730,17 @@ const listContinuationKeymap = Prec.high(
         if (!m) return false;
         const [, indent, marker, task, rest] = m;
         // 若该 marker 行无内容（只剩 marker）→ 清掉 marker，光标停在原位
-        if (rest.trim().length === 0) {
+        if (rest!.trim().length === 0) {
           view.dispatch({
             changes: { from: line.from, to: line.to, insert: indent },
-            selection: { anchor: line.from + indent.length },
+            selection: { anchor: line.from + indent!.length },
             userEvent: "delete.selection",
           });
           return true;
         }
         const nextMarker =
-          /^\d+\./.test(marker)
-            ? `${parseInt(marker, 10) + 1}.`
+          /^\d+\./.test(marker!)
+            ? `${parseInt(marker!, 10) + 1}.`
             : marker;
         const insert = `\n${indent}${nextMarker} ${task ?? ""}`;
         view.dispatch({

@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -11,10 +9,6 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { SourceEditor } from "./SourceEditor";
-
-const BlockEditor = lazy(() =>
-  import("./BlockEditor").then((m) => ({ default: m.BlockEditor })),
-);
 import { Preview } from "../preview/Preview";
 import { BubbleMenu } from "../popovers/BubbleMenu";
 import { SlashMenu } from "../popovers/SlashMenu";
@@ -53,7 +47,6 @@ import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
 import type { OutlineItem, ViewMode } from "@/types";
 import type { ScrollTarget } from "@/lib/scrollSync";
-import { isDarkTheme } from "@/themes";
 
 interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
@@ -63,7 +56,7 @@ interface Props {
 const MODE_CLASS: Record<ViewMode, string> = {
   source: "source-only",
   split: "split",
-  wysiwyg: "block-only",
+  wysiwyg: "wysiwyg",
 };
 
 const MAX_PASTE_IMAGES = 8;
@@ -121,8 +114,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
   const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
-  const themeId = useSettings((s) => s.theme);
-  const locale = useSettings((s) => s.locale);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
@@ -916,9 +907,11 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     return <div className="editor-split" aria-busy="true" />;
   }
 
-  const showSource = renderMode === "source" || renderMode === "split";
+  const showSource =
+    renderMode === "source" ||
+    renderMode === "split" ||
+    renderMode === "wysiwyg";
   const showPreview = renderMode === "split";
-  const showBlock = renderMode === "wysiwyg";
 
   return (
     <div
@@ -926,21 +919,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       className={classNames("editor-split", MODE_CLASS[mode])}
       style={splitStyle}
     >
-      {showBlock && (
-        <Suspense fallback={<div className="editor-pane" aria-busy="true" />}>
-          <div className="editor-pane block-pane">
-            <BlockEditor
-              key={tab.id}
-              value={tab.content}
-              docKey={tab.id}
-              onChange={handleContentChange}
-              onMeta={onMetaInternal}
-              dark={isDarkTheme(themeId)}
-              locale={locale}
-            />
-          </div>
-        </Suspense>
-      )}
       {showSource && (
         <div
           className="editor-pane"
@@ -955,7 +933,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         >
           <SourceEditor
             value={tab.content}
-            wysiwyg={false}
+            wysiwyg={renderMode === "wysiwyg"}
             onChange={handleContentChange}
             syncScroll={renderMode === "split"}
             scrollTarget={

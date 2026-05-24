@@ -133,8 +133,8 @@ describe("buildPreviewAnchors", () => {
     const next = root.querySelector<HTMLElement>("p")!;
     table.getBoundingClientRect = () => rect(100, 120);
     headRow.getBoundingClientRect = () => rect(100, 30);
-    bodyRows[0].getBoundingClientRect = () => rect(150, 30);
-    bodyRows[1].getBoundingClientRect = () => rect(190, 30);
+    bodyRows[0]!.getBoundingClientRect = () => rect(150, 30);
+    bodyRows[1]!.getBoundingClientRect = () => rect(190, 30);
     next.getBoundingClientRect = () => rect(260);
     document.body.appendChild(root);
 

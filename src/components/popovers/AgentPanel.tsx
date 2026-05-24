@@ -96,7 +96,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
     setBlocks((cur) => {
       for (let i = cur.length - 1; i >= 0; i--) {
         const b = cur[i];
-        if (b.kind === "tool" && b.output === undefined) {
+        if (b && b.kind === "tool" && b.output === undefined) {
           const updated: Block = { ...b, output, isError };
           return [...cur.slice(0, i), updated, ...cur.slice(i + 1)];
         }

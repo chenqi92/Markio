@@ -340,8 +340,8 @@ export function pasteTableTextToText(
     for (const row of cells) row.push("");
   }
   for (let r = 0; r < data.length; r++) {
-    for (let c = 0; c < data[r].length; c++) {
-      cells[startRow + r][startCol + c] = data[r][c];
+    for (let c = 0; c < data[r]!.length; c++) {
+      cells[startRow + r]![startCol + c] = data[r]![c]!;
     }
   }
 

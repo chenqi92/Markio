@@ -13,8 +13,8 @@ export function parseImageMarkdown(text: string): ImageParts | null {
   const m = text.trim().match(IMAGE_URL_RE);
   if (!m) return null;
   return {
-    alt: m[1],
-    url: m[2],
+    alt: m[1]!,
+    url: m[2]!,
     title: m[3] ?? m[4],
   };
 }
@@ -22,7 +22,7 @@ export function parseImageMarkdown(text: string): ImageParts | null {
 export function imageWidthFromTitle(title?: string): string | null {
   const m = title?.match(SIZE_RE);
   if (!m) return null;
-  const raw = m[1];
+  const raw = m[1]!;
   if (raw.endsWith("%") || raw.endsWith("px")) return raw;
   return `${raw}px`;
 }

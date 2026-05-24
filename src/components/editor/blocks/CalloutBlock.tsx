@@ -237,7 +237,7 @@ export function tryParseCalloutFromQuote(
 ): { type: string; title: string; body: string } | null {
   const m = plainQuoteText.match(/^\[!([a-zA-Z][\w-]*)\][+-]?\s*(.*?)(\n[\s\S]*)?$/);
   if (!m) return null;
-  const type = normalizeCalloutType(m[1]);
+  const type = normalizeCalloutType(m[1]!);
   if (!type) return null;
   return {
     type,

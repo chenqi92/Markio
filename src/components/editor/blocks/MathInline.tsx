@@ -105,7 +105,7 @@ export function expandInlineMathInInlineContent(content: unknown): unknown {
     let pushedAny = false;
     re.lastIndex = 0;
     while ((m = re.exec(text)) !== null) {
-      const prev = m.index > 0 ? text[m.index - 1] : "";
+      const prev = m.index > 0 ? text[m.index - 1] ?? "" : "";
       const after = text[m.index + m[0].length] ?? "";
       // 前后字符不是字母数字下划线即可 —— 避开 `$100`/`C#`/`md5$hash`，
       // 但允许任意空白、标点、中文（包括 `：`、`，`、`（` 等）。

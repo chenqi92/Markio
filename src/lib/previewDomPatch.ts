@@ -76,9 +76,9 @@ export function patchPreviewDom(root: HTMLElement | null, nextHtml: string) {
   while (
     prefix < currentNodes.length &&
     prefix < nextNodes.length &&
-    equivalentNode(currentNodes[prefix], nextNodes[prefix])
+    equivalentNode(currentNodes[prefix]!, nextNodes[prefix]!)
   ) {
-    syncPreservedMetadata(currentNodes[prefix], nextNodes[prefix]);
+    syncPreservedMetadata(currentNodes[prefix]!, nextNodes[prefix]!);
     prefix++;
   }
 
@@ -87,9 +87,9 @@ export function patchPreviewDom(root: HTMLElement | null, nextHtml: string) {
   while (
     currentSuffix >= prefix &&
     nextSuffix >= prefix &&
-    equivalentNode(currentNodes[currentSuffix], nextNodes[nextSuffix])
+    equivalentNode(currentNodes[currentSuffix]!, nextNodes[nextSuffix]!)
   ) {
-    syncPreservedMetadata(currentNodes[currentSuffix], nextNodes[nextSuffix]);
+    syncPreservedMetadata(currentNodes[currentSuffix]!, nextNodes[nextSuffix]!);
     currentSuffix--;
     nextSuffix--;
   }
@@ -98,14 +98,14 @@ export function patchPreviewDom(root: HTMLElement | null, nextHtml: string) {
 
   const before = currentNodes[currentSuffix + 1] ?? null;
   for (let i = prefix; i <= currentSuffix; i++) {
-    if (currentNodes[i].parentNode === root) {
-      root.removeChild(currentNodes[i]);
+    if (currentNodes[i]!.parentNode === root) {
+      root.removeChild(currentNodes[i]!);
     }
   }
 
   const fragment = document.createDocumentFragment();
   for (let i = prefix; i <= nextSuffix; i++) {
-    fragment.appendChild(nextNodes[i].cloneNode(true));
+    fragment.appendChild(nextNodes[i]!.cloneNode(true));
   }
   root.insertBefore(fragment, before?.parentNode === root ? before : null);
 }

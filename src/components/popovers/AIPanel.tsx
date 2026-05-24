@@ -535,7 +535,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
               text: trace.join("\n") + "\n\n_思考中…_",
             });
           },
-          onToolDone: (call, output) => {
+          onToolDone: (_call, output) => {
             if (isStale()) return;
             const summary =
               output.length > 200
@@ -658,18 +658,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
         finalize();
       }
     }
-  };
-
-  const _cancelStream = async () => {
-    // bump 在 await 之前——in-flight 的 chunk 立刻被视为 stale，
-    // 不会再写入 message（避免"取消后还在长字"的视觉 bug）
-    streamTokenRef.current++;
-    // Agent loop 跑在前端，不走 ai_chat_cancel；靠 cancel ref 让下一次 loop 检查时跳出
-    agentCancelRef.current = true;
-    const fn = streamCancelRef.current;
-    streamCancelRef.current = null;
-    setBusy(false);
-    if (fn) await fn();
   };
 
   return (

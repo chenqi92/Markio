@@ -751,7 +751,7 @@ function updateParsedTableCell(
     return normalizedTable(table);
   }
   while (table.rows.length < row) table.rows.push(Array(cols).fill(""));
-  table.rows[row - 1][safeCol] = value;
+  table.rows[row - 1]![safeCol] = value;
   return normalizedTable(table);
 }
 
@@ -1835,8 +1835,8 @@ const wysiwygMousedown = EditorView.domEventHandlers({
     const text = line.text;
     const m = text.match(/^(\s*[-*+]\s+\[)([ xX])(\])/);
     if (!m) return;
-    const insert = m[2].toLowerCase() === "x" ? " " : "x";
-    const from = line.from + m[1].length;
+    const insert = m[2]!.toLowerCase() === "x" ? " " : "x";
+    const from = line.from + m[1]!.length;
     const to = from + 1;
     view.dispatch({ changes: { from, to, insert } });
     e.preventDefault();

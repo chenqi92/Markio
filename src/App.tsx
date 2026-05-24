@@ -251,7 +251,7 @@ export default function App() {
       if (!cancelled) {
         const st = useTabs.getState();
         if (!st.activeId && st.tabs.length > 0) {
-          st.setActive(st.tabs[0].id);
+          st.setActive(st.tabs[0]!.id);
         }
       }
     }, 600);

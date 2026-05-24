@@ -21,13 +21,13 @@ describe("WYSIWYG table DOM", () => {
 
     expect(dom.getAttribute("contenteditable")).toBe("false");
     expect(cells).toHaveLength(9);
-    expect(cells[0].dataset.row).toBe("0");
-    expect(cells[0].dataset.col).toBe("0");
-    expect(cells[0].tagName).toBe("TEXTAREA");
+    expect(cells[0]!.dataset.row).toBe("0");
+    expect(cells[0]!.dataset.col).toBe("0");
+    expect(cells[0]!.tagName).toBe("TEXTAREA");
     expect((cells[0] as HTMLTextAreaElement).value).toBe("A");
     expect((cells[4] as HTMLTextAreaElement).value).toBe("2");
-    expect(cells[4].dataset.row).toBe("1");
-    expect(cells[4].dataset.col).toBe("1");
+    expect(cells[4]!.dataset.row).toBe("1");
+    expect(cells[4]!.dataset.col).toBe("1");
   });
 
   it("renders edge insertion buttons and a contextual menu host", () => {
@@ -46,9 +46,9 @@ describe("WYSIWYG table DOM", () => {
     const dom = buildTableDom(parseTableSource(TABLE));
     const header = Array.from(dom.querySelectorAll<HTMLElement>("th"));
 
-    expect(header[0].style.textAlign).toBe("left");
-    expect(header[1].style.textAlign).toBe("center");
-    expect(header[2].style.textAlign).toBe("right");
+    expect(header[0]!.style.textAlign).toBe("left");
+    expect(header[1]!.style.textAlign).toBe("center");
+    expect(header[2]!.style.textAlign).toBe("right");
   });
 });
 

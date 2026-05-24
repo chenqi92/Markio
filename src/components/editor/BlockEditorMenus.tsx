@@ -180,7 +180,6 @@ export function WikilinkSuggestionMenu({ editor }: { editor: AnyEditor }) {
               // 用户已经敲入 "[[" + query：trigger 吃掉第一个 "["，
               // 第二个 "[" + query 还在文档里需要删掉再插 wikilink。
               const $pos = editor._tiptapEditor.state.selection.$from;
-              const off = $pos.parentOffset;
               const docPos = $pos.pos;
               const back = 1 + query.length; // 第二个 "[" + query 长度
               const from = docPos - back;
@@ -194,7 +193,6 @@ export function WikilinkSuggestionMenu({ editor }: { editor: AnyEditor }) {
                 })
                 .insertContent(" ")
                 .run();
-              const _ = off;
             },
           } as DefaultReactSuggestionItem;
         });

@@ -148,7 +148,7 @@ export function expandWikilinksInInlineContent(content: unknown): unknown {
       }
       out.push({
         type: "wikilink",
-        props: { target: m[1].trim() },
+        props: { target: m[1]!.trim() },
       });
       lastIdx = m.index + m[0].length;
     }

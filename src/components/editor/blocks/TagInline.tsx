@@ -90,7 +90,7 @@ export function expandTagsInInlineContent(content: unknown): unknown {
     let pushedAny = false;
     re.lastIndex = 0;
     while ((m = re.exec(text)) !== null) {
-      const prev = m.index > 0 ? text[m.index - 1] : "";
+      const prev = m.index > 0 ? text[m.index - 1] ?? "" : "";
       // 前一字符必须是空白或字符串开头，否则不当 tag
       if (prev !== "" && !/\s/.test(prev)) continue;
       pushedAny = true;

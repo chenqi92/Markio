@@ -191,6 +191,11 @@ export class CodeFenceWidget extends WidgetType {
   /** 当前 DOM 上的 listener 拆除函数；destroy 时调用，避免 widget 失效后
    *  闭包持有 view / source / handler 延长 GC。 */
   private cleanup: Cleanup | null = null;
+  /** 留着 view / host 引用，destroy 时尝试把 textarea 内未提交的草稿写回 doc，
+   *  挽救"外部 docChanged 把 widget 替换、用户正在 textarea 里写的几行字
+   *  随旧 DOM 一起消失"的边角场景。 */
+  private view: EditorView | null = null;
+  private host: HTMLElement | null = null;
   constructor(
     private readonly lang: string,
     private readonly source: string,
@@ -264,6 +269,8 @@ export class CodeFenceWidget extends WidgetType {
     body.append(gutter, pre);
 
     figure.append(head, body);
+    this.view = view;
+    this.host = figure;
     this.cleanup = installCodeFenceDomHandlers(view, figure, this.source);
     return figure;
   }
@@ -271,7 +278,29 @@ export class CodeFenceWidget extends WidgetType {
     return true;
   }
   destroy() {
+    // 顺序：先尝试 commit 草稿（commit 内会再 dispatch，触发新一轮 build；新
+    // widget 在 toDOM 时 source 已是最新值），再拆 listener / 解引用。
+    flushPendingCodeFenceEdit(this.view, this.host);
     this.cleanup?.();
     this.cleanup = null;
+    this.view = null;
+    this.host = null;
+  }
+}
+
+/** widget destroy 时挽救正在编辑的 textarea：如果 host 内还有未 commit 的
+ *  textarea，且 view.posAtDOM(host) 仍能定位到原始 source 位置，就把 textarea
+ *  value 写回 doc。posAtDOM 在 detached host 上可能返回 null，commit 会 noop。 */
+function flushPendingCodeFenceEdit(
+  view: EditorView | null,
+  host: HTMLElement | null,
+) {
+  if (!view || !host) return;
+  const textarea = host.querySelector<HTMLTextAreaElement>(".cm-md-code-editor");
+  if (!textarea) return;
+  try {
+    commitCodeFenceBody(view, host, textarea.value);
+  } catch {
+    // view 已 destroy / host 已 detach 时 dispatch 会抛，吞掉以免影响 destroy
   }
 }

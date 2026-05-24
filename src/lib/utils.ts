@@ -98,5 +98,5 @@ export function colorForName(name: string): string {
   const palette = ["#0a84ff", "#5b8a6a", "#a05a14", "#bd93f9", "#c43d63", "#34c759", "#ff9500", "#88c0d0"];
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return palette[hash % palette.length];
+  return palette[hash % palette.length]!;
 }

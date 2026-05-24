@@ -165,9 +165,6 @@ importers:
       '@tauri-apps/cli':
         specifier: ^2.1.0
         version: 2.11.1
-      '@types/cytoscape':
-        specifier: ^3.31.0
-        version: 3.31.0
       '@types/markdown-it':
         specifier: ^14.1.2
         version: 14.1.2
@@ -1439,10 +1436,6 @@ packages:
 
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
-
-  '@types/cytoscape@3.31.0':
-    resolution: {integrity: sha512-EXHOHxqQjGxLDEh5cP4te6J0bi7LbCzmZkzsR6f703igUac8UGMdEohMyU3GHAayCTZrLQOMnaE/lqB2Ekh8Ww==}
-    deprecated: This is a stub types definition. cytoscape provides its own type definitions, so you do not need this installed.
 
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
@@ -4466,10 +4459,6 @@ snapshots:
   '@types/babel__traverse@7.28.0':
     dependencies:
       '@babel/types': 7.29.0
-
-  '@types/cytoscape@3.31.0':
-    dependencies:
-      cytoscape: 3.33.3
 
   '@types/d3-array@3.2.2': {}
 

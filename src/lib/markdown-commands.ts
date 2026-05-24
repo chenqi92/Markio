@@ -50,7 +50,7 @@ function buildTableFromText(input: string): string | null {
     while (next.length < cols) next.push("");
     return next;
   });
-  const header = padded[0];
+  const header = padded[0]!;
   const body = padded.length > 1 ? padded.slice(1) : [Array(cols).fill("")];
   const separator = Array(cols).fill("---");
   return [header, separator, ...body]

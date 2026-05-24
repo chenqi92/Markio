@@ -25,7 +25,7 @@ describe("aiModelsCache", () => {
     ]);
     const out = getCached("openai");
     expect(out).toHaveLength(2);
-    expect(out?.[1].contextLength).toBe(128000);
+    expect(out?.[1]!.contextLength).toBe(128000);
     expect(getCached("anthropic")).toBeNull();
   });
 

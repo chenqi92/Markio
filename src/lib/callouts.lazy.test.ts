@@ -118,7 +118,7 @@ describe("enhanceCalloutsLazy — correctness", () => {
       visibilityMargin: 0,
     });
     const before = root.querySelectorAll("blockquote.callout").length;
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     io.fireAll();
     const after = root.querySelectorAll("blockquote.callout").length;
     expect(after).toBeGreaterThan(before);
@@ -159,7 +159,7 @@ describe("enhanceCalloutsLazy — correctness", () => {
       viewportHeight: 50,
       visibilityMargin: 0,
     });
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     io.fireAll();
     const heads1 = root.querySelectorAll(".callout-head").length;
     io.fireAll(); // unobserved by now, but re-call helper to be sure
@@ -200,7 +200,7 @@ describe("enhanceCalloutsLazy — correctness", () => {
     });
     const before = root.querySelectorAll("blockquote.callout").length;
     handle.disconnect();
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     io.fireAll();
     const after = root.querySelectorAll("blockquote.callout").length;
     expect(after).toBe(before);

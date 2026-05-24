@@ -93,16 +93,22 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
     // 公式：拷贝走 Preview 同款渲染，避免编辑器丢公式
     const mathNodes = wrap.querySelectorAll<HTMLElement>(".math");
     if (mathNodes.length > 0) {
-      const katex = await import("katex");
+      const [katex, DOMPurify] = await Promise.all([
+        import("katex"),
+        import("dompurify").then((m) => m.default),
+      ]);
       for (const node of Array.from(mathNodes)) {
         const tex = node.textContent ?? "";
         const displayMode = node.classList.contains("math-display");
         try {
-          node.innerHTML = katex.renderToString(tex, {
+          const html = katex.renderToString(tex, {
             displayMode,
             throwOnError: false,
             strict: "ignore",
             output: "htmlAndMathml",
+          });
+          node.innerHTML = DOMPurify.sanitize(html, {
+            USE_PROFILES: { html: true, mathMl: true, svg: true },
           });
         } catch {
           node.textContent = displayMode ? `$$${tex}$$` : `$${tex}$`;

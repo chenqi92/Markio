@@ -106,7 +106,7 @@ describe("enhanceWikiLinksLazy — correctness", () => {
     const handle = enhanceWikiLinksLazy(root, makeFiles(10));
     expect(root.querySelectorAll("a.wikilink").length).toBe(0);
 
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     io.fireFirst(3);
     // 3 blocks × 2 wikilinks each = 6
     expect(root.querySelectorAll("a.wikilink").length).toBe(6);
@@ -141,7 +141,7 @@ describe("enhanceWikiLinksLazy — correctness", () => {
   it("does not re-enhance a block that has been processed", () => {
     const root = makeDoc(5);
     const handle = enhanceWikiLinksLazy(root, makeFiles(5));
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     io.fireAll();
     const before = root.querySelectorAll("a.wikilink").length;
     // Simulate IO firing again for the same blocks (browsers do this when
@@ -154,7 +154,7 @@ describe("enhanceWikiLinksLazy — correctness", () => {
   it("disconnect() stops further enhancement", () => {
     const root = makeDoc(10);
     const handle = enhanceWikiLinksLazy(root, makeFiles(10));
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     handle.disconnect();
     io.fireAll();
     // disconnect first means observed[] was cleared
@@ -178,9 +178,9 @@ describe("enhanceWikiLinksLazy — correctness", () => {
     root.append(p1, p2);
     document.body.appendChild(root);
     enhanceWikiLinksLazy(root, makeFiles(2));
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
     expect(io.observed).toHaveLength(1);
-    expect(io.observed[0]).toBe(p2);
+    expect(io.observed[0]!).toBe(p2);
   });
 });
 
@@ -223,7 +223,7 @@ describe("enhanceWikiLinksLazy — first paint perf", () => {
     document.body.appendChild(root);
 
     const handle = enhanceWikiLinksLazy(root, makeFiles(1500));
-    const io = FakeIntersectionObserver.instances[0];
+    const io = FakeIntersectionObserver.instances[0]!;
 
     const t0 = performance.now();
     io.fireFirst(20);

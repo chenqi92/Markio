@@ -730,17 +730,17 @@ const listContinuationKeymap = Prec.high(
         if (!m) return false;
         const [, indent, marker, task, rest] = m;
         // 若该 marker 行无内容（只剩 marker）→ 清掉 marker，光标停在原位
-        if (rest.trim().length === 0) {
+        if (rest!.trim().length === 0) {
           view.dispatch({
             changes: { from: line.from, to: line.to, insert: indent },
-            selection: { anchor: line.from + indent.length },
+            selection: { anchor: line.from + indent!.length },
             userEvent: "delete.selection",
           });
           return true;
         }
         const nextMarker =
-          /^\d+\./.test(marker)
-            ? `${parseInt(marker, 10) + 1}.`
+          /^\d+\./.test(marker!)
+            ? `${parseInt(marker!, 10) + 1}.`
             : marker;
         const insert = `\n${indent}${nextMarker} ${task ?? ""}`;
         view.dispatch({

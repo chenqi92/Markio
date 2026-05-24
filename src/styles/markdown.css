@@ -679,6 +679,21 @@
   max-width: 100%;
   height: auto;
 }
+
+/* 外链图片默认占位：lib/remoteImageGuard 在渲染时把 src 换成占位 SVG，
+   原值挪到 data-original-src；点击即可恢复加载。 */
+.preview img.blocked-remote-img {
+  cursor: pointer;
+  outline: 0.5px dashed var(--border);
+  outline-offset: -1px;
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+.preview img.blocked-remote-img:hover,
+.preview img.blocked-remote-img:focus-visible {
+  opacity: 1;
+  outline-color: var(--accent, #3b82f6);
+}
 .preview .diagram-notice {
   width: 100%;
   max-width: 620px;

@@ -11,6 +11,7 @@ import { useRag } from "./rag";
 import { useVaultIndex } from "./vaultIndex";
 import { reportDiagnostic } from "./diagnostics";
 import { spaceCJK } from "@/lib/pangu";
+import { createKeyedTimers } from "@/lib/keyedTimers";
 
 /** 同一文件 5 分钟内只写一次快照，避免自动保存把磁盘塞满 */
 const SNAPSHOT_DEDUP_MS = 5 * 60 * 1000;
@@ -36,43 +37,46 @@ interface TabsState {
 
 const POST_SAVE_RAG_DELAY_MS = 4_000;
 const POST_SAVE_TOKEN_DELAY_MS = 2_500;
-const ragReindexTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const tokenRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const ragReindexTimers = createKeyedTimers();
+const tokenRefreshTimers = createKeyedTimers();
+
+export function cancelPendingTimersForWorkspace(workspacePath: string) {
+  ragReindexTimers.clearPrefix(`${workspacePath}\0`);
+  tokenRefreshTimers.cancel(workspacePath);
+}
 
 function scheduleRagReindex(workspacePath: string, filePath: string) {
   const key = `${workspacePath}\0${filePath}`;
-  const current = ragReindexTimers.get(key);
-  if (current) clearTimeout(current);
-  const timer = setTimeout(() => {
-    ragReindexTimers.delete(key);
-    void (async () => {
-      try {
-        const s = useSettings.getState();
-        if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
-        await useRag.getState().reindexFile(workspacePath, filePath);
-      } catch (err) {
-        console.warn("[rag.reindexFile] post-save failed", err);
-        reportDiagnostic({
-          source: "rag",
-          severity: "warning",
-          message: "保存后索引更新失败",
-          detail: err,
-          workspace: workspacePath,
-        });
-      }
-    })();
-  }, POST_SAVE_RAG_DELAY_MS);
-  ragReindexTimers.set(key, timer);
+  ragReindexTimers.schedule(
+    key,
+    () => {
+      void (async () => {
+        try {
+          const s = useSettings.getState();
+          if (!s.ragEnabled || !s.ragAutoReindexOnSave) return;
+          await useRag.getState().reindexFile(workspacePath, filePath);
+        } catch (err) {
+          console.warn("[rag.reindexFile] post-save failed", err);
+          reportDiagnostic({
+            source: "rag",
+            severity: "warning",
+            message: "保存后索引更新失败",
+            detail: err,
+            workspace: workspacePath,
+          });
+        }
+      })();
+    },
+    POST_SAVE_RAG_DELAY_MS,
+  );
 }
 
 function scheduleVaultTokenRefresh(workspacePath: string) {
-  const current = tokenRefreshTimers.get(workspacePath);
-  if (current) clearTimeout(current);
-  const timer = setTimeout(() => {
-    tokenRefreshTimers.delete(workspacePath);
-    useVaultIndex.getState().scheduleRebuild(workspacePath);
-  }, POST_SAVE_TOKEN_DELAY_MS);
-  tokenRefreshTimers.set(workspacePath, timer);
+  tokenRefreshTimers.schedule(
+    workspacePath,
+    () => useVaultIndex.getState().scheduleRebuild(workspacePath),
+    POST_SAVE_TOKEN_DELAY_MS,
+  );
 }
 
 export const useTabs = create<TabsState>((set, get) => ({
@@ -257,7 +261,7 @@ export const useTabs = create<TabsState>((set, get) => ({
         return s;
       }
       const [it] = tabs.splice(fromIdx, 1);
-      tabs.splice(toIdx, 0, it);
+      tabs.splice(toIdx, 0, it!);
       return { tabs };
     }),
 

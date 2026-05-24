@@ -161,7 +161,7 @@ function enhanceSubtree(subtree: HTMLElement, index: VaultIndex) {
     const fragment = doc.createDocumentFragment();
 
     while ((match = WIKI_LINK_RE.exec(text))) {
-      const body = match[1];
+      const body = match[1]!;
       const parts = parseWikiLinkBody(body);
       if (!parts) continue;
       if (match.index > last) {

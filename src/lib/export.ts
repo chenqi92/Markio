@@ -156,7 +156,7 @@ async function inlineRemoteImages(html: string): Promise<string> {
   if (matches.length === 0) return html;
   const cache = new Map<string, string>();
   for (const m of matches) {
-    const url = m[1];
+    const url = m[1]!;
     if (cache.has(url)) continue;
     try {
       cache.set(url, await api.fetchImageAsDataUrl(url));

@@ -20,12 +20,12 @@ function computeHeadingSpans(content: string): HeadingSpan[] {
   let offset = 0;
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
+    const ln = lines[i]!;
     if (/^\s*```/.test(ln)) inFence = !inFence;
     if (!inFence) {
       const m = /^(#{1,6})[ \t]+\S/.exec(ln);
       if (m) {
-        headings.push({ line: i, level: m[1].length, offset });
+        headings.push({ line: i, level: m[1]!.length, offset });
       }
     }
     offset += ln.length + 1; // +1 for "\n"
@@ -34,8 +34,8 @@ function computeHeadingSpans(content: string): HeadingSpan[] {
   return headings.map((h, i) => {
     let to = totalLen;
     for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= h.level) {
-        to = headings[j].offset;
+      if (headings[j]!.level <= h.level) {
+        to = headings[j]!.offset;
         break;
       }
     }
@@ -302,11 +302,11 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
     const parents: Array<number | null> = new Array(items.length).fill(null);
     const stack: number[] = [];
     for (let i = 0; i < items.length; i++) {
-      const lv = items[i].level;
-      while (stack.length > 0 && items[stack[stack.length - 1]].level >= lv) {
+      const lv = items[i]!.level;
+      while (stack.length > 0 && items[stack[stack.length - 1]!]!.level >= lv) {
         stack.pop();
       }
-      parents[i] = stack.length > 0 ? stack[stack.length - 1] : null;
+      parents[i] = stack.length > 0 ? stack[stack.length - 1]! : null;
       stack.push(i);
     }
     return parents;
@@ -327,7 +327,7 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
     if (!queryNorm) return null;
     const set = new Set<number>();
     for (let i = 0; i < items.length; i++) {
-      if (items[i].text.toLowerCase().includes(queryNorm)) set.add(i);
+      if (items[i]!.text.toLowerCase().includes(queryNorm)) set.add(i);
     }
     return set;
   }, [items, queryNorm]);
@@ -340,23 +340,23 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
     if (matchedSet) {
       for (const idx of matchedSet) {
         set.add(idx);
-        let p = parentOf[idx];
+        let p = parentOf[idx] ?? null;
         while (p !== null) {
           set.add(p);
-          p = parentOf[p];
+          p = parentOf[p] ?? null;
         }
       }
       return set;
     }
     for (let i = 0; i < items.length; i++) {
       let hidden = false;
-      let p = parentOf[i];
+      let p = parentOf[i] ?? null;
       while (p !== null) {
         if (collapsed.has(p)) {
           hidden = true;
           break;
         }
-        p = parentOf[p];
+        p = parentOf[p] ?? null;
       }
       if (!hidden) set.add(i);
     }

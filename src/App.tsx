@@ -20,6 +20,7 @@ import { devLog } from "./lib/devLogger";
 import { selectionCoords } from "./lib/editor-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { createKeyedTimers } from "./lib/keyedTimers";
 
 function isTreeRefreshRelevant(path: string): boolean {
   if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) return true;
@@ -48,7 +49,11 @@ function treeRefreshDir(
 const FS_RAG_DELAY_MS = 2_000;
 const FS_EVENT_STARTUP_GRACE_MS = 8_000;
 const appStartedAt = Date.now();
-const fsRagTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const fsRagTimers = createKeyedTimers();
+
+export function cancelFsRagTimersForWorkspace(workspace: string) {
+  fsRagTimers.clearPrefix(`${workspace}\0`);
+}
 
 function isRagFile(path: string): boolean {
   return /\.(md|markdown|mdown|mkd)$/i.test(path);
@@ -61,20 +66,20 @@ function scheduleRagForFsEvent(
 ) {
   if (!isRagFile(path)) return;
   const key = `${workspace}\0${path}`;
-  const current = fsRagTimers.get(key);
-  if (current) clearTimeout(current);
-  const timer = setTimeout(() => {
-    fsRagTimers.delete(key);
-    const settings = useSettings.getState();
-    if (!settings.ragEnabled || !settings.ragAutoReindexOnSave) return;
-    const rag = useRag.getState();
-    if (kind === "removed") {
-      void rag.removeFile(workspace, path);
-    } else {
-      void rag.reindexFile(workspace, path);
-    }
-  }, FS_RAG_DELAY_MS);
-  fsRagTimers.set(key, timer);
+  fsRagTimers.schedule(
+    key,
+    () => {
+      const settings = useSettings.getState();
+      if (!settings.ragEnabled || !settings.ragAutoReindexOnSave) return;
+      const rag = useRag.getState();
+      if (kind === "removed") {
+        void rag.removeFile(workspace, path);
+      } else {
+        void rag.reindexFile(workspace, path);
+      }
+    },
+    FS_RAG_DELAY_MS,
+  );
 }
 
 export default function App() {
@@ -284,9 +289,10 @@ export default function App() {
     if (!isDesktop()) return;
     const queue: string[] = [];
     let ready = false;
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
-      unlisten = await listen<string>("open-from-os", (e) => {
+      const fn = await listen<string>("open-from-os", (e) => {
         if (typeof e.payload !== "string") return;
         if (!ready) {
           queue.push(e.payload);
@@ -294,14 +300,22 @@ export default function App() {
         }
         void useTabs.getState().openPath(e.payload);
       });
+      // 注册过程中组件已卸载 → 立刻取消订阅
+      if (cancelled) {
+        fn();
+        return;
+      }
+      unlisten = fn;
       // 给 hydrate 一点时间——workspace 列表注册到 Rust 后 openPath 才能通过 allowlist
       await new Promise((resolve) => setTimeout(resolve, 800));
+      if (cancelled) return;
       ready = true;
       for (const p of queue.splice(0)) {
         void useTabs.getState().openPath(p);
       }
     })();
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
     };
   }, []);
@@ -318,10 +332,11 @@ export default function App() {
   // 全局订阅 rag-status：把后端推送的进度 / 索引快照写入 useRag.status
   useEffect(() => {
     if (!isDesktop()) return;
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
       try {
-        unlisten = await listen<import("./lib/api").RagStatus>(
+        const fn = await listen<import("./lib/api").RagStatus>(
           "rag-status",
           (e) => {
             const payload = e.payload;
@@ -341,6 +356,11 @@ export default function App() {
             }));
           },
         );
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
       } catch (err) {
         console.warn("[rag-status] subscribe failed", err);
         reportDiagnostic({
@@ -352,6 +372,7 @@ export default function App() {
       }
     })();
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
     };
   }, []);
@@ -370,11 +391,12 @@ export default function App() {
   // Rust watcher 触发的文件系统变动 → 节流刷新文件树
   useEffect(() => {
     if (!isDesktop()) return;
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     const pendingRefresh: Map<string, ReturnType<typeof setTimeout>> = new Map();
     (async () => {
       try {
-        unlisten = await listen<{
+        const fn = await listen<{
           workspace: string;
           path: string;
           kind: "modified" | "created" | "removed";
@@ -412,6 +434,11 @@ export default function App() {
           }, 600);
           pendingRefresh.set(refreshKey, handle);
         });
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
       } catch (err) {
         console.warn("[fs-changed] subscribe failed", err);
         reportDiagnostic({
@@ -423,10 +450,10 @@ export default function App() {
       }
     })();
     return () => {
+      cancelled = true;
       pendingRefresh.forEach(clearTimeout);
       pendingRefresh.clear();
-      fsRagTimers.forEach(clearTimeout);
-      fsRagTimers.clear();
+      fsRagTimers.clearAll();
       if (unlisten) unlisten();
     };
   }, []);

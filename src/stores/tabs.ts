@@ -12,6 +12,7 @@ import { useVaultIndex } from "./vaultIndex";
 import { reportDiagnostic } from "./diagnostics";
 import { spaceCJK } from "@/lib/pangu";
 import { createKeyedTimers } from "@/lib/keyedTimers";
+import { registerWorkspaceCleanup } from "./workspaceCleanup";
 
 /** 同一文件 5 分钟内只写一次快照，避免自动保存把磁盘塞满 */
 const SNAPSHOT_DEDUP_MS = 5 * 60 * 1000;
@@ -45,6 +46,8 @@ export function cancelPendingTimersForWorkspace(workspacePath: string) {
   ragReindexTimers.clearPrefix(`${workspacePath}\0`);
   tokenRefreshTimers.cancel(workspacePath);
 }
+
+registerWorkspaceCleanup(cancelPendingTimersForWorkspace);
 
 function scheduleRagReindex(workspacePath: string, filePath: string) {
   const key = `${workspacePath}\0${filePath}`;

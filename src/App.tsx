@@ -21,6 +21,7 @@ import { selectionCoords } from "./lib/editor-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { createKeyedTimers } from "./lib/keyedTimers";
+import { registerWorkspaceCleanup } from "./stores/workspaceCleanup";
 
 function isTreeRefreshRelevant(path: string): boolean {
   if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) return true;
@@ -54,6 +55,8 @@ const fsRagTimers = createKeyedTimers();
 export function cancelFsRagTimersForWorkspace(workspace: string) {
   fsRagTimers.clearPrefix(`${workspace}\0`);
 }
+
+registerWorkspaceCleanup(cancelFsRagTimersForWorkspace);
 
 function isRagFile(path: string): boolean {
   return /\.(md|markdown|mdown|mkd)$/i.test(path);

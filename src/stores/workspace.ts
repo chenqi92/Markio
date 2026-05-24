@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils";
 import { tauriStorage } from "@/lib/tauriStorage";
 import { reportDiagnostic } from "./diagnostics";
+import { runWorkspaceCleanups } from "./workspaceCleanup";
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -253,15 +254,9 @@ export const useWorkspace = create<WorkspaceState>()(
           };
         });
         if (ws) {
-          // 清理该 workspace 的 pending 定时器（保存后 RAG 重建 / token 刷新 /
-          // fs-changed 防抖），避免在 workspace 已移除后仍触发回调。
-          // 静态导入会形成循环依赖（tabs / workspace 互相引用），改为动态。
-          void import("./tabs").then((m) =>
-            m.cancelPendingTimersForWorkspace(ws.path),
-          );
-          void import("@/App").then((m) =>
-            m.cancelFsRagTimersForWorkspace(ws.path),
-          );
+          // 走 workspaceCleanup registry，由 tabs / App 在自己模块加载时注册
+          // 各自的清理函数；这样 workspace.ts 不需要直接 import tabs / App。
+          runWorkspaceCleanups(ws.path);
           try {
             const canon = await api.workspaceUnregister(ws.path);
             get()._registered.delete(canon);

@@ -1,0 +1,310 @@
+/* theme swatches */
+.theme-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  padding: 16px;
+}
+.theme-tile {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid transparent;
+  transition: all var(--tr);
+  text-align: center;
+}
+.theme-tile:hover { background: var(--bg-hover); }
+.theme-tile.active { border-color: var(--accent); background: var(--bg-hover); }
+.theme-preview {
+  aspect-ratio: 4/3;
+  border-radius: 7px;
+  border: 0.5px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.theme-preview .tp-text {
+  position: absolute; bottom: 14px; left: 10px; font-size: 18px; font-weight: 700;
+  font-family: var(--font-serif);
+}
+.theme-preview .tp-dot {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+}
+.theme-preview .tp-dot:nth-of-type(1) { right: 10px; top: 12px; }
+.theme-preview .tp-dot:nth-of-type(2) { right: 28px; top: 6px; }
+.theme-name {
+  margin-top: 6px;
+  font-size: 12px; line-height: 1.3; color: var(--text); font-weight: 500;
+}
+.theme-check {
+  position: absolute; top: 2px; right: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: white;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  border: 2px solid var(--bg-pane);
+}
+
+/* form controls */
+.sw {
+  width: 36px; height: 22px; border-radius: 999px;
+  background: var(--border-strong);
+  padding: 2px;
+  display: inline-flex; align-items: center;
+  transition: background var(--tr);
+  flex-shrink: 0;
+  align-self: center;
+}
+.sw > span {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  transition: transform var(--tr);
+}
+.sw.on { background: var(--accent); }
+.sw.on > span { transform: translateX(14px); }
+
+.select-btn {
+  height: var(--settings-control-size);
+  font-size: 12px; line-height: 1; color: var(--text);
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  min-width: 120px;
+  max-width: 260px;
+  text-align: left;
+  cursor: pointer;
+  justify-content: space-between;
+  transition: background var(--tr), border-color var(--tr), box-shadow var(--tr);
+}
+.select-btn:hover,
+.select-btn.open {
+  background: var(--bg-elev);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.select-btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-btn svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.select-menu {
+  position: fixed;
+  z-index: 10000;
+  max-height: min(320px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--bg-elev);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 9px;
+  box-shadow: var(--shadow-deep);
+}
+.select-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.select-option:hover,
+.select-option.active {
+  background: var(--bg-hover);
+}
+.select-option.selected {
+  background: var(--bg-selected);
+}
+.select-option:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.select-option-copy {
+  flex: 1;
+  min-width: 0;
+}
+.select-option-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-option-desc {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-option svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.slider-wrap { width: 140px; }
+.slider {
+  position: relative;
+  height: 4px;
+  background: var(--border);
+  border-radius: 999px;
+}
+.slider > div { height: 100%; background: var(--accent); border-radius: 999px; }
+.slider .thumb {
+  position: absolute; top: 50%; width: 16px; height: 16px;
+  border-radius: 50%; background: white;
+  border: 0.5px solid var(--border-strong);
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  transform: translate(-50%, -50%);
+}
+
+.kbd-group { display: inline-flex; gap: 4px; align-items: center; }
+.kbd-group .kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 0 8px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  min-width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.kbd-group .kbd.kbd-recording {
+  min-width: 140px;
+  height: 30px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: kbdRecPulse 1.4s ease-in-out infinite;
+}
+@keyframes kbdRecPulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 8%, transparent); }
+}
+
+.settings-btn {
+  min-height: 34px;
+  font-size: 12px; line-height: 1; color: var(--text);
+  padding: 0 16px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-weight: 500;
+  transition: background var(--tr), filter var(--tr), transform var(--tr), box-shadow var(--tr), border-color var(--tr);
+}
+.settings-btn:hover { background: var(--bg-elev); }
+.settings-btn:active { transform: translateY(0.5px); }
+.settings-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.settings-btn.primary {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 1px 2px rgba(0,0,0,0.12);
+}
+.settings-btn.primary:hover { filter: brightness(1.05); background: var(--accent); }
+.settings-btn.primary:active { filter: brightness(0.94); }
+
+/* 旧的弹窗 .settings-window + 新的覆盖页 .settings-workspace 共用一套输入样式；
+ * 之前漏写 .settings-workspace 那个分支，导致 Git/WebDAV 卡里所有 input
+ * 都用浏览器默认样式（无 padding、无圆角、字号 16）跟 SelectBtn / 按钮严重不协调。 */
+.settings-window input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.settings-window textarea,
+.settings-workspace input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.settings-workspace textarea {
+  min-height: var(--settings-control-size);
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 7px;
+  font-size: 12px !important;
+  line-height: 1.35;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+
+.settings-window input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus,
+.settings-window textarea:focus,
+.settings-workspace input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus,
+.settings-workspace textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* textarea 需要垂直 padding；上面的 padding: 0 10px 只对单行输入合适 */
+.settings-window textarea,
+.settings-workspace textarea {
+  padding: 8px 10px;
+}
+
+.settings-choice-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+}
+
+.settings-choice-row:hover {
+  background: var(--bg-hover);
+}
+
+.settings-choice-row.active {
+  background: var(--bg-hover);
+}
+
+.settings-choice-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.settings-choice-row.active .settings-choice-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg-pane);
+}
+
+
+/* 用户点击网盘卡的「配置」按钮时，把目标卡片高亮一下，方便定位 */
+.mk-flash {
+  animation: mk-flash-pulse 1.6s ease-out;
+  border-radius: 10px;
+}
+@keyframes mk-flash-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent); }
+  20%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+

@@ -1,0 +1,244 @@
+/* settings window */
+.settings-window {
+  --settings-label-size: 13px;
+  --settings-help-size: 12px;
+  --settings-control-size: 30px;
+  width: 880px; max-width: 92vw;
+  height: 620px; max-height: 86vh;
+  background: var(--bg-window);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-deep);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.settings-titlebar {
+  display: flex; align-items: center;
+  padding: 0 14px;
+  height: 44px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-title {
+  flex: 1; text-align: center;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  line-height: 1;
+}
+.settings-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  overflow: hidden;
+}
+.settings-nav {
+  padding: 14px 0;
+  background: var(--bg-pane-2);
+  border-right: 0.5px solid var(--border);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 32px;
+  padding: 0 12px;
+  margin: 1px 8px;
+  font-size: 12px; line-height: 1;
+  color: var(--text-2);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all var(--tr);
+  width: calc(100% - 16px);
+  text-align: left;
+}
+.settings-nav-item .ico {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.settings-nav-item.active { background: var(--accent); color: white; }
+
+.settings-main {
+  padding: 28px 36px 48px;
+  overflow-y: auto;
+}
+.settings-h {
+  font-size: 22px; font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.settings-sub {
+  font-size: 12px; color: var(--text-3);
+  line-height: 1.45;
+  margin: 0 0 18px;
+}
+.settings-card {
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.settings-card-h {
+  padding: 0 16px;
+  font-size: 11px; font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  background: var(--bg-pane-2);
+  border-bottom: 0.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.settings-card-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-row {
+  display: flex; align-items: center;
+  min-height: 48px;
+  padding: 9px 16px;
+  gap: 14px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-row:last-child { border-bottom: 0; }
+/* 固定左列宽度让所有 row 的值列对齐 */
+.settings-row-l {
+  flex: 0 0 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-row-l + * { margin-left: auto; }
+.settings-label {
+  font-size: var(--settings-label-size);
+  line-height: 1.35;
+  color: var(--text);
+  font-weight: 500;
+}
+.settings-label-with-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-help {
+  font-size: var(--settings-help-size);
+  line-height: 1.45;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.settings-card > .settings-help {
+  padding: 0 16px 8px;
+  margin-top: 0;
+}
+.settings-info {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border-strong);
+  color: var(--text-3);
+  background: var(--bg-input);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: help;
+}
+.settings-info::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  z-index: 10000;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 56px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-deep);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-2px);
+  transition: opacity var(--tr), transform var(--tr), visibility var(--tr);
+}
+.settings-info:hover::after,
+.settings-info:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%);
+}
+.settings-card-h .settings-info::after {
+  left: 0;
+  top: calc(100% + 8px);
+  transform: translateY(-2px);
+}
+.settings-card-h .settings-info:hover::after,
+.settings-card-h .settings-info:focus-visible::after {
+  transform: translateY(0);
+}
+.settings-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-action-row:last-child { border-bottom: 0; }
+.settings-message {
+  padding: 0 16px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-app-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  object-fit: contain;
+  display: block;
+  flex: 0 0 auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.brand-mark {
+  border-radius: 6px;
+  background: #fff;
+  color: var(--brand-color);
+  border: 0.5px solid rgba(0,0,0,0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.brand-mark img {
+  width: 68%;
+  height: 68%;
+  object-fit: contain;
+  display: block;
+}
+.brand-mark svg { color: currentColor; }
+

@@ -1,0 +1,67 @@
+/* 让 input[type=time] 跟 .kbd / .settings-btn 的高度与字体保持一致：
+ * 浏览器默认会拉出 spin button 和 picker indicator，体积不一致还带原生灰底，
+ * 这里压成 30px 高、mono 字体、accent focus ring。 */
+.settings-time-input {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.settings-time-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-time-input:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-time-input::-webkit-inner-spin-button,
+.settings-time-input::-webkit-clear-button {
+  display: none;
+}
+.settings-time-input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  filter: invert(var(--time-picker-invert, 0));
+}
+[data-theme="dark"] .settings-time-input,
+[data-theme="nord"] .settings-time-input,
+[data-theme="hc"] .settings-time-input,
+[data-theme="dracula"] .settings-time-input { --time-picker-invert: 0.85; }
+
+/* 兜底：settings-row 里没有显式样式的 <input> 一律走与 .settings-time-input 一致的
+ * 尺寸 / 边框 / focus ring。GitSyncCard / WebDavCard 里大量 inline 只写了 flex/minWidth
+ * 的 input 就会自动套上来；不影响已经通过 inputStyle / className 显式样式的输入。 */
+.settings-main2 .settings-row > input[type="text"],
+.settings-main2 .settings-row > input[type="password"],
+.settings-main2 .settings-row > input[type="email"],
+.settings-main2 .settings-row > input[type="url"],
+.settings-main2 .settings-row > input[type="search"] {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.settings-main2 .settings-row > input[type="password"],
+.settings-main2 .settings-row > input[type="search"] {
+  font-family: var(--font-mono);
+}
+.settings-main2 .settings-row > input[type="text"]:focus,
+.settings-main2 .settings-row > input[type="password"]:focus,
+.settings-main2 .settings-row > input[type="email"]:focus,
+.settings-main2 .settings-row > input[type="url"]:focus,
+.settings-main2 .settings-row > input[type="search"]:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-main2 .settings-row > input::placeholder { color: var(--text-3); }

@@ -17,21 +17,6 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import go from "highlight.js/lib/languages/go";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdown from "highlight.js/lib/languages/markdown";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
-import type { LanguageFn } from "highlight.js";
 import { cursorInsideRange, detectMathRanges } from "@/lib/math-ranges";
 import {
   applyImageElementSizing,
@@ -188,56 +173,96 @@ function safeLanguageClass(lang: string): string {
   return lang.trim().toLowerCase().replace(/[^\w-]/g, "");
 }
 
-const HIGHLIGHT_LANGUAGES: Record<string, LanguageFn> = {
-  bash,
-  sh: bash,
-  shell: bash,
-  zsh: bash,
-  css,
-  go,
-  golang: go,
-  java,
-  javascript,
-  js: javascript,
-  json,
-  markdown,
-  md: markdown,
-  python,
-  py: python,
-  rust,
-  rs: rust,
-  sql,
-  typescript,
-  ts: typescript,
-  xml,
-  html: xml,
-  svg: xml,
-  yaml,
-  yml: yaml,
-};
+// 把 highlight.js core 和 13 个语言 grammar 改成按需 lazy：
+//
+// 旧实现把 hljs/lib/core 与 bash/css/go/java/js/json/markdown/python/rust/sql/
+// ts/xml/yaml 13 个语言全部静态 top-level import，挂到 wysiwyg.ts；
+// wysiwyg.ts 又被 SourceEditor 静态依赖 → 全部沉到主 chunk，每次 SourceEditor
+// 启动都要解析 hljs + 全套词法（即使文档里没一个 fenced code）。
+//
+// 改成：core 一个独立 dynamic chunk；每个 grammar 自己 chunk，按 lang 首次
+// 出现时拉一次。CodeFenceWidget.toDOM 先用 escape 后的明文渲染 → 拉完 grammar
+// 再回填到同一个 <code>，眼里看到的是"代码块先以无色显示，几十毫秒后高亮亮起"。
+//
+// 一旦某语言加载过就缓存（langPromises Map）。
 
-function ensureHighlightLanguage(lang: string): string | null {
-  const normalized = lang.trim().toLowerCase();
-  if (!normalized) return null;
-  const language = HIGHLIGHT_LANGUAGES[normalized];
-  if (!language) return null;
-  if (!hljs.getLanguage(normalized)) hljs.registerLanguage(normalized, language);
-  return normalized;
+type HljsCore = typeof import("highlight.js/lib/core").default;
+
+let hljsCorePromise: Promise<HljsCore> | null = null;
+function loadHljsCore(): Promise<HljsCore> {
+  if (!hljsCorePromise) {
+    hljsCorePromise = import("highlight.js/lib/core").then((m) => m.default);
+  }
+  return hljsCorePromise;
 }
 
-function highlightCode(source: string, lang: string): string {
-  const normalized = ensureHighlightLanguage(lang);
-  try {
-    if (normalized) {
-      return hljs.highlight(source, { language: normalized, ignoreIllegals: true }).value;
+// 一组工厂函数：value 必须是 () => import("...") 形式，让 Vite 各自切 chunk。
+const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
+  bash: () => import("highlight.js/lib/languages/bash"),
+  sh: () => import("highlight.js/lib/languages/bash"),
+  shell: () => import("highlight.js/lib/languages/bash"),
+  zsh: () => import("highlight.js/lib/languages/bash"),
+  css: () => import("highlight.js/lib/languages/css"),
+  go: () => import("highlight.js/lib/languages/go"),
+  golang: () => import("highlight.js/lib/languages/go"),
+  java: () => import("highlight.js/lib/languages/java"),
+  javascript: () => import("highlight.js/lib/languages/javascript"),
+  js: () => import("highlight.js/lib/languages/javascript"),
+  json: () => import("highlight.js/lib/languages/json"),
+  markdown: () => import("highlight.js/lib/languages/markdown"),
+  md: () => import("highlight.js/lib/languages/markdown"),
+  python: () => import("highlight.js/lib/languages/python"),
+  py: () => import("highlight.js/lib/languages/python"),
+  rust: () => import("highlight.js/lib/languages/rust"),
+  rs: () => import("highlight.js/lib/languages/rust"),
+  sql: () => import("highlight.js/lib/languages/sql"),
+  typescript: () => import("highlight.js/lib/languages/typescript"),
+  ts: () => import("highlight.js/lib/languages/typescript"),
+  xml: () => import("highlight.js/lib/languages/xml"),
+  html: () => import("highlight.js/lib/languages/xml"),
+  svg: () => import("highlight.js/lib/languages/xml"),
+  yaml: () => import("highlight.js/lib/languages/yaml"),
+  yml: () => import("highlight.js/lib/languages/yaml"),
+};
+
+const langPromises = new Map<string, Promise<string | null>>();
+
+function ensureHighlightLanguage(lang: string): Promise<string | null> {
+  const normalized = lang.trim().toLowerCase();
+  if (!normalized) return Promise.resolve(null);
+  const loader = LANG_LOADERS[normalized];
+  if (!loader) return Promise.resolve(null);
+  const cached = langPromises.get(normalized);
+  if (cached) return cached;
+  const p = (async () => {
+    const hljs = await loadHljsCore();
+    if (!hljs.getLanguage(normalized)) {
+      const mod = await loader();
+      // grammar 模块 default export 是 (hljs) => LanguageDefinition
+      hljs.registerLanguage(normalized, mod.default as Parameters<typeof hljs.registerLanguage>[1]);
     }
-  } catch {
-    // fall through to escaped plain text
-  }
-  return source
+    return normalized;
+  })().catch(() => null);
+  langPromises.set(normalized, p);
+  return p;
+}
+
+function escapeCodeHtml(s: string): string {
+  return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+async function highlightCode(source: string, lang: string): Promise<string> {
+  const normalized = await ensureHighlightLanguage(lang);
+  if (!normalized) return escapeCodeHtml(source);
+  try {
+    const hljs = await loadHljsCore();
+    return hljs.highlight(source, { language: normalized, ignoreIllegals: true }).value;
+  } catch {
+    return escapeCodeHtml(source);
+  }
 }
 
 function codeFenceRangeFromHost(
@@ -440,8 +465,17 @@ class CodeFenceWidget extends WidgetType {
     pre.className = "cm-md-code-pre";
     const code = document.createElement("code");
     code.className = `hljs${safeLang ? ` language-${safeLang}` : ""}`;
-    code.innerHTML = DOMPurify.sanitize(highlightCode(this.source, lang), {
+    // 先用 escape 后的明文渲染，避免 toDOM 同步阻塞等待 hljs lazy chunk；
+    // grammar 拉完后回填到同一个 <code>（CodeFenceWidget.eq 比对 source/lang，
+    // 只要内容没变，DOM 会被 CodeMirror 复用，回填后高亮一直保留）。
+    const sourceForHighlight = this.source;
+    code.innerHTML = DOMPurify.sanitize(escapeCodeHtml(sourceForHighlight), {
       USE_PROFILES: { html: true },
+    });
+    void highlightCode(sourceForHighlight, lang).then((html) => {
+      code.innerHTML = DOMPurify.sanitize(html, {
+        USE_PROFILES: { html: true },
+      });
     });
     pre.append(code);
     body.append(gutter, pre);

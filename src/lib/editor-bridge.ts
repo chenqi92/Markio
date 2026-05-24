@@ -8,6 +8,12 @@ import type { EditorView } from "@codemirror/view";
 
 let active: EditorView | null = null;
 const listeners = new Set<() => void>();
+type MarkdownCommandHandler = (
+  name: string,
+  args: readonly unknown[],
+) => boolean;
+
+let markdownCommandHandler: MarkdownCommandHandler | null = null;
 
 export function registerEditor(view: EditorView | null) {
   active = view;
@@ -21,6 +27,23 @@ export function getEditor(): EditorView | null {
 export function subscribeEditor(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);
+}
+
+export function registerMarkdownCommandHandler(
+  handler: MarkdownCommandHandler | null,
+) {
+  markdownCommandHandler = handler;
+}
+
+export function runRegisteredMarkdownCommand(
+  name: string,
+  args: readonly unknown[] = [],
+): boolean {
+  try {
+    return markdownCommandHandler?.(name, args) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** 通用：把当前选区包裹起来；如果没选区，就插入占位串 */

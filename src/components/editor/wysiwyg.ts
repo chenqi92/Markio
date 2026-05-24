@@ -113,6 +113,11 @@ class MathWidget extends WidgetType {
 
 type VisualLang = "mermaid" | "dot" | "chart";
 
+// Rendering visual fenced blocks inside the editor runs on CodeMirror's startup
+// decoration path. Keep the WYSIWYG editor lightweight; split/preview mode owns
+// the expensive chart/diagram rendering pipeline.
+const WYSIWYG_VISUAL_FENCES_ENABLED = true;
+
 function detectVisualLang(lang: string): VisualLang | null {
   const lower = lang.toLowerCase();
   if (lower === "mermaid") return "mermaid";
@@ -1692,7 +1697,7 @@ function build(state: EditorState): BuildResult {
           const visualKind = detectVisualLang(lang);
           if (!visualKind || source.trim().length > 0) {
             const widget =
-              visualKind && source.trim().length > 0
+              WYSIWYG_VISUAL_FENCES_ENABLED && visualKind && source.trim().length > 0
                 ? new VisualFenceWidget(visualKind, source)
                 : new CodeFenceWidget(lang, source, node.to - node.from);
             decos.push({

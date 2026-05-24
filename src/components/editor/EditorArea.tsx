@@ -47,6 +47,7 @@ import {
 } from "@/lib/preview-context-menu";
 import type { ImageParts } from "@/lib/markdown-images";
 import { MathPreview } from "../popovers/MathPreview";
+import { devLog } from "@/lib/devLogger";
 import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
@@ -126,6 +127,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
   );
+  useEffect(() => {
+    devLog("debug", "editorArea.state", {
+      activeId,
+      tabPath: tab?.path ?? null,
+      mode,
+      contentLength: tab?.content.length ?? 0,
+    });
+  }, [activeId, tab?.path, tab?.content.length, mode]);
   const splitRootRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {

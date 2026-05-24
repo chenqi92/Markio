@@ -236,7 +236,7 @@
         "h": "MCP server",
         "sub": "把当前 vault 暴露给 Claude Code / Codex 等外部 AI 工具调用。只监听本机回环（127.0.0.1）。"
       },
-      "export": { "h": "导入导出", "sub": "导入会落到 imports 目录并给出简要报告；复杂格式迁移仍可能降级。" },
+      "export": { "h": "导入导出", "sub": "增量导入到 imports/<provider>/；指纹记录在 .markio/imports.json，重复导入同一条目会跳过。复杂格式迁移仍可能降级。" },
       "clipper": { "h": "Web Clipper", "sub": "浏览器扩展把网页抓回 markio 时的处理偏好。" },
       "rss": { "h": "RSS 订阅", "sub": "在 markio 内汇总信息流；订阅与拉取频率本地存。" },
       "mobile": { "h": "移动端 / 设备", "sub": "在桌面 / 移动端之间共享当前仓库。" },

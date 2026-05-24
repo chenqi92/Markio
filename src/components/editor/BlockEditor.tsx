@@ -3,125 +3,26 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
   BlockNoteSchema,
-  createCodeBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
   type PartialBlock,
 } from "@blocknote/core";
 import { en as bnEn, zh as bnZh } from "@blocknote/core/locales";
-import type { CodeBlockOptions } from "@blocknote/core";
-import {
-  createHighlighter,
-  bundledLanguages,
-  bundledLanguagesInfo,
-} from "shiki";
-
-/**
- * 把 BlockNote 内置代码块的 `<select>` 替换成 `<input list>` —— 让用户能
- * 直接打字输入任意语言名（不限于下拉里的 280 种），shiki 不认识的就当
- * plain text 渲染，但用户的源码里 ` ```xxx ` 围栏标识保留正确。
- *
- * 共享一个全局 datalist，第一次挂载时创建。
- */
-function ensureLangDatalist() {
-  let dl = document.getElementById("bn-code-lang-list") as HTMLDataListElement | null;
-  if (dl) return;
-  dl = document.createElement("datalist");
-  dl.id = "bn-code-lang-list";
-  for (const info of bundledLanguagesInfo) {
-    const opt = document.createElement("option");
-    opt.value = info.id;
-    opt.label = info.name;
-    dl.appendChild(opt);
-  }
-  document.body.appendChild(dl);
-}
-
-function replaceCodeBlockSelect(select: HTMLSelectElement) {
-  if (select.dataset.markioReplaced === "1") return;
-  select.dataset.markioReplaced = "1";
-  // 隐藏原 select 但保留在 DOM 里（BlockNote 内部还要读它的 value）
-  select.style.display = "none";
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.setAttribute("list", "bn-code-lang-list");
-  input.placeholder = "language…";
-  input.value = select.value;
-  input.className = "bn-code-lang-input";
-  input.spellcheck = false;
-
-  const commit = () => {
-    const val = input.value.trim();
-    if (!val) return;
-    // 没有对应 <option> 就动态加一个，否则 select.value 会被忽略
-    if (!Array.from(select.options).some((o) => o.value === val)) {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.text = val;
-      select.appendChild(opt);
-    }
-    if (select.value !== val) {
-      select.value = val;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  };
-  input.addEventListener("change", commit);
-  input.addEventListener("blur", commit);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-      input.blur();
-    }
-  });
-  select.parentElement?.insertBefore(input, select);
-}
-
-function installCodeBlockLangInput(root: HTMLElement): () => void {
-  ensureLangDatalist();
-  const scan = () => {
-    root
-      .querySelectorAll<HTMLSelectElement>("[data-content-type='codeBlock'] select")
-      .forEach(replaceCodeBlockSelect);
-  };
-  scan();
-  const obs = new MutationObserver(scan);
-  obs.observe(root, { childList: true, subtree: true });
-  return () => obs.disconnect();
-}
-
-/**
- * 自己拼 codeBlockOptions：用 shiki 的 bundle-full 提供 280+ 语言列表
- * + lazy load grammar（vite 会按 dynamic import 自动拆 chunk，runtime
- * 只下载用户真正用到的那个 lang）。
- *
- * 替换 @blocknote/code-block 内置的 47 语言 enum。
- */
-const codeBlockOptions: CodeBlockOptions = {
-  defaultLanguage: "text",
-  supportedLanguages: Object.fromEntries(
-    bundledLanguagesInfo.map((info) => [
-      info.id,
-      {
-        name: info.name,
-        aliases: info.aliases ?? [],
-      },
-    ]),
-  ),
-  createHighlighter: () =>
-    createHighlighter({
-      themes: ["github-dark", "github-light"],
-      // 用 lazy import map：shiki 会在收到具体 lang 时按需 dynamic import
-      // 对应 grammar，运行期只加载用到的语言文件
-      langs: Object.values(bundledLanguages),
-    }),
-};
 import "@blocknote/mantine/style.css";
 // markio 主题 CSS override
 import "./BlockEditor.css";
 import { MermaidReactBlock } from "./blocks/MermaidBlock";
 import { MathReactBlock } from "./blocks/MathBlock";
+import { ChartReactBlock, DEFAULT_CHART_CODE } from "./blocks/ChartBlock";
+import {
+  DiagramReactBlock,
+  DEFAULT_DOT_CODE,
+  DEFAULT_PLANTUML_CODE,
+} from "./blocks/DiagramBlock";
+import {
+  MarkioCodeBlockSpec,
+  normalizeCodeBlockLanguage,
+} from "./codeBlockSpec";
 import {
   CalloutReactBlock,
   tryParseCalloutFromQuote,
@@ -143,6 +44,9 @@ import {
   collapseInlineMathInInlineContent,
 } from "./blocks/MathInline";
 import { MarkioSlashMenu, WikilinkSuggestionMenu } from "./BlockEditorMenus";
+import { devLog } from "@/lib/devLogger";
+import { registerMarkdownCommandHandler } from "@/lib/editor-bridge";
+import { useDialog } from "@/stores/dialog";
 import type { Locale } from "@/i18n";
 
 import type { OutlineItem } from "@/types";
@@ -175,11 +79,11 @@ interface Props {
 const markioSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
-    // 用 @blocknote/code-block 的 shiki 高亮替换默认 codeBlock：自带
-    // 语言下拉、行高亮主题、复制按钮，覆盖原默认的纯文本代码块
-    codeBlock: createCodeBlockSpec(codeBlockOptions),
+    codeBlock: MarkioCodeBlockSpec,
     mermaid: MermaidReactBlock(),
     math: MathReactBlock(),
+    chart: ChartReactBlock(),
+    diagram: DiagramReactBlock(),
     callout: CalloutReactBlock(),
   },
   inlineContentSpecs: {
@@ -278,7 +182,39 @@ function splitFrontmatter(md: string): [string, string] {
  * 完整带进来；后处理 transformBlocksAfterParse 再把 codeBlock(math) 转
  * 成自定义 math block。
  */
+const BLOCK_EDITOR_RICH_VISUALS_ENABLED = true;
+
+function firstFenceToken(input: string): string {
+  return input.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+}
+
+function parseFenceAttr(input: string, key: string): string | null {
+  const m = input.match(new RegExp(`${key}=("[^"]*"|'[^']*'|\\S+)`));
+  if (!m) return null;
+  const raw = m[1] ?? "";
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function isChartLang(lang: string): boolean {
+  return lang === "chart" || lang === "markio-chart" || lang === "charts";
+}
+
+function isGraphvizLang(lang: string): boolean {
+  return lang === "dot" || lang === "graphviz";
+}
+
+function isPlantUmlLang(lang: string): boolean {
+  return lang === "plantuml" || lang === "puml";
+}
+
 function preprocessMarkdown(md: string): string {
+  if (!BLOCK_EDITOR_RICH_VISUALS_ENABLED) return md;
   return md.replace(
     /(^|\n)\$\$\s*\n?([\s\S]*?)\n?\$\$(?=\n|$)/g,
     (_, lead, body) => `${lead}\`\`\`math\n${body.trim()}\n\`\`\``,
@@ -315,23 +251,52 @@ function transformBlocksAfterParse(blocks: PartialBlock[]): PartialBlock[] {
     if (bb.content != null) {
       const a = expandWikilinksInInlineContent(bb.content);
       const b = expandTagsInInlineContent(a);
-      bb.content = expandInlineMathInInlineContent(b) as typeof bb.content;
+      bb.content = BLOCK_EDITOR_RICH_VISUALS_ENABLED
+        ? (expandInlineMathInInlineContent(b) as typeof bb.content)
+        : (b as typeof bb.content);
     }
     if (bb.type === "codeBlock" && typeof bb.props?.language === "string") {
-      const lang = bb.props.language.toLowerCase();
+      const rawLang = bb.props.language;
+      const lang = firstFenceToken(rawLang);
       const text = extractCodeText(bb.content);
-      if (lang === "mermaid") {
+      if (BLOCK_EDITOR_RICH_VISUALS_ENABLED && lang === "mermaid") {
         return {
           type: "mermaid",
           props: { code: text },
         } as unknown as PartialBlock;
       }
-      if (lang === "math") {
+      if (BLOCK_EDITOR_RICH_VISUALS_ENABLED && lang === "math") {
         return {
           type: "math",
           props: { latex: text },
         } as unknown as PartialBlock;
       }
+      if (BLOCK_EDITOR_RICH_VISUALS_ENABLED && isChartLang(lang)) {
+        return {
+          type: "chart",
+          props: { code: text },
+        } as unknown as PartialBlock;
+      }
+      if (BLOCK_EDITOR_RICH_VISUALS_ENABLED && isGraphvizLang(lang)) {
+        return {
+          type: "diagram",
+          props: { kind: "graphviz", code: text, server: "" },
+        } as unknown as PartialBlock;
+      }
+      if (BLOCK_EDITOR_RICH_VISUALS_ENABLED && isPlantUmlLang(lang)) {
+        return {
+          type: "diagram",
+          props: {
+            kind: "plantuml",
+            code: text,
+            server: parseFenceAttr(rawLang, "server") ?? "",
+          },
+        } as unknown as PartialBlock;
+      }
+      (bb as { props?: Record<string, unknown> }).props = {
+        ...(bb.props ?? {}),
+        language: normalizeCodeBlockLanguage(rawLang),
+      };
     }
     // quote 块（BlockNote 把 `> ...` parse 成 quote 块）+ 首行匹配
     // `[!type] title?` → callout
@@ -406,6 +371,30 @@ function transformBlocksBeforeSerialize(blocks: PartialBlock[]): PartialBlock[] 
         content: [{ type: "text", text: latex, styles: {} }],
       } as unknown as PartialBlock;
     }
+    if (bb.type === "chart") {
+      const code = (bb.props?.code as string) ?? "";
+      return {
+        type: "codeBlock",
+        props: { language: "chart" },
+        content: [{ type: "text", text: code, styles: {} }],
+      } as unknown as PartialBlock;
+    }
+    if (bb.type === "diagram") {
+      const kind = bb.props?.kind === "plantuml" ? "plantuml" : "graphviz";
+      const code = (bb.props?.code as string) ?? "";
+      const server = String(bb.props?.server ?? "").trim();
+      const language =
+        kind === "plantuml" && server
+          ? `plantuml server="${server.replace(/"/g, "")}"`
+          : kind === "plantuml"
+            ? "plantuml"
+            : "dot";
+      return {
+        type: "codeBlock",
+        props: { language },
+        content: [{ type: "text", text: code, styles: {} }],
+      } as unknown as PartialBlock;
+    }
     if (bb.type === "callout") {
       const text = calloutToQuoteText({
         type: (bb.props?.calloutType as string) ?? "note",
@@ -422,6 +411,270 @@ function transformBlocksBeforeSerialize(blocks: PartialBlock[]): PartialBlock[] 
     }
     return b;
   });
+}
+
+type CommandBlock = {
+  id?: string;
+  type?: string;
+  content?: unknown;
+  props?: Record<string, unknown>;
+};
+
+type CommandEditor = {
+  focus: () => void;
+  getSelectedText: () => string;
+  getTextCursorPosition: () => { block: CommandBlock; nextBlock?: CommandBlock };
+  updateBlock: (block: unknown, update: PartialBlock) => unknown;
+  insertBlocks: (
+    blocks: PartialBlock[],
+    referenceBlock: unknown,
+    placement?: "before" | "after",
+  ) => CommandBlock[];
+  setTextCursorPosition: (
+    targetBlock: unknown,
+    placement?: "start" | "end",
+  ) => void;
+  insertInlineContent: (
+    content: unknown,
+    options?: { updateSelection?: boolean },
+  ) => void;
+  toggleStyles: (styles: Record<string, boolean | string>) => void;
+  createLink: (url: string, text?: string) => void;
+};
+
+function currentBlock(editor: CommandEditor): CommandBlock | null {
+  try {
+    return editor.getTextCursorPosition().block;
+  } catch {
+    return null;
+  }
+}
+
+function updateCurrentBlock(
+  editor: CommandEditor,
+  update: PartialBlock,
+): boolean {
+  const block = currentBlock(editor);
+  if (!block) return false;
+  editor.updateBlock(block, update);
+  editor.focus();
+  return true;
+}
+
+function insertAfterCursor(editor: CommandEditor, block: PartialBlock): boolean {
+  const ref = currentBlock(editor);
+  if (!ref) return false;
+  const inserted = editor.insertBlocks([block], ref, "after")[0];
+  try {
+    editor.setTextCursorPosition(inserted, "start");
+  } catch {
+    /* custom no-content blocks do not always accept text cursor placement */
+  }
+  editor.focus();
+  return true;
+}
+
+function tableRows(rows: number, cols: number) {
+  const safeRows = Math.max(1, Math.min(20, Math.floor(rows)));
+  const safeCols = Math.max(1, Math.min(12, Math.floor(cols)));
+  return Array.from({ length: safeRows + 1 }, () => ({
+    cells: Array(safeCols).fill(""),
+  }));
+}
+
+function splitDelimitedLine(line: string): string[] {
+  if (line.includes("\t")) return line.split("\t").map((cell) => cell.trim());
+  if (line.includes("|")) {
+    return line
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((cell) => cell.trim());
+  }
+  return line.split(/[,，]/).map((cell) => cell.trim());
+}
+
+function tableRowsFromText(input: string) {
+  const lines = input
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = lines
+    .map(splitDelimitedLine)
+    .filter((row) => row.length > 0 && row.some(Boolean));
+  if (rows.length === 0) return null;
+  const cols = Math.max(...rows.map((row) => row.length));
+  if (cols < 2) return null;
+  return rows.map((row) => {
+    const cells = row.slice();
+    while (cells.length < cols) cells.push("");
+    return { cells };
+  });
+}
+
+function insertTextParagraph(editor: CommandEditor, text: string): boolean {
+  return insertAfterCursor(editor, {
+    type: "paragraph",
+    content: [{ type: "text", text, styles: {} }],
+  } as unknown as PartialBlock);
+}
+
+function runBlockEditorCommand(
+  editor: CommandEditor,
+  name: string,
+  args: readonly unknown[],
+): boolean {
+  const style = (styles: Record<string, boolean | string>) => {
+    editor.toggleStyles(styles);
+    editor.focus();
+    return true;
+  };
+
+  switch (name) {
+    case "bold":
+      return style({ bold: true });
+    case "italic":
+      return style({ italic: true });
+    case "underline":
+      return style({ underline: true });
+    case "strike":
+      return style({ strike: true });
+    case "inlineCode":
+      return style({ code: true });
+    case "mark":
+      return style({ backgroundColor: "yellow" });
+    case "h1":
+    case "h2":
+    case "h3":
+    case "h4":
+    case "h5":
+      return updateCurrentBlock(editor, {
+        type: "heading",
+        props: { level: Number(name.slice(1)) },
+      } as unknown as PartialBlock);
+    case "bulletList":
+      return updateCurrentBlock(editor, {
+        type: "bulletListItem",
+      } as unknown as PartialBlock);
+    case "orderedList":
+      return updateCurrentBlock(editor, {
+        type: "numberedListItem",
+      } as unknown as PartialBlock);
+    case "taskList":
+      return updateCurrentBlock(editor, {
+        type: "checkListItem",
+        props: { checked: false },
+      } as unknown as PartialBlock);
+    case "quote":
+      return updateCurrentBlock(editor, {
+        type: "quote",
+      } as unknown as PartialBlock);
+    case "wikiLink": {
+      const target = editor.getSelectedText().trim() || "笔记名";
+      editor.insertInlineContent(
+        [{ type: "wikilink", props: { target } }],
+        { updateSelection: true },
+      );
+      editor.focus();
+      return true;
+    }
+    case "link": {
+      void (async () => {
+        const selected = editor.getSelectedText().trim();
+        const url = await useDialog.getState().prompt({
+          title: "链接 URL",
+          defaultValue: /^https?:\/\//i.test(selected) ? selected : "https://",
+          confirmLabel: "插入",
+        });
+        if (!url) return;
+        editor.createLink(url, selected || "链接文本");
+        editor.focus();
+      })();
+      return true;
+    }
+    case "image": {
+      void (async () => {
+        const url = await useDialog.getState().prompt({
+          title: "图片 URL",
+          defaultValue: "https://",
+          confirmLabel: "插入",
+        });
+        if (!url) return;
+        insertAfterCursor(editor, {
+          type: "image",
+          props: { url, caption: "", name: "" },
+        } as unknown as PartialBlock);
+      })();
+      return true;
+    }
+    case "insertTable": {
+      const rows = Number(args[0] ?? 3);
+      const cols = Number(args[1] ?? 3);
+      return insertAfterCursor(editor, {
+        type: "table",
+        content: {
+          type: "tableContent",
+          rows: tableRows(rows, cols),
+        },
+      } as unknown as PartialBlock);
+    }
+    case "selectionToTable": {
+      const rows = tableRowsFromText(editor.getSelectedText());
+      return insertAfterCursor(editor, {
+        type: "table",
+        content: {
+          type: "tableContent",
+          rows: rows ?? tableRows(3, 3),
+        },
+      } as unknown as PartialBlock);
+    }
+    case "codeBlock":
+      return insertAfterCursor(editor, {
+        type: "codeBlock",
+        props: { language: "typescript" },
+        content: [{ type: "text", text: "代码", styles: {} }],
+      } as unknown as PartialBlock);
+    case "mathBlock":
+      return insertAfterCursor(editor, {
+        type: "math",
+        props: { latex: "公式" },
+      } as unknown as PartialBlock);
+    case "mermaid":
+      return insertAfterCursor(editor, {
+        type: "mermaid",
+        props: { code: "graph LR\n  A --> B" },
+      } as unknown as PartialBlock);
+    case "chart":
+      return insertAfterCursor(editor, {
+        type: "chart",
+        props: { code: DEFAULT_CHART_CODE },
+      } as unknown as PartialBlock);
+    case "graphviz":
+      return insertAfterCursor(editor, {
+        type: "diagram",
+        props: { kind: "graphviz", code: DEFAULT_DOT_CODE, server: "" },
+      } as unknown as PartialBlock);
+    case "plantuml":
+      return insertAfterCursor(editor, {
+        type: "diagram",
+        props: { kind: "plantuml", code: DEFAULT_PLANTUML_CODE, server: "" },
+      } as unknown as PartialBlock);
+    case "callout":
+      return insertAfterCursor(editor, {
+        type: "callout",
+        props: { calloutType: "tip", title: "", body: "提示内容" },
+      } as unknown as PartialBlock);
+    case "footnote":
+      return insertTextParagraph(editor, "[^1]: 脚注内容");
+    case "horizontalRule":
+      return insertAfterCursor(editor, {
+        type: "divider",
+      } as unknown as PartialBlock);
+    default:
+      return false;
+  }
 }
 
 export function BlockEditor({
@@ -454,21 +707,51 @@ export function BlockEditor({
   const emitTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const commandEditor = editor as unknown as CommandEditor;
+    registerMarkdownCommandHandler((name, args) =>
+      runBlockEditorCommand(commandEditor, name, args),
+    );
+    return () => registerMarkdownCommandHandler(null);
+  }, [editor]);
+
+  useEffect(() => {
     if (hydratedKeyRef.current === docKey) return;
     const counterRef = hydrationIdRef;
     const myId = ++counterRef.current;
     const raw = initialValueRef.current;
+    devLog("debug", "blockEditor.hydrate.start", {
+      docKey,
+      chars: raw.length,
+    });
     // 先切掉 frontmatter，存到 ref，BlockNote 只看 body
     const [frontmatter, body] = splitFrontmatter(raw);
     frontmatterRef.current = frontmatter;
     const md = preprocessMarkdown(body);
     void (async () => {
+      const parseT0 = performance.now();
       const parsed = await editor.tryParseMarkdownToBlocks(md);
       if (myId !== counterRef.current) return;
+      devLog("debug", "blockEditor.parse.done", {
+        docKey,
+        ms: Math.round(performance.now() - parseT0),
+        blocks: parsed.length,
+      });
+      const transformT0 = performance.now();
       const blocks = transformBlocksAfterParse(parsed as PartialBlock[]);
+      devLog("debug", "blockEditor.transform.done", {
+        docKey,
+        ms: Math.round(performance.now() - transformT0),
+        blocks: blocks.length,
+      });
       isHydratingRef.current = true;
       try {
+        const replaceT0 = performance.now();
         editor.replaceBlocks(editor.document, blocks);
+        devLog("debug", "blockEditor.replace.done", {
+          docKey,
+          ms: Math.round(performance.now() - replaceT0),
+          blocks: blocks.length,
+        });
         lastEmittedRef.current = raw;
         hydratedKeyRef.current = docKey;
         // hydrate 完立刻吐一次大纲，避免 BlockNote 模式下右栏大纲空一段
@@ -519,17 +802,10 @@ export function BlockEditor({
     };
   }, [editor]);
 
-  // 把 BlockNote 内置代码块的 <select> 替换成可输入的 <input list>
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!rootRef.current) return;
-    return installCodeBlockLangInput(rootRef.current);
-  }, []);
-
   const themeMode = useMemo(() => (dark ? "dark" : "light"), [dark]);
 
   return (
-    <div ref={rootRef} style={{ width: "100%", height: "100%" }}>
+    <div style={{ width: "100%", height: "100%" }}>
     <BlockNoteView
       editor={editor}
       theme={themeMode}

@@ -937,6 +937,7 @@ export const api = {
       provider: string;
       dest: string;
       files: number;
+      skipped?: number;
       warnings: string[];
       reportPath?: string | null;
     }>("import_run", { provider, source, workspace }),
@@ -947,9 +948,26 @@ export const api = {
       provider: string;
       dest: string;
       files: number;
+      skipped?: number;
       warnings: string[];
       reportPath?: string | null;
     }>("import_apple_notes", { workspace }),
+
+  /** 列出 imports/ 下旧的时间戳目录（增量切换前留下的）。 */
+  importListLegacyDirs: (workspace: string) =>
+    invoke<
+      {
+        path: string;
+        provider: string;
+        stamp: string;
+        sizeBytes: number;
+        fileCount: number;
+      }[]
+    >("import_list_legacy_dirs", { workspace }),
+
+  /** 把单个旧时间戳目录移到 .markio/trash，可恢复。 */
+  importTrashLegacyDir: (workspace: string, path: string) =>
+    invoke<void>("import_trash_legacy_dir", { workspace, path }),
 
   // RAG 向量索引 / 混合检索
   ragStatus: (workspace: string) =>

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api } from "@/lib/api";
 import { enhanceCalloutsLazy, type CalloutEnhanceHandle } from "@/lib/callouts";
 import {
@@ -13,7 +20,12 @@ import {
   syncPreviewToSource,
 } from "@/lib/splitScrollSync";
 import { perfMeasure, perfMeasureAsync } from "@/lib/perfMarks";
-import { renderChartsIn } from "@/lib/charts";
+import {
+  mergePreviewVisualSnapshot,
+  restorePreviewVisualBlocks,
+} from "@/lib/previewVisualCache";
+import { patchPreviewDom } from "@/lib/previewDomPatch";
+import { renderChartsLazy } from "@/lib/charts";
 import { enhanceCodeBlocks } from "@/lib/code-blocks";
 import { renderDiagramsLazy } from "@/lib/diagrams";
 import { enhanceMarkdownImages } from "@/lib/markdown-images";
@@ -113,6 +125,8 @@ export function Preview({
   const onSourceChangeRef = useRef(onSourceChange);
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
+  const themeRef = useRef(theme);
+  const visualCacheRef = useRef<Map<string, string>>(new Map());
   const findQuery = useUI((s) => s.findQuery);
   const findIndex = useUI((s) => s.findIndex);
   const findCaseSensitive = useUI((s) => s.findCaseSensitive);
@@ -132,6 +146,24 @@ export function Preview({
     sourceRef.current = source;
     onSourceChangeRef.current = onSourceChange;
   }, [source, onSourceChange]);
+
+  useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
+
+  const commitPreviewHtml = useCallback((nextHtml: string, restoreVisuals = true) => {
+    if (!restoreVisuals) {
+      setHtml(nextHtml);
+      return;
+    }
+    const themeId = themeRef.current;
+    mergePreviewVisualSnapshot(visualCacheRef.current, contentRef.current, themeId);
+    setHtml(restorePreviewVisualBlocks(nextHtml, visualCacheRef.current, themeId));
+  }, []);
+
+  useLayoutEffect(() => {
+    patchPreviewDom(contentRef.current, html);
+  }, [html]);
 
   useEffect(() => {
     if (activeWorkspace) {
@@ -369,6 +401,7 @@ export function Preview({
     const handles: number[] = [];
     let wikiHandle: WikiEnhanceHandle | null = null;
     let calloutHandle: CalloutEnhanceHandle | null = null;
+    let chartHandle: VisualBlockHandle | null = null;
     let mathHandle: VisualBlockHandle | null = null;
     let mermaidHandle: VisualBlockHandle | null = null;
     let diagramHandle: VisualBlockHandle | null = null;
@@ -399,9 +432,12 @@ export function Preview({
         wikiHandle = enhanceWikiLinksLazy(root, vaultFiles);
       }),
     );
-    // chart / 重活儿放更后一帧，避免首屏阻塞
-    idle(() => perfMeasure("preview:renderCharts", () => renderChartsIn(root)));
-
+    // Charts can be numerous in real notes; schedule them like the heavier
+    // visual blocks so startup never renders a chart-heavy document in one go.
+    perfMeasure("preview:renderCharts", () => {
+      if (cancelled) return;
+      chartHandle = renderChartsLazy(root);
+    });
     // 重 IO（math 编译 / mermaid svg / graphviz）：viewport-first + 串行 idle
     // 调度。Promise.all 并发跑只会让主线程交错执行，反而拉高单帧峰值。
     perfMeasure("preview:renderMath", () => {
@@ -458,6 +494,7 @@ export function Preview({
       }
       wikiHandle?.disconnect();
       calloutHandle?.disconnect();
+      chartHandle?.disconnect();
       mathHandle?.disconnect();
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
@@ -612,7 +649,7 @@ export function Preview({
           const flushChunks = () => {
             flushTimer = null;
             if (cancelled || seq !== seqRef.current) return;
-            setHtml(chunks.join(""));
+            commitPreviewHtml(chunks.join(""));
           };
           const scheduleFlush = () => {
             if (flushTimer != null) return;
@@ -627,7 +664,7 @@ export function Preview({
             onDone: (info) => {
               if (cancelled || seq !== seqRef.current) return;
               clearFlushTimer();
-              setHtml(chunks.join(""));
+              commitPreviewHtml(chunks.join(""));
               hasRenderedOnceRef.current = true;
               onMetaRef.current?.({
                 outline: info.outline,
@@ -654,7 +691,7 @@ export function Preview({
           api.renderMarkdown(source, basePath),
         );
         if (seq !== seqRef.current) return; // 期间又输入了，丢弃
-        setHtml(r.html);
+        commitPreviewHtml(r.html);
         hasRenderedOnceRef.current = true;
         onMetaRef.current?.({
           outline: r.outline,
@@ -677,7 +714,7 @@ export function Preview({
       clearFlushTimer();
       cleanupStream?.();
     };
-  }, [source, basePath, viewKind, fm.body]);
+  }, [source, basePath, viewKind, fm.body, commitPreviewHtml]);
 
   // 预览侧用 splitScrollSync 单例总线接入分屏滚动同步。containerRef 既是 scroll
   // 元素也是 anchors 测量基准。viewKind 切换会换 containerRef 指向的元素（kanban /
@@ -879,7 +916,6 @@ export function Preview({
         ref={contentRef}
         className="preview"
         style={{ fontSize }}
-        dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import {
   insertBlock,
   prefixLine,
   replaceSelection,
+  runRegisteredMarkdownCommand,
   selectedText,
   wrapSelection,
 } from "@/lib/editor-bridge";
@@ -58,18 +59,31 @@ function buildTableFromText(input: string): string | null {
 }
 
 export const markdownCommands = {
-  h1: () => prefixLine("# "),
-  h2: () => prefixLine("## "),
-  h3: () => prefixLine("### "),
-  h4: () => prefixLine("#### "),
-  h5: () => prefixLine("##### "),
-  bold: () => wrapSelection("**", "**", "加粗文字"),
-  italic: () => wrapSelection("*", "*", "斜体"),
-  strike: () => wrapSelection("~~", "~~", "删除"),
-  mark: () => wrapSelection("==", "==", "高亮"),
-  inlineCode: () => wrapSelection("`", "`", "code"),
-  underline: () => wrapSelection("<u>", "</u>", "下划线"),
+  h1: () => runRegisteredMarkdownCommand("h1") || prefixLine("# "),
+  h2: () => runRegisteredMarkdownCommand("h2") || prefixLine("## "),
+  h3: () => runRegisteredMarkdownCommand("h3") || prefixLine("### "),
+  h4: () => runRegisteredMarkdownCommand("h4") || prefixLine("#### "),
+  h5: () => runRegisteredMarkdownCommand("h5") || prefixLine("##### "),
+  bold: () =>
+    runRegisteredMarkdownCommand("bold") ||
+    wrapSelection("**", "**", "加粗文字"),
+  italic: () =>
+    runRegisteredMarkdownCommand("italic") ||
+    wrapSelection("*", "*", "斜体"),
+  strike: () =>
+    runRegisteredMarkdownCommand("strike") ||
+    wrapSelection("~~", "~~", "删除"),
+  mark: () =>
+    runRegisteredMarkdownCommand("mark") ||
+    wrapSelection("==", "==", "高亮"),
+  inlineCode: () =>
+    runRegisteredMarkdownCommand("inlineCode") ||
+    wrapSelection("`", "`", "code"),
+  underline: () =>
+    runRegisteredMarkdownCommand("underline") ||
+    wrapSelection("<u>", "</u>", "下划线"),
   link: async () => {
+    if (runRegisteredMarkdownCommand("link")) return;
     const current = selectedText().trim();
     const url = await useDialog.getState().prompt({
       title: "链接 URL",
@@ -83,8 +97,11 @@ export const markdownCommands = {
     }
     wrapSelection("[", `](${url})`, "链接文本");
   },
-  wikiLink: () => wrapSelection("[[", "]]", "笔记名"),
+  wikiLink: () =>
+    runRegisteredMarkdownCommand("wikiLink") ||
+    wrapSelection("[[", "]]", "笔记名"),
   image: async () => {
+    if (runRegisteredMarkdownCommand("image")) return;
     const current = selectedText().trim();
     const url = await useDialog.getState().prompt({
       title: "图片 URL",
@@ -98,11 +115,15 @@ export const markdownCommands = {
     }
     wrapSelection("![", `](${url})`, "alt");
   },
-  bulletList: () => prefixLine("- "),
-  orderedList: () => prefixLine("1. "),
-  taskList: () => prefixLine("- [ ] "),
-  quote: () => prefixLine("> "),
+  bulletList: () =>
+    runRegisteredMarkdownCommand("bulletList") || prefixLine("- "),
+  orderedList: () =>
+    runRegisteredMarkdownCommand("orderedList") || prefixLine("1. "),
+  taskList: () =>
+    runRegisteredMarkdownCommand("taskList") || prefixLine("- [ ] "),
+  quote: () => runRegisteredMarkdownCommand("quote") || prefixLine("> "),
   insertTable: (rows = 3, cols = 3) =>
+    runRegisteredMarkdownCommand("insertTable", [rows, cols]) ||
     insertBlock(buildTableMarkdown(rows, cols), {
       atLineStart: true,
       ensureBlankLines: true,
@@ -111,6 +132,7 @@ export const markdownCommands = {
     }),
   table: () => markdownCommands.insertTable(3, 3),
   selectionToTable: () => {
+    if (runRegisteredMarkdownCommand("selectionToTable")) return;
     const table = buildTableFromText(selectedText());
     if (!table) {
       markdownCommands.table();
@@ -121,24 +143,28 @@ export const markdownCommands = {
     else replaceSelection(table, { cursorOffset: 2 });
   },
   codeBlock: () =>
+    runRegisteredMarkdownCommand("codeBlock") ||
     insertBlock("```ts\n代码\n```", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "代码",
     }),
   mathBlock: () =>
+    runRegisteredMarkdownCommand("mathBlock") ||
     insertBlock("$$\n公式\n$$", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "公式",
     }),
   mermaid: () =>
+    runRegisteredMarkdownCommand("mermaid") ||
     insertBlock("```mermaid\ngraph LR\n  A --> B\n```", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "graph LR",
     }),
   chart: () =>
+    runRegisteredMarkdownCommand("chart") ||
     insertBlock(
       [
         "```chart",
@@ -160,30 +186,35 @@ export const markdownCommands = {
       },
     ),
   graphviz: () =>
+    runRegisteredMarkdownCommand("graphviz") ||
     insertBlock("```dot\ndigraph G {\n  A -> B\n}\n```", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "A -> B",
     }),
   plantuml: () =>
+    runRegisteredMarkdownCommand("plantuml") ||
     insertBlock("```plantuml\n@startuml\nA -> B: message\n@enduml\n```", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "A -> B: message",
     }),
   callout: () =>
+    runRegisteredMarkdownCommand("callout") ||
     insertBlock("> [!TIP]\n> 提示内容", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "提示内容",
     }),
   footnote: () =>
+    runRegisteredMarkdownCommand("footnote") ||
     insertBlock("[^1]: 脚注内容", {
       atLineStart: true,
       ensureBlankLines: true,
       selectText: "脚注内容",
     }),
   horizontalRule: () =>
+    runRegisteredMarkdownCommand("horizontalRule") ||
     insertBlock("---", {
       atLineStart: true,
       ensureBlankLines: true,

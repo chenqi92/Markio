@@ -1,8 +1,13 @@
 import { createReactInlineContentSpec } from "@blocknote/react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
 import { useVaultIndex } from "@/stores/vaultIndex";
+import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
 
 /**
  * Wikilink inline content —— `[[target]]` 在 BlockNote 里显示为可点击 pill。
@@ -28,23 +33,34 @@ interface RenderProps {
 
 function WikilinkView({ inlineContent }: RenderProps) {
   const target = inlineContent.props.target;
-  const onClick = () => {
+
+  const stopEditorPointer = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const stopEditorMouse = (event: ReactMouseEvent<HTMLSpanElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onClickCapture = (event: ReactMouseEvent<HTMLSpanElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
     const ws = useWorkspace.getState().activeWorkspace();
     if (!ws) return;
     const idx = useVaultIndex.getState().index[ws.path];
-    const norm = target.replace(/\\/g, "/").toLowerCase();
-    const stem = norm.split("/").pop() ?? norm;
-    const hit = idx?.files.find((f) => {
-      const fn = f.name.toLowerCase().replace(/\.md$/, "");
-      const path = f.path.toLowerCase();
-      return fn === stem || path.endsWith(`/${norm}.md`) || path.endsWith(`/${norm}`);
-    });
+    const parsed = parseWikiLinkBody(target);
+    const linkTarget = parsed?.target ?? target.trim();
+    const hit = resolveWikiFile(idx?.files, linkTarget);
     if (hit) {
-      void useTabs.getState().openPath(hit.path);
+      window.setTimeout(() => {
+        void useTabs.getState().openPath(hit.path);
+      }, 0);
     } else {
       useUI.getState().setToast({
         stage: "error",
-        message: `未找到笔记：${target}`,
+        message: `未找到笔记：${linkTarget}`,
       });
       setTimeout(() => useUI.getState().setToast(null), 1800);
     }
@@ -54,7 +70,9 @@ function WikilinkView({ inlineContent }: RenderProps) {
     <span
       className="bn-wikilink"
       contentEditable={false}
-      onClick={onClick}
+      onPointerDownCapture={stopEditorPointer}
+      onMouseDownCapture={stopEditorMouse}
+      onClickCapture={onClickCapture}
       style={{
         // 纯 inline 文字 chip：BlockNote 的 atom inline 外面已经包了一层
         // ProseMirror NodeView 容器；这里再嵌套 inline-flex 或 svg 会让

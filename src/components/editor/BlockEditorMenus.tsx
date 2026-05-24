@@ -13,6 +13,8 @@ import {
   insertOrUpdateBlockForSlashMenu,
 } from "@blocknote/core/extensions";
 import type { BlockNoteEditor, PartialBlock } from "@blocknote/core";
+import { DEFAULT_CHART_CODE } from "./blocks/ChartBlock";
+import { DEFAULT_DOT_CODE, DEFAULT_PLANTUML_CODE } from "./blocks/DiagramBlock";
 import { useWorkspace } from "@/stores/workspace";
 import { useVaultIndex } from "@/stores/vaultIndex";
 
@@ -40,6 +42,45 @@ function getMarkioSlashItems(
       group,
       icon: <span style={{ fontSize: 14 }}>🧜</span>,
       subtext: "插入 Mermaid 流程图 / 时序图 / 甘特图",
+    },
+    {
+      title: "Chart 图表",
+      onItemClick: () => {
+        insertOrUpdateBlockForSlashMenu(editor, {
+          type: "chart",
+          props: { code: DEFAULT_CHART_CODE },
+        } as unknown as PartialBlock<any, any, any>);
+      },
+      aliases: ["chart", "bar", "line", "pie", "图表", "柱状图"],
+      group,
+      icon: <span style={{ fontSize: 14 }}>▥</span>,
+      subtext: "插入 JSON 驱动的 bar / line / pie 图表",
+    },
+    {
+      title: "Graphviz / DOT",
+      onItemClick: () => {
+        insertOrUpdateBlockForSlashMenu(editor, {
+          type: "diagram",
+          props: { kind: "graphviz", code: DEFAULT_DOT_CODE, server: "" },
+        } as unknown as PartialBlock<any, any, any>);
+      },
+      aliases: ["graphviz", "dot", "diagram", "关系图"],
+      group,
+      icon: <span style={{ fontSize: 14 }}>◎</span>,
+      subtext: "插入本地渲染的 DOT 关系图",
+    },
+    {
+      title: "PlantUML",
+      onItemClick: () => {
+        insertOrUpdateBlockForSlashMenu(editor, {
+          type: "diagram",
+          props: { kind: "plantuml", code: DEFAULT_PLANTUML_CODE, server: "" },
+        } as unknown as PartialBlock<any, any, any>);
+      },
+      aliases: ["plantuml", "puml", "sequence", "时序图"],
+      group,
+      icon: <span style={{ fontSize: 12, fontWeight: 700 }}>PU</span>,
+      subtext: "插入 PlantUML 块",
     },
     {
       title: "数学公式 (KaTeX)",

@@ -16,6 +16,7 @@ import { useSession } from "./stores/session";
 import { reportDiagnostic } from "./stores/diagnostics";
 import { installNetworkListeners } from "./stores/network";
 import { installLongTaskObserver } from "./lib/longTaskObserver";
+import { devLog } from "./lib/devLogger";
 import { selectionCoords } from "./lib/editor-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -225,9 +226,20 @@ export default function App() {
         if (!known.has(t.workspaceId)) continue;
         const isActiveOne = t.path === activePath;
         try {
+          devLog("debug", "session.restore.open.start", {
+            path: t.path,
+            active: isActiveOne,
+          });
           await useTabs.getState().openPath(t.path, { silent: !isActiveOne });
+          devLog("debug", "session.restore.open.done", {
+            path: t.path,
+            active: isActiveOne,
+            tabs: useTabs.getState().tabs.length,
+            activeId: useTabs.getState().activeId,
+          });
         } catch {
           // 文件可能已被外部删除：跳过即可
+          devLog("warn", "session.restore.open.failed", { path: t.path });
         }
       }
       // 兜底：restore 结束后没有 active（activePath 已不存在等），切到第一个 tab

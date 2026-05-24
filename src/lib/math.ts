@@ -16,6 +16,7 @@ async function getKatex(): Promise<KatexModule> {
 async function renderMathBlock(node: HTMLElement) {
   if (node.dataset.rendered) return;
   const tex = node.textContent ?? "";
+  node.dataset.mathSource = tex;
   const displayMode = node.classList.contains("math-display");
   const katex = await getKatex();
   try {

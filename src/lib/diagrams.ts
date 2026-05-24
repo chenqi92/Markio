@@ -171,7 +171,7 @@ function renderPlantUmlBlock(block: HTMLElement) {
   }
 }
 
-async function renderDiagramBlock(block: HTMLElement) {
+export async function renderDiagramBlock(block: HTMLElement) {
   if (block.dataset.rendered) return;
   if (block.classList.contains("graphviz-block")) {
     await renderGraphvizBlock(block);

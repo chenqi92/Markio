@@ -99,7 +99,26 @@
   border-radius: 4px;
 }
 
-/* 代码块语言：把默认 <select> 替成 input + datalist，允许任意输入 */
+/* 代码块语言：BlockNote codeBlock 的语言选择器 */
+.bn-mantine .bn-editor select {
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 24px 2px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 130px;
+  height: 24px;
+  line-height: 18px;
+  margin: 0 0 4px;
+}
+.bn-mantine .bn-editor select:focus {
+  border-color: var(--accent);
+}
+
+/* 旧实现用 input + datalist，这里保留样式，避免历史块或实验开关回退时裸奔。 */
 .bn-mantine .bn-editor input.bn-code-lang-input {
   background: var(--bg-pane-2);
   border: 0.5px solid var(--border);
@@ -114,5 +133,58 @@
   line-height: 18px;
 }
 .bn-mantine .bn-editor input.bn-code-lang-input:focus {
+  border-color: var(--accent);
+}
+
+.bn-mantine .bn-preview-embed.preview {
+  max-width: none;
+  margin: 8px 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+  font-family: var(--font-sans);
+}
+
+.bn-mantine .bn-preview-embed.preview .chart-block,
+.bn-mantine .bn-preview-embed.preview .graphviz-block,
+.bn-mantine .bn-preview-embed.preview .plantuml-block {
+  margin: 0;
+}
+
+.bn-mantine .bn-visual-source {
+  width: 100%;
+  min-height: 140px;
+  padding: 10px;
+  border: 0.5px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+}
+
+.bn-mantine .bn-visual-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.bn-mantine .bn-visual-editor select,
+.bn-mantine .bn-visual-editor input {
+  height: 28px;
+  padding: 0 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-pane-2);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
+.bn-mantine .bn-visual-editor select:focus,
+.bn-mantine .bn-visual-editor input:focus,
+.bn-mantine .bn-visual-source:focus {
   border-color: var(--accent);
 }

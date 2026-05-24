@@ -107,3 +107,30 @@ test("split mode keeps source and preview scroll positions in sync", async ({
     })
     .toBeGreaterThan(200);
 });
+
+test("wysiwyg wikilink opens the target note without locking the editor", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "打开文件夹…" }).click();
+
+  await page.evaluate(
+    (path) => {
+      const state = window.__MARKIO_E2E_STATE__;
+      if (!state) throw new Error("E2E state missing");
+      state.mutateFile(path, "# Daily\n\nJump to [[Plan]].\n");
+    },
+    E2E_DAILY_PATH,
+  );
+
+  await page.getByRole("treeitem", { name: /Daily\.md/ }).click();
+  await page.getByTitle(/所见即所得/).click();
+  const link = page.locator(".bn-wikilink", { hasText: "Plan" });
+  await expect(link).toBeVisible();
+
+  await link.click();
+
+  await expect(page.getByText("project search token")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+1");
+  await expect(page.locator(".cm-content")).toBeVisible();
+});

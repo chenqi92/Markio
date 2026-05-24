@@ -627,9 +627,11 @@
   flex-shrink: 0;
   opacity: 0.72;
 }
-.settings-search-top input,
-.settings-workspace .settings-search-top input,
-.settings-workspace .settings-search-top .settings-search-input {
+/* 注意：specificity 必须压过下面 `.settings-workspace input:not(...)` 那条兜底规则
+ * （否则 search 输入框会被加上边框 + 背景，出现"双框"），所以这里同样写满
+ * 3 个 :not() 把 specificity 推到 (0,5,1)。 */
+.settings-window .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.settings-workspace .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -644,7 +646,7 @@
   line-height: 36px;
   outline: none;
 }
-.settings-workspace .settings-search-top input:focus {
+.settings-workspace .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus {
   border-color: transparent;
   box-shadow: none;
 }
@@ -902,6 +904,458 @@
   transform: translateY(-50%);
 }
 
+/* 让 input[type=time] 跟 .kbd / .settings-btn 的高度与字体保持一致：
+ * 浏览器默认会拉出 spin button 和 picker indicator，体积不一致还带原生灰底，
+ * 这里压成 30px 高、mono 字体、accent focus ring。 */
+.settings-time-input {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.settings-time-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-time-input:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-time-input::-webkit-inner-spin-button,
+.settings-time-input::-webkit-clear-button {
+  display: none;
+}
+.settings-time-input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  filter: invert(var(--time-picker-invert, 0));
+}
+[data-theme="dark"] .settings-time-input,
+[data-theme="nord"] .settings-time-input,
+[data-theme="hc"] .settings-time-input,
+[data-theme="dracula"] .settings-time-input { --time-picker-invert: 0.85; }
+
+/* 兜底：settings-row 里没有显式样式的 <input> 一律走与 .settings-time-input 一致的
+ * 尺寸 / 边框 / focus ring。GitSyncCard / WebDavCard 里大量 inline 只写了 flex/minWidth
+ * 的 input 就会自动套上来；不影响已经通过 inputStyle / className 显式样式的输入。 */
+.settings-main2 .settings-row > input[type="text"],
+.settings-main2 .settings-row > input[type="password"],
+.settings-main2 .settings-row > input[type="email"],
+.settings-main2 .settings-row > input[type="url"],
+.settings-main2 .settings-row > input[type="search"] {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.settings-main2 .settings-row > input[type="password"],
+.settings-main2 .settings-row > input[type="search"] {
+  font-family: var(--font-mono);
+}
+.settings-main2 .settings-row > input[type="text"]:focus,
+.settings-main2 .settings-row > input[type="password"]:focus,
+.settings-main2 .settings-row > input[type="email"]:focus,
+.settings-main2 .settings-row > input[type="url"]:focus,
+.settings-main2 .settings-row > input[type="search"]:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-main2 .settings-row > input::placeholder { color: var(--text-3); }
+
+/* Git 合并冲突横幅：之前用 --surface-2（未定义）+ 平排按钮，没层级。
+ * 改用 danger-tint 背景 + 三段：图标 + 标题/列表 + 操作按钮。 */
+.sync-conflict {
+  margin: 6px 0 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ea580c 8%, transparent);
+  border: 0.5px solid color-mix(in srgb, #ea580c 35%, var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sync-conflict-h {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sync-conflict-h::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ea580c;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.sync-conflict-list {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+  max-height: 140px;
+  overflow-y: auto;
+}
+.sync-conflict-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* settings-help 的语义着色：OK = 绿，错误 = 红。
+ * 之前各处 inline color: var(--success/danger) 写得乱，统一一处。 */
+.settings-help-ok { color: var(--success, #2c9c5a); }
+.settings-help-err { color: var(--danger, #c1432f); }
+
+/* 卡片整块淡化（如 Picgo 选了"不上传"时通用行为/压缩两块） */
+.settings-card-dim {
+  opacity: 0.55;
+  filter: saturate(0.85);
+  pointer-events: none;
+}
+
+/* 通用提示横幅：用于"功能 shell 已存好、后端未接"的说明。
+ * Web Clipper / RSS / 移动端 / Smart Channel 之前各自 inline 写一份，统一这里。 */
+.settings-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  margin: 4px 0 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.settings-banner::before {
+  content: "i";
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+.settings-banner.warn {
+  background: color-mix(in srgb, #ea580c 7%, transparent);
+  border-color: color-mix(in srgb, #ea580c 30%, var(--border));
+}
+.settings-banner.warn::before { background: #ea580c; content: "!"; font-style: normal; }
+
+/* Web Clipper 扩展安装：两个浏览器入口卡片网格，与 .about-foot-card 风格统一但
+ * 套在 settings-card 内时去掉外层 padding 让边对齐。 */
+.clipper-browsers {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 4px 0 4px;
+}
+
+/* 智能通道 提问测试：label 一行 + textarea + 发送按钮，竖向堆叠不再跟 row 的横向布局冲突 */
+.smart-test-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 6px;
+}
+.smart-test-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 56px;
+  outline: none;
+  transition: border-color var(--tr), box-shadow var(--tr);
+}
+.smart-test-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.smart-test-actions { display: flex; justify-content: flex-end; }
+.smart-test-err {
+  padding: 8px 12px;
+  margin-top: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+  border: 0.5px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  color: #dc2626;
+  font-size: 12px;
+}
+.smart-test-answer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+}
+.smart-test-answer-h {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.smart-test-answer-body {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.smart-test-refs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.smart-test-refs > li {
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+.smart-ref-file {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.smart-ref-heading {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+/* "如何在其他工具里用" 说明区：去掉之前 inline 的 padding 16/14 */
+.smart-howto {
+  padding: 8px 0 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.smart-howto p { margin: 0 0 6px; }
+.smart-howto ol { margin: 6px 0 0; padding-left: 20px; }
+.smart-howto ol li { margin-bottom: 4px; }
+.smart-howto code {
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* MCP server 暴露的工具：name 等宽 + 签名灰色 + 描述常规字 */
+.mcp-tools-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mcp-tools-list > li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 0.5px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mcp-tools-list > li:first-child { border-top: 0; }
+.mcp-tool-name { color: var(--text); font-weight: 600; }
+.mcp-tool-sig { color: var(--text-3); margin-left: 2px; }
+.mcp-tool-desc { color: var(--text-2); }
+
+/* RSS 订阅头部右侧的 "全部刷新" 按钮：用 CardTitle 提供的 right slot，
+ * 不再 inline marginLeft:auto 挤进 card-h。 */
+.settings-card-h-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* feed 行里的 "N 新" 小圆角 chip */
+.settings-pill-new {
+  margin-left: 8px;
+  font-size: 10px;
+  padding: 1px 7px;
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-radius: 999px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* danger 按钮：删除 / 解除等高风险操作的红色文字按钮 */
+.settings-btn.settings-btn-danger { color: var(--danger, #c1432f); }
+.settings-btn.settings-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #c1432f) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #c1432f) 35%, var(--border-strong));
+}
+
+/* 外观 → 自定义主题列表 */
+.custom-theme-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.custom-theme-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 0.5px solid var(--border);
+}
+.custom-theme-list > li:first-child { border-top: 0; }
+.cth-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cth-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-theme-list > li.active .cth-name { font-weight: 600; color: var(--accent); }
+.cth-size { font-size: 11px; color: var(--text-3); }
+
+/* 旧导入目录清理：行内 path + 文件数 + 单条/全部清理按钮 */
+.legacy-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.legacy-import-list > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--border);
+}
+.legacy-import-list > li:first-child { border-top: 0; }
+.lic-l { flex: 1; min-width: 0; }
+.lic-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lic-stamp {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-pane-2);
+  border: 0.5px solid var(--border);
+  color: var(--text-3);
+  font-weight: 500;
+}
+.lic-meta { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.lic-path {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lic-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* RAG 设置：Embedding 提供方两张大瓦片，跟卡片左右对齐，激活态描 accent 边。 */
+.rag-provider-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+.rag-provider-tile {
+  position: relative;
+  padding: 12px 14px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--tr), border-color var(--tr), box-shadow var(--tr);
+}
+.settings-main2 .rag-provider-tile { background: var(--bg-pane); }
+.rag-provider-tile:hover { border-color: var(--border-strong); }
+.rag-provider-tile.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.rag-provider-tile-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.rag-provider-tile-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.rag-provider-tile-check {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .import-report {
   margin: 0 16px 14px;
   padding: 12px;
@@ -1148,39 +1602,43 @@
 .about-cl-tag.cur { background: var(--text); color: var(--bg-modal, var(--bg-window)); }
 .about-cl-tag.major { background: var(--accent-glow); color: var(--accent); }
 .about-cl-main {
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 16px;
   min-width: 0;
 }
-/* chip 自然宽度 + 横向 padding；用 flex 替代之前的 grid (固定 50px 的 chip 列在
- * 中文标点 + 长 chip 文本下会把正文挤成单字纵列)。 */
+/* chip 独占一行 + ul 紧跟其下：之前用 grid/flex 把 chip 和 ul 放同一行，长 chip
+ * 文案或正文 min-content 较大时（中文不强制断行）会出现挤压、纵向单字断行、
+ * chip 与 ul 视觉重叠等问题。改为纵向堆叠最稳，chip 像 section 小标题。
+ *
+ * 注意 chip 的 display 必须强制 block（之前 inline-block 在某些渲染场景下会跟
+ * 紧随其后的 ul 视觉粘连得看着像同一行），并显式给 chip + ul 之间留 10px。 */
 .about-cl-section {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
   min-width: 0;
 }
 .about-cl-section ul {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding-left: 18px;
+  align-self: stretch;
+  margin: 10px 0 0;
+  padding-left: 20px;
   font-size: 12px;
   line-height: 1.65;
   color: var(--text-2);
   word-break: break-word;
   overflow-wrap: anywhere;
+  list-style: disc;
 }
 .about-cl-section ul li { margin-bottom: 4px; }
 .about-cl-chip {
-  flex-shrink: 0;
-  align-self: flex-start;
+  display: block;
+  width: max-content;
+  margin: 0;
   font-size: 10px;
-  padding: 3px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  line-height: 1.2;
-  margin-top: 2px;
+  line-height: 1.4;
   white-space: nowrap;
 }
 .about-cl-chip.added { background: rgba(34,197,94,0.15); color: #16a34a; }

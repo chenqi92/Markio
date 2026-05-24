@@ -1,3 +1,9 @@
+import {
+  scheduleVisualBlocks,
+  type VisualBlockHandle,
+  type VisualSchedulerOptions,
+} from "./visualScheduler";
+
 export type ChartKind = "bar" | "line" | "pie";
 
 export interface ChartSeries {
@@ -605,4 +611,16 @@ export function renderChartsIn(root: HTMLElement) {
   root
     .querySelectorAll<HTMLElement>(".chart-block:not([data-rendered])")
     .forEach(renderChartBlock);
+}
+
+export function renderChartsLazy(
+  root: HTMLElement,
+  options: VisualSchedulerOptions = {},
+): VisualBlockHandle {
+  return scheduleVisualBlocks<HTMLElement>(
+    root,
+    ".chart-block:not([data-rendered])",
+    renderChartBlock,
+    options,
+  );
 }

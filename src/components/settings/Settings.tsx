@@ -587,40 +587,19 @@ function CustomThemesCard() {
           </button>
         )}
       </div>
-      {err && (
-        <div
-          className="settings-help"
-          style={{ color: "#ff453a", marginBottom: 8 }}
-        >
-          {err}
-        </div>
-      )}
+      {err && <div className="settings-banner warn">{err}</div>}
       {list.length === 0 ? (
-        <div className="settings-help">{t("settings.appear.noCustomThemes")}</div>
+        <div className="settings-help" style={{ padding: "8px 0 4px" }}>
+          {t("settings.appear.noCustomThemes")}
+        </div>
       ) : (
-        <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+        <ul className="custom-theme-list">
           {list.map((it) => (
-            <li
-              key={it.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 0",
-                borderTop: "1px solid var(--border)",
-              }}
-            >
-              <span style={{ flex: 1 }}>
-                <span style={{ fontWeight: activeId === it.id ? 600 : 400 }}>
-                  {it.name}
-                </span>
-                <span
-                  className="settings-help"
-                  style={{ marginLeft: 8, fontSize: 11 }}
-                >
-                  {(it.size / 1024).toFixed(1)} KB
-                </span>
-              </span>
+            <li key={it.id} className={activeId === it.id ? "active" : ""}>
+              <div className="cth-l">
+                <div className="cth-name">{it.name}</div>
+                <div className="cth-size">{(it.size / 1024).toFixed(1)} KB</div>
+              </div>
               <button
                 className="settings-btn"
                 disabled={busy !== null || activeId === it.id}
@@ -629,10 +608,9 @@ function CustomThemesCard() {
                 {activeId === it.id ? t("common.applied") : t("common.apply")}
               </button>
               <button
-                className="settings-btn"
+                className="settings-btn settings-btn-danger"
                 disabled={busy !== null}
                 onClick={() => void onRemove(it.id)}
-                style={{ color: "#ff453a" }}
               >
                 {t("common.delete")}
               </button>
@@ -2708,56 +2686,53 @@ function GitSyncCard() {
             · 远端 {branches?.remote.length ?? 0}
           </div>
         </div>
-        {branches && branches.local.length > 0 && (
-          <select
+        {branches && branches.local.length > 0 ? (
+          <SelectBtn
             value={branches.current ?? ""}
-            onChange={(e) =>
-              wrap("checkout", () => api.gitCheckout(workspacePath, e.target.value))
-            }
-            disabled={busy !== null}
-            style={{ minWidth: 180 }}
-          >
-            {branches.local.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        )}
-        <button className="settings-btn" disabled={!workspacePath} onClick={refreshBranches}>
+            options={branches.local.map((b) => ({ value: b, label: b }))}
+            onChange={(v) => {
+              if (busy !== null) return;
+              wrap("checkout", () => api.gitCheckout(workspacePath, v));
+            }}
+            minMenuWidth={220}
+          />
+        ) : null}
+        <button
+          className="settings-btn"
+          disabled={!workspacePath}
+          onClick={refreshBranches}
+        >
           刷新分支
         </button>
-        <label
-          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}
-        >
-          <input
-            type="checkbox"
-            checked={pullRebase}
-            onChange={(e) => setPullRebase(e.target.checked)}
-          />
-          pull 用 rebase
-        </label>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <LabelWithTip tip="开启后本地分支落后远端时，pull 会以 rebase 方式整理你的本地提交。">
+            pull 策略
+          </LabelWithTip>
+          <div className="settings-help">
+            {pullRebase ? "rebase（线性历史）" : "merge（默认 · 生成合并提交）"}
+          </div>
+        </div>
+        <Toggle on={pullRebase} onChange={setPullRebase} />
       </div>
 
       {conflict && conflict.length > 0 && (
-        <div
-          className="settings-help"
-          style={{
-            padding: 8,
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            background: "var(--surface-2)",
-          }}
-        >
-          <div style={{ marginBottom: 6 }}>
-            合并冲突 · {conflict.length} 个文件：
+        <div className="sync-conflict">
+          <div className="sync-conflict-h">
+            合并冲突 · 需要解决 {conflict.length} 个文件
           </div>
-          <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>
+          <ul className="sync-conflict-list">
             {conflict.slice(0, 20).map((f) => (
               <li key={f}>{f}</li>
             ))}
+            {conflict.length > 20 && (
+              <li style={{ color: "var(--text-3)" }}>
+                … 还有 {conflict.length - 20} 个
+              </li>
+            )}
           </ul>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div className="sync-conflict-actions">
             <button
               className="settings-btn"
               onClick={() =>
@@ -3220,8 +3195,6 @@ function Picgo() {
     none: { dot: "off", text: "粘贴 / 拖入图片留在本地不上传" },
   };
 
-  const cur = providerSummary[uploadProvider];
-
   return (
     <>
       <SectionHeader id="picgo" />
@@ -3266,15 +3239,14 @@ function Picgo() {
             <div className="settings-row-l">
               <div className="settings-label">{t("settings.picgo.status")}</div>
               <div
-                className="settings-help"
-                style={{
-                  color:
-                    ping.stage === "ok"
-                      ? "var(--success, #2c9c5a)"
-                      : ping.stage === "fail"
-                      ? "var(--danger, #c1432f)"
-                      : undefined,
-                }}
+                className={
+                  "settings-help" +
+                  (ping.stage === "ok"
+                    ? " settings-help-ok"
+                    : ping.stage === "fail"
+                      ? " settings-help-err"
+                      : "")
+                }
               >
                 {statusText}
               </div>
@@ -3306,20 +3278,17 @@ function Picgo() {
       {uploadProvider === "s3" && <S3Card />}
 
       {uploadProvider === "none" && (
-        <div className="settings-card">
-          <div
-            className="settings-help"
-            style={{ padding: "12px 4px" }}
-          >
-            选择 "不上传" 后，粘贴 / 拖入的图片不会自动上传，只在本地按附件保存；笔记里走相对路径。
-          </div>
+        <div className="settings-banner">
+          选择"不上传"后，粘贴 / 拖入的图片不会自动上传，只在本地按附件保存；笔记里走相对路径。
         </div>
       )}
 
       {/* 通用行为 — 不上传时大部分无意义，整块淡化 */}
       <div
-        className="settings-card"
-        style={uploadProvider === "none" ? { opacity: 0.55 } : undefined}
+        className={
+          "settings-card" + (uploadProvider === "none" ? " settings-card-dim" : "")
+        }
+        aria-disabled={uploadProvider === "none"}
       >
         <div className="settings-card-h">{t("settings.picgo.generalCard")}</div>
         <div className="settings-row">
@@ -3357,8 +3326,10 @@ function Picgo() {
 
       {/* 压缩 — 同样上传时才有意义 */}
       <div
-        className="settings-card"
-        style={uploadProvider === "none" ? { opacity: 0.55 } : undefined}
+        className={
+          "settings-card" + (uploadProvider === "none" ? " settings-card-dim" : "")
+        }
+        aria-disabled={uploadProvider === "none"}
       >
         <div className="settings-card-h">{t("settings.picgo.compressCard")}</div>
         <div className="settings-row">
@@ -3385,8 +3356,6 @@ function Picgo() {
           </div>
         )}
       </div>
-      {/* 引用一下，避免 ping/cur 变量未使用警告（cur 暂留给后续侧栏状态展示） */}
-      <div style={{ display: "none" }} aria-hidden>{cur.dot}</div>
     </>
   );
 }
@@ -3554,19 +3523,10 @@ function WxAssistant() {
           </div>
           <input
             type="time"
+            className="settings-time-input"
             value={digestTime}
             onChange={(e) => setPreference("wxAssistantDigestTime", e.target.value)}
             disabled={!enabled || !dailyDigest}
-            style={{
-              padding: "5px 10px",
-              background: "var(--bg-input)",
-              border: "0.5px solid var(--border-strong)",
-              borderRadius: 6,
-              fontSize: 12,
-              color: "var(--text)",
-              fontFamily: "var(--font-mono)",
-              opacity: !enabled || !dailyDigest ? 0.5 : 1,
-            }}
           />
         </div>
         <div className="settings-row settings-row-action">
@@ -3808,94 +3768,49 @@ function SmartChannelSettings() {
 
       <div className="settings-card">
         <div className="settings-card-h">提问测试</div>
-        <div className="settings-row" style={{ alignItems: "flex-start" }}>
-          <div className="settings-row-l" style={{ flex: 1 }}>
-            <LabelWithTip tip="模拟外部 app 通过通道发起的查询；结果与外部一致。">
-              测试问题
-            </LabelWithTip>
-            <textarea
-              value={testQuery}
-              onChange={(e) => setTestQuery(e.target.value)}
-              placeholder={`例如：本周我写过哪些和"反脆弱"相关的笔记？`}
-              rows={2}
-              style={{
-                marginTop: 8,
-                width: "100%",
-                padding: "7px 10px",
-                background: "var(--bg-input)",
-                border: "0.5px solid var(--border-strong)",
-                borderRadius: 6,
-                fontSize: 12,
-                color: "var(--text)",
-                resize: "vertical",
-                fontFamily: "inherit",
-              }}
-            />
+        <div className="smart-test-row">
+          <LabelWithTip tip="模拟外部 app 通过通道发起的查询；结果与外部一致。">
+            测试问题
+          </LabelWithTip>
+          <textarea
+            className="smart-test-input"
+            value={testQuery}
+            onChange={(e) => setTestQuery(e.target.value)}
+            placeholder={`例如：本周我写过哪些和"反脆弱"相关的笔记？`}
+            rows={2}
+          />
+          <div className="smart-test-actions">
+            <button
+              className="settings-btn primary"
+              onClick={runTest}
+              disabled={testing || !enabled}
+              title={!enabled ? "请先开启总开关" : undefined}
+            >
+              {testing ? "查询中…" : "发送"}
+            </button>
           </div>
-          <button
-            className="settings-btn primary"
-            onClick={runTest}
-            disabled={testing || !enabled}
-            title={!enabled ? "请先开启总开关" : undefined}
-            style={{ marginLeft: 12, alignSelf: "flex-end" }}
-          >
-            {testing ? "查询中…" : "发送"}
-          </button>
         </div>
         {testErr && (
-          <div
-            className="settings-help"
-            style={{ color: "#ff453a", padding: "0 16px 8px" }}
-          >
-            {testErr}
-          </div>
+          <div className="smart-test-err">✗ {testErr}</div>
         )}
         {testAnswer && (
-          <div style={{ padding: "0 16px 12px", borderTop: "1px solid var(--border)" }}>
-            <div
-              className="settings-help"
-              style={{ marginTop: 8, color: "var(--text-2)" }}
-            >
-              回答
-            </div>
-            <div
-              style={{
-                marginTop: 6,
-                padding: 10,
-                background: "var(--bg-pane-2)",
-                borderRadius: 6,
-                fontSize: 12,
-                whiteSpace: "pre-wrap",
-                lineHeight: 1.6,
-                color: "var(--text)",
-              }}
-            >
-              {testAnswer}
-            </div>
+          <div className="smart-test-answer">
+            <div className="smart-test-answer-h">回答</div>
+            <div className="smart-test-answer-body">{testAnswer}</div>
             {testRefs.length > 0 && (
               <>
-                <div className="settings-help" style={{ marginTop: 10 }}>
+                <div className="smart-test-answer-h" style={{ marginTop: 10 }}>
                   引用片段
                 </div>
-                <ul
-                  style={{
-                    margin: "4px 0 0",
-                    padding: 0,
-                    listStyle: "none",
-                    fontSize: 12,
-                  }}
-                >
+                <ul className="smart-test-refs">
                   {testRefs.map((r, i) => (
-                    <li
-                      key={i}
-                      style={{
-                        padding: "3px 0",
-                        color: "var(--text-3)",
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    >
-                      · {r.path.split("/").slice(-1)[0]}
-                      {r.heading ? ` — ${r.heading}` : ""}
+                    <li key={i}>
+                      <span className="smart-ref-file">
+                        {r.path.split("/").slice(-1)[0]}
+                      </span>
+                      {r.heading && (
+                        <span className="smart-ref-heading"> — {r.heading}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -3907,12 +3822,12 @@ function SmartChannelSettings() {
 
       <div className="settings-card">
         <div className="settings-card-h">如何在其他工具里用</div>
-        <div style={{ padding: "10px 16px 14px", fontSize: 12, lineHeight: 1.7, color: "var(--text-2)" }}>
-          <p style={{ margin: 0 }}>
+        <div className="smart-howto">
+          <p>
             智能通道在浏览器环境暴露为 <code>window.__markioSmartChannel</code>；
             在 Tauri 桌面端会附带本机进程内调用。外部应用可通过以下方式触发：
           </p>
-          <ol style={{ margin: "8px 0 0 18px", padding: 0 }}>
+          <ol>
             <li>
               命令面板（<code>{shortcutText("⌘K")}</code>）搜索"<b>通过智能通道查询</b>"，把当前问题发给同一引擎。
             </li>
@@ -4469,9 +4384,16 @@ function S3Card() {
           type="password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
+          onBlur={() => {
+            if (secret) void save();
+          }}
           style={{ flex: 1, minWidth: 220 }}
         />
-        <button className="settings-btn" onClick={save} disabled={!endpoint}>
+        <button
+          className="settings-btn primary"
+          onClick={save}
+          disabled={!endpoint || !secret}
+        >
           {t("common.save")}
         </button>
       </div>
@@ -4500,30 +4422,28 @@ function S3Card() {
           onChange={(v) => setPreference("s3PathStyle", v)}
         />
       </div>
-      <div className="settings-row">
+      <div className="settings-row settings-row-action">
         <div className="settings-row-l">
           <LabelWithTip tip={t("settings.picgo.s3ProbeTip")}>
             {t("settings.picgo.s3Probe")}
           </LabelWithTip>
+          <div
+            className={
+              "settings-help" +
+              (msg ? (msg.kind === "err" ? " settings-help-err" : " settings-help-ok") : "")
+            }
+          >
+            {msg?.text ?? t("settings.picgo.s3ProbeTip", { defaultValue: "上传一张 1×1 像素 PNG 验证 endpoint / bucket / 签名是否生效" })}
+          </div>
         </div>
         <button
-          className="settings-btn"
+          className="settings-btn primary"
           onClick={testConnection}
           disabled={testing || !endpoint || !bucket || !accessKeyId}
         >
           {testing ? t("settings.picgo.s3Testing") : t("settings.picgo.s3TestBtn")}
         </button>
       </div>
-      {msg && (
-        <div
-          className="settings-message"
-          style={{
-            color: msg.kind === "err" ? "#dc2626" : "var(--accent)",
-          }}
-        >
-          {msg.text}
-        </div>
-      )}
     </div>
   );
 }
@@ -4958,24 +4878,27 @@ function RerankCard() {
             {keyConfigured ? "已存入系统钥匙串" : "未配置"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input
             type="password"
             value={keyDraft}
             onChange={(e) => setKeyDraft(e.target.value)}
+            onBlur={() => {
+              if (keyDraft.trim()) void saveKey();
+            }}
             placeholder="cohere_xxx"
             style={inputStyle}
           />
           <button
             type="button"
-            className="btn-primary"
+            className="settings-btn primary"
             disabled={!keyDraft.trim() || savingKey}
             onClick={saveKey}
           >
-            保存
+            {savingKey ? "保存中…" : "保存"}
           </button>
           {keyConfigured && (
-            <button type="button" className="btn-ghost" onClick={clearKey}>
+            <button type="button" className="settings-btn" onClick={clearKey}>
               清除
             </button>
           )}
@@ -5250,14 +5173,14 @@ function RagSettings() {
 
       <div className="settings-card">
         <div className="settings-card-h">Embedding 提供方</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 8,
-            padding: "10px 16px",
-          }}
-        >
+        <div className="settings-help" style={{ padding: "0 0 6px" }}>
+          markio 把 embedding 接入面分成两类：本地 Ollama（离线、零成本）
+          与 OpenAI 兼容协议（OpenAI / SiliconFlow / Zhipu / DashScope / Moonshot
+          / xAI / Groq / DeepSeek / Together 等均走这条）。下方「快速预设」
+          可一键复用 AI 助手已存的 Key 与端点。Anthropic 无 embedding API、
+          Gemini 协议不同，故未列入。
+        </div>
+        <div className="rag-provider-tiles">
           {[
             {
               id: "ollama" as const,
@@ -5266,49 +5189,22 @@ function RagSettings() {
             },
             {
               id: "openai" as const,
-              n: "OpenAI 兼容",
-              sub: "需 API Key，联网调用",
+              n: "OpenAI 兼容协议",
+              sub: "OpenAI / SiliconFlow / Zhipu / DashScope …",
             },
           ].map((p) => (
             <button
               type="button"
               key={p.id}
               onClick={() => setPreference("ragProvider", p.id)}
-              style={{
-                position: "relative",
-                padding: "9px 12px",
-                background:
-                  provider === p.id ? "var(--accent-glow)" : "var(--bg-pane-2)",
-                border:
-                  "1px solid " +
-                  (provider === p.id ? "var(--accent)" : "var(--border)"),
-                borderRadius: 9,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
+              className={
+                "rag-provider-tile" + (provider === p.id ? " active" : "")
+              }
             >
-              <div
-                style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}
-              >
-                {p.n}
-              </div>
-              <div
-                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}
-              >
-                {p.sub}
-              </div>
+              <div className="rag-provider-tile-name">{p.n}</div>
+              <div className="rag-provider-tile-sub">{p.sub}</div>
               {provider === p.id && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 8,
-                    color: "var(--accent)",
-                    fontWeight: 700,
-                  }}
-                >
-                  ✓
-                </span>
+                <span className="rag-provider-tile-check">✓</span>
               )}
             </button>
           ))}
@@ -5426,26 +5322,29 @@ function RagSettings() {
                   {openaiKeyConfigured ? "已存储" : "未配置"}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   type="password"
                   value={openaiKeyDraft}
                   placeholder="sk-..."
                   onChange={(e) => setOpenaiKeyDraft(e.target.value)}
+                  onBlur={() => {
+                    if (openaiKeyDraft) void saveOpenaiKey();
+                  }}
                   style={inputStyle}
                 />
                 <button
                   type="button"
-                  className="btn-primary"
+                  className="settings-btn primary"
                   disabled={!openaiKeyDraft || savingKey}
                   onClick={saveOpenaiKey}
                 >
-                  保存
+                  {savingKey ? "保存中…" : "保存"}
                 </button>
                 {openaiKeyConfigured && (
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="settings-btn"
                     onClick={clearOpenaiKey}
                   >
                     清除
@@ -5524,34 +5423,40 @@ function RagSettings() {
                 )}
               </div>
             )}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                padding: "10px 16px",
-              }}
-            >
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={triggerReindex}
-                disabled={progress?.running}
-              >
-                {status?.totalDocs ? "重新索引整个仓库" : "首次构建索引"}
-              </button>
-              {progress?.running && (
+            <div className="settings-row settings-row-action">
+              <div className="settings-row-l">
+                <div className="settings-label">索引操作</div>
+                <div className="settings-help">
+                  首次或更换 embedding 提供方后需要重建。
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
                 <button
                   type="button"
-                  className="btn-ghost"
-                  onClick={triggerCancel}
-                  disabled={progress.cancelRequested}
+                  className="settings-btn primary"
+                  onClick={triggerReindex}
+                  disabled={progress?.running}
                 >
-                  {progress.cancelRequested ? "取消中…" : "取消重建"}
+                  {status?.totalDocs ? "重新索引整个仓库" : "首次构建索引"}
                 </button>
-              )}
-              <button type="button" className="btn-ghost" onClick={triggerClear}>
-                清空索引
-              </button>
+                {progress?.running && (
+                  <button
+                    type="button"
+                    className="settings-btn"
+                    onClick={triggerCancel}
+                    disabled={progress.cancelRequested}
+                  >
+                    {progress.cancelRequested ? "取消中…" : "取消重建"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="settings-btn"
+                  onClick={triggerClear}
+                >
+                  清空索引
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -5744,6 +5649,7 @@ interface ImportReportState {
   provider: string;
   dest: string;
   files: number;
+  skipped?: number;
   warnings: string[];
   reportPath?: string | null;
 }
@@ -5787,9 +5693,12 @@ function importReportText(report: ImportReportState): string {
   const lines = [
     `来源：${report.provider}`,
     `目标：${report.dest}`,
-    `文件数：${report.files}`,
-    `警告数：${report.warnings.length}`,
+    `新增文件：${report.files}`,
   ];
+  if (report.skipped && report.skipped > 0) {
+    lines.push(`跳过（已存在）：${report.skipped}`);
+  }
+  lines.push(`警告数：${report.warnings.length}`);
   if (report.reportPath) lines.push(`报告：${report.reportPath}`);
   if (report.warnings.length > 0) {
     lines.push("", "警告：", ...report.warnings.map((w) => `- ${w}`));
@@ -5846,9 +5755,11 @@ function ImportExport() {
     try {
       const report = await api.importRun(provider, src, activeWorkspace.path);
       setImportReport(report);
+      const skip = report.skipped ?? 0;
+      const skipPart = skip > 0 ? `（跳过 ${skip} 条已存在）` : "";
       setImportMsg({
         kind: "ok",
-        text: `${name} 导入完成：${report.files} 个文件 → ${report.dest}`,
+        text: `${name} 导入完成：新增 ${report.files} 个文件${skipPart} → ${report.dest}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {
@@ -5872,9 +5783,11 @@ function ImportExport() {
     try {
       const report = await api.importAppleNotes(activeWorkspace.path);
       setImportReport(report);
+      const skip = report.skipped ?? 0;
+      const skipPart = skip > 0 ? `（跳过 ${skip} 篇已存在）` : "";
       setImportMsg({
         kind: "ok",
-        text: `Apple Notes 导入完成：${report.files} 篇 → ${report.dest}`,
+        text: `Apple Notes 导入完成：新增 ${report.files} 篇${skipPart} → ${report.dest}`,
       });
       await refreshTree(activeWorkspace.id).catch(() => undefined);
     } catch (e) {
@@ -5921,7 +5834,7 @@ function ImportExport() {
         </div>
       </div>
       <div className="settings-card">
-        <CardTitle tip="导入到当前仓库的 imports/provider-timestamp/；Notion/Roam/Bear 选 ZIP，印象笔记选 ENEX，Obsidian/Logseq 选目录。">
+        <CardTitle tip="增量导入到 imports/<provider>/；指纹记在 .markio/imports.json，同条目下次不会再写入。Notion/Roam/Bear 选 ZIP，印象笔记选 ENEX，Obsidian/Logseq 选目录。">
           从其它工具导入
         </CardTitle>
         <div
@@ -6073,7 +5986,12 @@ function ImportExport() {
               <div>
                 <div className="import-report-title">导入报告</div>
                 <div className="import-report-sub">
-                  {importReport.files} 个文件 · {importReport.warnings.length} 条警告
+                  新增 {importReport.files} 个文件
+                  {importReport.skipped && importReport.skipped > 0
+                    ? ` · 跳过 ${importReport.skipped} 条（已存在）`
+                    : ""}
+                  {" · "}
+                  {importReport.warnings.length} 条警告
                 </div>
               </div>
               <div className="import-report-actions">
@@ -6115,7 +6033,187 @@ function ImportExport() {
           </div>
         )}
       </div>
+
+      <LegacyImportsCard
+        workspacePath={activeWorkspace?.path ?? null}
+        onTrashed={() =>
+          activeWorkspace
+            ? refreshTree(activeWorkspace.id).catch(() => undefined)
+            : undefined
+        }
+      />
     </>
+  );
+}
+
+function LegacyImportsCard({
+  workspacePath,
+  onTrashed,
+}: {
+  workspacePath: string | null;
+  onTrashed: () => void;
+}) {
+  const [list, setList] = useState<
+    | null
+    | {
+        path: string;
+        provider: string;
+        stamp: string;
+        sizeBytes: number;
+        fileCount: number;
+      }[]
+  >(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const confirmDialog = useDialog((s) => s.confirm);
+
+  const refresh = async () => {
+    if (!workspacePath) {
+      setList([]);
+      return;
+    }
+    try {
+      const r = await api.importListLegacyDirs(workspacePath);
+      setList(r);
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspacePath]);
+
+  if (!workspacePath) return null;
+  const items = list ?? [];
+  const totalBytes = items.reduce((s, it) => s + it.sizeBytes, 0);
+  const totalFiles = items.reduce((s, it) => s + it.fileCount, 0);
+  const fmtSize = (n: number) =>
+    n >= 1024 * 1024
+      ? `${(n / 1024 / 1024).toFixed(1)} MB`
+      : n >= 1024
+        ? `${Math.round(n / 1024)} KB`
+        : `${n} B`;
+
+  const purgeAll = async () => {
+    if (items.length === 0) return;
+    const ok = await confirmDialog({
+      title: `清理 ${items.length} 个旧导入目录？`,
+      message: `共 ${totalFiles} 个文件 · ${fmtSize(totalBytes)}\n会移动到 .markio/trash，可在回收站恢复。`,
+      confirmLabel: "移到回收站",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    setMsg(null);
+    let done = 0;
+    let failed = 0;
+    for (const it of items) {
+      try {
+        await api.importTrashLegacyDir(workspacePath, it.path);
+        done += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBusy(false);
+    setMsg(
+      failed === 0
+        ? `✓ 已移走 ${done} 个目录`
+        : `已移走 ${done} 个，${failed} 个失败`,
+    );
+    await refresh();
+    onTrashed();
+  };
+
+  const purgeOne = async (path: string) => {
+    setBusy(true);
+    try {
+      await api.importTrashLegacyDir(workspacePath, path);
+      setMsg("✓ 已移到回收站");
+      await refresh();
+      onTrashed();
+    } catch (e) {
+      setMsg(`✗ ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-card">
+      <CardTitle tip="增量导入切换前留下的 imports/<provider>-<stamp>/ 目录。清理走 .markio/trash，可恢复。">
+        旧的全量导入目录
+      </CardTitle>
+      {items.length === 0 ? (
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">
+              {list === null ? "扫描中…" : "没有发现旧目录"}
+            </div>
+            <div className="settings-help">
+              当前 workspace 下 imports/ 里没有形如 <code>provider-YYYYMMDD-HHMMSS</code>{" "}
+              的目录。
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="settings-row settings-row-action">
+            <div className="settings-row-l">
+              <div className="settings-label">
+                共 {items.length} 个目录 · {totalFiles} 文件 · {fmtSize(totalBytes)}
+              </div>
+              <div className="settings-help">
+                {msg ?? "全部移到 .markio/trash；可在回收站逐个恢复。"}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="settings-btn primary"
+              disabled={busy}
+              onClick={purgeAll}
+            >
+              {busy ? "处理中…" : "全部清理"}
+            </button>
+          </div>
+          <ul className="legacy-import-list">
+            {items.map((it) => (
+              <li key={it.path}>
+                <div className="lic-l">
+                  <div className="lic-name">
+                    {it.provider}
+                    <span className="lic-stamp">{it.stamp}</span>
+                  </div>
+                  <div className="lic-meta">
+                    {it.fileCount} 文件 · {fmtSize(it.sizeBytes)}
+                  </div>
+                  <div className="lic-path">{it.path}</div>
+                </div>
+                <div className="lic-actions">
+                  <button
+                    type="button"
+                    className="settings-btn"
+                    onClick={() => void api.reveal(it.path)}
+                  >
+                    打开
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-btn"
+                    disabled={busy}
+                    onClick={() => void purgeOne(it.path)}
+                  >
+                    移到回收站
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -6164,34 +6262,15 @@ function WebClipper() {
 
   return (
     <>
-      <h2 className="settings-h">Web Clipper</h2>
-      <p className="settings-sub">
-        浏览器扩展把网页抓回 markio 时按下面的偏好处理。扩展端单独分发，桌面端这里只配置接收行为。
-      </p>
+      <SectionHeader id="clipper" />
 
-      <div
-        className="settings-help"
-        style={{
-          padding: "10px 12px",
-          background: "var(--bg-pane)",
-          border: "0.5px solid var(--border)",
-          borderRadius: 8,
-          marginBottom: 16,
-        }}
-      >
+      <div className="settings-banner">
         扩展端 → 桌面端的推送通道未接，下方开关已存好；扩展上架后即生效。
       </div>
 
       <div className="settings-card">
         <div className="settings-card-h">扩展安装</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 8,
-            padding: "8px 0",
-          }}
-        >
+        <div className="clipper-browsers">
           {CLIPPER_BROWSERS.map((b) => (
             <button
               key={b.id}
@@ -6362,23 +6441,27 @@ function RssFeeds() {
 
   return (
     <>
-      <h2 className="settings-h">RSS 订阅</h2>
-      <p className="settings-sub">
-        在 markio 内汇总信息流。点「刷新」或「全部刷新」拉取最新条目；条目元数据在本地，正文留给浏览器。
-      </p>
+      <SectionHeader id="rss" />
 
       <div className="settings-card">
-        <div className="settings-card-h" style={{ display: "flex", alignItems: "center" }}>
+        <div className="settings-card-h">
           <span>订阅 ({feeds.length})</span>
           {feeds.length > 0 && (
-            <button
-              className="settings-btn"
-              style={{ marginLeft: "auto", padding: "3px 9px", fontSize: 11 }}
-              onClick={() => void refreshAll()}
-              disabled={refreshingAll}
-            >
-              {refreshingAll ? "刷新中…" : "全部刷新"}
-            </button>
+            <div className="settings-card-h-actions">
+              <button
+                className="settings-btn"
+                onClick={() => void refreshAll()}
+                disabled={refreshingAll}
+              >
+                {refreshingAll ? "刷新中…" : "全部刷新"}
+              </button>
+              <button
+                className="settings-btn primary"
+                onClick={() => void addFeed()}
+              >
+                添加订阅
+              </button>
+            </div>
           )}
         </div>
         {feeds.length === 0 ? (
@@ -6403,17 +6486,7 @@ function RssFeeds() {
                     <div className="settings-label">
                       {f.title}
                       {(f.unread ?? 0) > 0 && (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontSize: 10,
-                            padding: "1px 6px",
-                            background: "var(--accent-glow)",
-                            color: "var(--accent)",
-                            borderRadius: 999,
-                            fontWeight: 600,
-                          }}
-                        >
+                        <span className="settings-pill-new">
                           {f.unread} 新
                         </span>
                       )}
@@ -6459,7 +6532,7 @@ function RssFeeds() {
                       打开
                     </button>
                     <button
-                      className="settings-btn"
+                      className="settings-btn settings-btn-danger"
                       onClick={() => void removeFeed(f.id, f.title)}
                     >
                       删除
@@ -6468,11 +6541,6 @@ function RssFeeds() {
                 </div>
               );
             })}
-            <div className="settings-row" style={{ justifyContent: "flex-end" }}>
-              <button className="settings-btn primary" onClick={() => void addFeed()}>
-                添加订阅
-              </button>
-            </div>
           </>
         )}
       </div>
@@ -6559,23 +6627,11 @@ function MobileDevices() {
 
   return (
     <>
-      <h2 className="settings-h">移动端 / 设备</h2>
-      <p className="settings-sub">
-        在 iPhone / iPad / 其它桌面之间共享当前仓库。配对清单本地存；P2P 握手后端开发中。
-      </p>
+      <SectionHeader id="mobile" />
 
-      <div
-        className="settings-help"
-        style={{
-          padding: "10px 12px",
-          background: "var(--bg-pane)",
-          border: "0.5px solid var(--border)",
-          borderRadius: 8,
-          marginBottom: 16,
-        }}
-      >
-        macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；
-        mDNS + WS 握手后端开发中。当前可登记设备清单，握手通道上线后即可激活。
+      <div className="settings-banner">
+        macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；mDNS + WS
+        握手后端开发中。当前可登记设备清单，握手通道上线后即可激活。
       </div>
 
       <div className="settings-card">
@@ -6624,7 +6680,10 @@ function MobileDevices() {
                     }))}
                     onChange={(v) => setKind(d.id, v)}
                   />
-                  <button className="settings-btn" onClick={() => void removeDevice(d.id, d.name)}>
+                  <button
+                    className="settings-btn settings-btn-danger"
+                    onClick={() => void removeDevice(d.id, d.name)}
+                  >
                     解除
                   </button>
                 </div>
@@ -6915,103 +6974,138 @@ function McpServerSettings() {
     setTimeout(() => setToast(null), 1500);
   };
 
+  const copyEndpoint = async () => {
+    if (!status?.port) return;
+    await writeText(`http://127.0.0.1:${status.port}`);
+    setToast({ stage: "done", message: "端点已复制" });
+    setTimeout(() => setToast(null), 1500);
+  };
+
+  const copyToken = async () => {
+    if (!status?.token) return;
+    await writeText(status.token);
+    setToast({ stage: "done", message: "Token 已复制" });
+    setTimeout(() => setToast(null), 1500);
+  };
+
+  const MCP_TOOLS = [
+    { name: "search_notes", sig: "(query, limit?)", desc: "全文搜索" },
+    { name: "get_note", sig: "(path)", desc: "读取笔记内容" },
+    { name: "list_notes", sig: "(limit?)", desc: "列出全部笔记" },
+    { name: "open_note", sig: "(path)", desc: "在 markio UI 中打开" },
+    { name: "get_vault_info", sig: "()", desc: "当前 / 全部 vault" },
+  ];
+
   return (
-    <div className="settings-section">
+    <>
       <SectionHeader id="mcp" />
+
       <div className="settings-card">
-        <CardTitle>状态</CardTitle>
+        <div className="settings-card-h">状态</div>
         {loading ? (
-          <div style={{ color: "var(--text-3)", fontSize: 12 }}>读取中…</div>
-        ) : status?.port ? (
-          <div style={{ display: "grid", gap: 8, fontSize: 12 }}>
-            <div>
-              <span style={{ color: "var(--text-3)" }}>端点：</span>
-              <code>http://127.0.0.1:{status.port}</code>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label" style={{ color: "var(--text-3)" }}>
+                读取中…
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "var(--text-3)" }}>Token：</span>
-              <code style={{ flex: 1, fontSize: 11, wordBreak: "break-all" }}>
-                {showToken
-                  ? status.token
-                  : status.token
-                    ? `${status.token.slice(0, 8)}…${status.token.slice(-4)}`
-                    : "(无)"}
-              </code>
+          </div>
+        ) : status?.port ? (
+          <>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">端点</div>
+                <div className="settings-help" style={{ fontFamily: "var(--font-mono)" }}>
+                  http://127.0.0.1:{status.port}
+                </div>
+              </div>
+              <button className="settings-btn" onClick={copyEndpoint}>
+                复制
+              </button>
+            </div>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">Token</div>
+                <div className="settings-help" style={{ fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                  {showToken
+                    ? status.token
+                    : status.token
+                      ? `${status.token.slice(0, 8)}…${status.token.slice(-4)}`
+                      : "(无)"}
+                </div>
+              </div>
               <button
-                type="button"
                 className="settings-btn"
-                style={{ padding: "2px 8px", fontSize: 11 }}
                 onClick={() => setShowToken((v) => !v)}
               >
                 {showToken ? "隐藏" : "显示"}
               </button>
+              <button
+                className="settings-btn"
+                onClick={copyToken}
+                disabled={!status.token}
+              >
+                复制
+              </button>
             </div>
-            <div>
-              <span style={{ color: "var(--text-3)" }}>活跃 vault：</span>
-              <code style={{ fontSize: 11 }}>
-                {status.activeWorkspace ?? "(无；将兜底使用唯一已注册仓库)"}
-              </code>
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label">活跃 vault</div>
+                <div className="settings-help" style={{ fontFamily: "var(--font-mono)" }}>
+                  {status.activeWorkspace ?? "(无；将兜底使用唯一已注册仓库)"}
+                </div>
+              </div>
             </div>
-          </div>
+          </>
         ) : (
-          <div style={{ color: "var(--text-3)", fontSize: 12 }}>
-            MCP server 尚未启动（启动失败时请看主进程日志）。
+          <div className="settings-banner warn">
+            MCP server 尚未启动；启动失败时请看主进程日志。
           </div>
         )}
       </div>
 
       <div className="settings-card">
-        <CardTitle>Claude Code 配置</CardTitle>
-        <p style={{ fontSize: 12, color: "var(--text-3)", margin: "4px 0 8px" }}>
+        <div className="settings-card-h">Claude Code 配置</div>
+        <div className="settings-help" style={{ padding: "0 0 10px" }}>
           先在 markio 仓库的 <code>mcp-server/</code> 目录里跑 <code>npm install</code>，
           再把下面 JSON 粘进 Claude Code 的 MCP 配置文件，并把{" "}
           <code>/absolute/path/to/markio</code> 改成你机器上的实际路径。
-        </p>
-        <pre
-          style={{
-            background: "var(--bg-pane-2)",
-            border: "0.5px solid var(--border)",
-            borderRadius: 8,
-            padding: 12,
-            fontSize: 11,
-            lineHeight: 1.5,
-            overflow: "auto",
-            maxHeight: 280,
-          }}
-        >
+        </div>
+        <pre className="about-notes" style={{ maxHeight: 280 }}>
           {claudeCodeSnippet || "(等待 MCP server 就绪…)"}
         </pre>
-        <button
-          type="button"
-          className="settings-btn"
-          onClick={copySnippet}
-          disabled={!claudeCodeSnippet}
-          style={{ marginTop: 8 }}
-        >
-          复制配置
-        </button>
+        <div className="settings-row settings-row-action">
+          <div className="settings-row-l">
+            <div className="settings-label">复制 JSON 配置</div>
+            <div className="settings-help">
+              粘到 Claude Code 的 <code>~/.config/Claude/claude_desktop_config.json</code>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="settings-btn primary"
+            onClick={copySnippet}
+            disabled={!claudeCodeSnippet}
+          >
+            复制配置
+          </button>
+        </div>
       </div>
 
       <div className="settings-card">
-        <CardTitle>暴露的工具</CardTitle>
-        <ul style={{ fontSize: 12, lineHeight: 1.7, paddingLeft: 18 }}>
-          <li>
-            <code>search_notes(query, limit?)</code> — 全文搜索
-          </li>
-          <li>
-            <code>get_note(path)</code> — 读取笔记内容
-          </li>
-          <li>
-            <code>list_notes(limit?)</code> — 列出全部笔记
-          </li>
-          <li>
-            <code>open_note(path)</code> — 在 markio UI 中打开
-          </li>
-          <li>
-            <code>get_vault_info()</code> — 当前 / 全部 vault
-          </li>
+        <div className="settings-card-h">暴露的工具</div>
+        <ul className="mcp-tools-list">
+          {MCP_TOOLS.map((tool) => (
+            <li key={tool.name}>
+              <code>
+                <span className="mcp-tool-name">{tool.name}</span>
+                <span className="mcp-tool-sig">{tool.sig}</span>
+              </code>
+              <span className="mcp-tool-desc">{tool.desc}</span>
+            </li>
+          ))}
         </ul>
       </div>
-    </div>
+    </>
   );
 }

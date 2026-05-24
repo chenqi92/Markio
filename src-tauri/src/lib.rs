@@ -3187,6 +3187,28 @@ async fn import_apple_notes(
         .map_err(|e| e.to_string())?
 }
 
+/// 列出 workspace/imports 下旧的时间戳目录（增量切换前留下的）。
+#[tauri::command]
+fn import_list_legacy_dirs(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<import::LegacyImportDir>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    import::list_legacy_import_dirs(&ws)
+}
+
+/// 把一个旧时间戳目录移到 .markio/trash（可恢复，不真删）。
+#[tauri::command]
+fn import_trash_legacy_dir(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    path: String,
+) -> Result<(), String> {
+    let ws = validate_path(&state, &workspace)?;
+    let p = std::path::PathBuf::from(&path);
+    import::trash_legacy_import_dir(&ws, &p)
+}
+
 // ─── RAG 向量索引 / 混合检索 ────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3774,6 +3796,8 @@ pub fn run() {
             gdrive_delete,
             import_run,
             import_apple_notes,
+            import_list_legacy_dirs,
+            import_trash_legacy_dir,
             rag_status,
             rag_reindex,
             rag_embed_test,

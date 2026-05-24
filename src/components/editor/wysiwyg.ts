@@ -1174,8 +1174,6 @@ class CalloutLabelWidget extends WidgetType {
 
 // ─── Wikilink widget ──────────────────────────────────────────────────────
 
-const WIKI_LINK_RE = /\[\[([^\]\n]{1,200})\]\]/g;
-
 interface WikilinkInfo {
   from: number;
   to: number;
@@ -1186,17 +1184,25 @@ interface WikilinkInfo {
   path?: string;
 }
 
-function detectWikilinks(state: EditorState): WikilinkInfo[] {
-  const text = state.doc.toString();
+/** Vault files for the currently-active workspace, or undefined if none open.
+ *  Pulled once per build() so detectWikilinks doesn't repeatedly poke the stores. */
+type VaultFiles = ReturnType<typeof currentVaultFiles>;
+
+function currentVaultFiles() {
   const ws = useWorkspace.getState();
   const activeWs = ws.workspaces.find((w) => w.id === ws.activeId);
-  const files = activeWs
+  return activeWs
     ? useVaultIndex.getState().index[activeWs.path]?.files
     : undefined;
+}
+
+function detectWikilinks(text: string, files: VaultFiles): WikilinkInfo[] {
+  // 函数内局部正则：避免共享 /g 全局 RegExp 的 lastIndex 状态（被 worker /
+  // microtask / 未来的并发 build 路径污染时会漏匹配）。
+  const re = /\[\[([^\]\n]{1,200})\]\]/g;
   const out: WikilinkInfo[] = [];
-  WIKI_LINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = WIKI_LINK_RE.exec(text))) {
+  while ((m = re.exec(text))) {
     const parts = parseWikiLinkBody(m[1]!);
     if (!parts) continue;
     const resolved = resolveWikiFile(files, parts.target);
@@ -1414,10 +1420,14 @@ function build(state: EditorState): BuildResult {
     return selectionHitsRange(state.selection, { from, to, inclusive });
   };
 
+  // doc.toString() 是大文档（兆级笔记）的真正 cost；math / wikilink 两个
+  // regex 扫共享同一份字符串，避免重复转换。
+  const docText = state.doc.toString();
+
   // Math regions: detect once over the full doc (regex-only, no AST since
   // lezer-markdown has no math node by default). Skip the widget when the
   // cursor is inside so the user can edit the source plainly.
-  const mathRanges = detectMathRanges(state.doc.toString());
+  const mathRanges = detectMathRanges(docText);
   for (const range of mathRanges) {
     if (trackCursor(range.from, range.to, true)) continue;
     decos.push({
@@ -1437,7 +1447,7 @@ function build(state: EditorState): BuildResult {
 
   // Wikilinks: same regex-based scan; rendered widget shows display text and
   // remembers the resolved vault path so clicks can open the target note.
-  const wikilinkRanges = detectWikilinks(state);
+  const wikilinkRanges = detectWikilinks(docText, currentVaultFiles());
   for (const info of wikilinkRanges) {
     if (trackCursor(info.from, info.to, true)) continue;
     decos.push({

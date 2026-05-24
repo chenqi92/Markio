@@ -362,21 +362,34 @@ function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: str
   textarea.focus({ preventScroll: true });
 }
 
+/** 把所有挂上去的 listener 攒到 cleanups，返回一个统一拆除函数；widget destroy
+ *  时调用，避免长会话 + 大文档累积 widget 时事件闭包持有 view / source 引用。 */
+type Cleanup = () => void;
+
 function installCodeFenceDomHandlers(
   view: EditorView,
   host: HTMLElement,
   source: string,
-) {
+): Cleanup {
+  const cleanups: Cleanup[] = [];
+  const on = <K extends keyof HTMLElementEventMap>(
+    target: HTMLElement,
+    event: K,
+    handler: (e: HTMLElementEventMap[K]) => void,
+  ) => {
+    target.addEventListener(event, handler);
+    cleanups.push(() => target.removeEventListener(event, handler));
+  };
+
   const input = host.querySelector<HTMLInputElement>(".cm-md-code-lang-input");
   const edit = host.querySelector<HTMLButtonElement>(".cm-md-code-edit");
   const body = host.querySelector<HTMLElement>(".cm-md-code-body");
 
   if (input) {
-    const commit = () => commitCodeFenceLang(view, host, input.value);
-    input.addEventListener("mousedown", (event) => event.stopPropagation());
-    input.addEventListener("click", (event) => event.stopPropagation());
-    input.addEventListener("blur", commit);
-    input.addEventListener("keydown", (event) => {
+    on(input, "mousedown", (event) => event.stopPropagation());
+    on(input, "click", (event) => event.stopPropagation());
+    on(input, "blur", () => commitCodeFenceLang(view, host, input.value));
+    on(input, "keydown", (event) => {
       event.stopPropagation();
       if (event.key === "Enter") {
         event.preventDefault();
@@ -389,25 +402,37 @@ function installCodeFenceDomHandlers(
     });
   }
 
-  edit?.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  edit?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    startCodeFenceBodyEdit(view, host, source);
-  });
+  if (edit) {
+    on(edit, "mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    on(edit, "click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      startCodeFenceBodyEdit(view, host, source);
+    });
+  }
 
-  body?.addEventListener("mousedown", (event) => {
-    if (event.target instanceof HTMLTextAreaElement) return;
-    event.preventDefault();
-    event.stopPropagation();
-    startCodeFenceBodyEdit(view, host, source);
-  });
+  if (body) {
+    on(body, "mousedown", (event) => {
+      if (event.target instanceof HTMLTextAreaElement) return;
+      event.preventDefault();
+      event.stopPropagation();
+      startCodeFenceBodyEdit(view, host, source);
+    });
+  }
+
+  return () => {
+    for (const fn of cleanups) fn();
+    cleanups.length = 0;
+  };
 }
 
 class CodeFenceWidget extends WidgetType {
+  /** 当前 DOM 上的 listener 拆除函数；destroy 时调用，避免 widget 失效后
+   *  闭包持有 view / source / handler 延长 GC。 */
+  private cleanup: Cleanup | null = null;
   constructor(
     private readonly lang: string,
     private readonly source: string,
@@ -481,11 +506,15 @@ class CodeFenceWidget extends WidgetType {
     body.append(gutter, pre);
 
     figure.append(head, body);
-    installCodeFenceDomHandlers(view, figure, this.source);
+    this.cleanup = installCodeFenceDomHandlers(view, figure, this.source);
     return figure;
   }
   ignoreEvent() {
     return true;
+  }
+  destroy() {
+    this.cleanup?.();
+    this.cleanup = null;
   }
 }
 
@@ -699,6 +728,9 @@ export function buildTableDom(parsed: ParsedTable): HTMLElement {
 }
 
 class TableWidget extends WidgetType {
+  /** 当前 DOM 上的 listener 拆除函数；destroy 时调用，避免大文档累积 widget 时
+   *  table host 上 9 个 listener 闭包持有 view / pointerDown 等状态。 */
+  private cleanup: Cleanup | null = null;
   constructor(private readonly source: string) {
     super();
   }
@@ -708,11 +740,15 @@ class TableWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const dom = buildTableDom(parseTableSource(this.source));
     dom.dataset.sourceLength = String(this.source.length);
-    installTableDomHandlers(view, dom);
+    this.cleanup = installTableDomHandlers(view, dom);
     return dom;
   }
   ignoreEvent() {
     return true;
+  }
+  destroy() {
+    this.cleanup?.();
+    this.cleanup = null;
   }
 }
 
@@ -996,7 +1032,16 @@ function showTableMenu(host: HTMLElement, cell: HTMLElement, event: MouseEvent) 
   menu.hidden = false;
 }
 
-function installTableDomHandlers(view: EditorView, host: HTMLElement) {
+function installTableDomHandlers(view: EditorView, host: HTMLElement): Cleanup {
+  const cleanups: Cleanup[] = [];
+  const on = <K extends keyof HTMLElementEventMap>(
+    event: K,
+    handler: (e: HTMLElementEventMap[K]) => void,
+  ) => {
+    host.addEventListener(event, handler);
+    cleanups.push(() => host.removeEventListener(event, handler));
+  };
+
   let pointerDown:
     | {
         cell: HTMLElement;
@@ -1006,7 +1051,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     | null = null;
   let suppressNextCellClick = false;
 
-  host.addEventListener("focusin", (event) => {
+  on("focusin", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1015,7 +1060,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("focusout", (event) => {
+  on("focusout", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1023,7 +1068,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("keydown", (event) => {
+  on("keydown", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1042,7 +1087,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     }
   });
 
-  host.addEventListener("mousedown", (event) => {
+  on("mousedown", (event) => {
     const target = eventElementTarget(event);
     const tool = target?.closest<HTMLButtonElement>(
       ".cm-md-table-edge-action[data-action], .cm-md-table-menu-item[data-action]",
@@ -1062,7 +1107,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     }
   });
 
-  host.addEventListener("mouseup", (event) => {
+  on("mouseup", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1079,7 +1124,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("click", (event) => {
+  on("click", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1092,7 +1137,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("click", (event) => {
+  on("click", (event) => {
     const target = eventElementTarget(event);
     const tool = target?.closest<HTMLButtonElement>(
       ".cm-md-table-edge-action[data-action], .cm-md-table-menu-item[data-action]",
@@ -1103,7 +1148,7 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("contextmenu", (event) => {
+  on("contextmenu", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
@@ -1113,13 +1158,18 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement) {
     event.stopPropagation();
   });
 
-  host.addEventListener("input", (event) => {
+  on("input", (event) => {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
     resizeTableCellEditor(cell);
     event.stopPropagation();
   });
+
+  return () => {
+    for (const fn of cleanups) fn();
+    cleanups.length = 0;
+  };
 }
 
 // ─── Image widget ─────────────────────────────────────────────────────────

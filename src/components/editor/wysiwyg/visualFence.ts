@@ -47,7 +47,7 @@ async function renderVisualWidget(
     } else if (kind === "dot") {
       host.classList.add("graphviz-block");
       host.setAttribute("data-graphviz", encoded);
-      await renderGraphvizBlock(host);
+      await renderGraphvizBlock(host, signal);
     } else {
       host.classList.add("chart-block");
       host.setAttribute("data-chart", encoded);

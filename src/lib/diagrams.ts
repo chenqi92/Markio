@@ -112,11 +112,13 @@ function renderError(block: HTMLElement, kind: string, message: string, source: 
   block.classList.add("diagram-rendered", "diagram-failed");
 }
 
-export async function renderGraphvizBlock(block: HTMLElement) {
+export async function renderGraphvizBlock(block: HTMLElement, signal?: AbortSignal) {
   const source = decodeSource(block.getAttribute("data-graphviz") ?? block.textContent ?? "");
   try {
     const viz = await getViz();
+    if (signal?.aborted) return;
     const svg = viz.renderSVGElement(source, { engine: "dot" });
+    if (signal?.aborted) return;
     const serialized = new XMLSerializer().serializeToString(svg);
     const { figure, viewport } = diagramShell("Graphviz / DOT", "本地离线渲染");
     viewport.innerHTML = DOMPurify.sanitize(serialized, {
@@ -127,6 +129,7 @@ export async function renderGraphvizBlock(block: HTMLElement) {
     block.dataset.rendered = "1";
     block.classList.add("diagram-rendered");
   } catch (err) {
+    if (signal?.aborted) return;
     renderError(block, "Graphviz / DOT", (err as Error).message, source);
   }
 }
@@ -171,10 +174,11 @@ function renderPlantUmlBlock(block: HTMLElement) {
   }
 }
 
-export async function renderDiagramBlock(block: HTMLElement) {
+export async function renderDiagramBlock(block: HTMLElement, signal?: AbortSignal) {
   if (block.dataset.rendered) return;
+  if (signal?.aborted) return;
   if (block.classList.contains("graphviz-block")) {
-    await renderGraphvizBlock(block);
+    await renderGraphvizBlock(block, signal);
   } else if (block.classList.contains("plantuml-block")) {
     renderPlantUmlBlock(block);
   }

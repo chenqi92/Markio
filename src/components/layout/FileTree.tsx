@@ -592,9 +592,9 @@ function TreeContextMenu({
   const openHistory = useUI((s) => s.openHistory);
   const openFile = useTabs((s) => s.openFile);
   const openPath = useTabs((s) => s.openPath);
+  const closeTabsForPath = useTabs((s) => s.closeTabsForPath);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
-  const closeTabsForPath = useTabsForPath();
   const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
   const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
   const setColor = useFileMeta((s) => s.setColor);
@@ -946,17 +946,4 @@ async function ragUpdateAfterPathRemoval(workspace: string, path: string, isDir:
   } catch {
     /* ignore */
   }
-}
-
-/** 删除文件后顺手关闭已打开的相关 tab */
-function useTabsForPath() {
-  const tabs = useTabs((s) => s.tabs);
-  const closeTab = useTabs((s) => s.closeTab);
-  return (path: string) => {
-    for (const t of tabs) {
-      if (t.path === path || t.path.startsWith(path + "/")) {
-        closeTab(t.id);
-      }
-    }
-  };
 }

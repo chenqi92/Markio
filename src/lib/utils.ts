@@ -38,6 +38,21 @@ export function dirname(path: string): string {
   return idx > 0 ? norm.slice(0, idx) : "/";
 }
 
+export function pathKey(path: string): string {
+  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[a-zA-Z]:\//.test(norm) ? norm.toLowerCase() : norm;
+}
+
+export function samePath(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
+}
+
+export function pathContains(parent: string, candidate: string): boolean {
+  const p = pathKey(parent);
+  const c = pathKey(candidate);
+  return c === p || c.startsWith(`${p}/`);
+}
+
 export function joinPath(...parts: string[]): string {
   return parts
     .filter(Boolean)

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { TabInfo } from "@/types";
 import { api, parseError, type FileSig } from "@/lib/api";
-import { basename, dirname, uid } from "@/lib/utils";
+import { basename, dirname, pathContains, samePath, uid } from "@/lib/utils";
 import { useWorkspace } from "./workspace";
 import { useStreak } from "./streak";
 import { useRecents } from "./recents";
@@ -26,6 +26,7 @@ interface TabsState {
   openFile: (workspaceId: string, path: string, opts?: { silent?: boolean }) => Promise<void>;
   openPath: (path: string, opts?: { silent?: boolean }) => Promise<void>;
   closeTab: (id: string) => void;
+  closeTabsForPath: (path: string) => void;
   setActive: (id: string) => void;
   updateContent: (id: string, content: string) => void;
   saveTab: (id: string, force?: boolean) => Promise<"ok" | "conflict" | "error">;
@@ -163,6 +164,33 @@ export const useTabs = create<TabsState>((set, get) => ({
       }
       const newSigs = { ...s.sigs };
       delete newSigs[id];
+      return { tabs: next, activeId, sigs: newSigs };
+    }),
+
+  closeTabsForPath: (path) =>
+    set((s) => {
+      const closing = s.tabs.filter((t) => pathContains(path, t.path));
+      if (closing.length === 0) return s;
+
+      const closingIds = new Set(closing.map((t) => t.id));
+      const closingPaths = new Set(closing.map((t) => t.path));
+      const next = s.tabs.filter((t) => !closingIds.has(t.id));
+      const activeWasClosed = s.activeId ? closingIds.has(s.activeId) : false;
+      let activeId = s.activeId;
+      if (activeWasClosed) {
+        const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
+        const fallback = next[activeIdx] ?? next[activeIdx - 1] ?? next[0] ?? null;
+        activeId = fallback?.id ?? null;
+      }
+
+      const newSigs = { ...s.sigs };
+      for (const id of closingIds) delete newSigs[id];
+
+      for (const p of closingPaths) {
+        const stillOpen = next.some((t) => samePath(t.path, p));
+        if (!stillOpen) api.close(p).catch(() => undefined);
+      }
+
       return { tabs: next, activeId, sigs: newSigs };
     }),
 

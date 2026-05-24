@@ -39,23 +39,66 @@ export function currentVaultFiles() {
 }
 
 export function detectWikilinks(text: string, files: VaultFiles): WikilinkInfo[] {
-  // 函数内局部正则：避免共享 /g 全局 RegExp 的 lastIndex 状态（被 worker /
-  // microtask / 未来的并发 build 路径污染时会漏匹配）。
-  const re = /\[\[([^\]\n]{1,200})\]\]/g;
+  // 跳过 fenced code (``` ... ```) 与 inline code (`...`)：代码块里的
+  // [[Foo]] 是字面字符，不应被替换成 widget（比如解释 wikilink 语法的文档）。
   const out: WikilinkInfo[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const parts = parseWikiLinkBody(m[1]!);
-    if (!parts) continue;
-    const resolved = resolveWikiFile(files, parts.target);
-    out.push({
-      from: m.index,
-      to: m.index + m[0].length,
-      display: parts.display,
-      target: parts.target,
-      heading: parts.heading,
-      path: resolved?.path,
-    });
+  const len = text.length;
+  let i = 0;
+  while (i < len) {
+    const c = text[i];
+    // fenced code block at line start
+    if (
+      c === "`" &&
+      text[i + 1] === "`" &&
+      text[i + 2] === "`" &&
+      (i === 0 || text[i - 1] === "\n")
+    ) {
+      const close = text.indexOf("\n```", i + 3);
+      if (close < 0) break;
+      const afterFence = text.indexOf("\n", close + 1);
+      i = afterFence < 0 ? len : afterFence + 1;
+      continue;
+    }
+    // inline code
+    if (c === "`") {
+      const close = text.indexOf("`", i + 1);
+      if (close < 0) {
+        i++;
+        continue;
+      }
+      i = close + 1;
+      continue;
+    }
+    // [[ ... ]] (single-line, body length capped at 200)
+    if (c === "[" && text[i + 1] === "[") {
+      const close = text.indexOf("]]", i + 2);
+      if (close < 0) {
+        i++;
+        continue;
+      }
+      const body = text.slice(i + 2, close);
+      if (body.length === 0 || body.length > 200 || body.includes("\n")) {
+        i++;
+        continue;
+      }
+      const parts = parseWikiLinkBody(body);
+      if (parts) {
+        const resolved = resolveWikiFile(files, parts.target);
+        out.push({
+          from: i,
+          to: close + 2,
+          display: parts.display,
+          target: parts.target,
+          heading: parts.heading,
+          path: resolved?.path,
+        });
+        i = close + 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    i++;
   }
   return out;
 }

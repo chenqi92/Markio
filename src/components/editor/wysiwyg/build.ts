@@ -116,6 +116,34 @@ function extractFenceLang(state: EditorState, from: number): string {
   return m ? m[2]! : "";
 }
 
+/**
+ * YAML frontmatter 区间：文档以 `---\n` 开头 + 后续某行单独 `---` 结束。
+ * 返回 frontmatter 结束后第一个字符的 offset；不存在时返回 0。
+ *
+ * 用途：lezer 把 `---` 解析为 HorizontalRule，没有 frontmatter 节点；如果
+ * 不显式排除，文档头部和 `---` 闭合行都会被替换成 HR widget。
+ */
+function frontmatterEnd(text: string): number {
+  if (!text.startsWith("---")) return 0;
+  // 第一行必须就是 `---`（允许尾随 \r）
+  const firstEol = text.indexOf("\n");
+  if (firstEol < 0) return 0;
+  const firstLine = text.slice(0, firstEol).trimEnd();
+  if (firstLine !== "---") return 0;
+  // 后续找一行只含 `---` 的关闭 delimiter
+  let i = firstEol + 1;
+  while (i < text.length) {
+    const eol = text.indexOf("\n", i);
+    const line = text.slice(i, eol < 0 ? text.length : eol).trimEnd();
+    if (line === "---") {
+      return eol < 0 ? text.length : eol + 1;
+    }
+    if (eol < 0) return 0;
+    i = eol + 1;
+  }
+  return 0;
+}
+
 export function build(state: EditorState): BuildResult {
   const decos: PendingDeco[] = [];
   const atomic: PendingDeco[] = [];
@@ -134,6 +162,7 @@ export function build(state: EditorState): BuildResult {
   // doc.toString() 是大文档（兆级笔记）的真正 cost；math / wikilink 两个
   // regex 扫共享同一份字符串，避免重复转换。
   const docText = state.doc.toString();
+  const fmEnd = frontmatterEnd(docText);
 
   // Math regions: detect once over the full doc (regex-only, no AST since
   // lezer-markdown has no math node by default). Skip the widget when the
@@ -357,6 +386,9 @@ export function build(state: EditorState): BuildResult {
 
       // ─── 水平线 ───
       if (n === "HorizontalRule") {
+        // YAML frontmatter 的开 / 闭 `---` 不当 HR 渲染 —— 否则首行变成横线、
+        // 中间 YAML 字段悬空，整个 frontmatter 块视觉错乱
+        if (node.from < fmEnd) return;
         const line = state.doc.lineAt(node.from);
         decos.push({
           from: line.from,
@@ -486,23 +518,23 @@ export function build(state: EditorState): BuildResult {
         if (!cursorInBlock) {
           const source = extractFencedBody(state, node.from, node.to);
           const visualKind = detectVisualLang(lang);
-          if (!visualKind || source.trim().length > 0) {
-            const widget =
-              WYSIWYG_VISUAL_FENCES_ENABLED && visualKind && source.trim().length > 0
-                ? new VisualFenceWidget(visualKind, source)
-                : new CodeFenceWidget(lang, source, node.to - node.from);
-            decos.push({
-              from: node.from,
-              to: node.to,
-              deco: Decoration.replace({ widget, block: true }),
-            });
-            atomic.push({
-              from: node.from,
-              to: node.to,
-              deco: Decoration.mark({}),
-            });
-            return;
-          }
+          // 空 mermaid/dot/chart fence 仍要给 widget —— 否则用户看到的是源码
+          // `\`\`\`mermaid` 加几行 codeblock 样式，没法走 widget 的编辑入口
+          const widget =
+            WYSIWYG_VISUAL_FENCES_ENABLED && visualKind && source.trim().length > 0
+              ? new VisualFenceWidget(visualKind, source)
+              : new CodeFenceWidget(lang, source, node.to - node.from);
+          decos.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.replace({ widget, block: true }),
+          });
+          atomic.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.mark({}),
+          });
+          return;
         }
         markLines(node.from, node.to, "cm-md-line cm-md-codeblock");
         return;

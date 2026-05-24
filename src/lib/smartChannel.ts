@@ -399,7 +399,15 @@ export async function smartChannelQuery(
   };
 }
 
-/** 暴露给开发者控制台 / 外部桥（Tauri 命令尚未挂上时的临时入口） */
+/**
+ * 暴露给开发者控制台 / 外部桥（Tauri 命令尚未挂上时的临时入口）。
+ *
+ * 现在受 smartChannelEnabled 设置 gate：关闭时不挂全局，避免在不打算用此功能
+ * 的设备上把内部 API 暴露给页面里的任意脚本 / 浏览器 devtools 探测。设置切换
+ * 时通过 useSettings.subscribe 同步增删。
+ *
+ * TODO: 正式的 Tauri command + permission model 出来后整体移除此全局。
+ */
 declare global {
   interface Window {
     __markioSmartChannel?: {
@@ -410,10 +418,24 @@ declare global {
   }
 }
 
+function syncSmartChannelGlobal(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  if (enabled) {
+    window.__markioSmartChannel = {
+      query: (q, opts) => smartChannelQuery({ query: q, ...opts }),
+      usage: getSmartChannelUsage,
+      id: () => useSettings.getState().smartChannelId,
+    };
+  } else {
+    delete window.__markioSmartChannel;
+  }
+}
+
 if (typeof window !== "undefined") {
-  window.__markioSmartChannel = {
-    query: (q, opts) => smartChannelQuery({ query: q, ...opts }),
-    usage: getSmartChannelUsage,
-    id: () => useSettings.getState().smartChannelId,
-  };
+  syncSmartChannelGlobal(useSettings.getState().smartChannelEnabled);
+  useSettings.subscribe((state, prev) => {
+    if (state.smartChannelEnabled !== prev.smartChannelEnabled) {
+      syncSmartChannelGlobal(state.smartChannelEnabled);
+    }
+  });
 }

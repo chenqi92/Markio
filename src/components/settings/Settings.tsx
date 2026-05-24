@@ -3824,8 +3824,9 @@ function SmartChannelSettings() {
         <div className="settings-card-h">如何在其他工具里用</div>
         <div className="smart-howto">
           <p>
-            智能通道在浏览器环境暴露为 <code>window.__markioSmartChannel</code>；
-            在 Tauri 桌面端会附带本机进程内调用。外部应用可通过以下方式触发：
+            智能通道开启后才会在浏览器环境挂载 <code>window.__markioSmartChannel</code>；
+            关闭即解绑，避免内部 API 被无意暴露。在 Tauri 桌面端会附带本机进程内调用。
+            外部应用可通过以下方式触发：
           </p>
           <ol>
             <li>

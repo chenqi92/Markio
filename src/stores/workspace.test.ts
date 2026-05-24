@@ -35,7 +35,7 @@ describe("removeTreePath", () => {
       "/vault/00 Welcome.md",
       "/vault/imports",
     ]);
-    expect(next.children?.[1].children).toEqual([]);
+    expect(next.children?.[1]?.children).toEqual([]);
   });
 
   it("does not remove the root node itself", () => {

@@ -15,6 +15,7 @@ pub mod history;
 pub mod icloud;
 pub mod import;
 pub mod mcp;
+pub mod rag;
 pub mod rss;
 pub mod s3;
 pub mod secret;

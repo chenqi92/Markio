@@ -40,9 +40,17 @@ function getKatex(): Promise<KatexModule> {
 }
 
 // 渲染失败时不让 widget 退化为空白 —— 显示带 ❗ 的灰字，让用户知道写错了。
-function renderKatexInto(host: HTMLElement, source: string, display: boolean) {
+// signal 来自 widget destroy：如果 widget 在 katex lazy chunk 拉完前就被销毁，
+// 跳过后续写 host，避免写到游离 DOM（无副作用但清洁，且省 sanitize 调用）。
+function renderKatexInto(
+  host: HTMLElement,
+  source: string,
+  display: boolean,
+  signal?: AbortSignal,
+) {
   void getKatex()
     .then((katex) => {
+      if (signal?.aborted) return;
       try {
         const html = katex.renderToString(source, {
           displayMode: display,
@@ -50,21 +58,25 @@ function renderKatexInto(host: HTMLElement, source: string, display: boolean) {
           strict: "ignore",
           output: "htmlAndMathml",
         });
+        if (signal?.aborted) return;
         host.innerHTML = DOMPurify.sanitize(html, {
           USE_PROFILES: { html: true, mathMl: true, svg: true },
         });
       } catch (err) {
+        if (signal?.aborted) return;
         host.classList.add("cm-md-math-error");
         host.textContent = `❗ ${(err as Error).message}`;
       }
     })
     .catch((err) => {
+      if (signal?.aborted) return;
       host.classList.add("cm-md-math-error");
       host.textContent = `❗ KaTeX 加载失败：${(err as Error).message}`;
     });
 }
 
 class MathWidget extends WidgetType {
+  private readonly abort = new AbortController();
   constructor(
     private readonly source: string,
     private readonly display: boolean,
@@ -83,12 +95,15 @@ class MathWidget extends WidgetType {
     el.className = this.display ? "cm-md-math-block" : "cm-md-math-inline";
     el.dataset.mathDisplay = String(this.display);
     el.textContent = this.display ? `$$${this.source}$$` : `$${this.source}$`;
-    renderKatexInto(el, this.source, this.display);
+    renderKatexInto(el, this.source, this.display, this.abort.signal);
     return el;
   }
   ignoreEvent() {
     // Let mousedown bubble so the wysiwyg plugin can move the caret into the source.
     return false;
+  }
+  destroy() {
+    this.abort.abort();
   }
 }
 
@@ -111,7 +126,12 @@ function detectVisualLang(lang: string): VisualLang | null {
   return null;
 }
 
-async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: string) {
+async function renderVisualWidget(
+  host: HTMLElement,
+  kind: VisualLang,
+  source: string,
+  signal?: AbortSignal,
+) {
   const encoded = encodeURIComponent(source);
   try {
     if (kind === "mermaid") {
@@ -128,6 +148,7 @@ async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: s
       renderChartBlock(host);
     }
   } catch (err) {
+    if (signal?.aborted) return;
     host.classList.add("cm-md-fenced-error");
     const pre = document.createElement("pre");
     pre.style.whiteSpace = "pre-wrap";
@@ -139,6 +160,7 @@ async function renderVisualWidget(host: HTMLElement, kind: VisualLang, source: s
 }
 
 class VisualFenceWidget extends WidgetType {
+  private readonly abort = new AbortController();
   constructor(
     private readonly kind: VisualLang,
     private readonly source: string,
@@ -156,11 +178,14 @@ class VisualFenceWidget extends WidgetType {
     const el = document.createElement("div");
     el.className = `cm-md-fenced-widget cm-md-fenced-${this.kind}`;
     el.dataset.kind = this.kind;
-    void renderVisualWidget(el, this.kind, this.source);
+    void renderVisualWidget(el, this.kind, this.source, this.abort.signal);
     return el;
   }
   ignoreEvent() {
     return false;
+  }
+  destroy() {
+    this.abort.abort();
   }
 }
 

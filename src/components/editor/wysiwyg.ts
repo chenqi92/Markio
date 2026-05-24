@@ -18,6 +18,8 @@ import {
 } from "@codemirror/view";
 import DOMPurify from "dompurify";
 import { cursorInsideRange, detectMathRanges } from "@/lib/math-ranges";
+import { MathWidget } from "./wysiwyg/math";
+import { escapeCodeHtml, highlightCode } from "./wysiwyg/highlight";
 import {
   applyImageElementSizing,
   parseImageMarkdown,
@@ -32,80 +34,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 
-type KatexModule = typeof import("katex");
-let katexPromise: Promise<KatexModule> | null = null;
-function getKatex(): Promise<KatexModule> {
-  if (!katexPromise) katexPromise = import("katex");
-  return katexPromise;
-}
-
-// 渲染失败时不让 widget 退化为空白 —— 显示带 ❗ 的灰字，让用户知道写错了。
-// signal 来自 widget destroy：如果 widget 在 katex lazy chunk 拉完前就被销毁，
-// 跳过后续写 host，避免写到游离 DOM（无副作用但清洁，且省 sanitize 调用）。
-function renderKatexInto(
-  host: HTMLElement,
-  source: string,
-  display: boolean,
-  signal?: AbortSignal,
-) {
-  void getKatex()
-    .then((katex) => {
-      if (signal?.aborted) return;
-      try {
-        const html = katex.renderToString(source, {
-          displayMode: display,
-          throwOnError: false,
-          strict: "ignore",
-          output: "htmlAndMathml",
-        });
-        if (signal?.aborted) return;
-        host.innerHTML = DOMPurify.sanitize(html, {
-          USE_PROFILES: { html: true, mathMl: true, svg: true },
-        });
-      } catch (err) {
-        if (signal?.aborted) return;
-        host.classList.add("cm-md-math-error");
-        host.textContent = `❗ ${(err as Error).message}`;
-      }
-    })
-    .catch((err) => {
-      if (signal?.aborted) return;
-      host.classList.add("cm-md-math-error");
-      host.textContent = `❗ KaTeX 加载失败：${(err as Error).message}`;
-    });
-}
-
-class MathWidget extends WidgetType {
-  private readonly abort = new AbortController();
-  constructor(
-    private readonly source: string,
-    private readonly display: boolean,
-  ) {
-    super();
-  }
-  eq(other: WidgetType): boolean {
-    return (
-      other instanceof MathWidget &&
-      other.source === this.source &&
-      other.display === this.display
-    );
-  }
-  toDOM(): HTMLElement {
-    const el = document.createElement(this.display ? "div" : "span");
-    el.className = this.display ? "cm-md-math-block" : "cm-md-math-inline";
-    el.dataset.mathDisplay = String(this.display);
-    el.textContent = this.display ? `$$${this.source}$$` : `$${this.source}$`;
-    renderKatexInto(el, this.source, this.display, this.abort.signal);
-    return el;
-  }
-  ignoreEvent() {
-    // Let mousedown bubble so the wysiwyg plugin can move the caret into the source.
-    return false;
-  }
-  destroy() {
-    this.abort.abort();
-  }
-}
+// MathWidget + getKatex + renderKatexInto 已迁移到 ./wysiwyg/math
 
 // ─── Visual fenced-code widgets (mermaid / dot / chart) ────────────────────
 // Match the conventions the preview render pipeline uses so we can reuse the
@@ -211,84 +140,7 @@ function safeLanguageClass(lang: string): string {
 //
 // 一旦某语言加载过就缓存（langPromises Map）。
 
-type HljsCore = typeof import("highlight.js/lib/core").default;
-
-let hljsCorePromise: Promise<HljsCore> | null = null;
-function loadHljsCore(): Promise<HljsCore> {
-  if (!hljsCorePromise) {
-    hljsCorePromise = import("highlight.js/lib/core").then((m) => m.default);
-  }
-  return hljsCorePromise;
-}
-
-// 一组工厂函数：value 必须是 () => import("...") 形式，让 Vite 各自切 chunk。
-const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
-  bash: () => import("highlight.js/lib/languages/bash"),
-  sh: () => import("highlight.js/lib/languages/bash"),
-  shell: () => import("highlight.js/lib/languages/bash"),
-  zsh: () => import("highlight.js/lib/languages/bash"),
-  css: () => import("highlight.js/lib/languages/css"),
-  go: () => import("highlight.js/lib/languages/go"),
-  golang: () => import("highlight.js/lib/languages/go"),
-  java: () => import("highlight.js/lib/languages/java"),
-  javascript: () => import("highlight.js/lib/languages/javascript"),
-  js: () => import("highlight.js/lib/languages/javascript"),
-  json: () => import("highlight.js/lib/languages/json"),
-  markdown: () => import("highlight.js/lib/languages/markdown"),
-  md: () => import("highlight.js/lib/languages/markdown"),
-  python: () => import("highlight.js/lib/languages/python"),
-  py: () => import("highlight.js/lib/languages/python"),
-  rust: () => import("highlight.js/lib/languages/rust"),
-  rs: () => import("highlight.js/lib/languages/rust"),
-  sql: () => import("highlight.js/lib/languages/sql"),
-  typescript: () => import("highlight.js/lib/languages/typescript"),
-  ts: () => import("highlight.js/lib/languages/typescript"),
-  xml: () => import("highlight.js/lib/languages/xml"),
-  html: () => import("highlight.js/lib/languages/xml"),
-  svg: () => import("highlight.js/lib/languages/xml"),
-  yaml: () => import("highlight.js/lib/languages/yaml"),
-  yml: () => import("highlight.js/lib/languages/yaml"),
-};
-
-const langPromises = new Map<string, Promise<string | null>>();
-
-function ensureHighlightLanguage(lang: string): Promise<string | null> {
-  const normalized = lang.trim().toLowerCase();
-  if (!normalized) return Promise.resolve(null);
-  const loader = LANG_LOADERS[normalized];
-  if (!loader) return Promise.resolve(null);
-  const cached = langPromises.get(normalized);
-  if (cached) return cached;
-  const p = (async () => {
-    const hljs = await loadHljsCore();
-    if (!hljs.getLanguage(normalized)) {
-      const mod = await loader();
-      // grammar 模块 default export 是 (hljs) => LanguageDefinition
-      hljs.registerLanguage(normalized, mod.default as Parameters<typeof hljs.registerLanguage>[1]);
-    }
-    return normalized;
-  })().catch(() => null);
-  langPromises.set(normalized, p);
-  return p;
-}
-
-function escapeCodeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-async function highlightCode(source: string, lang: string): Promise<string> {
-  const normalized = await ensureHighlightLanguage(lang);
-  if (!normalized) return escapeCodeHtml(source);
-  try {
-    const hljs = await loadHljsCore();
-    return hljs.highlight(source, { language: normalized, ignoreIllegals: true }).value;
-  } catch {
-    return escapeCodeHtml(source);
-  }
-}
+// hljs lazy 子系统 + escapeCodeHtml / highlightCode 已迁移到 ./wysiwyg/highlight
 
 function codeFenceRangeFromHost(
   view: EditorView,

@@ -37,6 +37,8 @@ interface TabsState {
   closeTabsForPath: (path: string) => void;
   /** 文件/文件夹被重命名或移动后，迁移所有 path 命中 from 或位于 from 下的 tab。 */
   relocateTabs: (from: string, to: string) => void;
+  /** 列出当前 path（或其子路径）对应的未保存 tab；删除前用于提示。 */
+  dirtyTabsUnder: (path: string) => TabInfo[];
   setActive: (id: string) => void;
   updateContent: (id: string, content: string) => void;
   saveTab: (id: string, force?: boolean) => Promise<"ok" | "conflict" | "error">;
@@ -228,6 +230,9 @@ export const useTabs = create<TabsState>((set, get) => ({
       });
       return changed ? { tabs } : s;
     }),
+
+  dirtyTabsUnder: (path) =>
+    get().tabs.filter((t) => t.dirty && pathContains(path, t.path)),
 
   setActive: (id) => set({ activeId: id }),
 

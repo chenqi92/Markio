@@ -1309,6 +1309,47 @@ interface BuildResult {
   /** 隐藏掉的 marker 字符范围，给 EditorView.atomicRanges 用 ——
    *  防止鼠标拖动选区时光标"落进"被隐藏的字符里、导致选区视觉上溢出到下方行 */
   atomic: DecorationSet;
+  /** 受光标位置影响是否展示 widget 的所有判定范围。selection-only 的 tr 触发
+   *  rebuild 时，先按这些范围在新旧选区下的命中变化判断；任何一个翻转才 rebuild，
+   *  否则直接复用上次结果，避免大文档每次方向键 / 鼠标选中都跑全文 syntaxTree。 */
+  sensitive: SensitiveRange[];
+}
+
+interface SensitiveRange {
+  from: number;
+  to: number;
+  inclusive: boolean;
+}
+
+/** rangeHasCursor 的内核：把判断从 EditorState 解耦到 EditorSelection，
+ *  让 fast-path 在 update() 里跨 prev / current selection 重放。 */
+function selectionHitsRange(
+  selection: { ranges: ReadonlyArray<{ head: number; from: number; to: number }> },
+  range: SensitiveRange,
+): boolean {
+  for (const sel of selection.ranges) {
+    const head = sel.head;
+    const headInside = range.inclusive
+      ? head >= range.from && head <= range.to
+      : head >= range.from && head < range.to;
+    if (headInside) return true;
+    if (sel.from < range.to && sel.to > range.from) return true;
+  }
+  return false;
+}
+
+/** 任何 sensitive range 的命中在两个选区下结果不同 → 必须重新 build。 */
+function anySensitiveRangeFlipped(
+  ranges: SensitiveRange[],
+  prevSel: { ranges: ReadonlyArray<{ head: number; from: number; to: number }> },
+  newSel: { ranges: ReadonlyArray<{ head: number; from: number; to: number }> },
+): boolean {
+  for (const r of ranges) {
+    if (selectionHitsRange(prevSel, r) !== selectionHitsRange(newSel, r)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1321,35 +1362,30 @@ interface BuildResult {
  *           or tables: pressing ArrowDown out of the block should re-render
  *           immediately, not stick on the boundary).
  */
-function rangeHasCursor(
-  range: { from: number; to: number },
-  state: EditorState,
-  inclusive: boolean = true,
-): boolean {
-  for (const sel of state.selection.ranges) {
-    const head = sel.head;
-    const headInside = inclusive
-      ? head >= range.from && head <= range.to
-      : head >= range.from && head < range.to;
-    if (headInside) return true;
-    // Non-empty selections that strictly overlap the range
-    if (sel.from < range.to && sel.to > range.from) return true;
-  }
-  // Keep cursorInsideRange import alive; used by other math helpers.
-  void cursorInsideRange;
-  return false;
-}
+// Keep cursorInsideRange import alive; used by other math helpers.
+void cursorInsideRange;
 
 function build(state: EditorState): BuildResult {
   const decos: PendingDeco[] = [];
   const atomic: PendingDeco[] = [];
+  /** 把每个"是否生成 widget 由光标位置决定"的范围都登记进来，让 update()
+   *  的 selection-only fast path 能判断"翻转"。 */
+  const sensitive: SensitiveRange[] = [];
+  const trackCursor = (
+    from: number,
+    to: number,
+    inclusive: boolean = true,
+  ): boolean => {
+    sensitive.push({ from, to, inclusive });
+    return selectionHitsRange(state.selection, { from, to, inclusive });
+  };
 
   // Math regions: detect once over the full doc (regex-only, no AST since
   // lezer-markdown has no math node by default). Skip the widget when the
   // cursor is inside so the user can edit the source plainly.
   const mathRanges = detectMathRanges(state.doc.toString());
   for (const range of mathRanges) {
-    if (rangeHasCursor(range, state)) continue;
+    if (trackCursor(range.from, range.to, true)) continue;
     decos.push({
       from: range.from,
       to: range.to,
@@ -1369,7 +1405,7 @@ function build(state: EditorState): BuildResult {
   // remembers the resolved vault path so clicks can open the target note.
   const wikilinkRanges = detectWikilinks(state);
   for (const info of wikilinkRanges) {
-    if (rangeHasCursor({ from: info.from, to: info.to }, state, true)) continue;
+    if (trackCursor(info.from, info.to, true)) continue;
     decos.push({
       from: info.from,
       to: info.to,
@@ -1473,7 +1509,7 @@ function build(state: EditorState): BuildResult {
           const tokenStart = firstLine.from + marker[1]!.length;
           const tokenEnd = firstLine.from + marker[0].length;
           // 把 [!type] 这段隐藏起来，前面塞一个样式化的标签 widget
-          if (!rangeHasCursor({ from: tokenStart, to: tokenEnd }, state, true)) {
+          if (!trackCursor(tokenStart, tokenEnd, true)) {
             decos.push({
               from: tokenStart,
               to: tokenEnd,
@@ -1636,7 +1672,7 @@ function build(state: EditorState): BuildResult {
         const text = state.doc.sliceString(node.from, node.to);
         const parts = parseImageMarkdown(text);
         const canRender = !!parts && isAbsoluteSafeUrl(parts.url);
-        if (rangeHasCursor({ from: node.from, to: node.to }, state, true)) {
+        if (trackCursor(node.from, node.to, true)) {
           mark(node.from, node.to, "cm-md-image cm-md-image-active");
           if (canRender) {
             decos.push({
@@ -1691,7 +1727,7 @@ function build(state: EditorState): BuildResult {
       // ─── 代码块 ───
       if (n === "FencedCode") {
         const lang = extractFenceLang(state, node.from);
-        const cursorInBlock = rangeHasCursor({ from: node.from, to: node.to }, state, false);
+        const cursorInBlock = trackCursor(node.from, node.to, false);
         if (!cursorInBlock) {
           const source = extractFencedBody(state, node.from, node.to);
           const visualKind = detectVisualLang(lang);
@@ -1735,6 +1771,7 @@ function build(state: EditorState): BuildResult {
       atomic.map((d) => d.deco.range(d.from, d.to)),
       true,
     ),
+    sensitive,
   };
 }
 
@@ -1750,9 +1787,22 @@ const wysiwygField = StateField.define<BuildResult>({
     return build(state);
   },
   update(prev, tr) {
-    // 文档变了 → 内容变；选区变了 → math/wikilink 等需要切换渲染 / 源码
-    if (tr.docChanged || tr.selection) {
+    // 文档变了 → 必须完整重算（widget 位置 / 内容都可能动）
+    if (tr.docChanged) {
       return build(tr.state);
+    }
+    // 选区变了 → 只在某个"现形/隐藏"边界被跨过时才 rebuild；
+    // 否则方向键 / 鼠标拖选 / 简单点击不再触发整文档 syntaxTree iterate。
+    if (tr.selection) {
+      if (
+        anySensitiveRangeFlipped(
+          prev.sensitive,
+          tr.startState.selection,
+          tr.state.selection,
+        )
+      ) {
+        return build(tr.state);
+      }
     }
     return prev;
   },

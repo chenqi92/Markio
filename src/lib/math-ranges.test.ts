@@ -76,6 +76,14 @@ describe("detectMathRanges — block", () => {
     const src = "```\n$$\nx\n$$\n```";
     expect(detectMathRanges(src)).toEqual([]);
   });
+
+  it("finds a block indented inside a list item", () => {
+    const src = "4. 列表 + 数学\n\n   $$\n   \\sum i\n   $$\n";
+    const r = detectMathRanges(src);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.display).toBe(true);
+    expect(r[0]!.source).toBe("\\sum i");
+  });
 });
 
 describe("detectMathRanges — invariants", () => {

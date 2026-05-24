@@ -38,6 +38,21 @@ const isLineStart = (text: string, idx: number): boolean =>
   idx === 0 || text[idx - 1] === "\n";
 
 /**
+ * `$$` block 起点判定：允许前导空白 / tab（列表项里的 block 公式天然带缩进，
+ * 比如 ` 4. 列表 + 数学\n\n   $$...$$ `）。inline 的 `$..$` 不走这条路径。
+ */
+const isBlockOpenerStart = (text: string, idx: number): boolean => {
+  let i = idx - 1;
+  while (i >= 0) {
+    const c = text[i];
+    if (c === "\n") return true;
+    if (c !== " " && c !== "\t") return false;
+    i--;
+  }
+  return true;
+};
+
+/**
  * Detect all math ranges in `text`. Offsets are absolute (not relative to
  * a slice), so pass the full doc for stable positions.
  */
@@ -76,7 +91,7 @@ export function detectMathRanges(text: string): MathRange[] {
       // skip the whole `$$` so the inline branch doesn't pick up the second
       // `$` as an opener.
       if (text[i + 1] === "$") {
-        if (isLineStart(text, i) && isWhitespaceUntilEol(text, i + 2)) {
+        if (isBlockOpenerStart(text, i) && isWhitespaceUntilEol(text, i + 2)) {
           const start = i;
           const openEol = text.indexOf("\n", i + 2);
           const innerStart = openEol < 0 ? len : openEol + 1;

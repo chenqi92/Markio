@@ -22,6 +22,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { createKeyedTimers } from "./lib/keyedTimers";
 import { registerWorkspaceCleanup } from "./stores/workspaceCleanup";
+import { prefetchHeavyModulesOnce } from "./lib/prefetchHeavyModules";
 
 function isTreeRefreshRelevant(path: string): boolean {
   if (/\.(md|markdown|mdown|mkd|txt)$/i.test(path)) return true;
@@ -118,6 +119,12 @@ export default function App() {
 
   // 系统网络状态监听：online/offline 事件 → useNetwork.online
   useEffect(() => installNetworkListeners(), []);
+
+  // 闲时预热重型 lazy module（mermaid / viz / katex），避免用户首次滚到
+  // 图表 / 公式时主线程被现拉解析卡住
+  useEffect(() => {
+    prefetchHeavyModulesOnce();
+  }, []);
 
   // 本地性能观察器：?perf=1 或 window.__markioPerf=true 时，把长任务 / 慢 measure
   // 推到诊断面板。数据不出本机。

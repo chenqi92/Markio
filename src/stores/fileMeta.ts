@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { pathKey } from "@/lib/utils";
 
 /** 文件级用户元数据：收藏 / 颜色 / 标记 (区别于 #tag 来自文档内容)。
  *  存在 localStorage 里，按绝对路径索引；文件被重命名 / 移动后这里不会自动跟随，
@@ -67,11 +68,25 @@ export const useFileMeta = create<FileMetaState>()(
         }),
       movePath: (from, to) =>
         set((s) => {
-          if (!s.byPath[from]) return s;
-          const next = { ...s.byPath };
-          next[to] = next[from]!;
-          delete next[from];
-          return { byPath: next };
+          if (!from || !to || from === to) return s;
+          const fromKey = pathKey(from);
+          let changed = false;
+          const next: Record<string, FileMetaEntry> = {};
+          for (const [p, meta] of Object.entries(s.byPath)) {
+            const k = pathKey(p);
+            if (k === fromKey) {
+              next[to] = meta;
+              changed = true;
+            } else if (k.startsWith(`${fromKey}/`)) {
+              // 文件夹移动：子条目按相对 suffix 拼到新前缀
+              const suffix = k.slice(fromKey.length);
+              next[to + suffix] = meta;
+              changed = true;
+            } else {
+              next[p] = meta;
+            }
+          }
+          return changed ? { byPath: next } : s;
         }),
       prune: (livePaths) =>
         set((s) => {

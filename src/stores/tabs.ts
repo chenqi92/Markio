@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import type { TabInfo } from "@/types";
 import { api, parseError, type FileSig } from "@/lib/api";
-import { basename, dirname, pathContains, samePath, uid } from "@/lib/utils";
+import {
+  basename,
+  dirname,
+  pathContains,
+  pathKey,
+  samePath,
+  uid,
+} from "@/lib/utils";
 import { useWorkspace } from "./workspace";
 import { useStreak } from "./streak";
 import { useRecents } from "./recents";
@@ -28,6 +35,8 @@ interface TabsState {
   openPath: (path: string, opts?: { silent?: boolean }) => Promise<void>;
   closeTab: (id: string) => void;
   closeTabsForPath: (path: string) => void;
+  /** 文件/文件夹被重命名或移动后，迁移所有 path 命中 from 或位于 from 下的 tab。 */
+  relocateTabs: (from: string, to: string) => void;
   setActive: (id: string) => void;
   updateContent: (id: string, content: string) => void;
   saveTab: (id: string, force?: boolean) => Promise<"ok" | "conflict" | "error">;
@@ -195,6 +204,29 @@ export const useTabs = create<TabsState>((set, get) => ({
       }
 
       return { tabs: next, activeId, sigs: newSigs };
+    }),
+
+  relocateTabs: (from, to) =>
+    set((s) => {
+      if (!from || !to || samePath(from, to)) return s;
+      const fromKey = pathKey(from);
+      let changed = false;
+      const tabs = s.tabs.map((t) => {
+        const tKey = pathKey(t.path);
+        if (tKey === fromKey) {
+          changed = true;
+          return { ...t, path: to, title: basename(to) };
+        }
+        if (tKey.startsWith(`${fromKey}/`)) {
+          changed = true;
+          // 保留 from 之下的相对 suffix，拼到 to；pathKey 已经把 \ 统一成 /
+          const suffix = tKey.slice(fromKey.length);
+          const newPath = to + suffix;
+          return { ...t, path: newPath, title: basename(newPath) };
+        }
+        return t;
+      });
+      return changed ? { tabs } : s;
     }),
 
   setActive: (id) => set({ activeId: id }),

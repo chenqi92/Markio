@@ -593,6 +593,7 @@ function TreeContextMenu({
   const openFile = useTabs((s) => s.openFile);
   const openPath = useTabs((s) => s.openPath);
   const closeTabsForPath = useTabs((s) => s.closeTabsForPath);
+  const relocateTabs = useTabs((s) => s.relocateTabs);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
   const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
@@ -714,6 +715,9 @@ function TreeContextMenu({
       const to = `${parent}/${next}`;
       try {
         await api.rename(node.path, to);
+        // 已打开的 tab / 用户元数据需要同步指向新路径，否则保存会落到旧路径上
+        relocateTabs(node.path, to);
+        moveFileMeta(node.path, to);
         flash("已重命名");
         if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
@@ -780,6 +784,7 @@ function TreeContextMenu({
       const dest = `${norm}/${node.name}`;
       try {
         await api.rename(node.path, dest);
+        relocateTabs(node.path, dest);
         moveFileMeta(node.path, dest);
         flash("已移动");
         await loadDir(ws.id, curParent);

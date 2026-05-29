@@ -78,26 +78,26 @@ export function findAllTablesInText(doc: string): Array<{
   let acc = 0;
   for (let i = 0; i < lines.length; i++) {
     offsets[i] = acc;
-    acc += lines[i].length + 1; // +1 for "\n"
+    acc += lines[i]!.length + 1; // +1 for "\n"
   }
   let i = 0;
   while (i < lines.length) {
-    const head = lines[i].trim();
+    const head = lines[i]!.trim();
     if (
       head.startsWith("|") &&
       head.endsWith("|") &&
       i + 1 < lines.length &&
-      isSeparatorRow(lines[i + 1])
+      isSeparatorRow(lines[i + 1]!)
     ) {
       let end = i + 2;
       while (end < lines.length) {
-        const t = lines[end].trim();
+        const t = lines[end]!.trim();
         if (!t.startsWith("|") || !t.endsWith("|")) break;
         end++;
       }
-      const from = offsets[i];
+      const from = offsets[i]!;
       const to =
-        end < lines.length ? offsets[end] : offsets[end - 1] + lines[end - 1].length;
+        end < lines.length ? offsets[end]! : offsets[end - 1]! + lines[end - 1]!.length;
       result.push({
         from,
         to,
@@ -160,10 +160,10 @@ function buildTable(cells: string[][], aligns: Array<"left" | "center" | "right"
     return out;
   });
   const lines: string[] = [];
-  lines.push(buildRow(padded[0]));
+  lines.push(buildRow(padded[0]!));
   lines.push(buildAlignRow(aligns, cols));
   for (let i = 1; i < padded.length; i++) {
-    lines.push(buildRow(padded[i]));
+    lines.push(buildRow(padded[i]!));
   }
   return lines.join("\n");
 }
@@ -193,7 +193,7 @@ function buildPrettyTable(
     Math.max(3, ...padded.map((row) => (row[col] || "").length)),
   );
   const rowLine = (row: string[]) =>
-    `| ${row.map((cell, col) => padCell(cell, widths[col], aligns[col] ?? null)).join(" | ")} |`;
+    `| ${row.map((cell, col) => padCell(cell, widths[col]!, aligns[col] ?? null)).join(" | ")} |`;
   const separator = widths.map((width, col) => {
     const dashes = "-".repeat(Math.max(3, width));
     const align = aligns[col] ?? null;
@@ -202,7 +202,7 @@ function buildPrettyTable(
     if (align === "right") return `${dashes}:`;
     return dashes;
   });
-  return [rowLine(padded[0]), `| ${separator.join(" | ")} |`, ...padded.slice(1).map(rowLine)]
+  return [rowLine(padded[0]!), `| ${separator.join(" | ")} |`, ...padded.slice(1).map(rowLine)]
     .join("\n");
 }
 
@@ -212,12 +212,12 @@ function cellRangeInLine(lineText: string, lineFrom: number, col: number): { fro
     if (lineText[i] === "|") pipes.push(i);
   }
   if (pipes.length < 2) return { from: lineFrom, to: lineFrom };
-  const startPipe = pipes[Math.max(0, Math.min(col, pipes.length - 2))];
-  const endPipe = pipes[Math.max(1, Math.min(col + 1, pipes.length - 1))];
+  const startPipe = pipes[Math.max(0, Math.min(col, pipes.length - 2))]!;
+  const endPipe = pipes[Math.max(1, Math.min(col + 1, pipes.length - 1))]!;
   let from = startPipe + 1;
   let to = endPipe;
-  while (from < to && /\s/.test(lineText[from])) from++;
-  while (to > from && /\s/.test(lineText[to - 1])) to--;
+  while (from < to && /\s/.test(lineText[from]!)) from++;
+  while (to > from && /\s/.test(lineText[to - 1]!)) to--;
   return { from: lineFrom + from, to: lineFrom + to };
 }
 
@@ -287,7 +287,7 @@ export function parseTabularText(text: string): string[][] | null {
   if (!trimmed) return null;
   const lines = trimmed.split("\n");
 
-  if (lines.length >= 2 && /^\s*\|/.test(lines[0]) && isSeparatorRow(lines[1])) {
+  if (lines.length >= 2 && /^\s*\|/.test(lines[0]!) && isSeparatorRow(lines[1]!)) {
     return lines
       .filter((line, index) => index !== 1 && /^\s*\|/.test(line))
       .map(splitRow)
@@ -340,8 +340,8 @@ export function pasteTableTextToText(
     for (const row of cells) row.push("");
   }
   for (let r = 0; r < data.length; r++) {
-    for (let c = 0; c < data[r].length; c++) {
-      cells[startRow + r][startCol + c] = data[r][c];
+    for (let c = 0; c < data[r]!.length; c++) {
+      cells[startRow + r]![startCol + c] = data[r]![c]!;
     }
   }
 
@@ -381,8 +381,8 @@ export function pasteTableText(view: EditorView, text: string, start?: TableCell
     for (const row of cells) row.push("");
   }
   for (let r = 0; r < data.length; r++) {
-    for (let c = 0; c < data[r].length; c++) {
-      cells[startRow + r][startCol + c] = data[r][c];
+    for (let c = 0; c < data[r]!.length; c++) {
+      cells[startRow + r]![startCol + c] = data[r]![c]!;
     }
   }
 
@@ -392,7 +392,7 @@ export function pasteTableText(view: EditorView, text: string, start?: TableCell
     cells,
     aligns,
     startRow + data.length - 1,
-    startCol + data[data.length - 1].length - 1,
+    startCol + data[data.length - 1]!.length - 1,
   );
   return true;
 }
@@ -473,15 +473,15 @@ function detectTableAtPosition(view: EditorView, head: number): TableInfo | null
     rawLines.push(doc.line(i).text);
   }
 
-  const headerCells = splitRow(rawLines[0]);
+  const headerCells = splitRow(rawLines[0]!);
   const colCount = headerCells.length;
-  const aligns: Array<"left" | "center" | "right" | null> = splitRow(rawLines[1]).map(parseAlign);
+  const aligns: Array<"left" | "center" | "right" | null> = splitRow(rawLines[1]!).map(parseAlign);
   // pad aligns to colCount
   while (aligns.length < colCount) aligns.push(null);
 
   const cells: string[][] = [headerCells];
   for (let i = 2; i < rawLines.length; i++) {
-    const row = splitRow(rawLines[i]);
+    const row = splitRow(rawLines[i]!);
     while (row.length < colCount) row.push("");
     cells.push(row);
   }
@@ -584,7 +584,7 @@ export function clearTableRect(view: EditorView, rect: TableSelectionRect): bool
   const cells = info.cells.map((row) => row.slice());
   for (let row = current.startRow; row <= current.endRow; row++) {
     for (let col = current.startCol; col <= current.endCol; col++) {
-      cells[row][col] = "";
+      cells[row]![col] = "";
     }
   }
   replaceTable(view, info, cells, info.aligns.slice(), current.startRow, current.startCol);
@@ -622,16 +622,16 @@ function parseTableText(text: string): {
   aligns: Array<"left" | "center" | "right" | null>;
 } | null {
   const rawLines = text.split(/\r?\n/).filter((line) => /^\s*\|/.test(line));
-  if (rawLines.length < 2 || !isSeparatorRow(rawLines[1])) return null;
-  const headerCells = splitRow(rawLines[0]);
+  if (rawLines.length < 2 || !isSeparatorRow(rawLines[1]!)) return null;
+  const headerCells = splitRow(rawLines[0]!);
   const colCount = headerCells.length;
   const aligns: Array<"left" | "center" | "right" | null> =
-    splitRow(rawLines[1]).map(parseAlign);
+    splitRow(rawLines[1]!).map(parseAlign);
   while (aligns.length < colCount) aligns.push(null);
 
   const cells: string[][] = [headerCells];
   for (let i = 2; i < rawLines.length; i++) {
-    const row = splitRow(rawLines[i]);
+    const row = splitRow(rawLines[i]!);
     while (row.length < colCount) row.push("");
     cells.push(row);
   }
@@ -672,7 +672,7 @@ export function applyTableActionToText(
       cells.splice(row + 1, 0, Array(colCount).fill(""));
       break;
     case "duplicateRow":
-      cells.splice(row + 1, 0, cells[row].slice());
+      cells.splice(row + 1, 0, cells[row]!.slice());
       break;
     case "moveRowUp":
       if (row <= 1) return null;
@@ -714,24 +714,24 @@ export function applyTableActionToText(
       aligns.splice(col, 1);
       break;
     case "clearCell":
-      cells[row][col] = "";
+      cells[row]![col] = "";
       break;
     case "clearRow":
-      cells[row] = cells[row].map(() => "");
+      cells[row] = cells[row]!.map(() => "");
       break;
     case "clearCol":
       for (const r of cells) r[col] = "";
       break;
     case "fillDown": {
-      const value = cells[row][col] ?? "";
+      const value = cells[row]![col] ?? "";
       for (let r = Math.max(1, row + 1); r < cells.length; r++) {
-        cells[r][col] = value;
+        cells[r]![col] = value;
       }
       break;
     }
     case "sortAsc":
     case "sortDesc": {
-      const header = cells[0];
+      const header = cells[0]!;
       const body = cells.slice(1);
       const dir = action.type === "sortAsc" ? 1 : -1;
       body.sort((a, b) => compareTableValues(a[col] ?? "", b[col] ?? "") * dir);
@@ -752,8 +752,8 @@ export function applyTableActionToText(
 }
 
 function swapItems<T>(items: T[], a: number, b: number) {
-  const temp = items[a];
-  items[a] = items[b];
+  const temp = items[a]!;
+  items[a] = items[b]!;
   items[b] = temp;
 }
 
@@ -842,7 +842,7 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
     }
     case "duplicateRow": {
       const idx = row + 1;
-      cells.splice(idx, 0, cells[row].slice());
+      cells.splice(idx, 0, cells[row]!.slice());
       targetRow = idx;
       break;
     }
@@ -905,11 +905,11 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       break;
     }
     case "clearCell": {
-      cells[row][col] = "";
+      cells[row]![col] = "";
       break;
     }
     case "clearRow": {
-      cells[row] = cells[row].map(() => "");
+      cells[row] = cells[row]!.map(() => "");
       break;
     }
     case "clearCol": {
@@ -917,15 +917,15 @@ export function applyTableAction(view: EditorView, action: TableAction): boolean
       break;
     }
     case "fillDown": {
-      const value = cells[row][col] ?? "";
+      const value = cells[row]![col] ?? "";
       for (let r = Math.max(1, row + 1); r < cells.length; r++) {
-        cells[r][col] = value;
+        cells[r]![col] = value;
       }
       break;
     }
     case "sortAsc":
     case "sortDesc": {
-      const header = cells[0];
+      const header = cells[0]!;
       const body = cells.slice(1);
       const dir = action.type === "sortAsc" ? 1 : -1;
       body.sort((a, b) => compareTableValues(a[col] ?? "", b[col] ?? "") * dir);

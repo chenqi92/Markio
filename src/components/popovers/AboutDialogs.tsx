@@ -283,6 +283,110 @@ export function ChangelogDialog({
   );
 }
 
+// ─── 用户协议 / 隐私 / 开源许可 对话框 ──────────────────────────────
+// 之前是直接 openExternal 到 GitHub，离线或仓库地址变动就废了。
+// 这里把文本内置进来，跟着应用版本一起走。
+
+const MIT_LICENSE = `MIT License
+
+Copyright (c) ${new Date().getFullYear()} markio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.`;
+
+const PRIVACY_TEXT = `markio 是一款本地优先的 Markdown 阅读与写作应用。你的笔记、工作区、历史快照、本地搜索索引和应用偏好都保存在你的设备或你自己选择的文件夹中。
+
+不收集的数据
+markio 不运行广告、跟踪、遥测或分析。markio 没有云账号，开发者不会接收你的笔记、文件、API Key、使用历史或搜索索引。
+
+保存在设备上的数据
+应用设置、最近打开的工作区、界面状态、文档历史快照、回收站元数据、本地知识库索引会保存在本机。API Key 与服务凭据尽可能保存在操作系统钥匙串中。
+
+可选第三方服务
+只有在你主动配置后才会运行：
+· AI 提供方（OpenAI / Anthropic / Google Gemini / DeepSeek / Ollama / 自定义 OpenAI 兼容端点 等）
+· 同步与存储（WebDAV / S3 / Dropbox / Google Drive / Git 远端 等）
+· 图片上传 / 发布（PicGo / 微信公众号工具 等）
+使用这些集成时，你选择发送的内容与凭据会直接发送给对应服务，受该服务自身的条款与隐私政策约束，开发者不会接收或保存。
+
+网络访问
+仅在你启用的功能上发生（AI 请求、同步、更新检查、OAuth、图片上传等）。markio 不会因广告或跟踪而联网。
+
+你的控制权
+不配置任何网络集成即可完全本地使用。可在设置内随时移除 API Key 与服务凭据，也可以从系统标准存储位置删除本地数据。`;
+
+const OSS_DEPS: { name: string; license: string; sub: string }[] = [
+  { name: "React", license: "MIT", sub: "UI 框架" },
+  { name: "Tauri", license: "MIT / Apache-2.0", sub: "桌面运行时" },
+  { name: "BlockNote", license: "MPL-2.0", sub: "所见即所得编辑器" },
+  { name: "CodeMirror 6", license: "MIT", sub: "源码编辑器" },
+  { name: "pulldown-cmark", license: "MIT", sub: "Markdown 解析（Rust）" },
+  { name: "lezer", license: "MIT", sub: "语法解析" },
+  { name: "Zustand", license: "MIT", sub: "状态管理" },
+  { name: "i18next", license: "MIT", sub: "国际化" },
+  { name: "react-i18next", license: "MIT", sub: "React i18n 绑定" },
+  { name: "KaTeX", license: "MIT", sub: "公式渲染" },
+  { name: "Mermaid", license: "MIT", sub: "图表渲染" },
+  { name: "highlight.js", license: "BSD-3-Clause", sub: "代码高亮" },
+  { name: "Vite", license: "MIT", sub: "前端构建" },
+  { name: "TypeScript", license: "Apache-2.0", sub: "类型系统" },
+];
+
+export function LicenseDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <ModalShell title="用户协议" onClose={onClose} width={560}>
+      <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>
+        markio 以 MIT 协议开源，你可以自由使用、修改、分发，但需保留原作者与许可声明。
+      </div>
+      <pre className="about-notes">{MIT_LICENSE}</pre>
+    </ModalShell>
+  );
+}
+
+export function PrivacyDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <ModalShell title="隐私" onClose={onClose} width={560}>
+      <div className="about-privacy">{PRIVACY_TEXT}</div>
+    </ModalShell>
+  );
+}
+
+export function OssDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <ModalShell title="开源许可" onClose={onClose} width={560}>
+      <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>
+        markio 站在以下开源项目的肩膀上，对所有作者表达谢意。
+      </div>
+      <div className="about-oss-list">
+        {OSS_DEPS.map((d) => (
+          <div className="about-oss-item" key={d.name}>
+            <div className="about-oss-l">
+              <div className="about-oss-name">{d.name}</div>
+              <div className="about-oss-sub">{d.sub}</div>
+            </div>
+            <span className="about-oss-lic">{d.license}</span>
+          </div>
+        ))}
+      </div>
+    </ModalShell>
+  );
+}
+
 // ─── 反馈对话框 ────────────────────────────────────────────────────
 // 4 类型卡 + textarea + 4 附加开关 + 联系邮箱。提交时拼一个 GitHub Issue 预填 URL
 // （遵守 [[feedback_no_central_server]]：不上报到 SaaS，由用户在 GitHub 上提交）。

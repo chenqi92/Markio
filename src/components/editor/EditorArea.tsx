@@ -41,6 +41,7 @@ import {
 } from "@/lib/preview-context-menu";
 import type { ImageParts } from "@/lib/markdown-images";
 import { MathPreview } from "../popovers/MathPreview";
+import { devLog } from "@/lib/devLogger";
 import type { MathContext } from "@/lib/math-context";
 import { classNames, debounce } from "@/lib/utils";
 import { Outline } from "../layout/Outline";
@@ -56,7 +57,6 @@ const MODE_CLASS: Record<ViewMode, string> = {
   source: "source-only",
   split: "split",
   wysiwyg: "wysiwyg",
-  preview: "preview-only",
 };
 
 const MAX_PASTE_IMAGES = 8;
@@ -93,7 +93,16 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function EditorArea({ onMeta, onAskAi }: Props) {
-  const tab = useTabs((s) => s.activeTab());
+  // 关键：不要写成 `useTabs((s) => s.activeTab())` —— selector 调用 activeTab()
+  // 会让 zustand 每次 store 变都返回新 find() 引用，EditorArea 频繁重渲染，
+  // 叠加上层 lazy + Suspense 在某些时序下会出现一帧 fallback 闪烁。
+  // 改成订阅原子字段 activeId + tabs，再在组件内 useMemo 派生 tab。
+  const activeId = useTabs((s) => s.activeId);
+  const tabsList = useTabs((s) => s.tabs);
+  const tab = useMemo(
+    () => (activeId ? tabsList.find((t) => t.id === activeId) : undefined),
+    [activeId, tabsList],
+  );
   const updateContent = useTabs((s) => s.updateContent);
   const saveTab = useTabs((s) => s.saveTab);
   const workspaces = useWorkspace((s) => s.workspaces);
@@ -109,6 +118,14 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
   );
+  useEffect(() => {
+    devLog("debug", "editorArea.state", {
+      activeId,
+      tabPath: tab?.path ?? null,
+      mode,
+      contentLength: tab?.content.length ?? 0,
+    });
+  }, [activeId, tab?.path, tab?.content.length, mode]);
   const splitRootRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const [splitSourcePercent, setSplitSourcePercent] = useState(() => {
@@ -196,7 +213,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         current?.target.nonce === target.target.nonce ? null : current,
       );
     }, 1000);
-  }, [tab?.path, lineJump, clearLineJump]);
+  }, [tab, lineJump, clearLineJump]);
 
   useEffect(
     () => () => {
@@ -885,14 +902,16 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   );
 
   if (!tab) {
-    return null;
+    // tab 暂时拿不到（活动 tab id 已变化但 tabs 数组尚未同步等罕见时序），
+    // 返回最小占位骨架，避免父级 Suspense 显示空白。
+    return <div className="editor-split" aria-busy="true" />;
   }
 
   const showSource =
     renderMode === "source" ||
     renderMode === "split" ||
     renderMode === "wysiwyg";
-  const showPreview = renderMode === "preview" || renderMode === "split";
+  const showPreview = renderMode === "split";
 
   return (
     <div

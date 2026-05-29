@@ -183,4 +183,27 @@ describe("runSyncWorkflow", () => {
     ]);
     expect(calls.filter((c) => c[0] === "conflict")).toHaveLength(0);
   });
+
+  it("passes newest conflict strategy through to git resolution", async () => {
+    const { deps, calls, gitCalls } = makeDeps([
+      gitStatus(),
+      gitStatus({ behind: 1 }),
+      gitStatus({ ahead: 1 }),
+      gitStatus(),
+    ]);
+    deps.settings = () => ({ syncConflictStrategy: "newest" });
+    deps.gitPull = vi.fn(async () => {
+      gitCalls.push("pull");
+      throw new Error("CONFLICT:a.md");
+    });
+
+    await runSyncWorkflow("/repo", deps);
+
+    expect(gitCalls).toContain("resolve:newest");
+    expect(calls).toContainEqual([
+      "stage",
+      "conflict",
+      "按策略自动处理冲突 · 采用较新版本",
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../ui/Icon";
 import { api } from "@/lib/api";
@@ -62,9 +62,14 @@ export function TaskInbox() {
     setTimeout(() => setToast(null), 1500);
   };
 
-  const bucketLabel = (b: DueBucket) => t(`taskInbox.timeBucket.${b}`);
-  const priorityLabel = (k: TaskPriority | "_") =>
-    t(`taskInbox.priority.${k === "_" ? "none" : k}`);
+  const bucketLabel = useCallback(
+    (b: DueBucket) => t(`taskInbox.timeBucket.${b}`),
+    [t],
+  );
+  const priorityLabel = useCallback(
+    (k: TaskPriority | "_") => t(`taskInbox.priority.${k === "_" ? "none" : k}`),
+    [t],
+  );
 
   const refresh = async () => {
     if (workspaces.length === 0) {
@@ -174,7 +179,7 @@ export function TaskInbox() {
       color: undefined,
       items: list.sort(compareTasks),
     }));
-  }, [filtered, groupMode]);
+  }, [filtered, groupMode, bucketLabel, priorityLabel]);
 
   const totalCount = items.length;
 

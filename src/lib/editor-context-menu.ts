@@ -57,7 +57,7 @@ export function detectContext(view: EditorView, pos: number): EditorContext {
     // lezer markdown: Link 包 LinkMark "[" + 文本 + LinkMark "]" + LinkMark "(" + URL + LinkMark ")"
     const text = view.state.sliceDoc(linkNode.from, linkNode.to);
     const m = text.match(/\[([^\]]*)\]\(([^)]+)\)/);
-    if (m) link = { text: m[1], href: m[2], from: linkNode.from, to: linkNode.to };
+    if (m) link = { text: m[1]!, href: m[2]!, from: linkNode.from, to: linkNode.to };
   }
 
   let image: EditorContext["image"] = null;
@@ -77,7 +77,7 @@ export function detectContext(view: EditorView, pos: number): EditorContext {
     const first = view.state.doc.lineAt(codeNode.from).text;
     const langMatch = first.match(/^```\s*([^\s`]+)/);
     inCodeBlock = {
-      lang: langMatch ? langMatch[1] : null,
+      lang: langMatch ? langMatch[1]! : null,
       from: codeNode.from,
       to: codeNode.to,
     };
@@ -355,6 +355,6 @@ export function buildEditorContextItems(deps: BuildItemsDeps): CtxItem[] {
     },
   });
   // 防止结尾出现孤立分隔条
-  while (items.length && items[items.length - 1].sep) items.pop();
+  while (items.length && items[items.length - 1]!.sep) items.pop();
   return items;
 }

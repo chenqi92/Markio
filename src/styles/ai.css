@@ -6,20 +6,19 @@
   min-height: 0;
   overflow: hidden;
   background: var(--bg-window);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   display: flex;
   flex-direction: column;
   z-index: 70;
   animation: aiIn 280ms cubic-bezier(.2, .8, .2, 1);
 }
+/* 用主题同色系（--bg-deep）的低饱和辐射做对角 wash，柔化侧边栏 / 主区 /
+ * 输入栏三段拼接的硬色差，自动跟随主题（暖主题暖渐变、暗主题暗渐变）。 */
 .ai-workspace::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(circle at 30% 0%, var(--accent-glow), transparent 60%),
-              radial-gradient(circle at 70% 100%, rgba(189,147,249,0.12), transparent 60%);
+  background: radial-gradient(circle at 25% 0%, color-mix(in srgb, var(--bg-deep) 45%, transparent), transparent 60%),
+              radial-gradient(circle at 75% 100%, color-mix(in srgb, var(--bg-deep) 35%, transparent), transparent 60%);
   z-index: 0;
 }
-
 .ai-workspace-body {
   flex: 1; min-height: 0;
   display: grid;
@@ -31,7 +30,7 @@
 
 .ai-sidebar {
   display: flex; flex-direction: column;
-  background: var(--bg-pane-2);
+  background: transparent;
   border-right: 0.5px solid var(--border);
   min-width: 0;
   overflow: hidden;
@@ -374,8 +373,6 @@
   top: calc(100% + 6px); right: 0;
   width: 260px;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-deep);
@@ -600,8 +597,7 @@
   z-index: 2;
   flex-shrink: 0;
   padding: 12px clamp(20px, 6%, 80px) 12px;
-  border-top: 0.5px solid var(--border);
-  background: var(--bg-pane);
+  background: transparent;
 }
 
 /* 输入框上方的快速操作 chips */
@@ -784,8 +780,6 @@
   max-height: 360px;
   display: flex; flex-direction: column;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-deep);
@@ -1316,8 +1310,6 @@
   border-left: 0.5px solid var(--border-strong);
   display: flex; flex-direction: column;
   z-index: 30;
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   animation: aiCtxIn 200ms cubic-bezier(.2,.8,.2,1);
   box-shadow: -4px 0 16px rgba(0,0,0,0.06);
 }

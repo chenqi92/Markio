@@ -47,11 +47,13 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (ws) void ensureVaultIndex(ws.path);
-  }, [ws?.path, ensureVaultIndex]);
+  }, [ws, ensureVaultIndex]);
   const setMode = useUI((s) => s.setMode);
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openSettings = useUI((s) => s.openSettings);
   const openFind = useUI((s) => s.openFind);
+  const openPulse = useUI((s) => s.openPulse);
+  const openAgent = useUI((s) => s.openAgent);
   const setTheme = useSettings((s) => s.setTheme);
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const openFile = useTabs((s) => s.openFile);
@@ -82,19 +84,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         id: "view-wysiwyg",
         group: "视图",
         l1: "切换到所见即所得",
-        l2: "行内渲染（暂以预览替代）",
+        l2: "BlockNote rich editor（Notion 风格）",
         kbd: [shortcutText("⌘"), "3"],
         ico: "sparkle",
         run: () => setMode("wysiwyg" as ViewMode),
-      },
-      {
-        id: "view-preview",
-        group: "视图",
-        l1: "切换到阅读模式",
-        l2: "只读阅读视图",
-        kbd: [shortcutText("⌘"), "4"],
-        ico: "book",
-        run: () => setMode("preview" as ViewMode),
       },
       {
         id: "focus",
@@ -144,6 +137,22 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: () => openSettings(true),
       },
       {
+        id: "pulse",
+        group: "视图",
+        l1: "打开时间线",
+        l2: "按时间浏览仓库所有历史快照",
+        ico: "clock",
+        run: () => openPulse(true),
+      },
+      {
+        id: "agent",
+        group: "AI",
+        l1: "本地 Agent…",
+        l2: "spawn 本地 claude / codex / gemini CLI 操作 vault",
+        ico: "bot",
+        run: () => openAgent(true),
+      },
+      {
         id: "smart-channel-query",
         group: "AI",
         l1: "通过智能通道查询当前仓库",
@@ -191,6 +200,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       saveActive,
       addWorkspace,
       openSettings,
+      openPulse,
+      openAgent,
       promptDialog,
       setTheme,
     ],

@@ -1,0 +1,124 @@
+/* ─── 上传 / 同步 provider tab 切换 ─────────────────────────────
+ * 3 个 tab 平铺，每个含状态点 + 标题 + 副标；点击即切 uploadProvider。
+ * 适用于 Picgo 设置；后续 Sync 复用同样布局。 */
+.upload-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px;
+}
+.settings-main2 .upload-tabs {
+  padding: 12px 0;
+}
+.upload-tab {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-2);
+  transition: all 120ms;
+}
+.upload-tab:hover:not(.active) {
+  border-color: var(--text-3);
+  background: var(--bg-elev);
+}
+.upload-tab.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  color: var(--text);
+}
+.upload-tab-tt { min-width: 0; flex: 1; }
+.upload-tab-tt .t {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  line-height: 1.3;
+}
+.upload-tab-tt .s {
+  font-size: 11px; color: var(--text-3); margin-top: 3px;
+  line-height: 1.4;
+}
+.upload-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+.upload-dot-ok { background: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,0.18); }
+.upload-dot-warn { background: #eab308; box-shadow: 0 0 0 2px rgba(234,179,8,0.18); }
+.upload-dot-off { background: var(--text-4); }
+
+/* ─── Sync 顶部存储目标概览 (P-c) ──────────────────────────────── */
+.sync-overview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 6px;
+}
+.settings-main2 .sync-overview {
+  padding: 10px 0;
+}
+.sync-target {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-2);
+  transition: background 100ms;
+}
+.sync-target:hover:not(:disabled) { background: var(--bg-hover); }
+.sync-target:disabled { cursor: default; }
+.sync-target-tt { flex: 1; min-width: 0; }
+.sync-target-tt .t {
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.sync-target-tt .s {
+  font-size: 12px; color: var(--text-3); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sync-target-chev {
+  font-size: 18px; color: var(--text-4);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  margin-right: 4px;
+}
+
+/* ─── 同步子卡的统一状态行 (Git / WebDAV / S3 内部用) ───────────────
+ * 跟在 CardTitle 后面，一眼看出连接状态 + 摘要 + 可点的操作；
+ * 各卡片下方的具体配置行保持原样。 */
+.sync-card-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg-pane-2);
+}
+.settings-main2 .sync-card-status {
+  padding: 10px 0;
+  background: transparent;
+}
+.sync-card-status .summary {
+  flex: 1; min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sync-card-status .summary .strong { color: var(--text); font-weight: 600; }
+.sync-card-status .summary .dim { color: var(--text-3); }
+
+/* Suspense fallback skeleton lines */
+.sk-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-pane) 25%, var(--bg-pane-2) 50%, var(--bg-pane) 75%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s linear infinite;
+}
+.sk-line.sk-dim { opacity: 0.6; }
+@keyframes sk-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}

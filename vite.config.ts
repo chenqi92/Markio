@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -30,11 +30,26 @@ export default defineConfig(async () => ({
         "**/.turbo/**",
         "**/.next/**",
         "**/.vite/**",
+        // The app edits vault content during dev. If a test/demo vault lives
+        // under the repo, Vite sees those saves and full-reloads the app,
+        // briefly dropping in-memory tabs before session restore brings them
+        // back. Keep user content out of the dev-server watcher.
+        "**/store-assets/demo-vault/**",
+        "**/*.md",
+        "**/*.markdown",
+        "**/*.mdown",
+        "**/*.mkd",
+        "**/*.txt",
       ],
     },
   },
+  test: {
+    exclude: [...configDefaults.exclude, "**/.claude/**"],
+  },
   build: {
-    chunkSizeWarningLimit: 1200,
+    // Graphviz is isolated in a lazy @viz-js/viz chunk that currently minifies
+    // to ~1.27 MB. Keep the limit tight enough to still catch new large chunks.
+    chunkSizeWarningLimit: 1300,
     rollupOptions: {
       output: {
         manualChunks(id: string) {
@@ -47,6 +62,23 @@ export default defineConfig(async () => ({
             normalized.includes("/node_modules/scheduler/")
           ) {
             return "react";
+          }
+          if (
+            normalized.includes("/node_modules/@blocknote/") ||
+            normalized.includes("/node_modules/@tiptap/") ||
+            normalized.includes("/node_modules/@handlewithcare/prosemirror-inputrules") ||
+            normalized.includes("/node_modules/prosemirror-") ||
+            normalized.includes("/node_modules/y-prosemirror/") ||
+            normalized.includes("/node_modules/y-protocols/") ||
+            normalized.includes("/node_modules/yjs/")
+          ) {
+            return "block-editor-vendor";
+          }
+          if (
+            normalized.includes("/node_modules/@mantine/") ||
+            normalized.includes("/node_modules/@floating-ui/")
+          ) {
+            return "block-editor-ui";
           }
           if (
             normalized.includes("@codemirror/state") ||

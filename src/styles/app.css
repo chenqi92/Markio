@@ -101,8 +101,6 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .win {
   width: 100%; height: 100%;
   background: var(--bg-window);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   display: grid;
   grid-template-rows: 38px 1fr 26px;
   overflow: hidden;
@@ -619,8 +617,6 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .qc-scrim {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.58);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
   z-index: 2000;
   display: flex; justify-content: center;
   padding-top: 14vh;
@@ -806,8 +802,6 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .ex-scrim {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.58);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
   z-index: 1900;
   display: flex; justify-content: center;
   padding-top: 10vh;
@@ -1571,8 +1565,6 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
   bottom: 48px; right: 24px;
   width: 320px;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-deep, 0 8px 24px rgba(0,0,0,0.25));

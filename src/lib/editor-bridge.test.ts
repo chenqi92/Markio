@@ -36,7 +36,7 @@ class FakeDoc {
   lineAt(pos: number) {
     let number = 1;
     for (let i = 0; i < this.lineStarts.length; i++) {
-      if (this.lineStarts[i] <= pos) number = i + 1;
+      if (this.lineStarts[i]! <= pos) number = i + 1;
       else break;
     }
     return this.line(number);

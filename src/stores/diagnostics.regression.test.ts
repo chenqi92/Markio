@@ -17,7 +17,7 @@ describe("diagnostics — regression invariants", () => {
     const items = useDiagnostics.getState().items;
     expect(items).toHaveLength(30);
     // newest first
-    expect(items[0].source).toBe("s34");
+    expect(items[0]!.source).toBe("s34");
     // first 5 (s0..s4) dropped
     expect(items.some((i) => i.source === "s0")).toBe(false);
   });
@@ -28,14 +28,14 @@ describe("diagnostics — regression invariants", () => {
       message: "向量检索失败",
       detail: new Error("ECONNREFUSED 127.0.0.1:11434"),
     });
-    expect(useDiagnostics.getState().items[0].detail).toBe(
+    expect(useDiagnostics.getState().items[0]!.detail).toBe(
       "ECONNREFUSED 127.0.0.1:11434",
     );
   });
 
   it("stringifies non-Error details", () => {
     reportDiagnostic({ source: "x", message: "m", detail: { code: 500 } });
-    expect(useDiagnostics.getState().items[0].detail).toBe("[object Object]");
+    expect(useDiagnostics.getState().items[0]!.detail).toBe("[object Object]");
     reportDiagnostic({ source: "x2", message: "m", detail: 42 });
     expect(
       useDiagnostics.getState().items.find((i) => i.source === "x2")!.detail,
@@ -57,7 +57,7 @@ describe("diagnostics — regression invariants", () => {
 
   it("default severity is warning when omitted", () => {
     reportDiagnostic({ source: "x", message: "m" });
-    expect(useDiagnostics.getState().items[0].severity).toBe("warning");
+    expect(useDiagnostics.getState().items[0]!.severity).toBe("warning");
   });
 
   it("all IDs are unique across many rapid reports", () => {
@@ -71,8 +71,8 @@ describe("diagnostics — regression invariants", () => {
   it("dedupe re-marks item as unseen so the user sees the fresh failure", () => {
     reportDiagnostic({ source: "rag", message: "索引失败" });
     useDiagnostics.getState().markAllSeen();
-    expect(useDiagnostics.getState().items[0].seen).toBe(true);
+    expect(useDiagnostics.getState().items[0]!.seen).toBe(true);
     reportDiagnostic({ source: "rag", message: "索引失败" });
-    expect(useDiagnostics.getState().items[0].seen).toBe(false);
+    expect(useDiagnostics.getState().items[0]!.seen).toBe(false);
   });
 });

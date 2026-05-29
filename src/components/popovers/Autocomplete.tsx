@@ -112,7 +112,7 @@ export function Autocomplete({
 
   useEffect(() => {
     if (ws) void ensureIndex(ws.path);
-  }, [ws?.path, ensureIndex]);
+  }, [ws, ensureIndex]);
 
   const base: Item[] = useMemo(() => {
     if (kind === "mention") {

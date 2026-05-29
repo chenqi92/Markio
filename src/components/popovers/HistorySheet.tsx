@@ -63,7 +63,7 @@ export function HistorySheet() {
       .then((s) => setSnapshots(s))
       .catch(() => setSnapshots([]))
       .finally(() => setLoading(false));
-  }, [open, tabPath, ws?.id]);
+  }, [open, tabPath, ws]);
 
   if (!open) return null;
 

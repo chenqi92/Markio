@@ -48,4 +48,12 @@ export default tseslint.config(
       "react-hooks/exhaustive-deps": "warn",
     },
   },
+  {
+    // 测试文件：允许 console 输出和 any 占位类型
+    files: ["src/**/*.{test,perf.test,lazy.test}.{ts,tsx}"],
+    rules: {
+      "no-console": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 );

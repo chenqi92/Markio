@@ -87,7 +87,7 @@ describe("installLongTaskObserver — routing", () => {
       o.entryTypes.includes("longtask"),
     )!;
     obs.emit([entry("longtask", "self", 120)]);
-    const item = useDiagnostics.getState().items[0];
+    const item = useDiagnostics.getState().items[0]!;
     expect(item.source).toBe("performance");
     expect(item.severity).toBe("warning");
     expect(item.message).toBe("主线程长任务");
@@ -106,8 +106,8 @@ describe("installLongTaskObserver — routing", () => {
     ]);
     const items = useDiagnostics.getState().items;
     expect(items).toHaveLength(1);
-    expect(items[0].message).toBe("渲染慢：preview:renderMermaid");
-    expect(items[0].detail).toBe("250ms");
+    expect(items[0]!.message).toBe("渲染慢：preview:renderMermaid");
+    expect(items[0]!.detail).toBe("250ms");
   });
 
   it("dedupes repeated reports per the diagnostics store's window", () => {
@@ -119,7 +119,7 @@ describe("installLongTaskObserver — routing", () => {
     obs.emit([entry("longtask", "self", 90)]);
     // Both share source+message+workspace, so the second updates the first.
     expect(useDiagnostics.getState().items).toHaveLength(1);
-    expect(useDiagnostics.getState().items[0].detail).toBe("90ms");
+    expect(useDiagnostics.getState().items[0]!.detail).toBe("90ms");
   });
 
   it("disconnect() stops further routing", () => {
@@ -138,7 +138,7 @@ describe("installLongTaskObserver — routing", () => {
     const obs = FakePerformanceObserver.instances;
     // Only the measure observer should exist
     expect(obs).toHaveLength(1);
-    expect(obs[0].entryTypes).toEqual(["measure"]);
+    expect(obs[0]!.entryTypes).toEqual(["measure"]);
     // Reset for the other tests in this file
     FakePerformanceObserver.supportedEntryTypes = ["longtask", "measure"];
   });

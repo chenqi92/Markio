@@ -82,7 +82,7 @@ export function StatusBar() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [ws?.path]);
+  }, [ws]);
 
   // git status 轮询：用 setTimeout 链而非 setInterval，避免大仓库 / 网络挂载盘
   // 导致请求堆积。失败时指数退避（30s → 60s → 120s → 封顶 5min），
@@ -127,7 +127,7 @@ export function StatusBar() {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [ws?.path]);
+  }, [ws]);
 
   const saveLabel = tab
     ? tab.dirty

@@ -3,6 +3,7 @@ import { Icon, type IconName } from "../ui/Icon";
 import { FileTree } from "./FileTree";
 import { TaskInbox } from "./TaskInbox";
 import { TagLandscape } from "./TagLandscape";
+import { PropertyExplorer } from "./PropertyExplorer";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI, type SidebarTab } from "@/stores/ui";
 import { api, pickDirectory } from "@/lib/api";
@@ -15,6 +16,7 @@ const SIDEBAR_TABS: ReadonlyArray<{ id: SidebarTab; label: string; icon: IconNam
   { id: "files", label: "文件", icon: "folder" },
   { id: "tasks", label: "任务", icon: "check" },
   { id: "tags", label: "标签", icon: "hash" },
+  { id: "props", label: "属性", icon: "sliders" },
 ];
 
 export function Sidebar() {
@@ -266,6 +268,7 @@ export function Sidebar() {
       {sidebarTab === "files" && <FileTree />}
       {sidebarTab === "tasks" && <TaskInbox />}
       {sidebarTab === "tags" && <TagLandscape />}
+      {sidebarTab === "props" && <PropertyExplorer />}
 
       {repoCtx && active && (
         <ContextMenu

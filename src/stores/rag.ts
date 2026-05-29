@@ -54,7 +54,7 @@ export const useRag = create<RagState>((set, get) => ({
       await api.ragEmbedTest(cfg);
     } catch (e) {
       const msg = (e as Error).message;
-      throw new Error(`embedding 服务不可达：${msg}`);
+      throw new Error(`embedding 服务不可达：${msg}`, { cause: e });
     }
     await api.ragReindex(workspacePath, cfg);
   },

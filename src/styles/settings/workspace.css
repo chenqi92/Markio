@@ -1,0 +1,352 @@
+/* ─────────────────────────────────────────────────────────────────
+ * Settings — embedded workspace overlay (取代旧的 .settings-window 弹窗)
+ * 与 AIPanel 同样占据整个 body 区域；TitleBar / StatusBar 保留可见。
+ * ─────────────────────────────────────────────────────────────── */
+.settings-workspace {
+  /* 这些变量原本只定义在 .settings-window 弹窗上；嵌入式覆盖页要自己声明一份，
+   * 否则 .select-btn / .kbd / .settings-btn 的尺寸都会塌掉 */
+  --settings-label-size: 13px;
+  --settings-help-size: 12px;
+  --settings-control-size: 30px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--bg-window);
+  animation: sw-in 220ms cubic-bezier(.2,.8,.2,1);
+}
+@keyframes sw-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* top bar */
+.settings-workspace .settings-topbar {
+  display: flex; align-items: center;
+  padding: 14px 22px;
+  border-bottom: 0.5px solid var(--border);
+  gap: 16px;
+  flex-shrink: 0;
+}
+.settings-topbar-l { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.settings-topbar-tt { min-width: 0; }
+.settings-mark {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+.settings-topbar-t { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; line-height: 1.2; }
+.settings-topbar-s { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+.settings-topbar-r { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.settings-search-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(360px, 34vw);
+  height: 36px;
+  padding: 0 10px;
+  background: var(--bg-input, var(--bg-pane));
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-3);
+  transition: border-color var(--tr), box-shadow var(--tr), background var(--tr);
+}
+.settings-search-top:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background: var(--bg-modal, var(--bg-window));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.settings-search-top > svg {
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+/* 注意：specificity 必须压过下面 `.settings-workspace input:not(...)` 那条兜底规则
+ * （否则 search 输入框会被加上边框 + 背景，出现"双框"），所以这里同样写满
+ * 3 个 :not() 把 specificity 推到 (0,5,1)。 */
+.settings-window .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.settings-workspace .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 13px !important;
+  line-height: 36px;
+  outline: none;
+}
+.settings-workspace .settings-search-top input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+.settings-search-top input::placeholder { color: var(--text-3); }
+.settings-search-top .kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  background: transparent;
+  border-radius: 6px;
+  border: 0.5px solid var(--border);
+  color: var(--text-3);
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.settings-search-clear {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.settings-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.settings-close {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.settings-close:hover { background: var(--bg-elev); color: var(--text); }
+
+/* body */
+.settings-body2 {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+}
+
+/* nav */
+.settings-nav2 {
+  background: var(--bg-pane-2);
+  border-right: 0.5px solid var(--border);
+  padding: 16px 10px;
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.settings-nav2-group {
+  font-size: 10px; font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 14px 12px 6px;
+}
+.settings-nav2-group:first-child { padding-top: 0; }
+.settings-nav2-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 12px;
+  margin: 1px 0;
+  font-size: 13px;
+  color: var(--text-2);
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  transition: background var(--tr);
+}
+.settings-nav2-item .ico {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+.settings-nav2-item:hover { background: var(--bg-hover); color: var(--text); }
+.settings-nav2-item.active {
+  background: var(--bg-elev);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.settings-nav2-item.active .ico {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.settings-nav2-item.dim { opacity: 0.35; pointer-events: none; }
+
+.settings-nav2-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+}
+.settings-nav2-foot-l { display: flex; align-items: center; gap: 10px; padding: 6px 8px; min-width: 0; }
+.settings-nav2-foot-av {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg-window);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 12px;
+  flex-shrink: 0;
+}
+.settings-nav2-foot-l .t { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav2-foot-l .s { font-size: 11px; color: var(--text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* main：覆盖原 .settings-card 卡片样式为"无卡片"无圆角排版。
+ * grid-template-columns 把右侧灰白空间收起来——内容居中，行可读宽度封到 880。 */
+.settings-main2 {
+  padding: 32px clamp(24px, 5%, 64px) 80px;
+  overflow-y: auto;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 880px);
+  justify-content: center;
+  align-content: start;
+}
+.settings-main2 .settings-h {
+  font-size: 26px; font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.settings-main2 .settings-sub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin: 0 0 28px;
+}
+.settings-main2 .settings-card {
+  background: transparent;
+  border: 0;
+  border-top: 0.5px solid var(--border);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 18px 0 6px;
+  overflow: visible;
+}
+.settings-main2 .settings-card:first-of-type { border-top: 0; padding-top: 0; }
+.settings-main2 .settings-card-h {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: 0;
+  padding: 0 0 12px;
+  margin-bottom: 4px;
+  min-height: 0;
+}
+.settings-main2 .settings-row {
+  display: flex; align-items: center;
+  min-height: 0;
+  padding: 11px 0;
+  gap: 16px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-main2 .settings-row:last-child { border-bottom: 0; }
+.settings-main2 .settings-label { font-size: 13px; color: var(--text); font-weight: 500; }
+.settings-main2 .settings-help { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+
+/* 单选行：dot 紧贴 label 放最左，整行可点。在 no-card 模式下要重写布局，
+ * 不能继承 .settings-row 的 flex (会被 .settings-row-l + * { margin-left: auto } 推到最右)。 */
+.settings-main2 .settings-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  margin: 1px 0;
+  border-radius: 8px;
+  border-bottom: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.settings-main2 .settings-choice-row .settings-row-l {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+}
+.settings-main2 .settings-choice-row .settings-choice-dot {
+  order: -1;
+  margin-left: 0;
+}
+.settings-main2 .settings-choice-row:hover { background: var(--bg-hover); }
+.settings-main2 .settings-choice-row.active { background: var(--bg-elev); }
+
+/* kbd chip / select-btn / settings-btn 在没有 .settings-card 背景托住时对比度太弱：
+ * 把背景提到 bg-pane (更深一点)，border 提到 strong；不影响弹窗版样式。 */
+.settings-main2 .kbd-group .kbd {
+  background: var(--bg-pane);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.settings-main2 .select-btn {
+  background: var(--bg-pane);
+}
+.settings-main2 .select-btn:hover,
+.settings-main2 .select-btn.open {
+  background: var(--bg-elev);
+}
+/* 注意：必须 :not(.primary)，否则 .settings-btn.primary 的 accent 背景会被这里覆掉，
+ * 变成白底白字看不见（这是 image #17 报告的 bug）。 */
+.settings-main2 .settings-btn:not(.primary) {
+  background: var(--bg-pane);
+}
+.settings-main2 .settings-btn:not(.primary):hover:not(:disabled) {
+  background: var(--bg-elev);
+}
+
+/* 快捷键行：kbd-group + 3 个按钮应该挨在一起，row 的 gap 16px 在 no-card 下显得散，
+ * 用 margin-left:auto 把右侧操作块整体推到行尾，按钮之间 6px 紧凑布局。 */
+.settings-main2 .settings-row > .kbd-group { margin-left: auto; }
+.settings-main2 .settings-row > .kbd-group + .settings-btn,
+.settings-main2 .settings-row > .settings-btn + .settings-btn {
+  margin-left: 6px;
+}
+
+/* 快捷键页顶部「全部恢复默认」按钮的承载行：用独立容器避开 settings-row 的下边框，
+ * 同时压一个底部 margin，让按钮和紧随其后的 settings-card 边框留出呼吸感。 */
+.settings-main2 .shortcuts-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 14px;
+  border-bottom: 0;
+}
+
+/* 「测试连接 / 发送测试 / 立即发送一次摘要」这种位于卡片末尾的动作行：
+ * 之前用 bg-pane-2 高亮 + accent 色 label，跟整体的纯净排版冲突。
+ * 改用 label 的常规字色 + 一个略微抬升的左侧 accent 细条作为视觉锚点。 */
+.settings-main2 .settings-row-action {
+  position: relative;
+}
+.settings-main2 .settings-row-action::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.55;
+  transform: translateY(-50%);
+}
+

@@ -70,7 +70,7 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
       today: { path: dailyPath(ws.path) },
       inbox: { path: inboxPath(ws.path) },
     };
-  }, [ws?.path]);
+  }, [ws]);
 
   const save = async () => {
     if (!ws) {

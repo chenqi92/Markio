@@ -284,7 +284,6 @@
   grid-template-columns: minmax(0, var(--split-source, 50%)) 1px minmax(0, 1fr);
 }
 .editor-split.source-only,
-.editor-split.preview-only,
 .editor-split.wysiwyg { grid-template-columns: 1fr; }
 
 .editor-pane, .preview-pane {
@@ -295,7 +294,6 @@
 .editor-pane { border-right: 0.5px solid var(--border); }
 .editor-split.split .editor-pane { border-right: 0; }
 .editor-split.source-only .editor-pane,
-.editor-split.preview-only .editor-pane,
 .editor-split.wysiwyg .editor-pane { border-right: 0; }
 
 /* draggable splitter — a 1px column with a wider invisible hit zone overlapping
@@ -374,8 +372,6 @@
   width: 268px;
   display: flex; flex-direction: column;
   background: var(--bg-elev);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-soft);

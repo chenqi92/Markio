@@ -28,7 +28,6 @@ export type CommandId =
   | "app.viewSource"
   | "app.viewSplit"
   | "app.viewWysiwyg"
-  | "app.viewPreview"
   | "app.quickCapture"
   | "app.blockMenu"
   | "app.escape";
@@ -55,7 +54,6 @@ export const COMMANDS: CommandDef[] = [
   { id: "app.viewSource", label: "源码视图", group: "视图", defaultBinding: "Mod+1" },
   { id: "app.viewSplit", label: "分屏视图", group: "视图", defaultBinding: "Mod+2" },
   { id: "app.viewWysiwyg", label: "所见即所得", group: "视图", defaultBinding: "Mod+3" },
-  { id: "app.viewPreview", label: "阅读视图", group: "视图", defaultBinding: "Mod+4" },
   { id: "app.toggleSidebar", label: "侧栏开关", group: "视图", defaultBinding: "Mod+Shift+L" },
   { id: "app.toggleOutline", label: "大纲开关", group: "视图", defaultBinding: "Mod+Shift+R" },
 

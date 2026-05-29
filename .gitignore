@@ -48,3 +48,6 @@ test-results/
 tests/fixtures/perf/1mb.md
 tests/fixtures/perf/5mb.md
 mdview-design
+
+# 本地 demo / 备忘录素材（含隐私），不入库
+store-assets/demo-vault/

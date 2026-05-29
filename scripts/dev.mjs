@@ -9,6 +9,12 @@
 //
 // Production builds (`tauri build`) ship `dist/` as embedded assets
 // served via Tauri's custom protocol — no dev server, no port.
+//
+// External tools required:
+//   - macOS / Linux: `lsof` (usually pre-installed)
+//   - Windows: `netstat` + `taskkill` (built-in)
+// If `lsof` is missing on a stripped Linux image, install it via the
+// distro's package manager (e.g. `apt-get install lsof`).
 
 import { execSync, spawn } from "node:child_process";
 import net from "node:net";

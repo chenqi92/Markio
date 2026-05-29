@@ -1,4 +1,21 @@
 {
+  "callout": {
+    "note": "备注",
+    "info": "信息",
+    "tip": "提示",
+    "success": "成功",
+    "question": "问题",
+    "warning": "警告",
+    "danger": "危险",
+    "important": "重要",
+    "todo": "待办",
+    "example": "示例",
+    "bug": "Bug",
+    "quote": "引用",
+    "titlePlaceholder": "（可选标题）",
+    "bodyPlaceholder": "（双击添加正文）",
+    "editBody": "双击编辑"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",
@@ -181,6 +198,7 @@
       "wechat": "微信公众号",
       "wxAssistant": "微信助手",
       "smartChannel": "智能通道",
+      "mcp": "MCP server",
       "clipper": "Web Clipper",
       "rss": "RSS 订阅",
       "mobile": "移动端 / 设备",
@@ -214,7 +232,11 @@
         "h": "智能通道（实验）",
         "sub": "当前通过临时桥接暴露查询能力，正式权限模型和 Tauri command 仍需补齐。"
       },
-      "export": { "h": "导入导出", "sub": "导入会落到 imports 目录并给出简要报告；复杂格式迁移仍可能降级。" },
+      "mcp": {
+        "h": "MCP server",
+        "sub": "把当前 vault 暴露给 Claude Code / Codex 等外部 AI 工具调用。只监听本机回环（127.0.0.1）。"
+      },
+      "export": { "h": "导入导出", "sub": "增量导入到 imports/<provider>/；指纹记录在 .markio/imports.json，重复导入同一条目会跳过。复杂格式迁移仍可能降级。" },
       "clipper": { "h": "Web Clipper", "sub": "浏览器扩展把网页抓回 markio 时的处理偏好。" },
       "rss": { "h": "RSS 订阅", "sub": "在 markio 内汇总信息流；订阅与拉取频率本地存。" },
       "mobile": { "h": "移动端 / 设备", "sub": "在桌面 / 移动端之间共享当前仓库。" },
@@ -282,8 +304,7 @@
       "mode": {
         "source": "纯源码",
         "split": "分屏（推荐）",
-        "wysiwyg": "所见即所得",
-        "preview": "纯预览"
+        "wysiwyg": "所见即所得"
       },
       "inputCard": "输入",
       "smartQuotes": "智能引号",

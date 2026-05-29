@@ -11,7 +11,7 @@ describe("aiSessions store", () => {
     const st = useAISessions.getState();
     expect(st.activeId).toBe(id);
     expect(st.sessions).toHaveLength(1);
-    expect(st.sessions[0].mode).toBe("ask");
+    expect(st.sessions[0]!.mode).toBe("ask");
   });
 
   it("appends messages and updates title from first user message", () => {
@@ -22,7 +22,7 @@ describe("aiSessions store", () => {
       text: "How do I run tests?",
       time: 100,
     });
-    const s = useAISessions.getState().sessions[0];
+    const s = useAISessions.getState().sessions[0]!;
     expect(s.messages).toHaveLength(1);
     expect(s.title).toContain("How do I run tests");
   });
@@ -37,7 +37,7 @@ describe("aiSessions store", () => {
     });
     useAISessions.getState().appendChunk(id, "a1", "Hello ");
     useAISessions.getState().appendChunk(id, "a1", "world");
-    const msg = useAISessions.getState().sessions[0].messages[0];
+    const msg = useAISessions.getState().sessions[0]!.messages[0]!;
     expect(msg.text).toBe("Hello world");
   });
 
@@ -50,7 +50,7 @@ describe("aiSessions store", () => {
       time: 100,
     });
     useAISessions.getState().patchMessage(id, "a1", { text: "final" });
-    const msg = useAISessions.getState().sessions[0].messages[0];
+    const msg = useAISessions.getState().sessions[0]!.messages[0]!;
     expect(msg.text).toBe("final");
     expect(msg.role).toBe("assistant");
   });

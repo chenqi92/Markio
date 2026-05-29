@@ -100,7 +100,7 @@ describe("scheduleVisualBlocks — correctness", () => {
     expect(rendered.length).toBeGreaterThanOrEqual(4);
     expect(rendered.length).toBeLessThan(20);
     // Trigger IO for the rest:
-    FakeIntersectionObserver.instances[0].fireAll();
+    FakeIntersectionObserver.instances[0]!.fireAll();
     await new Promise((r) => setTimeout(r, 50));
     expect(rendered.length).toBe(20);
     handle.disconnect();
@@ -123,7 +123,7 @@ describe("scheduleVisualBlocks — correctness", () => {
       { viewportHeight: 50, visibilityMargin: 0, yieldFn: instantYield },
     );
     await new Promise((r) => setTimeout(r, 30));
-    FakeIntersectionObserver.instances[0].fireAll();
+    FakeIntersectionObserver.instances[0]!.fireAll();
     await new Promise((r) => setTimeout(r, 100));
     expect(maxInFlight).toBe(1);
     handle.disconnect();
@@ -161,7 +161,7 @@ describe("scheduleVisualBlocks — correctness", () => {
       { viewportHeight: 50, visibilityMargin: 0, yieldFn: instantYield },
     );
     // Visible set: just block 0 (top=0, bottom=80, viewport 50 + margin 0 → bottom>=0 && top<=50)
-    FakeIntersectionObserver.instances[0].fireAll();
+    FakeIntersectionObserver.instances[0]!.fireAll();
     handle.disconnect();
     await new Promise((r) => setTimeout(r, 80));
     // Some may have rendered before disconnect, but not all 20

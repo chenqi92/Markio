@@ -59,7 +59,7 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
 
   if (!tab) return null;
 
-  const fmtObj = FORMATS.find((f) => f.id === fmt) ?? FORMATS[0];
+  const fmtObj = FORMATS.find((f) => f.id === fmt) ?? FORMATS[0]!;
 
   const start = async () => {
     setStage("progress");

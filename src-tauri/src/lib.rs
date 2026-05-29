@@ -1,13 +1,17 @@
+mod agent_cli;
 mod ai;
+mod commands;
 mod custom_themes;
 mod dev_log;
 mod dropbox_ops;
+mod frontmatter;
 mod fs_ops;
 mod gdrive_ops;
 mod git_ops;
 mod ignore;
 mod import;
 mod markdown;
+mod mcp;
 mod oauth;
 pub mod rag;
 mod rss;
@@ -17,6 +21,38 @@ mod state;
 mod watcher;
 mod webdav_ops;
 mod window_state;
+
+use commands::{
+    agent::{agent_cancel, agent_list_providers, agent_run},
+    dropbox::{
+        dropbox_authorize, dropbox_delete, dropbox_download, dropbox_list, dropbox_signout,
+        dropbox_status, dropbox_upload,
+    },
+    gdrive::{
+        gdrive_authorize, gdrive_delete, gdrive_download, gdrive_list, gdrive_signout,
+        gdrive_status, gdrive_upload,
+    },
+    git::{
+        git_checkout, git_clone, git_commit, git_fetch, git_has_pat, git_init, git_list_branches,
+        git_pull, git_push, git_resolve_conflict, git_set_pat, git_status,
+    },
+    history::{history_list, history_list_all, history_read, history_save},
+    icloud::icloud_default_path,
+    import::{import_apple_notes, import_list_legacy_dirs, import_run, import_trash_legacy_dir},
+    mcp::{mcp_set_active_workspace, mcp_status},
+    rag::{
+        rag_cancel, rag_clear, rag_embed_test, rag_reindex, rag_reindex_file, rag_remove_file,
+        rag_repo_graph, rag_search, rag_status,
+    },
+    rss::rss_fetch,
+    s3::{s3_delete_object, s3_get_object, s3_has_secret, s3_list_objects, s3_put_object, s3_set_secret},
+    secret::{secret_copy, secret_delete, secret_get, secret_has, secret_set},
+    theme::{theme_delete, theme_dir_path, theme_import, theme_list, theme_read},
+    webdav::{
+        webdav_delete, webdav_get, webdav_has_password, webdav_list, webdav_mkcol, webdav_put,
+        webdav_set_password, webdav_test,
+    },
+};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -31,10 +67,10 @@ use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
-use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, Snapshot, TrashItem};
+use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, TrashItem};
 use markdown::{OutlineItem, RenderResult};
 use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
 
@@ -119,12 +155,12 @@ pub struct PicgoPingResult {
 
 const MAX_IMAGE_INPUT_BYTES: usize = 25 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 80_000_000;
-const MAX_SYNC_BODY_BYTES: usize = 50 * 1024 * 1024;
+pub(crate) const MAX_SYNC_BODY_BYTES: usize = 50 * 1024 * 1024;
 const MAX_CRASH_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_CRASH_LOG_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_CRASH_READ_BYTES: u64 = 512 * 1024;
 
-fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
     let inner = state
         .inner
         .lock()
@@ -153,7 +189,7 @@ fn containing_workspace(state: &AppState, target: &Path) -> Result<Option<PathBu
         .cloned())
 }
 
-fn workspace_for_path(state: &AppState, target: &Path) -> Result<PathBuf, String> {
+pub(crate) fn workspace_for_path(state: &AppState, target: &Path) -> Result<PathBuf, String> {
     containing_workspace(state, target)?.ok_or_else(|| "路径不在任何已注册仓库中".to_string())
 }
 
@@ -161,7 +197,11 @@ fn is_internal_path(workspace: &Path, target: &Path) -> bool {
     target.starts_with(workspace.join(".markio"))
 }
 
-fn ensure_user_file_path(state: &AppState, target: &Path, action: &str) -> Result<(), String> {
+pub(crate) fn ensure_user_file_path(
+    state: &AppState,
+    target: &Path,
+    action: &str,
+) -> Result<(), String> {
     let ws = workspace_for_path(state, target)?;
     if target == ws {
         return Err(format!("拒绝{action}：不能操作仓库根目录"));
@@ -181,7 +221,7 @@ fn ensure_same_workspace(state: &AppState, a: &Path, b: &Path) -> Result<PathBuf
     Ok(wa)
 }
 
-fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
+pub(crate) fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
     let history = workspace.join(".markio").join("history");
     if path.starts_with(history) {
         Ok(())
@@ -190,7 +230,11 @@ fn ensure_history_path(workspace: &Path, path: &Path) -> Result<(), String> {
     }
 }
 
-fn ensure_path_in_workspace(workspace: &Path, file: &Path, action: &str) -> Result<(), String> {
+pub(crate) fn ensure_path_in_workspace(
+    workspace: &Path,
+    file: &Path,
+    action: &str,
+) -> Result<(), String> {
     if file.starts_with(workspace) {
         Ok(())
     } else {
@@ -198,7 +242,11 @@ fn ensure_path_in_workspace(workspace: &Path, file: &Path, action: &str) -> Resu
     }
 }
 
-fn validate_body_size(label: &str, raw_base64: &str, max_bytes: usize) -> Result<(), String> {
+pub(crate) fn validate_body_size(
+    label: &str,
+    raw_base64: &str,
+    max_bytes: usize,
+) -> Result<(), String> {
     let estimate = raw_base64.trim().len().saturating_mul(3) / 4;
     if estimate > max_bytes {
         return Err(format!(
@@ -209,7 +257,7 @@ fn validate_body_size(label: &str, raw_base64: &str, max_bytes: usize) -> Result
     Ok(())
 }
 
-fn validate_http_service_url(input: &str, label: &str) -> Result<reqwest::Url, String> {
+pub(crate) fn validate_http_service_url(input: &str, label: &str) -> Result<reqwest::Url, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(format!("{label} 地址为空"));
@@ -230,7 +278,7 @@ fn validate_http_service_url(input: &str, label: &str) -> Result<reqwest::Url, S
     Ok(url)
 }
 
-fn remote_account(prefix: &str, endpoint: &str) -> Result<String, String> {
+pub(crate) fn remote_account(prefix: &str, endpoint: &str) -> Result<String, String> {
     let url = validate_http_service_url(endpoint, prefix)?;
     let host = url
         .host_str()
@@ -243,7 +291,7 @@ fn remote_account(prefix: &str, endpoint: &str) -> Result<String, String> {
     Ok(format!("{prefix}:{authority}"))
 }
 
-fn validate_remote_rel_path(path: &str, allow_empty: bool) -> Result<(), String> {
+pub(crate) fn validate_remote_rel_path(path: &str, allow_empty: bool) -> Result<(), String> {
     let normalized = path.replace('\\', "/");
     if normalized.is_empty() {
         return if allow_empty {
@@ -462,6 +510,23 @@ fn fs_read_text(state: tauri::State<'_, AppState>, path: String) -> Result<Strin
 }
 
 #[tauri::command]
+fn fs_read_file_base64(path: String) -> Result<String, String> {
+    let canon = std::fs::canonicalize(&path).map_err(|e| format!("读取文件失败：{e}"))?;
+    let meta = std::fs::metadata(&canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
+    if !meta.is_file() {
+        return Err("读取文件失败：目标不是文件".to_string());
+    }
+    if meta.len() > MAX_SYNC_BODY_BYTES as u64 {
+        return Err(format!(
+            "文件超过上传大小限制：最大 {} MB",
+            MAX_SYNC_BODY_BYTES / 1024 / 1024
+        ));
+    }
+    let bytes = std::fs::read(&canon).map_err(|e| format!("读取文件失败：{e}"))?;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[tauri::command]
 fn fs_close(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     // 文件可能已被外部删除（用户在 Finder 删了再点 close），validate_path 走的
     // ensure_in_workspaces 已支持"文件不存在但父目录在 workspace"。
@@ -504,6 +569,7 @@ fn disk_changed_since_baseline(
 /// - `expected_mtime` / `expected_hash` 是调用方打开 / 上次保存时记下的基线
 /// - 调用方基线优先于进程内 opened 表，避免旧标签覆盖新标签保存过的内容
 /// - `force` 表示用户主动覆盖
+/// - `snapshot_on_save` 表示调用方希望本次写入前保存旧版本快照
 /// - 返回新 sig；冲突时返回 Err("CONFLICT:<current_mtime>:<current_hash>")
 #[tauri::command]
 fn fs_save(
@@ -513,6 +579,7 @@ fn fs_save(
     expected_mtime: Option<i64>,
     expected_hash: Option<String>,
     force: Option<bool>,
+    snapshot_on_save: Option<bool>,
 ) -> Result<SigDto, String> {
     let canon = validate_path(&state, &path)?;
     ensure_user_file_path(&state, &canon, "保存")?;
@@ -535,12 +602,14 @@ fn fs_save(
             }
         }
     }
-    if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
-        if let Some(ws) = containing_workspace(&state, &canon)? {
-            if let Err(e) =
-                fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
-            {
-                eprintln!("[history.save] 保存旧版本失败：{e}");
+    if snapshot_on_save.unwrap_or(true) {
+        if let Some(old) = old_content.as_ref().filter(|old| old.as_str() != content) {
+            if let Some(ws) = containing_workspace(&state, &canon)? {
+                if let Err(e) =
+                    fs_ops::save_snapshot(&ws.to_string_lossy(), &canon.to_string_lossy(), old)
+                {
+                    eprintln!("[history.save] 保存旧版本失败：{e}");
+                }
             }
         }
     }
@@ -1391,32 +1460,7 @@ fn crash_read_latest() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&buf).to_string())
 }
 
-// ─── 自定义 CSS 主题 ─────────────────────────────────────────────
-
-#[tauri::command]
-fn theme_list() -> Result<Vec<custom_themes::CustomTheme>, String> {
-    custom_themes::list()
-}
-
-#[tauri::command]
-fn theme_import(source_path: String) -> Result<custom_themes::CustomTheme, String> {
-    custom_themes::import(&source_path)
-}
-
-#[tauri::command]
-fn theme_read(id: String) -> Result<String, String> {
-    custom_themes::read(&id)
-}
-
-#[tauri::command]
-fn theme_delete(id: String) -> Result<(), String> {
-    custom_themes::delete(&id)
-}
-
-#[tauri::command]
-fn theme_dir_path() -> Result<String, String> {
-    custom_themes::dir_path()
-}
+// 自定义 CSS 主题命令已迁移到 commands::theme
 
 fn crash_pending_path() -> PathBuf {
     crash_log_dir().join("crash-pending.json")
@@ -1864,42 +1908,19 @@ async fn export_pandoc(
     .map_err(|e| e.to_string())?
 }
 
-// ─── 历史快照 ───────────────────────────────────────────────────────
+// 历史快照命令已迁移到 commands::history
 
+/// 扫描 workspace 全部 md 的 frontmatter，返回每条笔记 → 字段 → 多值。
 #[tauri::command]
-fn history_save(
+fn fs_scan_frontmatter(
     state: tauri::State<'_, AppState>,
     workspace: String,
-    file: String,
-    content: String,
-) -> Result<(), String> {
+) -> Result<Vec<frontmatter::NoteFrontmatter>, String> {
     let ws = validate_path(&state, &workspace)?;
-    let f = validate_path(&state, &file)?;
-    ensure_path_in_workspace(&ws, &f, "保存历史")?;
-    ensure_user_file_path(&state, &f, "保存历史")?;
-    fs_ops::save_snapshot(&ws.to_string_lossy(), &f.to_string_lossy(), &content)
+    frontmatter::scan(&ws.to_string_lossy())
 }
 
-#[tauri::command]
-fn history_list(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    file: String,
-) -> Result<Vec<Snapshot>, String> {
-    let ws = validate_path(&state, &workspace)?;
-    let f = validate_path(&state, &file)?;
-    ensure_path_in_workspace(&ws, &f, "读取历史")?;
-    ensure_user_file_path(&state, &f, "读取历史")?;
-    fs_ops::list_snapshots(&ws.to_string_lossy(), &f.to_string_lossy())
-}
-
-#[tauri::command]
-fn history_read(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
-    let canon = validate_path(&state, &path)?;
-    let ws = workspace_for_path(&state, &canon)?;
-    ensure_history_path(&ws, &canon)?;
-    fs_ops::read_snapshot(&canon.to_string_lossy())
-}
+// MCP 状态查询 + 本地 AI Agent CLI 命令已迁移到 commands::mcp / commands::agent
 
 // ─── 反链 ───────────────────────────────────────────────────────────
 
@@ -2054,82 +2075,7 @@ fn fs_trash_purge(
     fs_ops::trash_purge(&ws.to_string_lossy(), stored_p)
 }
 
-// ─── 系统钥匙串 ─────────────────────────────────────────────────────
-
-fn is_allowed_secret_account(account: &str) -> bool {
-    matches!(
-        account,
-        "ai:anthropic"
-            | "ai:openai"
-            | "ai:deepseek"
-            | "ai:ollama"
-            | "ai:google"
-            | "ai:custom"
-            | "ai:nvidia"
-            | "ai:xai"
-            | "ai:groq"
-            | "ai:openrouter"
-            | "ai:siliconflow"
-            | "ai:zhipu"
-            | "ai:dashscope"
-            | "ai:moonshot"
-            | "ai:mistral"
-            | "ai:together"
-            | "embed:openai"
-            | "rerank:cohere"
-    )
-}
-
-fn validate_secret_account(account: &str) -> Result<(), String> {
-    if is_allowed_secret_account(account) {
-        Ok(())
-    } else {
-        Err("拒绝访问该密钥账户".to_string())
-    }
-}
-
-#[tauri::command]
-fn secret_set(account: String, value: String) -> Result<(), String> {
-    validate_secret_account(&account)?;
-    secrets::set(&account, &value)
-}
-
-#[tauri::command]
-fn secret_get(_account: String) -> Result<Option<String>, String> {
-    Err("出于安全考虑，不允许从前端读取密钥明文".to_string())
-}
-
-/// 在 keychain 内复制条目：把 from 账户的明文取出，写到 to 账户。
-/// 明文不离开 Rust 进程。两个账户都必须在 is_allowed_secret_account 白名单里。
-/// 用途：RAG embedding 想复用 AI 助手某个 provider 的 key 时调用。
-#[tauri::command]
-fn secret_copy(from: String, to: String) -> Result<bool, String> {
-    validate_secret_account(&from)?;
-    validate_secret_account(&to)?;
-    if from == to {
-        return Ok(true);
-    }
-    match secrets::get(&from) {
-        Ok(Some(value)) => {
-            secrets::set(&to, &value).map_err(|e| format!("写入失败：{e}"))?;
-            Ok(true)
-        }
-        Ok(None) => Ok(false),
-        Err(e) => Err(format!("读取来源密钥失败：{e}")),
-    }
-}
-
-#[tauri::command]
-fn secret_has(account: String) -> Result<bool, String> {
-    validate_secret_account(&account)?;
-    Ok(secrets::has(&account))
-}
-
-#[tauri::command]
-fn secret_delete(account: String) -> Result<(), String> {
-    validate_secret_account(&account)?;
-    secrets::delete(&account)
-}
+// 系统钥匙串命令已迁移到 commands::secret
 
 // ─── AI ─────────────────────────────────────────────────────────────
 
@@ -2150,11 +2096,11 @@ fn ai_retrieve(
     ))
 }
 
-fn is_loopback_host(host: Option<&str>) -> bool {
+pub(crate) fn is_loopback_host(host: Option<&str>) -> bool {
     matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"))
 }
 
-fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
+pub(crate) fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
     let url = reqwest::Url::parse(endpoint).map_err(|e| format!("API endpoint 无效：{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("API endpoint 仅支持 http/https".to_string());
@@ -2193,8 +2139,7 @@ fn check_ai_endpoint_host(provider: &str, endpoint: &str) -> Result<(), String> 
         "custom" => true,
         other => {
             let list = allowed_hosts_for(other);
-            list.iter()
-                .any(|h| host.as_deref() == Some(*h))
+            list.iter().any(|h| host.as_deref() == Some(*h))
         }
     };
     if allowed {
@@ -2214,7 +2159,7 @@ fn validate_ai_endpoint(req: &ChatRequest) -> Result<(), String> {
 fn hydrate_api_key(req: &mut ChatRequest) {
     if req.api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", req.provider);
-        if !is_allowed_secret_account(&account) {
+        if !commands::secret::is_allowed_secret_account(&account) {
             return;
         }
         if let Ok(Some(stored)) = secrets::get(&account) {
@@ -2233,31 +2178,13 @@ fn validate_ai_endpoint_agent(req: &AgentRequest) -> Result<(), String> {
 fn hydrate_api_key_agent(req: &mut AgentRequest) {
     if req.api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", req.provider);
-        if !is_allowed_secret_account(&account) {
+        if !commands::secret::is_allowed_secret_account(&account) {
             return;
         }
         if let Ok(Some(stored)) = secrets::get(&account) {
             req.api_key = Some(stored);
         }
     }
-}
-
-fn hydrate_rerank_api_key(
-    cfg: Option<rag::rerank::RerankConfig>,
-) -> Option<rag::rerank::RerankConfig> {
-    let mut cfg = cfg?;
-    if cfg.provider == "cohere"
-        && cfg
-            .api_key
-            .as_ref()
-            .map(|k| k.trim().is_empty())
-            .unwrap_or(true)
-    {
-        if let Ok(Some(stored)) = secrets::get("rerank:cohere") {
-            cfg.api_key = Some(stored);
-        }
-    }
-    Some(cfg)
 }
 
 #[tauri::command]
@@ -2297,11 +2224,7 @@ async fn ai_chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String
     ai::chat_with_tools(req).await
 }
 
-#[tauri::command]
-async fn rss_fetch(url: String) -> Result<rss::RssFetchResult, String> {
-    // 只放行 http/https；Rust 端做了 URL parse + scheme 检查 + body 大小 + 条目数上限
-    rss::fetch(&url).await
-}
+// rss_fetch 命令已迁移到 commands::rss
 
 #[tauri::command]
 async fn ai_list_models(
@@ -2317,7 +2240,7 @@ async fn ai_list_models(
     let mut key = api_key;
     if key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
         let account = format!("ai:{}", provider);
-        if is_allowed_secret_account(&account) {
+        if commands::secret::is_allowed_secret_account(&account) {
             if let Ok(Some(stored)) = secrets::get(&account) {
                 key = Some(stored);
             }
@@ -2326,1195 +2249,13 @@ async fn ai_list_models(
     ai::list_models(provider, endpoint, key).await
 }
 
-// ─── Git 同步 ──────────────────────────────────────────────────────
+// Git 同步命令已迁移到 commands::git
 
-fn resolve_git_pat(url: &str, explicit: Option<String>) -> Option<String> {
-    if let Some(t) = explicit.filter(|s| !s.is_empty()) {
-        return Some(t);
-    }
-    let account = git_ops::keychain_account_for_url(url);
-    secrets::get(&account)
-        .ok()
-        .flatten()
-        .filter(|s| !s.is_empty())
-}
+// WebDAV / S3 / iCloud / Dropbox / Google Drive 命令已迁移到 commands/{webdav,s3,icloud,dropbox,gdrive}
 
-fn git_remote_url(path: &std::path::Path) -> Option<String> {
-    git_ops::default_remote_url(path).ok()
-}
+// 第三方笔记导入命令已迁移到 commands::import
 
-#[tauri::command]
-async fn git_init(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
-    let canon = validate_path(&state, &path)?;
-    tauri::async_runtime::spawn_blocking(move || git_ops::init(&canon))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_clone(
-    state: tauri::State<'_, AppState>,
-    url: String,
-    dest: String,
-    pat: Option<String>,
-) -> Result<(), String> {
-    let canon = validate_path(&state, &dest)?;
-    let pat = resolve_git_pat(&url, pat);
-    let url2 = url.clone();
-    tauri::async_runtime::spawn_blocking(move || git_ops::clone(&url2, &canon, pat.as_deref()))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_status(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<git_ops::GitStatus, String> {
-    let canon = validate_path(&state, &workspace)?;
-    tauri::async_runtime::spawn_blocking(move || git_ops::status(&canon))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_fetch(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    remote: Option<String>,
-    pat: Option<String>,
-) -> Result<(), String> {
-    let canon = validate_path(&state, &workspace)?;
-    let url = git_remote_url(&canon).unwrap_or_default();
-    let pat = if url.is_empty() {
-        pat.filter(|s| !s.is_empty())
-    } else {
-        resolve_git_pat(&url, pat)
-    };
-    let remote = remote.unwrap_or_else(|| "origin".to_string());
-    tauri::async_runtime::spawn_blocking(move || git_ops::fetch(&canon, &remote, pat.as_deref()))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_commit(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    message: String,
-    author_name: String,
-    author_email: String,
-    files: Option<Vec<String>>,
-) -> Result<String, String> {
-    let canon = validate_path(&state, &workspace)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        git_ops::commit(
-            &canon,
-            &message,
-            &author_name,
-            &author_email,
-            files.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_pull(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    remote: Option<String>,
-    branch: Option<String>,
-    rebase: Option<bool>,
-    pat: Option<String>,
-) -> Result<(u32, u32), String> {
-    let canon = validate_path(&state, &workspace)?;
-    let url = git_remote_url(&canon).unwrap_or_default();
-    let pat = if url.is_empty() {
-        pat.filter(|s| !s.is_empty())
-    } else {
-        resolve_git_pat(&url, pat)
-    };
-    let remote = remote.unwrap_or_else(|| "origin".to_string());
-    let rebase = rebase.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || {
-        git_ops::pull(&canon, &remote, branch.as_deref(), pat.as_deref(), rebase)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_push(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    remote: Option<String>,
-    branch: Option<String>,
-    set_upstream: Option<bool>,
-    pat: Option<String>,
-) -> Result<(), String> {
-    let canon = validate_path(&state, &workspace)?;
-    let url = git_remote_url(&canon).unwrap_or_default();
-    let pat = if url.is_empty() {
-        pat.filter(|s| !s.is_empty())
-    } else {
-        resolve_git_pat(&url, pat)
-    };
-    let remote = remote.unwrap_or_else(|| "origin".to_string());
-    let set_upstream = set_upstream.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || {
-        git_ops::push(
-            &canon,
-            &remote,
-            branch.as_deref(),
-            pat.as_deref(),
-            set_upstream,
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_list_branches(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<git_ops::GitBranches, String> {
-    let canon = validate_path(&state, &workspace)?;
-    tauri::async_runtime::spawn_blocking(move || git_ops::list_branches(&canon))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_checkout(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    branch: String,
-    create: Option<bool>,
-) -> Result<(), String> {
-    let canon = validate_path(&state, &workspace)?;
-    let create = create.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || git_ops::checkout(&canon, &branch, create))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn git_resolve_conflict(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    strategy: String,
-    files: Vec<String>,
-) -> Result<(), String> {
-    let canon = validate_path(&state, &workspace)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        git_ops::resolve_conflict(&canon, &strategy, &files)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// 把 PAT 存到 OS 钥匙串。account 由 URL 推导（`git:<host>`），前端无需关心。
-#[tauri::command]
-fn git_set_pat(url: String, pat: String) -> Result<(), String> {
-    let account = git_ops::keychain_account_for_url(&url);
-    if pat.is_empty() {
-        secrets::delete(&account)
-    } else {
-        secrets::set(&account, &pat)
-    }
-}
-
-#[tauri::command]
-fn git_has_pat(url: String) -> Result<bool, String> {
-    let account = git_ops::keychain_account_for_url(&url);
-    Ok(secrets::has(&account))
-}
-
-// ─── WebDAV 同步 ───────────────────────────────────────────────────
-
-fn webdav_keychain_account(base_url: &str) -> Result<String, String> {
-    remote_account("webdav", base_url)
-}
-
-fn resolve_webdav_password(base_url: &str, explicit: &str) -> Result<String, String> {
-    if !explicit.is_empty() {
-        return Ok(explicit.to_string());
-    }
-    let account = webdav_keychain_account(base_url)?;
-    Ok(secrets::get(&account).ok().flatten().unwrap_or_default())
-}
-
-#[tauri::command]
-async fn webdav_test(base_url: String, auth: webdav_ops::WebDavAuth) -> Result<(), String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    webdav_ops::test(&base_url, &auth).await
-}
-
-#[tauri::command]
-async fn webdav_list(
-    base_url: String,
-    auth: webdav_ops::WebDavAuth,
-    path: String,
-) -> Result<Vec<webdav_ops::WebDavEntry>, String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    validate_remote_rel_path(&path, true)?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    webdav_ops::list(&base_url, &auth, &path).await
-}
-
-#[tauri::command]
-async fn webdav_put(
-    base_url: String,
-    auth: webdav_ops::WebDavAuth,
-    rel_path: String,
-    body_base64: String,
-) -> Result<(), String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    validate_remote_rel_path(&rel_path, false)?;
-    validate_body_size("WebDAV 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    let bytes = STANDARD
-        .decode(body_base64)
-        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
-    webdav_ops::put(&base_url, &auth, &rel_path, bytes).await
-}
-
-#[tauri::command]
-async fn webdav_get(
-    base_url: String,
-    auth: webdav_ops::WebDavAuth,
-    rel_path: String,
-) -> Result<String, String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    validate_remote_rel_path(&rel_path, false)?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    let bytes = webdav_ops::get(&base_url, &auth, &rel_path).await?;
-    Ok(STANDARD.encode(bytes))
-}
-
-#[tauri::command]
-async fn webdav_delete(
-    base_url: String,
-    auth: webdav_ops::WebDavAuth,
-    rel_path: String,
-) -> Result<(), String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    validate_remote_rel_path(&rel_path, false)?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    webdav_ops::delete(&base_url, &auth, &rel_path).await
-}
-
-#[tauri::command]
-async fn webdav_mkcol(
-    base_url: String,
-    auth: webdav_ops::WebDavAuth,
-    rel_path: String,
-) -> Result<(), String> {
-    validate_http_service_url(&base_url, "WebDAV")?;
-    validate_remote_rel_path(&rel_path, false)?;
-    let mut auth = auth;
-    auth.password = resolve_webdav_password(&base_url, &auth.password)?;
-    webdav_ops::mkcol(&base_url, &auth, &rel_path).await
-}
-
-#[tauri::command]
-fn webdav_set_password(base_url: String, password: String) -> Result<(), String> {
-    let account = webdav_keychain_account(&base_url)?;
-    if password.is_empty() {
-        secrets::delete(&account)
-    } else {
-        secrets::set(&account, &password)
-    }
-}
-
-#[tauri::command]
-fn webdav_has_password(base_url: String) -> Result<bool, String> {
-    let account = webdav_keychain_account(&base_url)?;
-    Ok(secrets::has(&account))
-}
-
-// ─── S3 兼容上传 ───────────────────────────────────────────────────
-
-fn resolve_s3_secret_key(endpoint: &str, explicit: &str) -> String {
-    if !explicit.is_empty() {
-        return explicit.to_string();
-    }
-    let account = remote_account("s3", endpoint).unwrap_or_else(|_| "s3:invalid".to_string());
-    secrets::get(&account).ok().flatten().unwrap_or_default()
-}
-
-#[tauri::command]
-async fn s3_put_object(
-    cfg: s3_ops::S3Config,
-    key: String,
-    body_base64: String,
-    content_type: String,
-) -> Result<String, String> {
-    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
-    if let Some(public) = cfg
-        .public_base_url
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-    {
-        validate_http_service_url(public, "S3 public URL")?;
-    }
-    validate_remote_rel_path(&key, false)?;
-    validate_body_size("S3 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
-    let mut cfg = cfg;
-    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
-    let bytes = STANDARD
-        .decode(body_base64)
-        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
-    s3_ops::put_object(&cfg, &key, bytes, &content_type).await
-}
-
-#[tauri::command]
-fn s3_set_secret(endpoint: String, secret_access_key: String) -> Result<(), String> {
-    let account = remote_account("s3", &endpoint)?;
-    if secret_access_key.is_empty() {
-        secrets::delete(&account)
-    } else {
-        secrets::set(&account, &secret_access_key)
-    }
-}
-
-#[tauri::command]
-fn s3_has_secret(endpoint: String) -> Result<bool, String> {
-    let account = remote_account("s3", &endpoint)?;
-    Ok(secrets::has(&account))
-}
-
-#[tauri::command]
-async fn s3_list_objects(
-    cfg: s3_ops::S3Config,
-    prefix: String,
-    continuation_token: Option<String>,
-    max_keys: Option<u32>,
-) -> Result<s3_ops::S3ListResult, String> {
-    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
-    let mut cfg = cfg;
-    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
-    s3_ops::list_objects(
-        &cfg,
-        &prefix,
-        continuation_token.as_deref(),
-        max_keys.unwrap_or(200),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn s3_get_object(cfg: s3_ops::S3Config, key: String) -> Result<String, String> {
-    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
-    validate_remote_rel_path(&key, false)?;
-    let mut cfg = cfg;
-    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
-    let bytes = s3_ops::get_object(&cfg, &key).await?;
-    Ok(STANDARD.encode(bytes))
-}
-
-#[tauri::command]
-async fn s3_delete_object(cfg: s3_ops::S3Config, key: String) -> Result<(), String> {
-    validate_http_service_url(&cfg.endpoint, "S3 endpoint")?;
-    validate_remote_rel_path(&key, false)?;
-    let mut cfg = cfg;
-    cfg.secret_access_key = resolve_s3_secret_key(&cfg.endpoint, &cfg.secret_access_key);
-    s3_ops::delete_object(&cfg, &key).await
-}
-
-// ─── iCloud Drive 默认路径侦测 ───────────────────────────────────────
-//
-// iCloud 是 Apple 在桌面上提供的同步：把文件丢进 iCloud Drive 文件夹，
-// 客户端进程会自动镜像到云端 + 其它设备。markio 这里只负责定位这个本地
-// 镜像目录，让用户把工作仓库建在里面（或选其下子目录）。
-
-#[tauri::command]
-fn icloud_default_path() -> Result<String, String> {
-    let p = detect_icloud_path();
-    match p {
-        Some(path) if path.exists() => Ok(path.to_string_lossy().to_string()),
-        _ => Ok(String::new()),
-    }
-}
-
-fn detect_icloud_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").ok()?;
-        Some(
-            std::path::PathBuf::from(home)
-                .join("Library")
-                .join("Mobile Documents")
-                .join("com~apple~CloudDocs"),
-        )
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let user = std::env::var("USERPROFILE").ok()?;
-        // iCloud for Windows 现代版本一般落在 %USERPROFILE%\iCloudDrive
-        // 旧版可能是 %USERPROFILE%\iCloud Drive
-        let candidates = [
-            std::path::PathBuf::from(&user).join("iCloudDrive"),
-            std::path::PathBuf::from(&user).join("iCloud Drive"),
-        ];
-        for c in candidates {
-            if c.exists() {
-                return Some(c);
-            }
-        }
-        Some(std::path::PathBuf::from(&user).join("iCloudDrive"))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        None
-    }
-}
-
-// ─── Dropbox / Google Drive OAuth + 文件 API ────────────────────────
-
-const DROPBOX_TOKENS_ACCOUNT: &str = "dropbox:tokens";
-const DROPBOX_CLIENT_ACCOUNT: &str = "dropbox:client_id";
-const GDRIVE_TOKENS_ACCOUNT: &str = "gdrive:tokens";
-const GDRIVE_CLIENT_ACCOUNT: &str = "gdrive:client_id";
-
-fn load_dropbox_tokens() -> Result<dropbox_ops::DropboxTokens, String> {
-    let raw =
-        secrets::get(DROPBOX_TOKENS_ACCOUNT)?.ok_or_else(|| "尚未授权 Dropbox".to_string())?;
-    serde_json::from_str(&raw).map_err(|e| format!("Dropbox token 解析失败：{e}"))
-}
-
-fn save_dropbox_tokens(tokens: &dropbox_ops::DropboxTokens) -> Result<(), String> {
-    let s = serde_json::to_string(tokens).map_err(|e| e.to_string())?;
-    secrets::set(DROPBOX_TOKENS_ACCOUNT, &s)
-}
-
-async fn dropbox_session() -> Result<(dropbox_ops::DropboxTokens, String), String> {
-    let mut tokens = load_dropbox_tokens()?;
-    let client_id = secrets::get(DROPBOX_CLIENT_ACCOUNT)?
-        .ok_or_else(|| "Dropbox client_id 丢失".to_string())?;
-    dropbox_ops::ensure_fresh(&mut tokens, &client_id).await?;
-    save_dropbox_tokens(&tokens)?;
-    Ok((tokens, client_id))
-}
-
-#[tauri::command]
-async fn dropbox_authorize(
-    app: tauri::AppHandle,
-    client_id: String,
-) -> Result<dropbox_ops::DropboxStatus, String> {
-    use tauri_plugin_opener::OpenerExt as _;
-    let client_id = client_id.trim().to_string();
-    if client_id.is_empty() {
-        return Err("Dropbox client_id 为空".to_string());
-    }
-    let pkce = oauth::PkcePair::new()?;
-    let state = oauth::random_state()?;
-    let listener = oauth::LoopbackListener::bind().await?;
-    let redirect = listener.redirect_uri();
-    let url = dropbox_ops::build_authorize_url(&client_id, &redirect, &pkce.challenge, &state);
-    app.opener()
-        .open_url(&url, None::<String>)
-        .map_err(|e| format!("打开浏览器失败：{e}"))?;
-    let code = listener
-        .wait_for_code(std::time::Duration::from_secs(300), Some(&state))
-        .await?;
-    let tokens = dropbox_ops::exchange_code(&client_id, &code, &pkce.verifier, &redirect).await?;
-    save_dropbox_tokens(&tokens)?;
-    secrets::set(DROPBOX_CLIENT_ACCOUNT, &client_id)?;
-    Ok(dropbox_ops::DropboxStatus {
-        connected: true,
-        display: tokens.display,
-        account_id: tokens.account_id,
-        expires_in_secs: (tokens.expires_at as i64)
-            - (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0)),
-    })
-}
-
-#[tauri::command]
-fn dropbox_status() -> Result<dropbox_ops::DropboxStatus, String> {
-    match load_dropbox_tokens() {
-        Ok(t) => {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-            Ok(dropbox_ops::DropboxStatus {
-                connected: true,
-                display: t.display,
-                account_id: t.account_id,
-                expires_in_secs: t.expires_at as i64 - now,
-            })
-        }
-        Err(_) => Ok(dropbox_ops::DropboxStatus {
-            connected: false,
-            display: String::new(),
-            account_id: String::new(),
-            expires_in_secs: 0,
-        }),
-    }
-}
-
-#[tauri::command]
-fn dropbox_signout() -> Result<(), String> {
-    let _ = secrets::delete(DROPBOX_TOKENS_ACCOUNT);
-    let _ = secrets::delete(DROPBOX_CLIENT_ACCOUNT);
-    Ok(())
-}
-
-#[tauri::command]
-async fn dropbox_list(path: String) -> Result<dropbox_ops::DropboxList, String> {
-    let (tokens, _) = dropbox_session().await?;
-    dropbox_ops::list_folder(&tokens, &path).await
-}
-
-#[tauri::command]
-async fn dropbox_upload(path: String, body_base64: String) -> Result<(), String> {
-    validate_remote_rel_path(&path, false)?;
-    validate_body_size("Dropbox 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
-    let bytes = STANDARD
-        .decode(body_base64)
-        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
-    let (tokens, _) = dropbox_session().await?;
-    dropbox_ops::upload(&tokens, &path, bytes).await
-}
-
-#[tauri::command]
-async fn dropbox_download(path: String) -> Result<String, String> {
-    validate_remote_rel_path(&path, false)?;
-    let (tokens, _) = dropbox_session().await?;
-    let bytes = dropbox_ops::download(&tokens, &path).await?;
-    Ok(STANDARD.encode(bytes))
-}
-
-#[tauri::command]
-async fn dropbox_delete(path: String) -> Result<(), String> {
-    validate_remote_rel_path(&path, false)?;
-    let (tokens, _) = dropbox_session().await?;
-    dropbox_ops::delete(&tokens, &path).await
-}
-
-// ── Google Drive ──
-
-fn load_gdrive_tokens() -> Result<gdrive_ops::GDriveTokens, String> {
-    let raw =
-        secrets::get(GDRIVE_TOKENS_ACCOUNT)?.ok_or_else(|| "尚未授权 Google Drive".to_string())?;
-    serde_json::from_str(&raw).map_err(|e| format!("Drive token 解析失败：{e}"))
-}
-
-fn save_gdrive_tokens(tokens: &gdrive_ops::GDriveTokens) -> Result<(), String> {
-    let s = serde_json::to_string(tokens).map_err(|e| e.to_string())?;
-    secrets::set(GDRIVE_TOKENS_ACCOUNT, &s)
-}
-
-async fn gdrive_session() -> Result<(gdrive_ops::GDriveTokens, String), String> {
-    let mut tokens = load_gdrive_tokens()?;
-    let client_id =
-        secrets::get(GDRIVE_CLIENT_ACCOUNT)?.ok_or_else(|| "Drive client_id 丢失".to_string())?;
-    gdrive_ops::ensure_fresh(&mut tokens, &client_id).await?;
-    save_gdrive_tokens(&tokens)?;
-    Ok((tokens, client_id))
-}
-
-#[tauri::command]
-async fn gdrive_authorize(
-    app: tauri::AppHandle,
-    client_id: String,
-) -> Result<gdrive_ops::GDriveStatus, String> {
-    use tauri_plugin_opener::OpenerExt as _;
-    let client_id = client_id.trim().to_string();
-    if client_id.is_empty() {
-        return Err("Google client_id 为空".to_string());
-    }
-    let pkce = oauth::PkcePair::new()?;
-    let state = oauth::random_state()?;
-    let listener = oauth::LoopbackListener::bind().await?;
-    let redirect = listener.redirect_uri();
-    let url = gdrive_ops::build_authorize_url(&client_id, &redirect, &pkce.challenge, &state);
-    app.opener()
-        .open_url(&url, None::<String>)
-        .map_err(|e| format!("打开浏览器失败：{e}"))?;
-    let code = listener
-        .wait_for_code(std::time::Duration::from_secs(300), Some(&state))
-        .await?;
-    let tokens = gdrive_ops::exchange_code(&client_id, &code, &pkce.verifier, &redirect).await?;
-    save_gdrive_tokens(&tokens)?;
-    secrets::set(GDRIVE_CLIENT_ACCOUNT, &client_id)?;
-    Ok(gdrive_ops::GDriveStatus {
-        connected: true,
-        display: tokens.display,
-        expires_in_secs: (tokens.expires_at as i64)
-            - (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0)),
-    })
-}
-
-#[tauri::command]
-fn gdrive_status() -> Result<gdrive_ops::GDriveStatus, String> {
-    match load_gdrive_tokens() {
-        Ok(t) => {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-            Ok(gdrive_ops::GDriveStatus {
-                connected: true,
-                display: t.display,
-                expires_in_secs: t.expires_at as i64 - now,
-            })
-        }
-        Err(_) => Ok(gdrive_ops::GDriveStatus {
-            connected: false,
-            display: String::new(),
-            expires_in_secs: 0,
-        }),
-    }
-}
-
-#[tauri::command]
-fn gdrive_signout() -> Result<(), String> {
-    let _ = secrets::delete(GDRIVE_TOKENS_ACCOUNT);
-    let _ = secrets::delete(GDRIVE_CLIENT_ACCOUNT);
-    Ok(())
-}
-
-#[tauri::command]
-async fn gdrive_list(
-    q: String,
-    page_token: Option<String>,
-) -> Result<gdrive_ops::GDriveList, String> {
-    let (tokens, _) = gdrive_session().await?;
-    gdrive_ops::list_files(&tokens, &q, page_token.as_deref()).await
-}
-
-#[tauri::command]
-async fn gdrive_upload(
-    name: String,
-    parent_id: Option<String>,
-    existing_id: Option<String>,
-    body_base64: String,
-    mime_type: String,
-) -> Result<String, String> {
-    if name.contains('/') || name.contains('\\') || name.is_empty() {
-        return Err("Drive 文件名无效".to_string());
-    }
-    validate_body_size("Drive 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
-    let bytes = STANDARD
-        .decode(body_base64)
-        .map_err(|e| format!("body 不是合法 base64：{e}"))?;
-    let (tokens, _) = gdrive_session().await?;
-    gdrive_ops::upload(
-        &tokens,
-        existing_id.as_deref().filter(|s| !s.is_empty()),
-        &name,
-        parent_id.as_deref().filter(|s| !s.is_empty()),
-        bytes,
-        &mime_type,
-    )
-    .await
-}
-
-#[tauri::command]
-async fn gdrive_download(file_id: String) -> Result<String, String> {
-    if file_id.is_empty() {
-        return Err("file_id 为空".to_string());
-    }
-    let (tokens, _) = gdrive_session().await?;
-    let bytes = gdrive_ops::download(&tokens, &file_id).await?;
-    Ok(STANDARD.encode(bytes))
-}
-
-#[tauri::command]
-async fn gdrive_delete(file_id: String) -> Result<(), String> {
-    if file_id.is_empty() {
-        return Err("file_id 为空".to_string());
-    }
-    let (tokens, _) = gdrive_session().await?;
-    gdrive_ops::delete(&tokens, &file_id).await
-}
-
-// ─── 第三方笔记导入 ─────────────────────────────────────────────────
-
-#[tauri::command]
-async fn import_run(
-    state: tauri::State<'_, AppState>,
-    provider: String,
-    source: String,
-    workspace: String,
-) -> Result<import::ImportReport, String> {
-    let ws = validate_path(&state, &workspace)?;
-    let src = std::path::PathBuf::from(&source);
-    if !src.exists() {
-        return Err(format!("源路径不存在：{source}"));
-    }
-    tauri::async_runtime::spawn_blocking(move || match provider.as_str() {
-        "notion" => import::import_notion(&src, &ws),
-        "obsidian" => import::import_obsidian(&src, &ws),
-        "bear" => import::import_bear(&src, &ws),
-        "evernote" => import::import_evernote(&src, &ws),
-        "roam" => import::import_roam(&src, &ws),
-        "logseq" => import::import_logseq(&src, &ws),
-        other => Err(format!("未知导入器：{other}")),
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Apple Notes 导入（macOS 专属）：不需要 source 路径，直接调系统 Notes.app。
-/// 首次会弹「markio 想要访问 Notes 数据」系统对话框。
-#[tauri::command]
-async fn import_apple_notes(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<import::ImportReport, String> {
-    let ws = validate_path(&state, &workspace)?;
-    tauri::async_runtime::spawn_blocking(move || import::import_apple_notes(&ws))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-// ─── RAG 向量索引 / 混合检索 ────────────────────────────────────────
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RagEmbedConfigDto {
-    pub provider: String,
-    pub model: String,
-    pub dim: u32,
-    pub base_url: Option<String>,
-    pub api_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RagReindexRequest {
-    pub workspace: String,
-    pub config: RagEmbedConfigDto,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RagReindexFileRequest {
-    pub workspace: String,
-    pub path: String,
-    pub config: RagEmbedConfigDto,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RagSearchRequest {
-    pub workspace: String,
-    pub query: String,
-    pub limit: Option<usize>,
-    pub expand_links: Option<bool>,
-    pub config: RagEmbedConfigDto,
-    pub rerank: Option<rag::rerank::RerankConfig>,
-}
-
-fn build_embed_config(dto: RagEmbedConfigDto) -> Result<(rag::embed::EmbedConfig, usize), String> {
-    let dim = dto.dim.max(1) as usize;
-    let provider = rag::embed::Provider::parse(&dto.provider)
-        .ok_or_else(|| format!("未知 embedding provider：{}", dto.provider))?;
-    let mut api_key = dto.api_key;
-    validate_rag_endpoint(&dto.provider, dto.base_url.as_deref())?;
-    if api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
-        // 先看 embed:<provider>，再回落 ai:<provider>
-        if let Ok(Some(v)) = secrets::get(&format!("embed:{}", dto.provider)) {
-            api_key = Some(v);
-        } else if let Ok(Some(v)) = secrets::get(&format!("ai:{}", dto.provider)) {
-            api_key = Some(v);
-        }
-    }
-    Ok((
-        rag::embed::EmbedConfig {
-            provider,
-            model: dto.model,
-            base_url: dto.base_url,
-            api_key,
-        },
-        dim,
-    ))
-}
-
-fn validate_rag_endpoint(provider: &str, base_url: Option<&str>) -> Result<(), String> {
-    let Some(endpoint) = base_url.filter(|s| !s.trim().is_empty()) else {
-        return Ok(());
-    };
-    let host = endpoint_host(endpoint)?;
-    let loopback = is_loopback_host(host.as_deref());
-    let allowed = match provider {
-        "ollama" => loopback,
-        "openai" => loopback || host.as_deref() == Some("api.openai.com"),
-        _ => false,
-    };
-    if allowed {
-        Ok(())
-    } else {
-        Err("Embedding endpoint 仅允许官方 OpenAI 或本机服务".to_string())
-    }
-}
-
-fn rag_jobs() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static CELL: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
-    CELL.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-struct RagJobGuard {
-    workspace: String,
-    cancel: Arc<AtomicBool>,
-}
-
-impl Drop for RagJobGuard {
-    fn drop(&mut self) {
-        if let Ok(mut jobs) = rag_jobs().lock() {
-            jobs.remove(&self.workspace);
-        }
-    }
-}
-
-impl RagJobGuard {
-    fn cancel_token(&self) -> Arc<AtomicBool> {
-        self.cancel.clone()
-    }
-}
-
-fn begin_rag_job(workspace: &str) -> Result<RagJobGuard, String> {
-    let mut jobs = rag_jobs()
-        .lock()
-        .map_err(|e| format!("rag job lock: {e}"))?;
-    if jobs.contains_key(workspace) {
-        return Err("该仓库已有 RAG 索引任务在运行".to_string());
-    }
-    let cancel = Arc::new(AtomicBool::new(false));
-    jobs.insert(workspace.to_string(), cancel.clone());
-    Ok(RagJobGuard {
-        workspace: workspace.to_string(),
-        cancel,
-    })
-}
-
-fn request_rag_cancel(workspace: &str) -> Result<bool, String> {
-    let jobs = rag_jobs()
-        .lock()
-        .map_err(|e| format!("rag job lock: {e}"))?;
-    let Some(cancel) = jobs.get(workspace) else {
-        return Ok(false);
-    };
-    cancel.store(true, Ordering::Relaxed);
-    Ok(true)
-}
-
-fn empty_rag_status(workspace: &str) -> rag::IndexStatus {
-    rag::IndexStatus {
-        workspace: workspace.to_string(),
-        total_docs: 0,
-        total_chunks: 0,
-        indexed_at: None,
-        embedding_model: None,
-        embedding_provider: None,
-        embedding_dim: None,
-        db_size: 0,
-        progress: None,
-    }
-}
-
-fn rag_status_from_handle(handle: &Arc<rag::RagHandle>) -> Result<rag::IndexStatus, String> {
-    let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-    let total_docs = db.doc_count();
-    let total_chunks = db.chunk_count();
-    let indexed_at = db.last_indexed_at();
-    let model = db.get_meta("embedding_model");
-    let provider = db.get_meta("embedding_provider");
-    let dim = db.get_meta("embedding_dim").and_then(|v| v.parse().ok());
-    let progress = db.progress.clone();
-    Ok(rag::IndexStatus {
-        workspace: handle.workspace.clone(),
-        total_docs,
-        total_chunks,
-        indexed_at,
-        embedding_model: model,
-        embedding_provider: provider,
-        embedding_dim: dim,
-        db_size: rag::db::db_size(Path::new(&handle.workspace)),
-        progress,
-    })
-}
-
-fn emit_rag_status(app: &tauri::AppHandle, status: rag::IndexStatus) {
-    let _ = app.emit("rag-status", status);
-}
-
-fn emit_rag_status_for_handle(app: &tauri::AppHandle, handle: &Arc<rag::RagHandle>) {
-    if let Ok(status) = rag_status_from_handle(handle) {
-        emit_rag_status(app, status);
-    }
-}
-
-fn has_rag_full_scan(workspace: &Path) -> bool {
-    let path = rag::db::db_path(workspace);
-    if !path.exists() {
-        return false;
-    }
-    let Ok(conn) =
-        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-    else {
-        return false;
-    };
-    conn.query_row(
-        "SELECT v FROM schema_meta WHERE k='last_full_scan'",
-        [],
-        |r| r.get::<_, String>(0),
-    )
-    .ok()
-    .and_then(|v| v.parse::<i64>().ok())
-    .is_some()
-}
-
-#[tauri::command]
-async fn rag_status(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<rag::IndexStatus, String> {
-    let ws = validate_path(&state, &workspace)?;
-    if !rag::db::db_path(&ws).exists() {
-        return Ok(empty_rag_status(ws.to_string_lossy().as_ref()));
-    }
-    let ws_str = ws.to_string_lossy().to_string();
-    let result = tokio::task::spawn_blocking(move || -> Result<rag::IndexStatus, String> {
-        let stored_dim = peek_embed_dim(Path::new(&ws_str)).unwrap_or(768);
-        let handle = rag::rag_handle(&ws_str, stored_dim)?;
-        rag_status_from_handle(&handle)
-    })
-    .await
-    .map_err(|e| format!("rag_status join 失败：{e}"))?;
-    result
-}
-
-fn peek_embed_dim(workspace: &Path) -> Option<usize> {
-    let path = rag::db::db_path(workspace);
-    if !path.exists() {
-        return None;
-    }
-    let conn =
-        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .ok()?;
-    conn.query_row(
-        "SELECT v FROM schema_meta WHERE k='embedding_dim'",
-        [],
-        |r| r.get::<_, String>(0),
-    )
-    .ok()?
-    .parse()
-    .ok()
-}
-
-/// 用空 input "ping" 测一次 embedding 服务是否可达；前端在开始 reindex 前先调它，
-/// 服务不可达就直接报错给用户，不要白白起一个会失败一整轮的后台任务。
-#[tauri::command]
-async fn rag_embed_test(config: rag::embed::EmbedConfig) -> Result<usize, String> {
-    let result = rag::embed::embed(&config, &["ping".to_string()]).await?;
-    Ok(result.dim)
-}
-
-#[tauri::command]
-async fn rag_reindex(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    req: RagReindexRequest,
-) -> Result<(), String> {
-    let ws = validate_path(&state, &req.workspace)?;
-    let ws_str = ws.to_string_lossy().to_string();
-    let (cfg, dim) = build_embed_config(req.config)?;
-    let guard = begin_rag_job(&ws_str)?;
-    let cancel = guard.cancel_token();
-    // 异步触发，不阻塞 IPC 调用方；进度通过 rag-status 事件推送。
-    std::thread::spawn(move || {
-        let _guard = guard;
-        let handle = match rag::rag_handle(&ws_str, dim) {
-            Ok(h) => h,
-            Err(e) => {
-                eprintln!("[rag.reindex] handle 打开失败：{e}");
-                return;
-            }
-        };
-        let app_for_progress = app.clone();
-        let handle_for_progress = handle.clone();
-        if let Err(e) = rag::index::reindex_workspace(
-            handle.clone(),
-            cfg,
-            move || {
-                emit_rag_status_for_handle(&app_for_progress, &handle_for_progress);
-            },
-            move || cancel.load(Ordering::Relaxed),
-        ) {
-            eprintln!("[rag.reindex] {e}");
-            emit_rag_status_for_handle(&app, &handle);
-        }
-    });
-    Ok(())
-}
-
-#[tauri::command]
-async fn rag_cancel(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<bool, String> {
-    let ws = validate_path(&state, &workspace)?;
-    let ws_str = ws.to_string_lossy().to_string();
-    let cancelled = request_rag_cancel(&ws_str)?;
-    if cancelled {
-        if let Some(handle) = rag::existing_handle(&ws_str) {
-            if let Ok(mut db) = handle.db.lock() {
-                if let Some(p) = db.progress.as_mut() {
-                    p.cancel_requested = true;
-                    p.last_error = Some("正在取消索引…".to_string());
-                }
-            }
-            emit_rag_status_for_handle(&app, &handle);
-        }
-    }
-    Ok(cancelled)
-}
-
-#[tauri::command]
-async fn rag_reindex_file(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    req: RagReindexFileRequest,
-) -> Result<(), String> {
-    let ws = validate_path(&state, &req.workspace)?;
-    let path = validate_path(&state, &req.path)?;
-    if !path.starts_with(&ws) {
-        return Err("文件不在所选仓库中".to_string());
-    }
-    if !has_rag_full_scan(&ws) {
-        return Ok(());
-    }
-    let ws_str = ws.to_string_lossy().to_string();
-    let (cfg, dim) = build_embed_config(req.config)?;
-    let guard = begin_rag_job(&ws_str)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        let handle = rag::rag_handle(&ws_str, dim)?;
-        rag::index::reindex_file(handle.clone(), cfg, &path)?;
-        emit_rag_status_for_handle(&app, &handle);
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| format!("join 失败：{e}"))??;
-    Ok(())
-}
-
-#[tauri::command]
-async fn rag_remove_file(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-    path: String,
-) -> Result<(), String> {
-    let ws = validate_path(&state, &workspace)?;
-    let p = validate_path(&state, &path)?;
-    if !has_rag_full_scan(&ws) {
-        return Ok(());
-    }
-    let ws_str = ws.to_string_lossy().to_string();
-    let dim = peek_embed_dim(&ws).unwrap_or(768);
-    tokio::task::spawn_blocking(move || {
-        let handle = rag::rag_handle(&ws_str, dim)?;
-        rag::index::remove_file(handle.clone(), &p)?;
-        emit_rag_status_for_handle(&app, &handle);
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| format!("join 失败：{e}"))??;
-    Ok(())
-}
-
-#[tauri::command]
-async fn rag_search(
-    state: tauri::State<'_, AppState>,
-    req: RagSearchRequest,
-) -> Result<Vec<rag::SearchHit>, String> {
-    let ws = validate_path(&state, &req.workspace)?;
-    if !has_rag_full_scan(&ws) {
-        return Ok(Vec::new());
-    }
-    let ws_str = ws.to_string_lossy().to_string();
-    let (cfg, dim) = build_embed_config(req.config)?;
-    let query = req.query;
-    let limit = req.limit.unwrap_or(8);
-    let expand_links = req.expand_links.unwrap_or(true);
-    let rerank_cfg = hydrate_rerank_api_key(req.rerank);
-    let hits = tokio::task::spawn_blocking(move || -> Result<Vec<rag::SearchHit>, String> {
-        let handle = rag::rag_handle(&ws_str, dim)?;
-        rag::search::search_with_rerank(handle, cfg, rerank_cfg, &query, limit, expand_links)
-    })
-    .await
-    .map_err(|e| format!("join 失败：{e}"))??;
-    Ok(hits)
-}
-
-#[tauri::command]
-async fn rag_repo_graph(
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<rag::graph::RepoGraph, String> {
-    let ws = validate_path(&state, &workspace)?;
-    if !has_rag_full_scan(&ws) {
-        return Ok(rag::graph::RepoGraph {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        });
-    }
-    let ws_str = ws.to_string_lossy().to_string();
-    let dim = peek_embed_dim(&ws).unwrap_or(768);
-    tokio::task::spawn_blocking(move || -> Result<rag::graph::RepoGraph, String> {
-        let handle = rag::rag_handle(&ws_str, dim)?;
-        let db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-        rag::graph::repo_graph(&db)
-    })
-    .await
-    .map_err(|e| format!("join 失败：{e}"))?
-}
-
-#[tauri::command]
-async fn rag_clear(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    workspace: String,
-) -> Result<(), String> {
-    let ws = validate_path(&state, &workspace)?;
-    let ws_str = ws.to_string_lossy().to_string();
-    let guard = begin_rag_job(&ws_str)?;
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let _guard = guard;
-        rag::drop_handle(&ws_str);
-        let path = rag::db::db_path(Path::new(&ws_str));
-        // 包括 WAL/-shm 一并清掉
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(path.with_extension("db-wal"));
-        let _ = std::fs::remove_file(path.with_extension("db-shm"));
-        emit_rag_status(&app, empty_rag_status(&ws_str));
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("join 失败：{e}"))??;
-    Ok(())
-}
+// RAG 相关命令 + DTO + 任务调度 helpers 已迁移到 commands::rag
 
 // ─── 入口 ───────────────────────────────────────────────────────────
 
@@ -3555,6 +2296,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .manage(std::sync::Arc::new(mcp::McpRuntime::default()))
         .invoke_handler(tauri::generate_handler![
             md_render,
             md_render_stream,
@@ -3566,6 +2308,7 @@ pub fn run() {
             fs_read_tree,
             fs_read_dir,
             fs_read_text,
+            fs_read_file_base64,
             fs_open,
             fs_close,
             fs_save,
@@ -3595,6 +2338,13 @@ pub fn run() {
             history_save,
             history_list,
             history_read,
+            history_list_all,
+            fs_scan_frontmatter,
+            mcp_status,
+            mcp_set_active_workspace,
+            agent_list_providers,
+            agent_run,
+            agent_cancel,
             fs_backlinks,
             fs_mentions,
             fs_index_tokens,
@@ -3664,6 +2414,8 @@ pub fn run() {
             gdrive_delete,
             import_run,
             import_apple_notes,
+            import_list_legacy_dirs,
+            import_trash_legacy_dir,
             rag_status,
             rag_reindex,
             rag_embed_test,
@@ -3683,6 +2435,15 @@ pub fn run() {
             window_state::apply_on_startup(app.handle());
             // 启动时如果是双击文件触发的，URL 已经在 CLI args 里（macOS 例外，走下面 Opened 事件）
             forward_cli_open_files(app.handle());
+            // MCP loopback HTTP server：异步启动，启动失败仅打日志。
+            {
+                let runtime = app
+                    .handle()
+                    .state::<std::sync::Arc<mcp::McpRuntime>>()
+                    .inner()
+                    .clone();
+                mcp::spawn(app.handle().clone(), runtime);
+            }
             // markio://open?path=... 深链接：注册回调，把 path 当作 open-from-os 同一事件转发
             {
                 use tauri_plugin_deep_link::DeepLinkExt;

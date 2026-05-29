@@ -5,7 +5,6 @@ import { useSettings } from "@/stores/settings";
 /** 拼一个独立 HTML 字符串：标题 + 主题 token + 渲染后的 markdown */
 async function buildStandaloneHtml(title: string, source: string): Promise<string> {
   const r = await api.renderMarkdown(source);
-  const theme = useSettings.getState().theme;
   // 用渲染主题对应的关键 token 内联到导出文件里，保证打开后样式自洽
   const tokens = readThemeTokens();
   const css = `
@@ -157,7 +156,7 @@ async function inlineRemoteImages(html: string): Promise<string> {
   if (matches.length === 0) return html;
   const cache = new Map<string, string>();
   for (const m of matches) {
-    const url = m[1];
+    const url = m[1]!;
     if (cache.has(url)) continue;
     try {
       cache.set(url, await api.fetchImageAsDataUrl(url));

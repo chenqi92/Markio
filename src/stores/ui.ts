@@ -3,8 +3,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { ViewMode } from "@/types";
 import { tauriStorage } from "@/lib/tauriStorage";
 
-/** 侧栏顶部的 tab：默认 files = 文件树；tasks = 任务收件箱；tags = 标签全景。 */
-export type SidebarTab = "files" | "tasks" | "tags";
+/** 侧栏顶部的 tab：files = 文件树；tasks = 任务收件箱；tags = 标签全景；props = frontmatter 浏览。 */
+export type SidebarTab = "files" | "tasks" | "tags" | "props";
 
 interface UIState {
   sidebarOpen: boolean;
@@ -17,6 +17,8 @@ interface UIState {
   findOpen: boolean;
   settingsOpen: boolean;
   historyOpen: boolean;
+  pulseOpen: boolean;
+  agentOpen: boolean;
   toast: { stage: "uploading" | "done" | "error"; message: string } | null;
   aiOpen: boolean;
   wechatOpen: boolean;
@@ -43,6 +45,8 @@ interface UIState {
   openFind: (v: boolean) => void;
   openSettings: (v: boolean) => void;
   openHistory: (v: boolean) => void;
+  openPulse: (v: boolean) => void;
+  openAgent: (v: boolean) => void;
   openAi: (v: boolean) => void;
   openWechat: (v: boolean) => void;
   setFindQuery: (q: string) => void;
@@ -75,6 +79,8 @@ export const useUI = create<UIState>()(
       findOpen: false,
       settingsOpen: false,
       historyOpen: false,
+      pulseOpen: false,
+      agentOpen: false,
       aiOpen: false,
       wechatOpen: false,
       findQuery: "",
@@ -100,6 +106,8 @@ export const useUI = create<UIState>()(
       openFind: (v) => set({ findOpen: v }),
       openSettings: (v) => set({ settingsOpen: v }),
       openHistory: (v) => set({ historyOpen: v }),
+      openPulse: (v) => set({ pulseOpen: v }),
+      openAgent: (v) => set({ agentOpen: v }),
       openAi: (v) => set({ aiOpen: v }),
       openWechat: (v) => set({ wechatOpen: v }),
       setFindQuery: (findQuery) => set({ findQuery, findIndex: 0 }),
@@ -132,6 +140,24 @@ export const useUI = create<UIState>()(
         focusMode: s.focusMode,
         mode: s.mode,
       }),
+      // hydrate 时校验 mode / sidebarTab：老版本可能持久化已下线的值
+      // （比如 "block" 是早期实验后来合并回 "wysiwyg"），未校正会让
+      // MODE_CLASS[mode] 返回 undefined 让编辑器渲染空壳。
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UIState>;
+        const validModes: ViewMode[] = ["source", "split", "wysiwyg"];
+        const validTabs: SidebarTab[] = ["files", "tasks", "tags", "props"];
+        return {
+          ...current,
+          ...p,
+          mode: validModes.includes(p.mode as ViewMode)
+            ? (p.mode as ViewMode)
+            : "split",
+          sidebarTab: validTabs.includes(p.sidebarTab as SidebarTab)
+            ? (p.sidebarTab as SidebarTab)
+            : "files",
+        };
+      },
     },
   ),
 );

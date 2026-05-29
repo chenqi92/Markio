@@ -12,15 +12,15 @@ describe("parseKanban — examples", () => {
     const body = "# 📥 Inbox\n- [ ] one\n- [x] two\n# Done\n- [x] three";
     const cols = parseKanban(body);
     expect(cols).toHaveLength(2);
-    expect(cols[0].title).toBe("Inbox");
-    expect(cols[0].emoji).toBe("📥");
-    expect(cols[0].tasks.map((t) => t.text)).toEqual(["one", "two"]);
-    expect(cols[0].tasks[1].done).toBe(true);
+    expect(cols[0]!.title).toBe("Inbox");
+    expect(cols[0]!.emoji).toBe("📥");
+    expect(cols[0]!.tasks.map((t) => t.text)).toEqual(["one", "two"]);
+    expect(cols[0]!.tasks[1]!.done).toBe(true);
   });
 
   it("extracts inline meta tokens", () => {
     const cols = parseKanban("# A\n- [ ] write doc #docs !high @05-20 ~2h {30%}");
-    const t = cols[0].tasks[0];
+    const t = cols[0]!.tasks[0]!;
     expect(t.text).toBe("write doc");
     expect(t.tag).toBe("docs");
     expect(t.prio).toBe("high");
@@ -31,13 +31,13 @@ describe("parseKanban — examples", () => {
 
   it("clamps progress > 100", () => {
     const cols = parseKanban("# A\n- [ ] x {999%}");
-    expect(cols[0].tasks[0].progress).toBe(100);
+    expect(cols[0]!.tasks[0]!.progress).toBe(100);
   });
 
   it("ignores body text that isn't a column heading or task", () => {
     const cols = parseKanban("random text\n# Col\nmore text\n- [ ] only this");
     expect(cols).toHaveLength(1);
-    expect(cols[0].tasks).toHaveLength(1);
+    expect(cols[0]!.tasks).toHaveLength(1);
   });
 });
 
@@ -119,13 +119,13 @@ describe("toggleTaskInSource — involutive", () => {
             "# Col\n" +
             tasks.map(([done, text]) => `- [${done ? "x" : " "}] ${text}`).join("\n");
           const cols = parseKanban(body);
-          if (cols[0].tasks.length === 0) return;
-          const first = cols[0].tasks[0];
+          if (cols[0]!.tasks.length === 0) return;
+          const first = cols[0]!.tasks[0]!;
           const once = toggleTaskInSource(body, body, first);
           expect(once).not.toBeNull();
           // re-parse to get the new task state, then toggle back
           const cols2 = parseKanban(once!);
-          const flipped = cols2[0].tasks[0];
+          const flipped = cols2[0]!.tasks[0]!;
           expect(flipped.done).toBe(!first.done);
           const twice = toggleTaskInSource(once!, once!, flipped);
           expect(twice).toBe(body);

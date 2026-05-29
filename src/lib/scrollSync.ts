@@ -112,18 +112,18 @@ export function topLineFromScroll(
 ): number | null {
   anchors = syncAnchors(anchors);
   if (anchors.length === 0) return null;
-  if (scrollTop <= anchors[0].top) return anchors[0].line;
-  const last = anchors[anchors.length - 1];
+  if (scrollTop <= anchors[0]!.top) return anchors[0]!.line;
+  const last = anchors[anchors.length - 1]!;
   if (scrollTop >= last.top) return last.line;
   let lo = 0;
   let hi = anchors.length - 1;
   while (lo + 1 < hi) {
     const mid = (lo + hi) >> 1;
-    if (anchors[mid].top <= scrollTop) lo = mid;
+    if (anchors[mid]!.top <= scrollTop) lo = mid;
     else hi = mid;
   }
-  const a = anchors[lo];
-  const b = anchors[hi];
+  const a = anchors[lo]!;
+  const b = anchors[hi]!;
   if (b.top === a.top) return a.line;
   const ratio = (scrollTop - a.top) / (b.top - a.top);
   return a.line + ratio * (b.line - a.line);
@@ -139,18 +139,18 @@ export function scrollPosForLine(
 ): number | null {
   anchors = syncAnchors(anchors);
   if (anchors.length === 0) return null;
-  if (line <= anchors[0].line) return anchors[0].top;
-  const last = anchors[anchors.length - 1];
+  if (line <= anchors[0]!.line) return anchors[0]!.top;
+  const last = anchors[anchors.length - 1]!;
   if (line >= last.line) return last.top;
   let lo = 0;
   let hi = anchors.length - 1;
   while (lo + 1 < hi) {
     const mid = (lo + hi) >> 1;
-    if (anchors[mid].line <= line) lo = mid;
+    if (anchors[mid]!.line <= line) lo = mid;
     else hi = mid;
   }
-  const a = anchors[lo];
-  const b = anchors[hi];
+  const a = anchors[lo]!;
+  const b = anchors[hi]!;
   if (b.line === a.line) return a.top;
   const ratio = (line - a.line) / (b.line - a.line);
   return a.top + ratio * (b.top - a.top);

@@ -52,7 +52,9 @@ export interface VaultIndex {
   paths: { norm: string; file: VaultFile }[];
 }
 
-export function buildVaultIndex(files: VaultFile[] | undefined): VaultIndex {
+const vaultIndexCache = new WeakMap<readonly VaultFile[], VaultIndex>();
+
+export function buildVaultIndex(files: readonly VaultFile[] | undefined): VaultIndex {
   const idx: VaultIndex = {
     byStem: new Map(),
     byName: new Map(),
@@ -74,6 +76,15 @@ export function buildVaultIndex(files: VaultFile[] | undefined): VaultIndex {
   return idx;
 }
 
+function getVaultIndex(files: readonly VaultFile[] | undefined): VaultIndex {
+  if (!files?.length) return buildVaultIndex(files);
+  const cached = vaultIndexCache.get(files);
+  if (cached) return cached;
+  const next = buildVaultIndex(files);
+  vaultIndexCache.set(files, next);
+  return next;
+}
+
 function resolveFromIndex(index: VaultIndex, target: string): VaultFile | null {
   const needle = normalizeName(target);
   if (!needle) return null;
@@ -92,9 +103,9 @@ function resolveFromIndex(index: VaultIndex, target: string): VaultFile | null {
   return null;
 }
 
-export function resolveWikiFile(files: VaultFile[] | undefined, target: string) {
+export function resolveWikiFile(files: readonly VaultFile[] | undefined, target: string) {
   if (!files?.length) return null;
-  return resolveFromIndex(buildVaultIndex(files), target);
+  return resolveFromIndex(getVaultIndex(files), target);
 }
 
 function isSkippableTextNode(node: Text): boolean {
@@ -150,7 +161,7 @@ function enhanceSubtree(subtree: HTMLElement, index: VaultIndex) {
     const fragment = doc.createDocumentFragment();
 
     while ((match = WIKI_LINK_RE.exec(text))) {
-      const body = match[1];
+      const body = match[1]!;
       const parts = parseWikiLinkBody(body);
       if (!parts) continue;
       if (match.index > last) {

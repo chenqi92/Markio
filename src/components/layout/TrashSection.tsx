@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { api } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
@@ -31,7 +31,7 @@ export function TrashSection() {
     null,
   );
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     if (!ws) return;
     try {
       const list = await api.trashList(ws.path);
@@ -39,11 +39,11 @@ export function TrashSection() {
     } catch {
       setItems([]);
     }
-  };
+  }, [ws]);
 
   useEffect(() => {
     if (open && ws) reload();
-  }, [open, ws?.id]);
+  }, [open, ws, reload]);
 
   if (!ws) return null;
 

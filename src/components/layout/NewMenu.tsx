@@ -95,7 +95,7 @@ export function NewMenu({
       toast("error", "请先打开一个仓库");
       return;
     }
-    let text = "";
+    let text: string;
     try {
       text = await navigator.clipboard.readText();
     } catch {

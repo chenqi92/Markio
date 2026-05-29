@@ -1,0 +1,382 @@
+/* ─── About 页面：64×64 黑色方形 logo + 4 张底部卡片 + 致谢 ──────── */
+.about-hero {
+  display: flex; align-items: center; gap: 18px;
+  padding: 16px 0 22px;
+}
+.about-mark {
+  width: 72px; height: 72px;
+  border-radius: 18px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.about-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.about-hero-name { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.about-hero-ver { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+.about-hero-tag { font-size: 13px; color: var(--text-2); margin-top: 6px; max-width: 480px; }
+.about-hero-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+
+.about-foot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 20px;
+}
+.about-foot-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 120ms;
+  text-align: left;
+}
+.about-foot-card:hover { border-color: var(--text); background: var(--bg-pane-2); }
+.about-foot-card .t { font-size: 13px; font-weight: 600; color: var(--text); }
+.about-foot-card .s { font-size: 11px; color: var(--text-3); }
+
+.about-thanks {
+  margin-top: 24px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  border-top: 0.5px solid var(--border);
+}
+
+/* ─── 通用模态（检查更新 / 发布日志 / 反馈） ─── */
+.about-modal {
+  background: var(--bg-modal, var(--bg-elev));
+  border: 0.5px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-deep);
+  max-height: 78vh;
+  display: flex; flex-direction: column;
+  margin-top: 8vh;
+  overflow: hidden;
+  animation: aboutModalIn 200ms cubic-bezier(.2,.8,.2,1);
+}
+@keyframes aboutModalIn {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.about-modal-h {
+  display: flex; align-items: center;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--border);
+}
+.about-modal-t { flex: 1; font-size: 13px; font-weight: 700; color: var(--text); }
+.about-modal-x {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.about-modal-x:hover { background: var(--bg-hover); color: var(--text); }
+.about-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+.about-modal-foot {
+  padding: 12px 16px;
+  border-top: 0.5px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+  background: var(--bg-pane-2);
+}
+
+/* 更新对话框 stages */
+.about-stage {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 24px 8px;
+  text-align: center;
+}
+.about-stage-t { font-size: 14px; font-weight: 600; color: var(--text); }
+.about-stage-s { font-size: 12px; color: var(--text-3); max-width: 320px; }
+.about-stage-icon {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700;
+  background: var(--bg-pane); color: var(--text-3);
+  margin-bottom: 6px;
+}
+.about-stage-icon.ok { background: var(--accent-glow); color: var(--accent); }
+.about-stage-icon.err { background: rgba(220,38,38,0.12); color: #dc2626; }
+.about-spin {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 2.5px solid var(--bg-pane);
+  border-top-color: var(--text);
+  animation: aboutSpin 0.8s linear infinite;
+  margin-bottom: 8px;
+}
+@keyframes aboutSpin { to { transform: rotate(360deg); } }
+.about-ver-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.about-ver-pill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--text); color: var(--bg-window);
+  border-radius: 5px;
+  font-weight: 600;
+}
+.about-ver-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  background: var(--accent-glow); color: var(--accent);
+  border-radius: 5px;
+  font-weight: 600;
+}
+.about-notes {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.about-prog {
+  height: 6px; border-radius: 999px;
+  background: var(--bg-pane);
+  overflow: hidden;
+}
+.about-prog-bar {
+  height: 100%;
+  background: var(--text);
+  border-radius: 999px;
+  transition: width 200ms;
+}
+
+/* 发布日志 timeline */
+.about-cl { display: flex; flex-direction: column; gap: 20px; }
+.about-cl-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 0.5px solid var(--border);
+}
+.about-cl-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.about-cl-side {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.about-cl-ver { font-weight: 700; color: var(--text); font-family: var(--font-mono); font-size: 13px; }
+.about-cl-date { color: var(--text-3); font-size: 11px; }
+.about-cl-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+  font-weight: 600;
+}
+.about-cl-tag.cur { background: var(--text); color: var(--bg-modal, var(--bg-window)); }
+.about-cl-tag.major { background: var(--accent-glow); color: var(--accent); }
+.about-cl-main {
+  display: flex; flex-direction: column; gap: 16px;
+  min-width: 0;
+}
+/* chip 独占一行 + ul 紧跟其下：之前用 grid/flex 把 chip 和 ul 放同一行，长 chip
+ * 文案或正文 min-content 较大时（中文不强制断行）会出现挤压、纵向单字断行、
+ * chip 与 ul 视觉重叠等问题。改为纵向堆叠最稳，chip 像 section 小标题。
+ *
+ * 注意 chip 的 display 必须强制 block（之前 inline-block 在某些渲染场景下会跟
+ * 紧随其后的 ul 视觉粘连得看着像同一行），并显式给 chip + ul 之间留 10px。 */
+.about-cl-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.about-cl-section ul {
+  align-self: stretch;
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-2);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  list-style: disc;
+}
+.about-cl-section ul li { margin-bottom: 4px; }
+.about-cl-chip {
+  display: block;
+  width: max-content;
+  margin: 0;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.about-cl-chip.added { background: rgba(34,197,94,0.15); color: #16a34a; }
+.about-cl-chip.changed { background: rgba(59,130,246,0.15); color: #2563eb; }
+.about-cl-chip.fixed { background: rgba(234,88,12,0.15); color: #ea580c; }
+
+/* 隐私 / 开源许可 等内置文本类对话框 */
+.about-privacy {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.about-oss-list {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.about-oss-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+.about-oss-item:last-child { border-bottom: 0; }
+.about-oss-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.about-oss-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.about-oss-sub { font-size: 11px; color: var(--text-3); }
+.about-oss-lic {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  color: var(--text-3);
+}
+
+/* 反馈对话框 */
+.about-fb-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.about-fb-kind {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px;
+  background: var(--bg-pane);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-2);
+  transition: all 120ms;
+}
+.about-fb-kind:hover { border-color: var(--text-3); }
+.about-fb-kind.active { border-color: var(--text); background: var(--bg-pane-2); color: var(--text); }
+.about-fb-kind .t { font-size: 12px; font-weight: 600; color: var(--text); }
+.about-fb-kind .s { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.about-fb-text {
+  width: 100%;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text);
+  font-family: inherit;
+  resize: vertical;
+}
+.about-fb-attach {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg-pane);
+  border-radius: 8px;
+}
+.about-fb-attach label {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.about-fb-attach label.dim { opacity: 0.5; cursor: not-allowed; }
+.about-fb-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px;
+}
+.about-fb-row .lbl { font-size: 12px; color: var(--text-2); flex-shrink: 0; }
+.about-fb-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+.about-fb-note {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+/* FilePropertiesDialog 行 */
+.fp-row {
+  display: flex; gap: 12px;
+  padding: 6px 0;
+  font-size: 12px;
+  align-items: center;
+  border-bottom: 0.5px solid var(--border);
+}
+.fp-row:last-child { border-bottom: 0; }
+.fp-k {
+  min-width: 80px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.fp-v {
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fp-mono { font-family: var(--font-mono); font-size: 11px; }
+.fp-sec-h {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-top: 0.5px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+

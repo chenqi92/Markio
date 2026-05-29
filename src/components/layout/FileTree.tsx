@@ -17,7 +17,7 @@ import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
 import { FilePropertiesDialog } from "../popovers/FilePropertiesDialog";
-import type { FileEntry } from "@/types";
+import type { FileEntry, TabInfo } from "@/types";
 
 export function FileTree() {
   const ws = useWorkspace((s) => s.activeWorkspace());
@@ -353,7 +353,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
   const out: FlatRow[] = [];
   const stack: FlatRow[] = [];
   for (let i = roots.length - 1; i >= 0; i--) {
-    stack.push({ node: roots[i], depth: 0 });
+    stack.push({ node: roots[i]!, depth: 0 });
   }
   while (stack.length > 0) {
     const row = stack.pop()!;
@@ -362,7 +362,7 @@ function flattenTree(roots: FileEntry[], expanded: Set<string>): FlatRow[] {
       const children = row.node.children;
       if (children) {
         for (let i = children.length - 1; i >= 0; i--) {
-          stack.push({ node: children[i], depth: row.depth + 1 });
+          stack.push({ node: children[i]!, depth: row.depth + 1 });
         }
       }
     }
@@ -448,7 +448,7 @@ function VirtualizedTree({
         }}
       >
         {items.map((vi) => {
-          const row = flat[vi.index];
+          const row = flat[vi.index]!;
           return (
             <div
               key={row.node.path}
@@ -592,9 +592,11 @@ function TreeContextMenu({
   const openHistory = useUI((s) => s.openHistory);
   const openFile = useTabs((s) => s.openFile);
   const openPath = useTabs((s) => s.openPath);
+  const closeTabsForPath = useTabs((s) => s.closeTabsForPath);
+  const relocateTabs = useTabs((s) => s.relocateTabs);
+  const dirtyTabsUnder = useTabs((s) => s.dirtyTabsUnder);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
-  const closeTabsForPath = useTabsForPath();
   const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
   const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
   const setColor = useFileMeta((s) => s.setColor);
@@ -714,6 +716,9 @@ function TreeContextMenu({
       const to = `${parent}/${next}`;
       try {
         await api.rename(node.path, to);
+        // 已打开的 tab / 用户元数据需要同步指向新路径，否则保存会落到旧路径上
+        relocateTabs(node.path, to);
+        moveFileMeta(node.path, to);
         flash("已重命名");
         if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
@@ -780,6 +785,7 @@ function TreeContextMenu({
       const dest = `${norm}/${node.name}`;
       try {
         await api.rename(node.path, dest);
+        relocateTabs(node.path, dest);
         moveFileMeta(node.path, dest);
         flash("已移动");
         await loadDir(ws.id, curParent);
@@ -894,6 +900,9 @@ function TreeContextMenu({
     danger: true,
     onClick: async () => {
       if (!ws) return;
+      if (!(await confirmDirtyLoss(node, dirtyTabsUnder, confirmDialog, "trash"))) {
+        return;
+      }
       try {
         await api.trashMove(ws.path, node.path);
         closeTabsForPath(node.path);
@@ -911,10 +920,16 @@ function TreeContextMenu({
     kbd: "⇧⌫",
     danger: true,
     onClick: async () => {
+      const dirty = dirtyTabsUnder(node.path);
+      const baseMsg = `永久删除 ${node.name}？无法从回收站恢复。`;
+      const message =
+        dirty.length > 0
+          ? `${baseMsg}\n\n${dirtyHint(dirty)}`
+          : baseMsg;
       const ok = await confirmDialog({
         title: "永久删除",
-        message: `永久删除 ${node.name}？无法从回收站恢复。`,
-        confirmLabel: "永久删除",
+        message,
+        confirmLabel: dirty.length > 0 ? "删除并丢弃未保存修改" : "永久删除",
         danger: true,
       });
       if (!ok) return;
@@ -935,6 +950,36 @@ function TreeContextMenu({
   return <ContextMenu x={x} y={y} items={items} onClose={onClose} />;
 }
 
+/** 删除 / 移到回收站前若命中未保存的 tab，弹 confirm；用户取消即返回 false。 */
+async function confirmDirtyLoss(
+  node: FileEntry,
+  dirtyTabsUnder: (path: string) => TabInfo[],
+  confirmDialog: (opts: {
+    title: string;
+    message?: string;
+    confirmLabel?: string;
+    danger?: boolean;
+  }) => Promise<boolean>,
+  mode: "trash" | "delete",
+): Promise<boolean> {
+  const dirty = dirtyTabsUnder(node.path);
+  if (dirty.length === 0) return true;
+  const action = mode === "trash" ? "移到回收站" : "永久删除";
+  return confirmDialog({
+    title: `${action}前确认`,
+    message: `${node.name} ${dirtyHint(dirty)}\n继续将丢失未保存的修改。`,
+    confirmLabel: `${action}并丢弃修改`,
+    danger: true,
+  });
+}
+
+function dirtyHint(dirty: TabInfo[]): string {
+  if (dirty.length === 1) {
+    return `有 1 个未保存的 tab（${dirty[0]!.title}）。`;
+  }
+  return `下有 ${dirty.length} 个未保存的 tab。`;
+}
+
 /** 顺手更新 RAG 索引；目录变更用全量重建来清理前缀下的旧记录。 */
 async function ragUpdateAfterPathRemoval(workspace: string, path: string, isDir: boolean) {
   try {
@@ -946,17 +991,4 @@ async function ragUpdateAfterPathRemoval(workspace: string, path: string, isDir:
   } catch {
     /* ignore */
   }
-}
-
-/** 删除文件后顺手关闭已打开的相关 tab */
-function useTabsForPath() {
-  const tabs = useTabs((s) => s.tabs);
-  const closeTab = useTabs((s) => s.closeTab);
-  return (path: string) => {
-    for (const t of tabs) {
-      if (t.path === path || t.path.startsWith(path + "/")) {
-        closeTab(t.id);
-      }
-    }
-  };
 }

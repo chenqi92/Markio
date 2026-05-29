@@ -111,33 +111,44 @@
 }
 .cm-md-code-widget {
   margin: 18px 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
   background: var(--code-bg);
   overflow: hidden;
   font-family: var(--font-sans);
-  box-shadow: 0 1px 2px color-mix(in srgb, #000 7%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 6%, transparent);
 }
 .cm-md-code-head {
-  min-height: 34px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-pane-2) 78%, transparent);
+  padding: 5px 8px 5px 14px;
+  border-bottom: 0.5px solid var(--border);
+  background: color-mix(in srgb, var(--bg-pane-2) 60%, transparent);
+}
+/* 语言标签前的小圆点，弱化「plain text」的存在感、让代码块更像卡片 */
+.cm-md-code-head::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: -4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .cm-md-code-lang-input {
-  width: 120px;
+  flex: 1 1 auto;
   min-width: 72px;
   height: 24px;
   box-sizing: border-box;
-  border: 1px solid transparent;
+  border: 0.5px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-2);
-  font: 600 12px/1 var(--font-sans);
+  color: var(--text-3);
+  font: 600 11.5px/1 var(--font-mono);
+  letter-spacing: 0.02em;
   text-transform: lowercase;
   padding: 0 7px;
   outline: none;
@@ -153,15 +164,20 @@
   text-transform: none;
 }
 .cm-md-code-edit {
+  flex: 0 0 auto;
   height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
+  padding: 0 11px;
+  border: 0.5px solid var(--border);
   border-radius: 6px;
   background: var(--bg-pane);
   color: var(--text-3);
   font: 12px/1 var(--font-sans);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms, border-color 120ms;
 }
+.cm-md-code-widget:hover .cm-md-code-edit,
+.cm-md-code-edit:focus-visible { opacity: 1; }
 .cm-md-code-edit:hover {
   border-color: var(--border-strong);
   color: var(--text);
@@ -175,32 +191,32 @@
 }
 .cm-md-code-gutter {
   flex: 0 0 auto;
-  min-width: 42px;
-  padding: 13px 0 13px 10px;
-  border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-pane-2) 48%, transparent);
+  min-width: 40px;
+  padding: 14px 0 14px 10px;
+  border-right: 0.5px solid var(--border);
+  background: color-mix(in srgb, var(--bg-pane-2) 35%, transparent);
   color: var(--text-4);
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.7;
   text-align: right;
   user-select: none;
 }
 .cm-md-code-gutter span {
   display: block;
-  padding-right: 10px;
+  padding-right: 12px;
 }
 .cm-md-code-pre {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  padding: 13px 16px;
+  padding: 14px 18px;
   overflow: auto;
   background: transparent;
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.7;
   white-space: pre;
 }
 .cm-md-code-pre code {
@@ -211,18 +227,18 @@
 .cm-md-code-editor {
   flex: 1 1 auto;
   width: 100%;
-  min-height: 96px;
-  resize: vertical;
+  min-height: 24px;
+  resize: none;
   box-sizing: border-box;
   border: 0;
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  background: transparent;
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text);
-  padding: 13px 16px;
+  padding: 14px 18px;
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.7;
   tab-size: 2;
 }
 

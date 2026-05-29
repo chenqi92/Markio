@@ -84,8 +84,9 @@ function commitCodeFenceBody(view: EditorView, host: HTMLElement, value: string)
 }
 
 function resizeCodeFenceTextarea(textarea: HTMLTextAreaElement) {
+  // 贴合内容高度（单行命令不再撑出一大块空白），只保留一行的最小高度
   textarea.style.height = "auto";
-  textarea.style.height = `${Math.max(96, textarea.scrollHeight)}px`;
+  textarea.style.height = `${Math.max(24, textarea.scrollHeight)}px`;
 }
 
 function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: string) {

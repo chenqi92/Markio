@@ -151,27 +151,56 @@
 
 /* find-in-page bar */
 .findbar {
-  position: absolute; top: 12px; right: 16px;
-  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  /* 顶部居中的搜索条（原右上角易被工具栏挤压 / 视觉割裂） */
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
   flex-wrap: wrap;
-  padding: 5px 7px;
-  max-width: calc(100% - 32px);
+  padding: 6px 8px 6px 10px;
+  width: min(640px, calc(100% - 48px));
+  box-sizing: border-box;
   background: var(--bg-elev);
   border: 0.5px solid var(--border-strong);
-  border-radius: 10px;
-  box-shadow: var(--shadow-soft);
+  border-radius: 12px;
+  box-shadow: var(--shadow-deep);
   /* 必须高于工具栏（toolbar 140 / toolbar-row-format 141），否则查找框被工具栏盖住 */
   z-index: 200;
   animation: cmdkIn 160ms;
 }
+.findbar > svg { flex: 0 0 auto; color: var(--text-3); }
 .findbar input {
   flex: 1 1 180px;
   background: transparent;
   border: 0;
-  padding: 5px 8px;
-  width: min(220px, 34vw);
-  min-width: 72px;
-  font-size: 12px; color: var(--text);
+  padding: 5px 4px;
+  min-width: 120px;
+  font-size: 13px; color: var(--text);
+}
+/* 范围切换：当前文档 / 整个仓库 */
+.findbar .find-scope {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-pane-2);
+}
+.findbar .find-scope-btn {
+  flex: 0 0 auto;
+  width: auto;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.findbar .find-scope-btn:hover { background: var(--bg-hover); color: var(--text); }
+.findbar .find-scope-btn.active {
+  background: var(--bg-elev);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 10%, transparent);
 }
 .findbar .count {
   font-size: 11px; color: var(--text-3); padding: 0 4px;

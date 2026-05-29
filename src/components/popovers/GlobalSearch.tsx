@@ -108,7 +108,8 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const jumpToLine = useUI((s) => s.jumpToLine);
   const promptDialog = useDialog((s) => s.prompt);
 
-  const [q, setQ] = useState("");
+  // 从查找栏「整个仓库」切换过来时带着当前关键词；否则空。
+  const [q, setQ] = useState(() => useUI.getState().findQuery || "");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [regex, setRegex] = useState(false);

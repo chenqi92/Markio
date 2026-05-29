@@ -18,9 +18,15 @@ export function FindBar() {
   const setQ = useUI((s) => s.setFindQuery);
   const setIdx = useUI((s) => s.setFindIndex);
   const setFindOptions = useUI((s) => s.setFindOptions);
+  const openGlobalSearch = useUI((s) => s.openGlobalSearch);
   const close = () => {
     useUI.getState().openFind(false);
     setQ("");
+  };
+  // 切到「整个仓库」：保留当前关键词，交给全局搜索面板（它默认搜整个当前仓库）
+  const goRepo = () => {
+    openGlobalSearch(true);
+    useUI.getState().openFind(false);
   };
   const content = useTabs((s) => {
     if (!open && !q) return "";
@@ -101,6 +107,7 @@ export function FindBar() {
 
   return (
     <div className="findbar" role="search">
+      <Icon name="search" size={14} />
       <input
         autoFocus
         placeholder="在当前文档中查找…"
@@ -114,6 +121,25 @@ export function FindBar() {
           if (e.key === "Escape") close();
         }}
       />
+      <span className="find-scope" role="tablist" aria-label="搜索范围">
+        <button
+          type="button"
+          className="find-scope-btn active"
+          aria-pressed={true}
+          title="只在当前文档中查找"
+        >
+          当前文档
+        </button>
+        <button
+          type="button"
+          className="find-scope-btn"
+          aria-pressed={false}
+          title="在整个仓库中搜索（打开全局搜索）"
+          onClick={goRepo}
+        >
+          整个仓库
+        </button>
+      </span>
       <span className={classNames("count", findError && "error")} title={findError ?? undefined}>
         {q ? (findError ? "正则错误" : `${total ? idx + 1 : 0} / ${total}`) : ""}
       </span>

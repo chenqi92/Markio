@@ -164,7 +164,13 @@
   box-shadow: var(--shadow-deep);
   /* 必须高于工具栏（toolbar 140 / toolbar-row-format 141），否则查找框被工具栏盖住 */
   z-index: 200;
-  animation: cmdkIn 160ms;
+  /* 用专属动画：每帧都带 translateX(-50%)，否则共用的 cmdkIn 会清掉居中偏移，
+     出现时先偏右、动画结束才跳回中间。 */
+  animation: findbarIn 150ms cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes findbarIn {
+  from { transform: translateX(-50%) translateY(-10px) scale(0.98); opacity: 0; }
+  to { transform: translateX(-50%); opacity: 1; }
 }
 .findbar > svg { flex: 0 0 auto; color: var(--text-3); }
 .findbar input {

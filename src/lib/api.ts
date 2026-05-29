@@ -137,6 +137,8 @@ export interface RagEmbedConfig {
   dim: number;
   baseUrl?: string;
   apiKey?: string;
+  /** 取 Key 用的源 id（如 "deepseek"）；embedding 协议走 openai 兼容但 Key 存 ai:{keyProvider} */
+  keyProvider?: string;
 }
 
 export interface RagIndexProgress {

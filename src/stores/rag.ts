@@ -15,22 +15,24 @@ interface RagState {
   search: (workspacePath: string, query: string) => Promise<RagHit[]>;
 }
 
-/** 把 settings 里的 RAG 偏好折算成后端要的 EmbedConfig */
+/** 把 settings 里的 embedding 绑定折算成后端要的 EmbedConfig。
+ *  本地 Ollama → provider:"ollama"；其余源 → openai 兼容协议 + keyProvider 取 ai:{源} 的 Key。 */
 export function resolveEmbedConfig(): RagEmbedConfig {
   const s = useSettings.getState();
-  if (s.ragProvider === "openai") {
+  if (s.ragEmbedSource === "ollama") {
     return {
-      provider: "openai",
-      model: s.ragOpenaiModel,
-      dim: s.ragOpenaiDim,
-      baseUrl: s.ragOpenaiBaseUrl || undefined,
+      provider: "ollama",
+      model: s.ragEmbedModel,
+      dim: s.ragEmbedDim,
+      baseUrl: s.ragEmbedBaseUrl || undefined,
     };
   }
   return {
-    provider: "ollama",
-    model: s.ragOllamaModel,
-    dim: s.ragOllamaDim,
-    baseUrl: s.ragOllamaBaseUrl || undefined,
+    provider: "openai",
+    model: s.ragEmbedModel,
+    dim: s.ragEmbedDim,
+    baseUrl: s.ragEmbedBaseUrl || undefined,
+    keyProvider: s.ragEmbedSource,
   };
 }
 

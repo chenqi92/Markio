@@ -29,6 +29,9 @@ pub struct RagEmbedConfigDto {
     pub dim: u32,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
+    /// 取 Key 时用的源 id（如 "deepseek"/"zhipu"）。embedding 协议走 openai 兼容，
+    /// 但 Key 存在 ai:{keyProvider}。为空时回落到 provider。
+    pub key_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,11 +66,17 @@ fn build_embed_config(dto: RagEmbedConfigDto) -> Result<(rag::embed::EmbedConfig
         .ok_or_else(|| format!("未知 embedding provider：{}", dto.provider))?;
     let mut api_key = dto.api_key;
     validate_rag_endpoint(&dto.provider, dto.base_url.as_deref())?;
+    // 取 Key 用的源 id：优先 keyProvider（如 deepseek/zhipu），否则回落 provider
+    let key_id = dto
+        .key_provider
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&dto.provider);
     if api_key.as_ref().map(|k| k.is_empty()).unwrap_or(true) {
-        // 先看 embed:<provider>，再回落 ai:<provider>
-        if let Ok(Some(v)) = secrets::get(&format!("embed:{}", dto.provider)) {
+        // 先看 embed:<id>，再回落 ai:<id>
+        if let Ok(Some(v)) = secrets::get(&format!("embed:{}", key_id)) {
             api_key = Some(v);
-        } else if let Ok(Some(v)) = secrets::get(&format!("ai:{}", dto.provider)) {
+        } else if let Ok(Some(v)) = secrets::get(&format!("ai:{}", key_id)) {
             api_key = Some(v);
         }
     }
@@ -90,14 +99,34 @@ fn validate_rag_endpoint(provider: &str, base_url: Option<&str>) -> Result<(), S
     let loopback = is_loopback_host(host.as_deref());
     let allowed = match provider {
         "ollama" => loopback,
-        "openai" => loopback || host.as_deref() == Some("api.openai.com"),
+        // openai 兼容：本机 + 一组已知 AI 厂商 host（用户在源池里配置的源），控制 SSRF 面
+        "openai" => loopback || is_known_embedding_host(host.as_deref()),
         _ => false,
     };
     if allowed {
         Ok(())
     } else {
-        Err("Embedding endpoint 仅允许官方 OpenAI 或本机服务".to_string())
+        Err("Embedding endpoint 仅允许本机服务或已知 AI 厂商".to_string())
     }
+}
+
+/// 允许做 embedding 的已知 AI 厂商 host 白名单（与 src/lib/ai-providers.ts 的厂商对齐）。
+fn is_known_embedding_host(host: Option<&str>) -> bool {
+    let Some(h) = host else { return false };
+    let h = h.to_ascii_lowercase();
+    const HOSTS: &[&str] = &[
+        "api.openai.com",
+        "open.bigmodel.cn",
+        "dashscope.aliyuncs.com",
+        "api.mistral.ai",
+        "api.siliconflow.cn",
+        "api.together.xyz",
+        "integrate.api.nvidia.com",
+        "api.deepseek.com",
+        "openrouter.ai",
+        "api.voyageai.com",
+    ];
+    HOSTS.iter().any(|known| h == *known || h.ends_with(&format!(".{known}")))
 }
 
 fn rag_jobs() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {

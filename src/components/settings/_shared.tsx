@@ -56,7 +56,6 @@ export const SECTION_GROUPS: ReadonlyArray<{
     group: "workflow",
     items: [
       { id: "ai", icon: "sparkle" },
-      { id: "rag", icon: "search" },
       { id: "export", icon: "upload" },
     ],
   },

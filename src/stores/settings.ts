@@ -6,7 +6,7 @@ import type { CommandId } from "@/lib/shortcuts";
 import { tauriStorage } from "@/lib/tauriStorage";
 import type { Locale } from "@/i18n";
 import { applyFonts } from "@/lib/fonts";
-import type { AIProviderId } from "@/lib/ai-providers";
+import { getProvider, type AIProviderId } from "@/lib/ai-providers";
 
 function defaultLocale(): Locale {
   if (typeof localStorage !== "undefined") {
@@ -69,13 +69,10 @@ type PreferenceKey =
   | "htmlExportInlineImages"
   | "ragEnabled"
   | "ragAutoReindexOnSave"
-  | "ragProvider"
-  | "ragOllamaBaseUrl"
-  | "ragOllamaModel"
-  | "ragOllamaDim"
-  | "ragOpenaiBaseUrl"
-  | "ragOpenaiModel"
-  | "ragOpenaiDim"
+  | "ragEmbedSource"
+  | "ragEmbedModel"
+  | "ragEmbedBaseUrl"
+  | "ragEmbedDim"
   | "ragTopK"
   | "ragExpandLinks"
   | "rerankEnabled"
@@ -219,6 +216,9 @@ interface SettingsState {
    *  切 provider 时 Settings 会从这里恢复，所以 OpenAI / DeepSeek / NVIDIA 之间
    *  来回切不会丢配置。 */
   aiProviderConfigs: Partial<Record<AIProviderId, { endpoint?: string; model?: string }>>;
+  /** 共享「AI 源」池：同时配置的多个 provider（Key 在 keychain ai:{provider}）。
+   *  对话 / embedding / rerank 三个用途各自从池里选源 + 模型。 */
+  aiSources: Array<{ provider: AIProviderId; label: string; endpoint?: string }>;
 
   /** Web Clipper：浏览器扩展把网页抓回 markio 时怎么处理。
    *  扩展端本身在 Chrome / Edge / Firefox / Safari 商店分发；这里是 markio 桌面端
@@ -263,14 +263,11 @@ interface SettingsState {
   ragEnabled: boolean;
   /** 保存后是否自动增量更新当前文件的索引 */
   ragAutoReindexOnSave: boolean;
-  /** embedding 提供方 */
-  ragProvider: "ollama" | "openai";
-  ragOllamaBaseUrl: string;
-  ragOllamaModel: string;
-  ragOllamaDim: number;
-  ragOpenaiBaseUrl: string;
-  ragOpenaiModel: string;
-  ragOpenaiDim: number;
+  /** embedding 绑定：用哪个源（"ollama"=本地，其余=源池里的 provider）+ 模型 + 端点 + 维度。 */
+  ragEmbedSource: AIProviderId | "ollama";
+  ragEmbedModel: string;
+  ragEmbedBaseUrl: string;
+  ragEmbedDim: number;
   /** 检索时返回 top-K 条 chunk */
   ragTopK: number;
   /** 是否启用引用图谱扩展（命中文档的 forward link 也带回） */
@@ -405,6 +402,7 @@ export const useSettings = create<SettingsState>()(
       aiTemperature: 0.7,
       aiMaxTokens: 4096,
       aiProviderConfigs: {},
+      aiSources: [{ provider: "anthropic", label: "Anthropic" }],
       clipperHtmlToMd: true,
       clipperReadability: true,
       clipperAiSummary: false,
@@ -418,13 +416,10 @@ export const useSettings = create<SettingsState>()(
       aiUseWorkspace: false,
       ragEnabled: false,
       ragAutoReindexOnSave: false,
-      ragProvider: "ollama",
-      ragOllamaBaseUrl: "http://127.0.0.1:11434",
-      ragOllamaModel: "nomic-embed-text",
-      ragOllamaDim: 768,
-      ragOpenaiBaseUrl: "https://api.openai.com",
-      ragOpenaiModel: "text-embedding-3-small",
-      ragOpenaiDim: 1536,
+      ragEmbedSource: "ollama",
+      ragEmbedModel: "nomic-embed-text",
+      ragEmbedBaseUrl: "http://127.0.0.1:11434",
+      ragEmbedDim: 768,
       ragTopK: 6,
       ragExpandLinks: true,
       rerankEnabled: false,
@@ -501,9 +496,9 @@ export const useSettings = create<SettingsState>()(
       name: "markio.settings.v1",
       storage: createJSONStorage(() => tauriStorage),
       skipHydration: true,
-      version: 1,
+      version: 2,
       migrate: (persistedState) =>
-        stripLegacySecretFields(persistedState) as SettingsState,
+        migrateUnifiedAi(stripLegacySecretFields(persistedState)) as SettingsState,
       partialize: (state) =>
         stripLegacySecretFields(state) as Partial<SettingsState>,
       onRehydrateStorage: () => (state) => {
@@ -518,4 +513,51 @@ function stripLegacySecretFields(state: unknown): unknown {
   const next = { ...(state as Record<string, unknown>) };
   delete next.rerankApiKey;
   return next;
+}
+
+/** v1 → v2：合并 AI 助手 / 知识库配置。
+ *  - 从旧 aiProvider + aiProviderConfigs 重建「AI 源」池 aiSources
+ *  - 旧 ragProvider / ragOllama / ragOpenai 系列 → ragEmbed 系列
+ *  Key 仍在 keychain ai:{provider}，无需搬迁。 */
+function migrateUnifiedAi(state: unknown): unknown {
+  if (!state || typeof state !== "object") return state;
+  const s = state as Record<string, unknown>;
+
+  if (!Array.isArray(s.aiSources) || s.aiSources.length === 0) {
+    const ids = new Set<string>();
+    if (typeof s.aiProvider === "string") ids.add(s.aiProvider);
+    const cfgs = s.aiProviderConfigs as
+      | Record<string, { endpoint?: string }>
+      | undefined;
+    if (cfgs) for (const id of Object.keys(cfgs)) ids.add(id);
+    if (ids.size === 0) ids.add("anthropic");
+    s.aiSources = Array.from(ids).map((id) => ({
+      provider: id,
+      label: getProvider(id)?.name ?? id,
+      endpoint: cfgs?.[id]?.endpoint,
+    }));
+  }
+
+  if (s.ragEmbedSource === undefined) {
+    if (s.ragProvider === "openai") {
+      s.ragEmbedSource = "openai";
+      s.ragEmbedModel = s.ragOpenaiModel ?? "text-embedding-3-small";
+      s.ragEmbedBaseUrl = s.ragOpenaiBaseUrl ?? "https://api.openai.com";
+      s.ragEmbedDim = s.ragOpenaiDim ?? 1536;
+    } else {
+      s.ragEmbedSource = "ollama";
+      s.ragEmbedModel = s.ragOllamaModel ?? "nomic-embed-text";
+      s.ragEmbedBaseUrl = s.ragOllamaBaseUrl ?? "http://127.0.0.1:11434";
+      s.ragEmbedDim = s.ragOllamaDim ?? 768;
+    }
+  }
+  // 删除旧字段
+  delete s.ragProvider;
+  delete s.ragOllamaBaseUrl;
+  delete s.ragOllamaModel;
+  delete s.ragOllamaDim;
+  delete s.ragOpenaiBaseUrl;
+  delete s.ragOpenaiModel;
+  delete s.ragOpenaiDim;
+  return s;
 }

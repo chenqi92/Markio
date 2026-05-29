@@ -257,18 +257,19 @@ async function retrieve(
     if (settings.ragEnabled) {
       try {
         const cfg: RagEmbedConfig =
-          settings.ragProvider === "ollama"
+          settings.ragEmbedSource === "ollama"
             ? {
                 provider: "ollama",
-                model: settings.ragOllamaModel,
-                dim: settings.ragOllamaDim,
-                baseUrl: settings.ragOllamaBaseUrl,
+                model: settings.ragEmbedModel,
+                dim: settings.ragEmbedDim,
+                baseUrl: settings.ragEmbedBaseUrl,
               }
             : {
                 provider: "openai",
-                model: settings.ragOpenaiModel,
-                dim: settings.ragOpenaiDim,
-                baseUrl: settings.ragOpenaiBaseUrl,
+                model: settings.ragEmbedModel,
+                dim: settings.ragEmbedDim,
+                baseUrl: settings.ragEmbedBaseUrl,
+                keyProvider: settings.ragEmbedSource,
               };
         const ragHits: RagHit[] = await api.ragSearch({
           workspace: workspacePath,

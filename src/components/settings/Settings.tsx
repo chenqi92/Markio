@@ -43,7 +43,6 @@ const SECTION_GROUPS: ReadonlyArray<{
     group: "workflow",
     items: [
       { id: "ai", icon: "sparkle" },
-      { id: "rag", icon: "search" },
       { id: "export", icon: "upload" },
     ],
   },
@@ -226,8 +225,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {section === "wxAssistant" && <WxAssistant />}
           {section === "smartChannel" && <SmartChannelSettings />}
           {section === "mcp" && <McpServerSettings />}
-          {section === "ai" && <AI />}
-          {section === "rag" && <RagSettings />}
+          {section === "ai" && (
+            <>
+              <AI />
+              <RagSettings />
+            </>
+          )}
           {section === "export" && <ImportExport />}
           {section === "about" && <About />}
         </div>

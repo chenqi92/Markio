@@ -8,6 +8,7 @@ import { useAISessions, type AIMsgRecord, type AIMsgRef } from "@/stores/aiSessi
 import { useRag } from "@/stores/rag";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { reportDiagnostic } from "@/stores/diagnostics";
+import { recordOp } from "@/stores/opsLog";
 import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
@@ -136,7 +137,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   // Agent 模式：让模型自己 list_dir / read_file / grep，多轮 tool-use 取回上下文。
-  // 默认关；Anthropic / Google 暂不支持（后端会回明确错误）。
+  // 所有支持工具的 provider 都可用（OpenAI 兼容 / Anthropic Messages / Google Gemini）。
   const [agentMode, setAgentMode] = useState(false);
   const agentCancelRef = useRef(false);
   const [attachedItems, setAttachedItems] = useState<AIAttachedItem[]>([]);
@@ -204,6 +205,13 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
+
+    recordOp("ai:send", {
+      provider,
+      mode: aiMode,
+      agent: agentMode,
+      scope,
+    });
 
     // 确保有活动 session（首次发送时建一个）
     let sessionId = activeSessionId;
@@ -438,13 +446,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     // 让模型自己 list_dir / read_file / grep 取上下文。期间用占位 assistant 显示
     // "📂 grep '本周'" 之类的 tool 状态行；最终文本拿到时一次性 patch 进去。
     if (agentMode && ws) {
-      if (provider === "anthropic" || provider === "google") {
-        patchMessage(sessionId, assistantId, {
-          text: `Agent 模式暂不支持 ${provider}，请切到 OpenAI 兼容 provider（DeepSeek / Groq / Moonshot / xAI 等）或关闭 Agent。`,
-        });
-        finalize();
-        return;
-      }
       agentCancelRef.current = false;
       // ─── 计算 Agent 的 scope 限制 ─────────────────────────────────────
       // 与非 Agent 路径的 scope 含义保持一致：
@@ -828,7 +829,6 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
             modelList={modelList}
             agentMode={agentMode}
             setAgentMode={setAgentMode}
-            provider={provider}
           />
         </div>
       </div>
@@ -879,8 +879,6 @@ interface InputBarPropsExt extends InputBarProps {
   setAIMode?: (mode: AIMode) => void;
   agentMode: boolean;
   setAgentMode: (next: boolean | ((v: boolean) => boolean)) => void;
-  /** 当前 provider，用来禁用 anthropic / google 的 Agent 开关 */
-  provider: string;
 }
 
 function AIInputBar({
@@ -900,7 +898,6 @@ function AIInputBar({
   modelList,
   agentMode,
   setAgentMode,
-  provider,
 }: InputBarPropsExt) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
@@ -1398,17 +1395,11 @@ function AIInputBar({
               <button
                 type="button"
                 className={"ai-tool chip" + (agentMode ? " active" : "")}
-                onClick={() => {
-                  if (provider === "anthropic" || provider === "google") return;
-                  setAgentMode((v) => !v);
-                }}
-                disabled={provider === "anthropic" || provider === "google"}
+                onClick={() => setAgentMode((v) => !v)}
                 title={
-                  provider === "anthropic" || provider === "google"
-                    ? "Agent 模式暂未支持此 provider"
-                    : agentMode
-                      ? "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（关）"
-                      : "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（开）"
+                  agentMode
+                    ? "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（关）"
+                    : "Agent 模式：AI 自己 list_dir / read_file / grep 取上下文（开）"
                 }
               >
                 <Icon name="bot" size={11} />

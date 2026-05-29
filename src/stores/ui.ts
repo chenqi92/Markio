@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ViewMode } from "@/types";
 import { tauriStorage } from "@/lib/tauriStorage";
+import { recordOp } from "./opsLog";
 
 /** 侧栏顶部的 tab：files = 文件树；tasks = 任务收件箱；tags = 标签全景；props = frontmatter 浏览。 */
 export type SidebarTab = "files" | "tasks" | "tags" | "props";
@@ -95,20 +96,32 @@ export const useUI = create<UIState>()(
       multiCopyOpen: false,
       blockMenuAt: null,
       toast: null,
-      setMode: (mode) => set({ mode }),
+      setMode: (mode) => {
+        set({ mode });
+        recordOp("mode:set", { mode });
+      },
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarWidth: (w) =>
         set({ sidebarWidth: Math.max(208, Math.min(420, Math.round(w))) }),
       setSidebarTab: (sidebarTab) => set({ sidebarTab }),
       toggleOutline: () => set((s) => ({ outlineOpen: !s.outlineOpen })),
       toggleFocus: () => set((s) => ({ focusMode: !s.focusMode })),
-      openCommand: (v) => set({ commandOpen: v }),
+      openCommand: (v) => {
+        set({ commandOpen: v });
+        if (v) recordOp("ui:command-palette");
+      },
       openFind: (v) => set({ findOpen: v }),
-      openSettings: (v) => set({ settingsOpen: v }),
+      openSettings: (v) => {
+        set({ settingsOpen: v });
+        if (v) recordOp("ui:open-settings");
+      },
       openHistory: (v) => set({ historyOpen: v }),
       openPulse: (v) => set({ pulseOpen: v }),
       openAgent: (v) => set({ agentOpen: v }),
-      openAi: (v) => set({ aiOpen: v }),
+      openAi: (v) => {
+        set({ aiOpen: v });
+        if (v) recordOp("ui:open-ai");
+      },
       openWechat: (v) => set({ wechatOpen: v }),
       setFindQuery: (findQuery) => set({ findQuery, findIndex: 0 }),
       setFindIndex: (findIndex) => set({ findIndex }),

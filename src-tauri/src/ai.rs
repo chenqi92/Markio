@@ -228,13 +228,8 @@ pub enum AgentTurnResult {
 pub async fn chat_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
     await_rate_limit(&req.provider).await;
     match req.provider.as_str() {
-        "anthropic" => {
-            Err("Anthropic tool-use 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider".to_string())
-        }
-        "google" => Err(
-            "Google function calling 暂未接入；关闭 Agent 模式或换 OpenAI 兼容 provider"
-                .to_string(),
-        ),
+        "anthropic" => call_anthropic_with_tools(req).await,
+        "google" => call_google_with_tools(req).await,
         _ => call_openai_compat_with_tools(req).await,
     }
 }
@@ -415,6 +410,420 @@ async fn call_openai_compat_with_tools(req: AgentRequest) -> Result<AgentTurnRes
     Ok(AgentTurnResult::Text {
         text,
         model,
+        input_tokens,
+        output_tokens,
+    })
+}
+
+// ─── Anthropic tool-use ──────────────────────────────────────────────
+//
+// Anthropic Messages API 的 tool 协议：
+// - 请求：tools = [{ name, description, input_schema }]
+// - assistant 调工具：content = [{ type:"text",text }, { type:"tool_use",id,name,input }]
+// - tool 结果：作为 user 消息发回，content = [{ type:"tool_result",tool_use_id,content }]
+// - 多个连续的 tool 结果必须合并到同一条 user 消息里，否则违反 alternating 规则。
+async fn call_anthropic_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
+    let key = req
+        .api_key
+        .clone()
+        .ok_or_else(|| "缺少 API Key，请到 设置 → AI 助手 填上".to_string())?;
+    let endpoint = req
+        .endpoint
+        .clone()
+        .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+    let url = format!("{}/v1/messages", endpoint.trim_end_matches('/'));
+
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    let mut pending_tool_results: Vec<serde_json::Value> = Vec::new();
+    let flush_results =
+        |pending: &mut Vec<serde_json::Value>, out: &mut Vec<serde_json::Value>| {
+            if !pending.is_empty() {
+                let content = std::mem::take(pending);
+                out.push(serde_json::json!({ "role": "user", "content": content }));
+            }
+        };
+
+    for m in req.messages.iter() {
+        match m {
+            AgentMsg::Tool {
+                tool_call_id,
+                content,
+            } => {
+                pending_tool_results.push(serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": content,
+                }));
+            }
+            AgentMsg::User { content } => {
+                flush_results(&mut pending_tool_results, &mut messages);
+                messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": content,
+                }));
+            }
+            AgentMsg::System { .. } => {
+                // Anthropic 把 system 放在 top-level，messages 里跳过
+                flush_results(&mut pending_tool_results, &mut messages);
+            }
+            AgentMsg::Assistant {
+                content,
+                tool_calls,
+            } => {
+                flush_results(&mut pending_tool_results, &mut messages);
+                let mut parts: Vec<serde_json::Value> = Vec::new();
+                if let Some(t) = content.as_ref() {
+                    if !t.is_empty() {
+                        parts.push(serde_json::json!({ "type": "text", "text": t }));
+                    }
+                }
+                if let Some(calls) = tool_calls {
+                    for c in calls {
+                        parts.push(serde_json::json!({
+                            "type": "tool_use",
+                            "id": c.id,
+                            "name": c.name,
+                            "input": c.input,
+                        }));
+                    }
+                }
+                if !parts.is_empty() {
+                    messages
+                        .push(serde_json::json!({ "role": "assistant", "content": parts }));
+                }
+            }
+        }
+    }
+    flush_results(&mut pending_tool_results, &mut messages);
+
+    let tools_json: Vec<serde_json::Value> = req
+        .tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "name": t.name,
+                "description": t.description,
+                "input_schema": t.parameters,
+            })
+        })
+        .collect();
+
+    let mut payload = serde_json::json!({
+        "model": req.model,
+        "max_tokens": req.max_tokens.unwrap_or(4096),
+        "messages": messages,
+    });
+    if let Some(sys) = req.system.as_ref() {
+        payload["system"] = serde_json::json!(sys);
+    }
+    if let Some(t) = req.temperature {
+        payload["temperature"] = serde_json::json!(t);
+    }
+    if !tools_json.is_empty() {
+        payload["tools"] = serde_json::json!(tools_json);
+    }
+
+    let client = http_chat_client();
+    let resp = client
+        .post(&url)
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Anthropic API {}: {}",
+            status,
+            truncate(&body, 400)
+        ));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+
+    let model = v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string());
+    let usage = v.get("usage").cloned();
+    let input_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("input_tokens"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    let output_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("output_tokens"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+
+    let blocks = v
+        .get("content")
+        .and_then(|c| c.as_array())
+        .ok_or_else(|| "响应缺少 content".to_string())?;
+    let mut texts: Vec<String> = Vec::new();
+    let mut calls: Vec<AgentToolCall> = Vec::new();
+    for block in blocks {
+        let kind = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        match kind {
+            "text" => {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    texts.push(text.to_string());
+                }
+            }
+            "tool_use" => {
+                let id = block
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = block
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = block.get("input").cloned().unwrap_or(serde_json::json!({}));
+                if !id.is_empty() && !name.is_empty() {
+                    calls.push(AgentToolCall { id, name, input });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if !calls.is_empty() {
+        return Ok(AgentTurnResult::ToolCalls {
+            calls,
+            model,
+            input_tokens,
+            output_tokens,
+        });
+    }
+    Ok(AgentTurnResult::Text {
+        text: texts.join(""),
+        model,
+        input_tokens,
+        output_tokens,
+    })
+}
+
+// ─── Google Gemini tool-use ──────────────────────────────────────────
+//
+// Gemini function calling 的协议：
+// - 请求：tools = [{ functionDeclarations: [{ name, description, parameters }] }]
+// - model 调工具：parts = [{ functionCall: { name, args } }]
+// - 工具结果：作为 user 消息 parts = [{ functionResponse: { name, response } }]
+// - Gemini 没有 tool_call_id 概念，本地映射 id→name 把前端传过来的 tool_call_id 翻译回 name
+async fn call_google_with_tools(req: AgentRequest) -> Result<AgentTurnResult, String> {
+    let key = req
+        .api_key
+        .clone()
+        .ok_or_else(|| "缺少 API Key".to_string())?;
+    let endpoint = req
+        .endpoint
+        .clone()
+        .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+    let model = if req.model.is_empty() {
+        "gemini-2.5-flash".to_string()
+    } else {
+        req.model.clone()
+    };
+    let url = format!(
+        "{}/v1beta/models/{}:generateContent?key={}",
+        endpoint.trim_end_matches('/'),
+        model,
+        urlencode_val(&key)
+    );
+
+    // 先建 id→name 映射，便于 Tool 消息回写 functionResponse 时填 name
+    let mut id_to_name: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for m in req.messages.iter() {
+        if let AgentMsg::Assistant {
+            tool_calls: Some(calls),
+            ..
+        } = m
+        {
+            for c in calls {
+                id_to_name.insert(c.id.clone(), c.name.clone());
+            }
+        }
+    }
+
+    let mut contents: Vec<serde_json::Value> = Vec::new();
+    let mut pending_responses: Vec<serde_json::Value> = Vec::new();
+    let flush_responses =
+        |pending: &mut Vec<serde_json::Value>, out: &mut Vec<serde_json::Value>| {
+            if !pending.is_empty() {
+                let parts = std::mem::take(pending);
+                out.push(serde_json::json!({ "role": "user", "parts": parts }));
+            }
+        };
+
+    for m in req.messages.iter() {
+        match m {
+            AgentMsg::Tool {
+                tool_call_id,
+                content,
+            } => {
+                let name = id_to_name.get(tool_call_id).cloned().unwrap_or_default();
+                pending_responses.push(serde_json::json!({
+                    "functionResponse": {
+                        "name": name,
+                        "response": { "content": content },
+                    },
+                }));
+            }
+            AgentMsg::User { content } => {
+                flush_responses(&mut pending_responses, &mut contents);
+                contents.push(serde_json::json!({
+                    "role": "user",
+                    "parts": [{ "text": content }],
+                }));
+            }
+            AgentMsg::System { .. } => {
+                // Gemini 把 system 放 systemInstruction，messages 里跳过
+                flush_responses(&mut pending_responses, &mut contents);
+            }
+            AgentMsg::Assistant {
+                content,
+                tool_calls,
+            } => {
+                flush_responses(&mut pending_responses, &mut contents);
+                let mut parts: Vec<serde_json::Value> = Vec::new();
+                if let Some(t) = content.as_ref() {
+                    if !t.is_empty() {
+                        parts.push(serde_json::json!({ "text": t }));
+                    }
+                }
+                if let Some(calls) = tool_calls {
+                    for c in calls {
+                        parts.push(serde_json::json!({
+                            "functionCall": { "name": c.name, "args": c.input },
+                        }));
+                    }
+                }
+                if !parts.is_empty() {
+                    contents.push(serde_json::json!({
+                        "role": "model",
+                        "parts": parts,
+                    }));
+                }
+            }
+        }
+    }
+    flush_responses(&mut pending_responses, &mut contents);
+
+    let mut payload = serde_json::json!({
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": req.max_tokens.unwrap_or(4096),
+        }
+    });
+    if let Some(t) = req.temperature {
+        payload["generationConfig"]["temperature"] = serde_json::json!(t);
+    }
+    if let Some(sys) = req.system.as_ref() {
+        payload["systemInstruction"] = serde_json::json!({ "parts": [{ "text": sys }] });
+    }
+    if !req.tools.is_empty() {
+        let decls: Vec<serde_json::Value> = req
+            .tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                })
+            })
+            .collect();
+        payload["tools"] = serde_json::json!([{ "functionDeclarations": decls }]);
+        payload["toolConfig"] = serde_json::json!({
+            "functionCallingConfig": { "mode": "AUTO" }
+        });
+    }
+
+    let client = http_chat_client();
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!("Google API {}: {}", status, truncate(&body, 400)));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
+
+    let usage = v.get("usageMetadata").cloned();
+    let input_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("promptTokenCount"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+    let output_tokens = usage
+        .as_ref()
+        .and_then(|u| u.get("candidatesTokenCount"))
+        .and_then(|n| n.as_u64())
+        .map(|n| n as u32);
+
+    let parts = v
+        .get("candidates")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array());
+
+    let mut texts: Vec<String> = Vec::new();
+    let mut calls: Vec<AgentToolCall> = Vec::new();
+    if let Some(parts) = parts {
+        for (i, p) in parts.iter().enumerate() {
+            if let Some(text) = p.get("text").and_then(|t| t.as_str()) {
+                texts.push(text.to_string());
+            }
+            if let Some(fc) = p.get("functionCall") {
+                let name = fc
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args = fc.get("args").cloned().unwrap_or(serde_json::json!({}));
+                if !name.is_empty() {
+                    // Gemini 没 ID，合成 "gemini-<name>-<i>" 保证当轮唯一
+                    calls.push(AgentToolCall {
+                        id: format!("gemini-{}-{}", name, i),
+                        name,
+                        input: args,
+                    });
+                }
+            }
+        }
+    }
+
+    if !calls.is_empty() {
+        return Ok(AgentTurnResult::ToolCalls {
+            calls,
+            model: Some(model),
+            input_tokens,
+            output_tokens,
+        });
+    }
+    Ok(AgentTurnResult::Text {
+        text: texts.join(""),
+        model: Some(model),
         input_tokens,
         output_tokens,
     })

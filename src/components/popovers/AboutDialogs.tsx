@@ -4,6 +4,9 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { Icon } from "../ui/Icon";
 import { useDiagnostics } from "@/stores/diagnostics";
 import { openExternal } from "@/lib/opener";
+import { writeImage, readImageAsPng } from "@/lib/clipboard";
+import { api, isDesktop, pickFile } from "@/lib/api";
+import { useOpsLog } from "@/stores/opsLog";
 
 // ─── 共用：模态外壳 ────────────────────────────────────────────────
 function ModalShell({
@@ -388,8 +391,53 @@ export function OssDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ─── 反馈对话框 ────────────────────────────────────────────────────
-// 4 类型卡 + textarea + 4 附加开关 + 联系邮箱。提交时拼一个 GitHub Issue 预填 URL
-// （遵守 [[feedback_no_central_server]]：不上报到 SaaS，由用户在 GitHub 上提交）。
+// 4 类型卡 + textarea + 附加开关 + 截图附件 + 联系邮箱。
+// 提交时拼一个 GitHub Issue 预填 URL（遵守 [[feedback_no_central_server]]：不上报到
+// SaaS，由用户在 GitHub 上提交）。GitHub URL 不能携带图片附件，所以截图走"复制到
+// 剪贴板，让用户在 Issue 编辑器内 ⌘V 粘贴"路径。
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+function readImageDimensions(
+  dataUrl: string,
+): Promise<{ w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () =>
+      resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => reject(new Error("图片加载失败"));
+    img.src = dataUrl;
+  });
+}
+
+async function reencodePng(dataUrl: string): Promise<Uint8Array> {
+  const img = new window.Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("图片解码失败"));
+    img.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas 2d context not available");
+  ctx.drawImage(img, 0, 0);
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("toBlob null"))),
+      "image/png",
+    );
+  });
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 const FEEDBACK_TYPES = [
   { id: "bug", label: "Bug", sub: "复现步骤、报错或异常", icon: "alert" as const },
   { id: "feature", label: "建议", sub: "功能、体验或工作流", icon: "sparkle" as const },
@@ -413,12 +461,87 @@ export function FeedbackDialog({
   const [includeDevice, setIncludeDevice] = useState(true);
   const [includeOps, setIncludeOps] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [attached, setAttached] = useState<{
+    pngBytes: Uint8Array;
+    dataUrl: string;
+    width: number;
+    height: number;
+    sizeKB: number;
+  } | null>(null);
+  const [attachBusy, setAttachBusy] = useState<"file" | "clip" | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const diags = useDiagnostics((s) => s.items);
+  const ops = useOpsLog((s) => s.items);
 
   const platform = useMemo(() => {
     if (typeof navigator === "undefined") return "unknown";
     return navigator.userAgent || navigator.platform || "unknown";
   }, []);
+
+  const setAttachedFromPng = async (pngBytes: Uint8Array) => {
+    const blob = new Blob([new Uint8Array(pngBytes)], { type: "image/png" });
+    const dataUrl = await blobToDataUrl(blob);
+    const dims = await readImageDimensions(dataUrl);
+    setAttached({
+      pngBytes,
+      dataUrl,
+      width: dims.w,
+      height: dims.h,
+      sizeKB: Math.round(pngBytes.byteLength / 1024),
+    });
+    setAttachError(null);
+  };
+
+  const pickImageFromFile = async () => {
+    if (attachBusy) return;
+    setAttachError(null);
+    setAttachBusy("file");
+    try {
+      const path = await pickFile([
+        { name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+      ]);
+      if (!path) return;
+      const base64 = await api.readFileBase64(path);
+      const ext = path.split(".").pop()?.toLowerCase() || "png";
+      const mime =
+        ext === "jpg" || ext === "jpeg"
+          ? "image/jpeg"
+          : ext === "webp"
+            ? "image/webp"
+            : ext === "gif"
+              ? "image/gif"
+              : "image/png";
+      const png = await reencodePng(`data:${mime};base64,${base64}`);
+      await setAttachedFromPng(png);
+    } catch (e) {
+      setAttachError(`读取失败：${(e as Error).message || String(e)}`);
+    } finally {
+      setAttachBusy(null);
+    }
+  };
+
+  const readFromClipboard = async () => {
+    if (attachBusy) return;
+    setAttachError(null);
+    setAttachBusy("clip");
+    try {
+      const png = await readImageAsPng();
+      if (!png) {
+        setAttachError("剪贴板里没有图片");
+        return;
+      }
+      await setAttachedFromPng(png);
+    } catch (e) {
+      setAttachError(`读取失败：${(e as Error).message || String(e)}`);
+    } finally {
+      setAttachBusy(null);
+    }
+  };
+
+  const clearAttach = () => {
+    setAttached(null);
+    setAttachError(null);
+  };
 
   const buildBody = () => {
     const lines: string[] = [];
@@ -444,9 +567,30 @@ export function FeedbackDialog({
       }
       lines.push("```");
     }
-    if (includeOps) {
+    if (includeOps && ops.length > 0) {
+      const recent = ops.slice(0, 50);
       lines.push("");
-      lines.push("**操作记录**：暂未支持自动采集，请在描述中补充复现步骤。");
+      lines.push(`**操作记录**（最近 ${recent.length} 步，按倒序）`);
+      lines.push("```");
+      for (const op of recent) {
+        const t = new Date(op.timestamp).toISOString().slice(11, 19);
+        const meta = op.meta
+          ? Object.entries(op.meta)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(" ")
+          : "";
+        lines.push(`[${t}] ${op.type}${meta ? " " + meta : ""}`);
+      }
+      lines.push("```");
+    } else if (includeOps) {
+      lines.push("");
+      lines.push("**操作记录**：当前 buffer 为空（重启或刚清理过）。");
+    }
+    if (attached) {
+      lines.push("");
+      lines.push(
+        `**截图**：已复制到剪贴板（${attached.width}×${attached.height} · ${attached.sizeKB} KB），请在 Issue 编辑器内 ⌘V / Ctrl+V 粘贴。`,
+      );
     }
     return lines.join("\n");
   };
@@ -454,6 +598,15 @@ export function FeedbackDialog({
   const submit = async () => {
     const title = `[${kind}] ${(text.trim().split("\n")[0] || "无标题").slice(0, 80)}`;
     const body = buildBody();
+    // GitHub Issue URL 无法携带图片附件 —— 在打开浏览器之前把 PNG 写入系统剪贴板，
+    // 让用户在 Issue 编辑器内 ⌘V 粘贴。
+    if (attached) {
+      try {
+        await writeImage(attached.pngBytes);
+      } catch (e) {
+        setAttachError(`截图写入剪贴板失败：${(e as Error).message || String(e)}`);
+      }
+    }
     const url =
       `https://github.com/${FEEDBACK_REPO}/issues/new` +
       `?title=${encodeURIComponent(title)}` +
@@ -479,7 +632,11 @@ export function FeedbackDialog({
         <div className="about-stage">
           <div className="about-stage-icon ok"><Icon name="check" size={22} /></div>
           <div className="about-stage-t">已为你打开 GitHub 提交页</div>
-          <div className="about-stage-s">在浏览器中确认内容并点提交。</div>
+          <div className="about-stage-s">
+            {attached
+              ? "在浏览器中确认内容；截图已复制到剪贴板，在评论框内按 ⌘V / Ctrl+V 粘贴即可。"
+              : "在浏览器中确认内容并点提交。"}
+          </div>
         </div>
       </ModalShell>
     );
@@ -553,12 +710,101 @@ export function FeedbackDialog({
             checked={includeOps}
             onChange={(e) => setIncludeOps(e.target.checked)}
           />
-          <span>操作记录（暂未支持自动采集，请补在描述里）</span>
+          <span>
+            操作记录（最近 {Math.min(ops.length, 50)} 步动作 · 不含路径 / 文本内容）
+          </span>
         </label>
-        <label className="dim" title="桌面截图采集后续再做">
-          <input type="checkbox" disabled />
-          <span>截图附件 · 暂未支持</span>
-        </label>
+      </div>
+
+      <div
+        className="about-fb-row"
+        style={{ alignItems: "flex-start", marginTop: 8 }}
+      >
+        <span className="lbl" style={{ paddingTop: 6 }}>
+          截图附件
+        </span>
+        <div style={{ flex: 1, display: "grid", gap: 6 }}>
+          {attached ? (
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: 8,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "var(--surface-2)",
+              }}
+            >
+              <img
+                src={attached.dataUrl}
+                alt="附图预览"
+                style={{
+                  width: 96,
+                  height: 72,
+                  objectFit: "cover",
+                  borderRadius: 4,
+                  border: "1px solid var(--border)",
+                  background: "#fff",
+                }}
+              />
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                  color: "var(--text-3)",
+                  minWidth: 0,
+                }}
+              >
+                <div>
+                  {attached.width} × {attached.height} · {attached.sizeKB} KB
+                </div>
+                <div style={{ color: "var(--text-3)" }}>
+                  提交时会自动复制到剪贴板，请在 GitHub 评论框 ⌘V 粘贴。
+                </div>
+                <button
+                  type="button"
+                  className="settings-btn"
+                  onClick={clearAttach}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  移除
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="settings-btn"
+                onClick={() => void pickImageFromFile()}
+                disabled={attachBusy !== null}
+              >
+                {attachBusy === "file" ? "读取中…" : "选择图片…"}
+              </button>
+              <button
+                type="button"
+                className="settings-btn"
+                onClick={() => void readFromClipboard()}
+                disabled={attachBusy !== null || !isDesktop()}
+                title={
+                  isDesktop()
+                    ? "把已截好的图从剪贴板粘进来"
+                    : "桌面端可用，浏览器预览不支持"
+                }
+              >
+                {attachBusy === "clip" ? "读取中…" : "从剪贴板读取"}
+              </button>
+            </div>
+          )}
+          {attachError && (
+            <div style={{ fontSize: 12, color: "var(--danger, #d33)" }}>
+              {attachError}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="about-fb-row">

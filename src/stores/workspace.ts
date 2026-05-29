@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils";
 import { tauriStorage } from "@/lib/tauriStorage";
 import { reportDiagnostic } from "./diagnostics";
+import { recordOp } from "./opsLog";
 import { runWorkspaceCleanups } from "./workspaceCleanup";
 
 interface WorkspaceState {
@@ -236,6 +237,7 @@ export const useWorkspace = create<WorkspaceState>()(
           lastOpenedAt: Date.now(),
         };
         set((s) => ({ workspaces: [...s.workspaces, ws] }));
+        recordOp("workspace:add");
         await get().setActive(ws.id);
         return ws.id;
       },
@@ -268,6 +270,7 @@ export const useWorkspace = create<WorkspaceState>()(
       },
 
       setActive: async (id) => {
+        const prev = get().activeId;
         set({ activeId: id });
         const ws = get().workspaces.find((w) => w.id === id);
         if (ws) {
@@ -275,6 +278,7 @@ export const useWorkspace = create<WorkspaceState>()(
           void api.mcpSetActiveWorkspace(ws.path).catch(() => {});
         }
         if (!get().treeCache[id]) await get().refreshTree(id);
+        if (prev !== id) recordOp("workspace:switch");
       },
 
       refreshTree: async (id) => {

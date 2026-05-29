@@ -17,6 +17,7 @@ import { useSettings } from "./settings";
 import { useRag } from "./rag";
 import { useVaultIndex } from "./vaultIndex";
 import { reportDiagnostic } from "./diagnostics";
+import { recordOp, sizeBucket, extOf } from "./opsLog";
 import { spaceCJK } from "@/lib/pangu";
 import { createKeyedTimers } from "@/lib/keyedTimers";
 import { registerWorkspaceCleanup } from "./workspaceCleanup";
@@ -141,6 +142,10 @@ export const useTabs = create<TabsState>((set, get) => ({
       sigs: { ...s.sigs, [tab.id]: sig },
     }));
     useRecents.getState().push(workspaceId, path, basename(path));
+    recordOp("file:open", {
+      size: sizeBucket(content.length),
+      ext: extOf(path),
+    });
   },
 
   openPath: async (path, opts) => {
@@ -162,6 +167,7 @@ export const useTabs = create<TabsState>((set, get) => ({
     set((s) => {
       const idx = s.tabs.findIndex((t) => t.id === id);
       if (idx === -1) return s;
+      recordOp("file:close");
       const next = s.tabs.filter((t) => t.id !== id);
       let activeId = s.activeId;
       if (s.activeId === id) {
@@ -297,11 +303,20 @@ export const useTabs = create<TabsState>((set, get) => ({
         ),
         sigs: { ...s.sigs, [id]: newSig },
       }));
+      recordOp("file:save", {
+        result: "ok",
+        size: sizeBucket(content.length),
+        ext: extOf(tab.path),
+      });
       return "ok";
     } catch (e) {
       const err = parseError(e);
-      if (err.code === "CONFLICT") return "conflict";
+      if (err.code === "CONFLICT") {
+        recordOp("file:save", { result: "conflict", ext: extOf(tab.path) });
+        return "conflict";
+      }
       console.error("saveTab failed", err.message);
+      recordOp("file:save", { result: "error", ext: extOf(tab.path) });
       return "error";
     }
   },

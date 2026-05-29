@@ -16,6 +16,7 @@
 // - readText 超过 8000 字符 → 截断 + 标注"已截断"，避免一次性灌爆上下文
 
 import { api } from "./api";
+import { recordOp } from "@/stores/opsLog";
 
 const MAX_TURNS = 8;
 const MAX_FILE_CHARS = 8000;
@@ -321,6 +322,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
         };
       }
       opts.onToolCall?.(call);
+      recordOp("ai:tool", { name: call.name });
       const output = await executeTool(call, opts.workspacePath, opts.scope);
       opts.onToolDone?.(call, output);
       messages.push({

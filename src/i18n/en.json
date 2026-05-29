@@ -335,7 +335,6 @@
         "configure": "Configure",
         "collapse": "Collapse",
         "pickFolder": "Pick sync folder",
-        "folderHint": "Choose a local folder; markio will treat it as the {{name}} sync root",
         "noFolder": "No folder picked",
         "enable": "Enable auto-sync",
         "disconnect": "Disconnect",
@@ -343,8 +342,7 @@
         "testUpload": "Test upload",
         "testOk": "Test succeeded",
         "testFailed": "Test failed: {{msg}}",
-        "openExisting": "See the {{name}} card above",
-        "comingSoon": "OAuth integration coming; for now pick a local folder as the sync root"
+        "openExisting": "See the {{name}} card above"
       },
       "policyCard": "Git auto-sync policy (hardening)",
       "policyTip": "Auto-sync runs add / commit / fetch / pull / push on the active Git workspace at the chosen frequency; conflict recovery and rollback are still being hardened.",

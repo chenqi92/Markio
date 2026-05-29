@@ -320,7 +320,7 @@ function DrivesCard() {
             {isExpanded && id === "drop" && <DropboxDriveDrawer />}
             {isExpanded && id === "drive" && <GDriveDriveDrawer />}
             {isExpanded && id === "icloud" && (
-              <FolderDriveDrawer driveId={id} driveName={d.name} />
+              <FolderDriveDrawer driveId={id} />
             )}
           </div>
         );
@@ -331,10 +331,8 @@ function DrivesCard() {
 
 function FolderDriveDrawer({
   driveId,
-  driveName,
 }: {
   driveId: DriveId;
-  driveName: string;
 }) {
   const { t } = useTranslation();
   const driveConfigs = useSettings((s) => s.driveConfigs);
@@ -377,8 +375,6 @@ function FolderDriveDrawer({
     setPreference("driveConfigs", next);
   };
 
-  const isIcloud = driveId === "icloud";
-
   return (
     <div
       className="settings-drawer"
@@ -391,11 +387,9 @@ function FolderDriveDrawer({
       }}
     >
       <div className="settings-help" style={{ marginBottom: 8 }}>
-        {isIcloud
-          ? "把 markio 仓库放进 iCloud Drive 文件夹，Apple 客户端会自动镜像到云端和其它设备。"
-          : t("settings.sync.drive.folderHint", { name: driveName })}
+        把 markio 仓库放进 iCloud Drive 文件夹，Apple 客户端会自动镜像到云端和其它设备。
       </div>
-      {isIcloud && autoDetected && (
+      {autoDetected && (
         <div
           className="settings-help"
           style={{
@@ -451,9 +445,7 @@ function FolderDriveDrawer({
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-help" style={{ color: "var(--text-3)" }}>
-            {isIcloud
-              ? "iCloud 的真实同步由 Apple 客户端进程负责；markio 只是把这个目录认作仓库根。"
-              : t("settings.sync.drive.comingSoon")}
+            iCloud 的真实同步由 Apple 客户端进程负责；markio 只是把这个目录认作仓库根。
           </div>
         </div>
         {cfg.folder && (

@@ -130,11 +130,6 @@ export function NewMenu({
     }
   };
 
-  const importUrl = async () => {
-    onClose();
-    toast("error", "URL 抓取功能即将上线", 2000);
-  };
-
   const openFolder = async () => {
     onClose();
     const d = await pickDirectory();
@@ -184,15 +179,6 @@ export function NewMenu({
         <div className="meta">
           <div className="ttl">从剪贴板新建</div>
           <div className="sub">将剪贴板文本写入新文件</div>
-        </div>
-      </button>
-      <button type="button" className="new-menu-item" onClick={importUrl}>
-        <span className="ico">
-          <Icon name="external" size={14} />
-        </span>
-        <div className="meta">
-          <div className="ttl">从 URL 抓取</div>
-          <div className="sub">敬请期待</div>
         </div>
       </button>
       <div className="new-menu-sep" />

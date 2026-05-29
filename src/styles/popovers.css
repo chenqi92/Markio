@@ -1032,7 +1032,6 @@
 /* table editing toolbar — pinned to top-center of editor pane */
 .table-toolbar {
   position: fixed;
-  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 6px;

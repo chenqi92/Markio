@@ -743,8 +743,8 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         return;
       }
       setTableTb({
-        x: info.rect.left + info.rect.width / 2,
-        y: Math.max(8, info.rect.top - 38),
+        x: info.rect.left,
+        y: Math.max(8, info.rect.top - 42),
         align: tinfo.aligns[tinfo.cursorCol] ?? null,
         row: Math.max(0, tinfo.cursorRow),
         col: tinfo.cursorCol,

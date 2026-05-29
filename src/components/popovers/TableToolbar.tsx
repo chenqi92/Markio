@@ -31,15 +31,14 @@ export function TableToolbar({
   onMouseEnter,
   onMouseLeave,
 }: Props) {
-  // x is treated as the horizontal CENTER of the toolbar (CSS uses
-  // translateX(-50%)). Clamp center so the toolbar can never poke outside
-  // the viewport assuming worst-case ~920px width.
+  // x = 表格左缘。工具栏左对齐贴着表格左边展开（不再 translateX(-50%) 居中），
+  // 这样它读起来是「这张表的工具栏」，而不是横跨左右、压住旁边段落的浮条。
   const left =
     typeof window === "undefined"
       ? x
       : (() => {
-          const half = Math.min(460, Math.floor((window.innerWidth - 16) / 2));
-          return Math.max(half + 8, Math.min(x, window.innerWidth - half - 8));
+          const width = Math.min(920, window.innerWidth - 24);
+          return Math.max(8, Math.min(x, window.innerWidth - width - 8));
         })();
   const top =
     typeof window === "undefined"

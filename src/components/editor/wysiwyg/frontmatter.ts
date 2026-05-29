@@ -1,10 +1,13 @@
 /**
- * YAML frontmatter 块 widget。
+ * YAML frontmatter 块 widget —— 就地属性编辑器。
  *
- * 文档开头的 `---\n…\n---` 在 WYSIWYG 下默认渲染成一张只读属性卡片，避免
- * 原始 YAML 字段（title:/tags:/`- 脚本` 等）以裸文本 / 误判列表的形式露出。
- * 点击卡片把光标移进 frontmatter 区间 → build() 的 cursor-aware 逻辑撤掉
- * widget、显形原始文本以便编辑（与代码块 widget 同一套交互）。
+ * 文档开头的 `---\n…\n---` 在 WYSIWYG 下渲染成一张可编辑属性表（类似表格
+ * widget）：每个字段的值就地改，回车 / 失焦把整块 frontmatter 重新序列化写回
+ * 源码。提交会把 YAML 规范化（引号 / 列表写法可能变，但语义不变）。
+ *
+ * 只处理三种常见结构：`key: value`、`key:` + 缩进 `- item` 列表、折叠/字面
+ * 标量（`>-` `|` 等）的缩进续行。遇到无法归类的行时 parse().ok = false，由
+ * build.ts 退回原始 YAML 文本编辑，避免就地编辑丢数据。
  */
 
 import { EditorView, WidgetType } from "@codemirror/view";
@@ -13,15 +16,26 @@ function unquote(s: string): string {
   return s.trim().replace(/^["']|["']$/g, "");
 }
 
-/** 把含 `---` 分隔符的 frontmatter 源码解析成 [key, value] 行。
- *  只覆盖 `key: value` / `key:` + 缩进 `- item` 列表 / 折叠标量续行三种结构。 */
-export function parseFrontmatterRows(src: string): Array<[string, string]> {
+export type FmKind = "scalar" | "list";
+export interface FmProp {
+  key: string;
+  kind: FmKind;
+  value: string;
+  items: string[];
+}
+export interface ParsedFrontmatter {
+  ok: boolean;
+  props: FmProp[];
+}
+
+export function parseFrontmatter(src: string): ParsedFrontmatter {
   let lines = src.replace(/\r\n/g, "\n").split("\n");
   if (lines[0]?.trim() === "---") lines = lines.slice(1);
   const closeIdx = lines.findIndex((l) => l.trim() === "---");
   if (closeIdx >= 0) lines = lines.slice(0, closeIdx);
 
-  const rows: Array<{ key: string; vals: string[] }> = [];
+  const props: FmProp[] = [];
+  let ok = true;
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, "");
     if (!line.trim()) continue;
@@ -29,8 +43,10 @@ export function parseFrontmatterRows(src: string): Array<[string, string]> {
     const trimmed = line.replace(/^\s+/, "");
 
     const li = trimmed.match(/^-\s+(.*)$/);
-    if (li && rows.length) {
-      rows[rows.length - 1]!.vals.push(unquote(li[1]!));
+    if (li && props.length) {
+      const p = props[props.length - 1]!;
+      p.kind = "list";
+      p.items.push(unquote(li[1]!));
       continue;
     }
     if (!indented) {
@@ -38,20 +54,106 @@ export function parseFrontmatterRows(src: string): Array<[string, string]> {
       if (idx > 0) {
         const key = trimmed.slice(0, idx).trim();
         if (/^[\w-]+$/.test(key)) {
-          let val = trimmed.slice(idx + 1).trim();
-          if ([">-", ">", "|", "|-", "|+"].includes(val)) val = "";
-          rows.push({ key, vals: val ? [unquote(val)] : [] });
+          const rawVal = trimmed.slice(idx + 1).trim();
+          const folded = [">-", ">", "|", "|-", "|+"].includes(rawVal);
+          props.push({
+            key,
+            kind: "scalar",
+            value: folded ? "" : unquote(rawVal),
+            items: [],
+          });
           continue;
         }
       }
     }
-    if (rows.length) {
-      const last = rows[rows.length - 1]!;
-      if (!last.vals.length) last.vals.push(trimmed);
-      else last.vals[0] = `${last.vals[0]} ${trimmed}`;
+    // 缩进续行（折叠标量）拼到最近 scalar 的值
+    const last = props[props.length - 1];
+    if (last && last.kind === "scalar") {
+      last.value = last.value ? `${last.value} ${trimmed}` : trimmed;
+      continue;
+    }
+    ok = false;
+  }
+  return { ok, props };
+}
+
+function needsQuote(v: string): boolean {
+  if (v === "") return true;
+  if (/[:#]/.test(v)) return true;
+  if (/^[>|[\]{}*&!@`'"%,?-]/.test(v)) return true;
+  if (/^\s|\s$/.test(v)) return true;
+  return false;
+}
+function quote(v: string): string {
+  return `'${v.replace(/'/g, "''")}'`;
+}
+function emit(v: string): string {
+  return needsQuote(v) ? quote(v) : v;
+}
+
+export function buildFrontmatter(props: FmProp[]): string {
+  const out: string[] = ["---"];
+  for (const p of props) {
+    const key = p.key.trim();
+    if (!key) continue;
+    if (p.kind === "list") {
+      out.push(`${key}:`);
+      for (const it of p.items) {
+        const t = it.trim();
+        if (t) out.push(`  - ${emit(t)}`);
+      }
+    } else {
+      const v = p.value.trim();
+      out.push(v ? `${key}: ${emit(v)}` : `${key}:`);
     }
   }
-  return rows.map((r) => [r.key, r.vals.join(", ")] as [string, string]);
+  out.push("---");
+  return `${out.join("\n")}\n`;
+}
+
+function frontmatterRange(
+  view: EditorView,
+  host: HTMLElement,
+): { from: number; to: number; source: string } | null {
+  const from = view.posAtDOM(host);
+  const len = Number(host.dataset.sourceLength);
+  if (from == null || !Number.isFinite(len) || len <= 0) return null;
+  const to = Math.min(view.state.doc.length, from + len);
+  return to > from ? { from, to, source: view.state.doc.sliceString(from, to) } : null;
+}
+
+/** 从 DOM 收集各行最新值 → 重建 props → 序列化 → 写回源码。 */
+function commitFrontmatter(view: EditorView, host: HTMLElement): boolean {
+  const range = frontmatterRange(view, host);
+  if (!range) return false;
+  const rows = Array.from(host.querySelectorAll<HTMLElement>(".cm-md-fm-row"));
+  const props: FmProp[] = rows.map((row) => {
+    const key = row.dataset.key ?? "";
+    const kind = (row.dataset.kind as FmKind) ?? "scalar";
+    const editor = row.querySelector<HTMLTextAreaElement>(".cm-md-fm-value");
+    const value = editor?.value ?? "";
+    if (kind === "list") {
+      return {
+        key,
+        kind,
+        value: "",
+        items: value.split(",").map((s) => s.trim()).filter(Boolean),
+      };
+    }
+    return { key, kind, value: value.trim(), items: [] };
+  });
+  const next = buildFrontmatter(props);
+  if (next === range.source) return false;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: next },
+    userEvent: "input",
+  });
+  return true;
+}
+
+function resizeValueEditor(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.max(22, el.scrollHeight)}px`;
 }
 
 export class FrontmatterWidget extends WidgetType {
@@ -64,36 +166,72 @@ export class FrontmatterWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-frontmatter-widget";
-    wrap.title = "点击编辑文档属性";
+    wrap.setAttribute("contenteditable", "false");
+    wrap.dataset.sourceLength = String(this.source.length);
 
-    const rows = parseFrontmatterRows(this.source);
-    if (rows.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "cm-md-frontmatter-empty";
-      empty.textContent = "文档属性";
-      wrap.append(empty);
-    } else {
-      const table = document.createElement("table");
-      const tbody = document.createElement("tbody");
-      for (const [key, value] of rows) {
-        const tr = document.createElement("tr");
-        const th = document.createElement("th");
-        th.textContent = key;
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.append(th, td);
-        tbody.append(tr);
-      }
-      table.append(tbody);
-      wrap.append(table);
+    const { props } = parseFrontmatter(this.source);
+    const table = document.createElement("table");
+    const tbody = document.createElement("tbody");
+    for (const p of props) {
+      const tr = document.createElement("tr");
+      tr.className = "cm-md-fm-row";
+      tr.dataset.key = p.key;
+      tr.dataset.kind = p.kind;
+
+      const th = document.createElement("th");
+      th.textContent = p.key;
+      const td = document.createElement("td");
+      const editor = document.createElement("textarea");
+      editor.className = "cm-md-fm-value";
+      editor.spellcheck = false;
+      editor.rows = 1;
+      editor.value = p.kind === "list" ? p.items.join(", ") : p.value;
+      editor.setAttribute(
+        "aria-label",
+        p.kind === "list" ? `${p.key}（逗号分隔多项）` : p.key,
+      );
+      if (p.kind === "list") editor.placeholder = "用逗号分隔多项";
+      td.append(editor);
+      tr.append(th, td);
+      tbody.append(tr);
     }
+    table.append(tbody);
+    wrap.append(table);
 
-    wrap.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      // frontmatter 始终在文档开头，把光标落到第二行（`---` 之后）即可显形原文编辑
-      const pos = Math.min(4, view.state.doc.length);
-      view.dispatch({ selection: { anchor: pos } });
-      view.focus();
+    // cell 编辑提交：Enter / 失焦写回；Esc 还原
+    wrap.addEventListener("focusin", (e) => {
+      const cell = (e.target as HTMLElement)?.closest<HTMLTextAreaElement>(
+        ".cm-md-fm-value",
+      );
+      if (cell) resizeValueEditor(cell);
+      e.stopPropagation();
+    });
+    wrap.addEventListener("input", (e) => {
+      const cell = (e.target as HTMLElement)?.closest<HTMLTextAreaElement>(
+        ".cm-md-fm-value",
+      );
+      if (cell) resizeValueEditor(cell);
+      e.stopPropagation();
+    });
+    wrap.addEventListener("focusout", (e) => {
+      const cell = (e.target as HTMLElement)?.closest(".cm-md-fm-value");
+      if (cell) commitFrontmatter(view, wrap);
+      e.stopPropagation();
+    });
+    wrap.addEventListener("keydown", (e) => {
+      const cell = (e.target as HTMLElement)?.closest<HTMLTextAreaElement>(
+        ".cm-md-fm-value",
+      );
+      if (!cell) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        commitFrontmatter(view, wrap);
+        cell.blur();
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        cell.blur();
+      }
     });
     return wrap;
   }

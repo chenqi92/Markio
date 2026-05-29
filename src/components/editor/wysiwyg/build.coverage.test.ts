@@ -162,6 +162,20 @@ describe("wysiwyg coverage — corner cases / known risks", () => {
     expect(widgets.filter((w) => w === HrWidget.name)).toEqual([]);
   });
 
+  it("frontmatter becomes a FrontmatterWidget", () => {
+    const src = "---\ntitle: Foo\ntags:\n  - a\n---\n\nbody\n";
+    const { widgets } = inspect(src);
+    expect(widgets).toContain("FrontmatterWidget");
+  });
+
+  it("body AFTER frontmatter still gets decorated (root not skipped)", () => {
+    // 回归：frontmatter 跳过逻辑若用 node.from<fmEnd，会把 from=0 的文档根节点
+    // 一并跳过，导致整篇正文不渲染。这里断言 frontmatter 之后的标题仍被处理。
+    const src = "---\ntitle: Foo\n---\n\n## 效果对比\n\n正文\n";
+    const { classes } = inspect(src);
+    expect(classes.some((c) => c.includes("cm-md-h2"))).toBe(true);
+  });
+
   it("inline math inside `inline code` is not picked up", () => {
     const { widgets } = inspect("`$not math$` and `$$also not$$`\n");
     expect(widgets.filter((w) => w === MathWidget.name)).toEqual([]);

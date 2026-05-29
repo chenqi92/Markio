@@ -17,7 +17,7 @@ import { Decoration, type DecorationSet } from "@codemirror/view";
 import { detectMathRanges } from "@/lib/math-ranges";
 
 import { CodeFenceWidget } from "./codeFence";
-import { FrontmatterWidget } from "./frontmatter";
+import { FrontmatterWidget, parseFrontmatter } from "./frontmatter";
 import {
   CalloutLabelWidget,
   HrWidget,
@@ -188,9 +188,9 @@ export function build(state: EditorState): BuildResult {
 
   // Wikilinks: same regex-based scan; rendered widget shows display text and
   // remembers the resolved vault path so clicks can open the target note.
+  // 始终渲染为 widget（单击打开笔记，悬浮出现 ✎ 进编辑浮层），不再光标显形原文。
   const wikilinkRanges = detectWikilinks(docText, currentVaultFiles());
   for (const info of wikilinkRanges) {
-    if (trackCursor(info.from, info.to, true)) continue;
     decos.push({
       from: info.from,
       to: info.to,
@@ -254,14 +254,14 @@ export function build(state: EditorState): BuildResult {
   };
 
   // ─── YAML frontmatter ───
-  // 默认整块替换成只读属性卡片；光标进入区间时显形原始 YAML 以便编辑。
-  // 无论哪种状态都跳过区间内的 lezer 节点（见 enter 开头的 guard），避免
-  // `- 脚本` 被当成无序列表、`title:` 等被当成裸段落。
+  // 渲染成就地可编辑的属性表（始终渲染，不退回原始块）。仅当 YAML 能被干净
+  // 解析时才上 widget——否则退回原始文本编辑，避免就地编辑丢数据。
+  // 无论哪种都跳过区间内的 lezer 节点（见 enter 开头的 guard），避免
+  // `- 脚本` 被当成无序列表、`title:` 被当成裸段落。
   if (fmEnd > 0) {
     const source = docText.slice(0, fmEnd);
-    if (trackCursor(0, fmEnd, false)) {
-      markLines(0, fmEnd, "cm-md-line cm-md-frontmatter-line");
-    } else {
+    const fm = parseFrontmatter(source);
+    if (fm.ok && fm.props.length > 0) {
       decos.push({
         from: 0,
         to: fmEnd,
@@ -271,6 +271,8 @@ export function build(state: EditorState): BuildResult {
         }),
       });
       atomic.push({ from: 0, to: fmEnd, deco: Decoration.mark({}) });
+    } else {
+      markLines(0, fmEnd, "cm-md-line cm-md-frontmatter-line");
     }
   }
 
@@ -287,9 +289,11 @@ export function build(state: EditorState): BuildResult {
       enter: (node) => {
       const n = node.name;
 
-      // frontmatter 区间整体由上面的 widget / line-mark 接管，跳过区间内所有
-      // lezer 节点（含被误判成 Hr / ListItem / ListMark 的 `---` 与 `- x`）。
-      if (fmEnd > 0 && node.from < fmEnd) return false;
+      // frontmatter 区间整体由上面的 widget / line-mark 接管，跳过**完全落在**
+      // 区间内的 lezer 节点（含被误判成 Hr / ListItem / ListMark 的 `---` 与
+      // `- x`）。注意必须判 node.to <= fmEnd：文档根节点 from=0 也 < fmEnd，
+      // 若只判 from 会把整棵树（含正文）一并跳过，导致正文完全不渲染。
+      if (fmEnd > 0 && node.to <= fmEnd) return false;
 
       // ─── 标题 ATX ───
       if (/^ATXHeading[1-6]$/.test(n)) {
@@ -484,36 +488,21 @@ export function build(state: EditorState): BuildResult {
       if (n === "Image") {
         const text = state.doc.sliceString(node.from, node.to);
         const parts = parseImageMarkdown(text);
-        const canRender = !!parts && isAbsoluteSafeUrl(parts.url);
-        if (trackCursor(node.from, node.to, true)) {
-          mark(node.from, node.to, "cm-md-image cm-md-image-active");
-          if (canRender) {
-            decos.push({
-              from: node.to,
-              to: node.to,
-              deco: Decoration.widget({
-                widget: new ImageWidget(parts, true),
-                side: 1,
-              }),
-            });
-          }
-          return false;
-        }
-        // 默认渲染图片；未聚焦时隐藏 markdown 源码。
-        if (canRender) {
-            decos.push({
-              from: node.from,
-              to: node.to,
-              deco: Decoration.replace({
-                widget: new ImageWidget(parts, false, node.to - node.from),
-              }),
-            });
-            atomic.push({
-              from: node.from,
-              to: node.to,
-              deco: Decoration.mark({}),
-            });
-            return;
+        // 始终渲染图片 widget（点击进编辑浮层），不再光标显形 markdown 源码。
+        if (parts && isAbsoluteSafeUrl(parts.url)) {
+          decos.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.replace({
+              widget: new ImageWidget(parts, false, node.to - node.from),
+            }),
+          });
+          atomic.push({
+            from: node.from,
+            to: node.to,
+            deco: Decoration.mark({}),
+          });
+          return;
         }
         mark(node.from, node.to, "cm-md-image");
         return false;

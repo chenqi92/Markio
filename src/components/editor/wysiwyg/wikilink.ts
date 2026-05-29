@@ -10,8 +10,9 @@
  * 解析到 path → 打开目标笔记；未解析 / Alt+点击 → 把光标移到 markdown 源码。
  */
 
-import { WidgetType } from "@codemirror/view";
+import { EditorView, WidgetType } from "@codemirror/view";
 
+import { openEditPopover } from "./editPopover";
 import { parseWikiLinkBody, resolveWikiFile } from "@/lib/wikilinks";
 import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
@@ -116,7 +117,11 @@ export class WikilinkWidget extends WidgetType {
       other.info.path === this.info.path
     );
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-wikilink-wrap";
+    wrap.dataset.sourceLength = String(this.info.to - this.info.from);
+
     const a = document.createElement("a");
     a.className = "cm-md-wikilink";
     a.href = "#";
@@ -129,9 +134,66 @@ export class WikilinkWidget extends WidgetType {
       a.title = `未找到笔记：${this.info.target}`;
     }
     if (this.info.heading) a.dataset.heading = this.info.heading;
-    return a;
+    wrap.append(a);
+
+    // 单击仍走主插件的「打开笔记」；悬浮出现的小按钮才进编辑浮层
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "cm-md-wikilink-edit";
+    edit.textContent = "✎";
+    edit.title = "编辑链接（目标 / 显示文本）";
+    edit.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    edit.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openWikilinkEditor(view, wrap, this.info);
+    });
+    wrap.append(edit);
+    return wrap;
   }
   ignoreEvent() {
     return false;
   }
+}
+
+function wikilinkRangeFromHost(
+  view: EditorView,
+  host: HTMLElement,
+): { from: number; to: number } | null {
+  const from = view.posAtDOM(host);
+  const len = Number(host.dataset.sourceLength);
+  if (from == null || !Number.isFinite(len) || len <= 0) return null;
+  const to = Math.min(view.state.doc.length, from + len);
+  return to > from ? { from, to } : null;
+}
+
+function openWikilinkEditor(view: EditorView, host: HTMLElement, info: WikilinkInfo) {
+  const range = wikilinkRangeFromHost(view, host);
+  if (!range) return;
+  openEditPopover(
+    view,
+    host,
+    [
+      { key: "target", label: "目标", value: info.target, placeholder: "笔记名" },
+      { key: "display", label: "显示", value: info.display, placeholder: "显示文本（可空）" },
+    ],
+    (v) => {
+      const target = v.target!.trim();
+      if (!target) return;
+      const head = info.heading ? `#${info.heading}` : "";
+      const disp = v.display!.trim();
+      const body = disp && disp !== target ? `${target}${head}|${disp}` : `${target}${head}`;
+      const next = `[[${body}]]`;
+      const current = view.state.doc.sliceString(range.from, range.to);
+      if (next !== current) {
+        view.dispatch({
+          changes: { from: range.from, to: range.to, insert: next },
+          userEvent: "input",
+        });
+      }
+    },
+  );
 }

@@ -12,9 +12,17 @@
  * destroy / AbortController；放一个文件方便集中管理样式与类名常量。
  */
 
-import { WidgetType } from "@codemirror/view";
+import { EditorView, WidgetType } from "@codemirror/view";
 
-import { applyImageElementSizing, type ImageParts } from "@/lib/markdown-images";
+import {
+  applyImageElementSizing,
+  buildImageMarkdown,
+  imageWidthFromTitle,
+  parseImageMarkdown,
+  setImageMarkdownWidth,
+  type ImageParts,
+} from "@/lib/markdown-images";
+import { openEditPopover } from "./editPopover";
 
 export class ListMarkerWidget extends WidgetType {
   constructor(
@@ -100,7 +108,7 @@ export class ImageWidget extends WidgetType {
       other.sourceLength === this.sourceLength
     );
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "cm-md-img-widget";
     if (this.inlinePreview) wrap.classList.add("cm-md-img-inline-preview");
@@ -120,11 +128,72 @@ export class ImageWidget extends WidgetType {
       wrap.title = `图片加载失败：${this.parts.url}`;
     });
     wrap.appendChild(img);
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "cm-md-img-edit";
+    edit.textContent = "编辑";
+    edit.title = "编辑图片（描述 / 地址 / 宽度）";
+    wrap.appendChild(edit);
+
+    // 点击图片或「编辑」按钮都打开浮层；阻止冒泡到 CM（否则会移动光标显形原文）
+    const open = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openImageEditor(view, wrap);
+    };
+    wrap.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    wrap.addEventListener("click", open);
     return wrap;
   }
   ignoreEvent() {
-    return false;
+    return true;
   }
+}
+
+function imageRangeFromHost(
+  view: EditorView,
+  host: HTMLElement,
+): { from: number; to: number; source: string } | null {
+  const from = view.posAtDOM(host);
+  const len = Number(host.dataset.sourceLength);
+  if (from == null || !Number.isFinite(len) || len <= 0) return null;
+  const to = Math.min(view.state.doc.length, from + len);
+  return to > from ? { from, to, source: view.state.doc.sliceString(from, to) } : null;
+}
+
+function openImageEditor(view: EditorView, host: HTMLElement) {
+  const range = imageRangeFromHost(view, host);
+  if (!range) return;
+  const parts = parseImageMarkdown(range.source) ?? {
+    alt: host.dataset.alt ?? "",
+    url: host.dataset.src ?? "",
+  };
+  const width = imageWidthFromTitle(parts.title) ?? "";
+  openEditPopover(
+    view,
+    host,
+    [
+      { key: "alt", label: "描述", value: parts.alt, placeholder: "alt 文本" },
+      { key: "url", label: "地址", value: parts.url, placeholder: "https://…" },
+      { key: "width", label: "宽度", value: width, placeholder: "如 480 或 60%" },
+    ],
+    (v) => {
+      const url = v.url!.trim();
+      if (!url) return;
+      let next = buildImageMarkdown({ alt: v.alt ?? "", url, title: parts.title });
+      next = setImageMarkdownWidth(next, v.width!.trim() || null) ?? next;
+      if (next !== range.source) {
+        view.dispatch({
+          changes: { from: range.from, to: range.to, insert: next },
+          userEvent: "input",
+        });
+      }
+    },
+  );
 }
 
 export class TaskCheckbox extends WidgetType {

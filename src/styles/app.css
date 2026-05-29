@@ -49,10 +49,18 @@ input:focus, textarea:focus, button:focus, select:focus { outline: none; }
 .markio-root input,
 .markio-root textarea,
 .markio-root .statusbar .item,
-.markio-root .crumb .seg.current,
 .markio-root .findbar input {
   -webkit-user-select: text;
   user-select: text;
+}
+/* 行号 gutter 是编辑器外壳，被 .cm-host * 误开成可选 —— 显式关掉。
+ * 面包屑路径同理：桌面 app 里不应能拖选文件名（复制路径走右键菜单）。 */
+.markio-root .cm-host .cm-gutters,
+.markio-root .cm-host .cm-gutters *,
+.markio-root .crumb,
+.markio-root .crumb * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 .markio-root .preview,
 .markio-root .preview p,

@@ -4,8 +4,6 @@
 use std::fs;
 use std::path::Path;
 
-use sha2::Digest;
-
 use super::common::*;
 
 pub fn import_bear(src_archive: &Path, workspace: &Path) -> Result<ImportReport, String> {

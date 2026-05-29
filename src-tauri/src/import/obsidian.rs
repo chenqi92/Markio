@@ -3,8 +3,6 @@
 
 use std::path::Path;
 
-use sha2::Digest;
-
 use super::common::*;
 
 pub fn import_obsidian(src_dir: &Path, workspace: &Path) -> Result<ImportReport, String> {

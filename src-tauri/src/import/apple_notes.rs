@@ -1,13 +1,12 @@
 //! See parent module `import` for orientation. Split out from the original
 //! 1399-line `import.rs` so each provider lives in its own file.
 
+#[cfg(target_os = "macos")]
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 
-use sha2::Digest;
-
 use super::common::*;
+#[cfg(target_os = "macos")]
 use super::evernote::enml_to_markdown;
 
 /// Apple Notes 导入（macOS 专属）：通过 osascript 走 Apple Events 让 Notes.app

@@ -1515,6 +1515,7 @@ pub struct MacShareInput {
 
 /// AppleScript 字符串字面量需要转义反斜杠和双引号；换行换成 `\n`
 /// 让 osascript 按字面量插入。
+#[cfg(target_os = "macos")]
 fn applescript_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');

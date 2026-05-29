@@ -2,10 +2,7 @@
 //! 1399-line `import.rs` so each provider lives in its own file.
 
 use std::fs;
-use std::io::Read;
 use std::path::Path;
-
-use sha2::Digest;
 
 use super::common::*;
 

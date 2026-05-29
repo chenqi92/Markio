@@ -89,9 +89,21 @@ function resizeCodeFenceTextarea(textarea: HTMLTextAreaElement) {
   textarea.style.height = `${Math.max(24, textarea.scrollHeight)}px`;
 }
 
+/** 把行号槽刷成 count 行（多退少补），让编辑态行号跟着输入实时增减。 */
+function setGutterLines(gutter: HTMLElement, count: number) {
+  const n = Math.max(1, count);
+  while (gutter.childElementCount > n) gutter.lastElementChild?.remove();
+  while (gutter.childElementCount < n) gutter.appendChild(document.createElement("span"));
+  for (let i = 0; i < n; i++) {
+    (gutter.children[i] as HTMLElement).textContent = String(i + 1);
+  }
+}
+
 function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: string) {
   const body = host.querySelector<HTMLElement>(".cm-md-code-body");
   if (!body || body.querySelector(".cm-md-code-editor")) return;
+  const pre = body.querySelector<HTMLElement>(".cm-md-code-pre");
+  const gutter = body.querySelector<HTMLElement>(".cm-md-code-gutter");
 
   const textarea = document.createElement("textarea");
   textarea.className = "cm-md-code-editor";
@@ -99,12 +111,17 @@ function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: str
   textarea.value = source;
   textarea.setAttribute("aria-label", "编辑代码块内容");
 
+  // 高度贴合内容 + 行号随输入实时同步（保留行号槽，编辑态不再丢行号/左移）
+  const sync = () => {
+    resizeCodeFenceTextarea(textarea);
+    if (gutter) setGutterLines(gutter, textarea.value.split(/\r?\n/).length);
+  };
   const commit = () => {
     commitCodeFenceBody(view, host, textarea.value);
   };
   textarea.addEventListener("mousedown", (event) => event.stopPropagation());
   textarea.addEventListener("click", (event) => event.stopPropagation());
-  textarea.addEventListener("input", () => resizeCodeFenceTextarea(textarea));
+  textarea.addEventListener("input", sync);
   textarea.addEventListener("blur", commit);
   textarea.addEventListener("keydown", (event) => {
     event.stopPropagation();
@@ -118,8 +135,10 @@ function startCodeFenceBodyEdit(view: EditorView, host: HTMLElement, source: str
     }
   });
 
-  body.replaceChildren(textarea);
-  resizeCodeFenceTextarea(textarea);
+  // 只替换 <pre>，保留左侧行号槽 —— 编辑态布局与渲染态一致，不丢行号、不左移
+  if (pre) pre.replaceWith(textarea);
+  else body.replaceChildren(textarea);
+  sync();
   textarea.focus({ preventScroll: true });
 }
 

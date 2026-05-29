@@ -226,14 +226,13 @@
 }
 .cm-md-code-editor {
   flex: 1 1 auto;
-  width: 100%;
+  min-width: 0;
   min-height: 24px;
   resize: none;
   box-sizing: border-box;
   border: 0;
   outline: none;
   background: color-mix(in srgb, var(--accent) 5%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text);
   padding: 14px 18px;
   font-family: var(--font-mono);

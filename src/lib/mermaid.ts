@@ -43,8 +43,11 @@ export async function renderMermaidBlock(block: HTMLElement) {
   const id = `mmd-${counter++}`;
   try {
     const { svg } = await mermaid.render(id, source);
+    // mermaid 默认主题把节点标签放在 <foreignObject> 里的 HTML <div class="nodeLabel">，
+    // 只开 svg profile 会被 DOMPurify 当非 SVG 内容剥掉 → 只剩空框没文字。
+    // 同时开 html profile 保留标签（SVG 来自本地 mermaid 且已 securityLevel:strict）。
     block.innerHTML = DOMPurify.sanitize(svg, {
-      USE_PROFILES: { svg: true, svgFilters: true },
+      USE_PROFILES: { svg: true, svgFilters: true, html: true },
     });
     block.dataset.rendered = "1";
   } catch (err) {

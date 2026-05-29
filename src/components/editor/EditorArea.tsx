@@ -31,7 +31,6 @@ import {
   type TableSelectionRect,
 } from "./table-edit";
 import { EditorSelection } from "@codemirror/state";
-import { TableToolbar } from "../popovers/TableToolbar";
 import { TableContextMenu } from "../popovers/TableContextMenu";
 import { ContextMenu, type CtxItem } from "../popovers/ContextMenu";
 import { buildEditorContextItems } from "@/lib/editor-context-menu";
@@ -150,15 +149,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   }>({ outline: [], words: 0, readingMinutes: 1 });
   const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
   const [slash, setSlash] = useState<{ x: number; y: number } | null>(null);
-  const [tableTb, setTableTb] = useState<{
-    x: number;
-    y: number;
-    align: "left" | "center" | "right" | null;
-    row: number;
-    col: number;
-    rows: number;
-    cols: number;
-  } | null>(null);
   const [tableMenu, setTableMenu] = useState<{
     x: number;
     y: number;
@@ -623,8 +613,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         setEditorMenu(null);
         setBubble(info.coords);
       }
-      // 表格 toolbar 不再由源码 cursor 触发；改由 Preview 中的 table hover 触发，
-      // 见 handleTableHover —— 这样 toolbar 只会浮在渲染后的 table 上方，不污染 md 编辑区
+      // 表格编辑改走右键菜单（TableContextMenu），不再有 hover 浮动工具栏
     },
     [allowBubble, bubbleTrigger],
   );
@@ -693,67 +682,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     [setToast],
   );
 
-  // toolbar 自身 hover 时延迟消失：Preview 上 mouseleave + toolbar 上 mouseleave 都
-  // 会调度一个 200ms 后清空的 timer；mouseenter 任一边都取消它
-  const tbDismissTimerRef = useRef<number | null>(null);
-  const cancelTbDismiss = useCallback(() => {
-    if (tbDismissTimerRef.current != null) {
-      window.clearTimeout(tbDismissTimerRef.current);
-      tbDismissTimerRef.current = null;
-    }
-  }, []);
-  const scheduleTbDismiss = useCallback(() => {
-    cancelTbDismiss();
-    tbDismissTimerRef.current = window.setTimeout(() => {
-      tbDismissTimerRef.current = null;
-      setTableTb(null);
-    }, 220);
-  }, [cancelTbDismiss]);
-  useEffect(() => () => cancelTbDismiss(), [cancelTbDismiss]);
-
-  const handleTableHover = useCallback(
-    (info: { index: number; rect: DOMRect } | null) => {
-      if (!info) {
-        scheduleTbDismiss();
-        return;
-      }
-      cancelTbDismiss();
-      const view = getEditor();
-      const src = view?.state.doc.toString() ?? tab?.content ?? "";
-      const tables = findAllTablesInText(src);
-      const target = tables[info.index];
-      if (!target || !view) {
-        setTableTb(null);
-        return;
-      }
-      // 把 cursor 移到该表格首个数据行的首个单元格（跳过 header + 分隔行）
-      // 这样 detectTable 能拿到 align/row/col，工具栏的所有 action 也作用在正确位置
-      const dataLine = view.state.doc.line(
-        Math.min(target.dataRowLine, view.state.doc.lines),
-      );
-      const firstCellPos = Math.min(dataLine.from + 2, dataLine.to);
-      view.dispatch({
-        selection: EditorSelection.cursor(firstCellPos),
-        // 不滚动到位 —— Preview 已经在那张表上了，源码侧滚动会打断分栏同步
-        scrollIntoView: false,
-      });
-      const tinfo = detectTable(view);
-      if (!tinfo) {
-        setTableTb(null);
-        return;
-      }
-      setTableTb({
-        x: info.rect.left,
-        y: Math.max(8, info.rect.top - 42),
-        align: tinfo.aligns[tinfo.cursorCol] ?? null,
-        row: Math.max(0, tinfo.cursorRow),
-        col: tinfo.cursorCol,
-        rows: tinfo.cells.length,
-        cols: tinfo.aligns.length,
-      });
-    },
-    [cancelTbDismiss, scheduleTbDismiss, tab?.content],
-  );
 
   // Preview 中右键 cell：把源码 cursor 移到对应 cell，再弹出已有的 TableContextMenu
   const handleTableCellContext = useCallback(
@@ -786,7 +714,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       // 拿一下当前 table info 用于 menu 标题
       setBubble(null);
       setSlash(null);
-      setTableTb(null);
       setTableMenu({
         x: info.x,
         y: info.y,
@@ -977,7 +904,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             lineJumpTarget?.path === tab.path ? lineJumpTarget.target : null
           }
           onSourceChange={handleContentChange}
-          onTableHover={handleTableHover}
           onTableCellContext={handleTableCellContext}
           onTableQuickAdd={handleTableQuickAdd}
           onPreviewContextMenu={handlePreviewContextMenu}
@@ -997,19 +923,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             onAskAi();
           }}
           onClose={() => setBubble(null)}
-        />
-      )}
-      {tableTb && (
-        <TableToolbar
-          x={tableTb.x}
-          y={tableTb.y}
-          align={tableTb.align}
-          row={tableTb.row}
-          col={tableTb.col}
-          rows={tableTb.rows}
-          cols={tableTb.cols}
-          onMouseEnter={cancelTbDismiss}
-          onMouseLeave={scheduleTbDismiss}
         />
       )}
       {tableMenu && (

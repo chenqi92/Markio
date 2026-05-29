@@ -358,8 +358,8 @@
 .sb-tab {
   flex: 1;
   display: inline-flex; align-items: center; justify-content: center;
-  gap: 6px;
-  padding: 7px 6px;
+  gap: 5px;
+  padding: 7px 4px;
   font-size: 13px;
   color: var(--text-3);
   background: transparent;
@@ -368,6 +368,12 @@
   cursor: pointer;
   transition: all 120ms;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sb-tab > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sb-tab:hover:not(:disabled) { color: var(--text-2); }
 .sb-tab.active {

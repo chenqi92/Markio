@@ -320,6 +320,38 @@
 .preview td:first-child { color: var(--text); }
 .preview tbody tr:hover { background: var(--bg-hover); }
 
+/* YAML frontmatter → 只读属性表（区别于正文表格：紧凑、左列为键） */
+.preview table.md-frontmatter {
+  width: auto;
+  max-width: 100%;
+  margin: 4px 0 24px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-pane);
+  font-size: 13px;
+}
+.preview table.md-frontmatter th,
+.preview table.md-frontmatter td {
+  padding: 6px 14px;
+  border-bottom: 0.5px solid var(--border);
+  vertical-align: top;
+}
+.preview table.md-frontmatter tr:last-child th,
+.preview table.md-frontmatter tr:last-child td { border-bottom: 0; }
+.preview table.md-frontmatter th {
+  background: var(--bg-pane-2);
+  color: var(--text-3);
+  font-weight: 600;
+  white-space: nowrap;
+  width: 1%;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.preview table.md-frontmatter td { color: var(--text-2); }
+.preview table.md-frontmatter tbody tr:hover { background: transparent; }
+
 /* preview 中表格的 "+ 行 / + 列" 浮动按钮：默认隐藏，hover 整张表才显形 */
 .preview .md-table-host {
   position: relative;

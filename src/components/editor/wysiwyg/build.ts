@@ -17,6 +17,7 @@ import { Decoration, type DecorationSet } from "@codemirror/view";
 import { detectMathRanges } from "@/lib/math-ranges";
 
 import { CodeFenceWidget } from "./codeFence";
+import { FrontmatterWidget } from "./frontmatter";
 import {
   CalloutLabelWidget,
   HrWidget,
@@ -252,6 +253,27 @@ export function build(state: EditorState): BuildResult {
     }
   };
 
+  // ─── YAML frontmatter ───
+  // 默认整块替换成只读属性卡片；光标进入区间时显形原始 YAML 以便编辑。
+  // 无论哪种状态都跳过区间内的 lezer 节点（见 enter 开头的 guard），避免
+  // `- 脚本` 被当成无序列表、`title:` 等被当成裸段落。
+  if (fmEnd > 0) {
+    const source = docText.slice(0, fmEnd);
+    if (trackCursor(0, fmEnd, false)) {
+      markLines(0, fmEnd, "cm-md-line cm-md-frontmatter-line");
+    } else {
+      decos.push({
+        from: 0,
+        to: fmEnd,
+        deco: Decoration.replace({
+          widget: new FrontmatterWidget(source),
+          block: true,
+        }),
+      });
+      atomic.push({ from: 0, to: fmEnd, deco: Decoration.mark({}) });
+    }
+  }
+
   // 块级 decoration 必须从 StateField 提供 → 没有 view.visibleRanges，
   // 直接遍历整个 doc。lezer 解析是增量的，全树 iterate 对几千行也只是几 ms。
   const tree = syntaxTree(state);
@@ -264,6 +286,10 @@ export function build(state: EditorState): BuildResult {
       to: visibleTo,
       enter: (node) => {
       const n = node.name;
+
+      // frontmatter 区间整体由上面的 widget / line-mark 接管，跳过区间内所有
+      // lezer 节点（含被误判成 Hr / ListItem / ListMark 的 `---` 与 `- x`）。
+      if (fmEnd > 0 && node.from < fmEnd) return false;
 
       // ─── 标题 ATX ───
       if (/^ATXHeading[1-6]$/.test(n)) {

@@ -31,7 +31,11 @@ import { renderDiagramsLazy } from "@/lib/diagrams";
 import { enhanceMarkdownImages } from "@/lib/markdown-images";
 import { renderMathLazy } from "@/lib/math";
 import { renderMermaidLazy } from "@/lib/mermaid";
-import { blockExternalImages } from "@/lib/remoteImageGuard";
+import {
+  blockExternalImages,
+  unblockAllRemoteImages,
+  LOAD_ALL_REMOTE_IMAGES_EVENT,
+} from "@/lib/remoteImageGuard";
 import type { VisualBlockHandle } from "@/lib/visualScheduler";
 import { enhanceWikiLinksLazy, type WikiEnhanceHandle } from "@/lib/wikilinks";
 import type { OutlineItem } from "@/types";
@@ -415,6 +419,12 @@ export function Preview({
       unblockImages = blockExternalImages(root);
     }
 
+    // 工具栏「一键加载外链图片」：放行当前预览里所有被拦截的外链图，省去逐张点击。
+    const onLoadAllRemote = () => {
+      unblockAllRemoteImages(root);
+    };
+    document.addEventListener(LOAD_ALL_REMOTE_IMAGES_EVENT, onLoadAllRemote);
+
     // 影响布局的（callouts 改 ::before、span 包裹）必须立刻——否则用户首屏看到的样式会跳
     // 视口内同步增强（零闪烁）；视口外用 IO 等滚动时再增强。
     perfMeasure("preview:enhanceCallouts", () => {
@@ -509,6 +519,7 @@ export function Preview({
       diagramHandle?.disconnect();
       resizeObserver?.disconnect();
       unblockImages?.();
+      document.removeEventListener(LOAD_ALL_REMOTE_IMAGES_EVENT, onLoadAllRemote);
       if (rebuildPending) window.clearTimeout(rebuildPending);
     };
   }, [html, theme, applyScrollTarget, vaultFiles, syncScroll, loadRemoteImages]);

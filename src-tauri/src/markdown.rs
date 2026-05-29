@@ -321,7 +321,80 @@ fn parser_options() -> Options {
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     opts.insert(Options::ENABLE_MATH);
     opts.insert(Options::ENABLE_GFM);
+    // 把文档开头 `---\n...\n---` 识别成 YAML metadata block（而非 HR + 段落），
+    // 渲染时单独拦截成属性表，避免 frontmatter 被拼成一段跑题正文。
+    opts.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
     opts
+}
+
+/// 把 YAML frontmatter 文本渲染成只读属性表。手写解析，只覆盖三种常见结构：
+///   * `key: value`
+///   * `key:` 后跟缩进 `- item` 列表
+///   * 折叠/字面标量（`>-` `|` 等）的缩进续行
+/// 不追求完整 YAML 语义（刻意不引入 yaml 依赖）。无可解析行时返回空串。
+fn render_frontmatter(yaml: &str) -> String {
+    let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+    let mut rows: Vec<(String, Vec<String>)> = Vec::new();
+    for raw in yaml.lines() {
+        let line = raw.trim_end();
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        let trimmed = line.trim_start();
+        // 列表项：归到最近的 key
+        if let Some(item) = trimmed.strip_prefix("- ") {
+            if let Some(last) = rows.last_mut() {
+                last.1.push(unquote(item));
+                continue;
+            }
+        }
+        // 顶层 `key: value`
+        if !indented {
+            if let Some(idx) = trimmed.find(':') {
+                let key = trimmed[..idx].trim();
+                let is_key = !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if is_key {
+                    let val = trimmed[idx + 1..].trim();
+                    let val = if matches!(val, ">-" | ">" | "|" | "|-" | "|+") {
+                        ""
+                    } else {
+                        val
+                    };
+                    let mut vals = Vec::new();
+                    if !val.is_empty() {
+                        vals.push(unquote(val));
+                    }
+                    rows.push((key.to_string(), vals));
+                    continue;
+                }
+            }
+        }
+        // 缩进续行（折叠标量）：拼到最近 key 的值
+        if let Some(last) = rows.last_mut() {
+            if last.1.is_empty() {
+                last.1.push(trimmed.to_string());
+            } else {
+                last.1[0] = format!("{} {}", last.1[0], trimmed);
+            }
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut html = String::from("<table class=\"md-frontmatter\"><tbody>");
+    for (key, vals) in rows {
+        html.push_str(&format!(
+            "<tr><th>{}</th><td>{}</td></tr>",
+            escape_html(&key),
+            escape_html(&vals.join(", "))
+        ));
+    }
+    html.push_str("</tbody></table>");
+    html
 }
 
 fn level_u8(l: HeadingLevel) -> u8 {
@@ -475,6 +548,11 @@ pub fn render_with_line_offset(
     // are excluded so that two sibling paragraphs flush at their boundary.
     let mut block_depth: i32 = 0;
 
+    // YAML frontmatter（metadata block）单独收集文本，闭合时渲染成属性表。
+    let mut in_meta = false;
+    let mut meta_buf = String::new();
+    let mut meta_line: Option<usize> = None;
+
     let flush = |buf: &mut Vec<Event>, html: &mut String, line: Option<usize>| {
         if buf.is_empty() {
             return;
@@ -598,7 +676,32 @@ pub fn render_with_line_offset(
             }
             continue;
         }
+        if in_meta {
+            match &ev {
+                Event::Text(t) => meta_buf.push_str(t),
+                Event::End(TagEnd::MetadataBlock(_)) => {
+                    in_meta = false;
+                    let table = render_frontmatter(&meta_buf);
+                    if !table.is_empty() {
+                        let mut piece = table;
+                        if let Some(n) = meta_line.take() {
+                            inject_data_line(&mut piece, n);
+                        }
+                        html.push_str(&piece);
+                    }
+                    meta_buf.clear();
+                }
+                _ => {}
+            }
+            continue;
+        }
         match &ev {
+            Event::Start(Tag::MetadataBlock(_)) => {
+                flush(&mut buffer, &mut html, buffer_line.take());
+                in_meta = true;
+                meta_buf.clear();
+                meta_line = Some(line);
+            }
             Event::Start(Tag::Heading { level, .. }) => {
                 flush(&mut buffer, &mut html, buffer_line.take());
                 heading = Some((level_u8(*level), String::new()));

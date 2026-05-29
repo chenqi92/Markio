@@ -95,6 +95,20 @@ export function blockExternalImages(root: HTMLElement): () => void {
   };
 }
 
+/**
+ * 一次性放行 root 内所有被拦截的外链图片（恢复原始 src）。
+ * 返回实际放行的张数，供调用方反馈给用户。
+ */
+export function unblockAllRemoteImages(root: HTMLElement): number {
+  const blocked = root.querySelectorAll<HTMLImageElement>(`img.${BLOCK_CLASS}`);
+  blocked.forEach(unblockOne);
+  return blocked.length;
+}
+
+/** 工具栏「一键加载外链图片」派发的事件名；Preview 监听后对自己的渲染根调用
+ *  unblockAllRemoteImages。用事件而非 ref，避免工具栏与 Preview 直接耦合。 */
+export const LOAD_ALL_REMOTE_IMAGES_EVENT = "markio:load-all-remote-images";
+
 /** 暴露给测试的内部常量。 */
 export const _internal = {
   PLACEHOLDER_SVG,

@@ -7,6 +7,7 @@ import { useDialog } from "@/stores/dialog";
 import { classNames } from "@/lib/utils";
 import { markdownCommands } from "@/lib/markdown-commands";
 import { shortcutText } from "@/lib/shortcuts";
+import { LOAD_ALL_REMOTE_IMAGES_EVENT } from "@/lib/remoteImageGuard";
 import type { ViewMode } from "@/types";
 
 const MODES: Array<{ id: ViewMode; label: string; icon: "code" | "split" | "sparkle" }> = [
@@ -143,6 +144,19 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
         >
           <Icon name="download" size={13} />
         </button>
+        {mode === "split" && (
+          <button
+            className="tb-btn"
+            title="加载全部外链图片"
+            onClick={() => {
+              document.dispatchEvent(new CustomEvent(LOAD_ALL_REMOTE_IMAGES_EVENT));
+              setToast({ stage: "done", message: "已加载外链图片" });
+              setTimeout(() => setToast(null), 1500);
+            }}
+          >
+            <Icon name="image" size={13} />
+          </button>
+        )}
 
         <div className="tb-sep" />
 

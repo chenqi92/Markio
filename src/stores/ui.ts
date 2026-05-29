@@ -98,7 +98,7 @@ export const useUI = create<UIState>()(
       setMode: (mode) => set({ mode }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarWidth: (w) =>
-        set({ sidebarWidth: Math.max(180, Math.min(420, Math.round(w))) }),
+        set({ sidebarWidth: Math.max(208, Math.min(420, Math.round(w))) }),
       setSidebarTab: (sidebarTab) => set({ sidebarTab }),
       toggleOutline: () => set((s) => ({ outlineOpen: !s.outlineOpen })),
       toggleFocus: () => set((s) => ({ focusMode: !s.focusMode })),

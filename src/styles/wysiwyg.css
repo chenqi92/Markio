@@ -661,3 +661,50 @@
 .cm-md-table-widget td:hover:not(:focus-within) {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* ─── YAML frontmatter 属性卡片 ─── */
+.cm-md-frontmatter-widget {
+  margin: 4px 0 18px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-pane);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+.cm-md-frontmatter-widget table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.cm-md-frontmatter-widget th,
+.cm-md-frontmatter-widget td {
+  padding: 6px 14px;
+  border-bottom: 0.5px solid var(--border);
+  vertical-align: top;
+}
+.cm-md-frontmatter-widget tr:last-child th,
+.cm-md-frontmatter-widget tr:last-child td { border-bottom: 0; }
+.cm-md-frontmatter-widget th {
+  background: var(--bg-pane-2);
+  color: var(--text-3);
+  font-weight: 600;
+  white-space: nowrap;
+  width: 1%;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.cm-md-frontmatter-widget td { color: var(--text-2); }
+.cm-md-frontmatter-empty {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+/* 编辑态（光标落入 frontmatter）：原始 YAML 以等宽淡色呈现 */
+.cm-host[data-mode="wysiwyg"] .cm-md-frontmatter-line {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--text-3) 5%, transparent);
+}

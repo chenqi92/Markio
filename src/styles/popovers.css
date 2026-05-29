@@ -160,7 +160,8 @@
   border: 0.5px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-soft);
-  z-index: 60;
+  /* 必须高于工具栏（toolbar 140 / toolbar-row-format 141），否则查找框被工具栏盖住 */
+  z-index: 200;
   animation: cmdkIn 160ms;
 }
 .findbar input {
@@ -740,7 +741,8 @@
   border: 0.5px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-deep);
-  z-index: 90;
+  /* 高于工具栏（140/141），否则历史 / 诊断面板被工具栏盖住 */
+  z-index: 200;
   display: flex; flex-direction: column;
   overflow: hidden;
   animation: cmdkIn 220ms;

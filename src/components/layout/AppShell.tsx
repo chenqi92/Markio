@@ -210,7 +210,7 @@ export function AppShell() {
                   <TabStrip />
                   <Toolbar onCopyAs={() => openMultiCopy(true)} />
                   <Crumb />
-                  <EditorArea onAskAi={() => openAi(true)} />
+                  <EditorArea />
                 </>
               ) : (
                 <Welcome />

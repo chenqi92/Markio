@@ -10,7 +10,6 @@ import {
 } from "react";
 import { SourceEditor } from "./SourceEditor";
 import { Preview } from "../preview/Preview";
-import { BubbleMenu } from "../popovers/BubbleMenu";
 import { SlashMenu } from "../popovers/SlashMenu";
 import { Autocomplete, type AcKind } from "../popovers/Autocomplete";
 import { useTabs } from "@/stores/tabs";
@@ -49,7 +48,6 @@ import type { ScrollTarget } from "@/lib/scrollSync";
 
 interface Props {
   onMeta?: (meta: { outline: OutlineItem[]; words: number; readingMinutes: number }) => void;
-  onAskAi: () => void;
 }
 
 const MODE_CLASS: Record<ViewMode, string> = {
@@ -91,7 +89,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function EditorArea({ onMeta, onAskAi }: Props) {
+export function EditorArea({ onMeta }: Props) {
   // 关键：不要写成 `useTabs((s) => s.activeTab())` —— selector 调用 activeTab()
   // 会让 zustand 每次 store 变都返回新 find() 引用，EditorArea 频繁重渲染，
   // 叠加上层 lazy + Suspense 在某些时序下会出现一帧 fallback 闪烁。
@@ -112,7 +110,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
   const autosave = useSettings((s) => s.autosave);
   const autosaveDelayMs = useSettings((s) => s.autosaveDelayMs);
   const shortcutStyle = useSettings((s) => s.shortcutStyle);
-  const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
   const workspace = useMemo(
     () => (tab ? workspaces.find((w) => w.id === tab.workspaceId) : undefined),
     [tab, workspaces],
@@ -147,7 +144,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     words: number;
     readingMinutes: number;
   }>({ outline: [], words: 0, readingMinutes: 1 });
-  const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
   const [slash, setSlash] = useState<{ x: number; y: number } | null>(null);
   const [tableMenu, setTableMenu] = useState<{
     x: number;
@@ -562,8 +558,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
     debouncedSave(tabId);
   }, [tabId, dirty, autosave, debouncedSave, tab?.content]);
 
-  const allowBubble =
-    shortcutStyle === "all" || shortcutStyle === "bubble";
   const allowSlash = shortcutStyle === "all" || shortcutStyle === "slash";
 
   const handleContentChange = useCallback(
@@ -582,7 +576,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       cols: number;
       rect: TableSelectionRect | null;
     }) => {
-      setBubble(null);
       setSlash(null);
       setEditorMenu(null);
       setTableMenu({
@@ -597,25 +590,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       });
     },
     [],
-  );
-
-  const handleSelectionChange = useCallback(
-    (info: {
-      hasSelection: boolean;
-      coords: { x: number; y: number } | null;
-    }) => {
-      // 选区→气泡：仅当用户允许气泡且触发方式是 "selection" 时才弹
-      if (!allowBubble || bubbleTrigger !== "selection") {
-        setBubble(null);
-      } else if (!info.hasSelection || !info.coords) {
-        setBubble(null);
-      } else {
-        setEditorMenu(null);
-        setBubble(info.coords);
-      }
-      // 表格编辑改走右键菜单（TableContextMenu），不再有 hover 浮动工具栏
-    },
-    [allowBubble, bubbleTrigger],
   );
 
   // 编辑器右键（非表格区域）。表格 cell 的右键已经在 SourceEditor 内部优先匹配走 TableContextMenu。
@@ -633,13 +607,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       setTableMenu(null);
       const view = getEditor();
       if (!view) return;
-      const hasSelection = !view.state.selection.main.empty;
-      if (bubbleTrigger === "rightClick" && allowBubble && hasSelection) {
-        setEditorMenu(null);
-        setBubble(info.coords);
-        return;
-      }
-      setBubble(null);
       const items = buildEditorContextItems({
         view,
         pos: info.pos,
@@ -656,13 +623,12 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
       });
       setEditorMenu({ x: info.coords.x, y: info.coords.y, items });
     },
-    [allowBubble, bubbleTrigger, setToast],
+    [setToast],
   );
 
   // 预览侧右键。Preview 内部已经 preventDefault，这里只决定弹什么条目。
   const handlePreviewContextMenu = useCallback(
     (info: { coords: { x: number; y: number }; info: PreviewClickInfo }) => {
-      setBubble(null);
       setSlash(null);
       setTableMenu(null);
       const items = buildPreviewContextItems({
@@ -712,7 +678,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           .split("|").length ?? 1;
       const rowCount = Math.max(1, tableLines.length - 1);
       // 拿一下当前 table info 用于 menu 标题
-      setBubble(null);
       setSlash(null);
       setTableMenu({
         x: info.x,
@@ -869,7 +834,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
             onPasteImages={handlePasteImages}
             onTableContextMenu={handleTableContextMenu}
             onEditorContextMenu={handleEditorContextMenu}
-            onSelectionChange={handleSelectionChange}
             onSlashTrigger={
               allowSlash ? handleSlashTrigger : undefined
             }
@@ -914,17 +878,6 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
         words={meta.words}
         readingMinutes={meta.readingMinutes}
       />
-      {bubble && (
-        <BubbleMenu
-          x={bubble.x}
-          y={bubble.y}
-          onAskAi={() => {
-            setBubble(null);
-            onAskAi();
-          }}
-          onClose={() => setBubble(null)}
-        />
-      )}
       {tableMenu && (
         <TableContextMenu
           x={tableMenu.x}
@@ -966,7 +919,7 @@ export function EditorArea({ onMeta, onAskAi }: Props) {
           onClose={() => setAc(null)}
         />
       )}
-      {mathCtx && !bubble && !slash && !ac && (
+      {mathCtx && !slash && !ac && (
         <MathPreview
           formula={mathCtx.formula}
           display={mathCtx.display}

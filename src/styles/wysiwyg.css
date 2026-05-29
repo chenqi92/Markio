@@ -847,3 +847,63 @@
   color: #fff;
 }
 .cm-md-edit-popover-btn:hover { filter: brightness(1.05); }
+
+/* ─── WYSIWYG 代码块语法高亮（highlight.js class token 着色）─── */
+/* 之前没有任何 .hljs-* 颜色规则，hljs 标记了 token 但没 CSS 上色 → 代码无高亮。
+   下面给 wysiwyg 代码 widget 补一套主题自适应的 token 配色（浅色默认 + 深色覆盖）。 */
+.cm-md-code-pre {
+  --hl-comment: #8a919e;
+  --hl-keyword: #a626a4;
+  --hl-string: #50a14f;
+  --hl-number: #b76b01;
+  --hl-title: #4078f2;
+  --hl-type: #c18401;
+  --hl-attr: #e45649;
+}
+:root[data-theme="dark"] .cm-md-code-pre,
+:root[data-theme="nord"] .cm-md-code-pre,
+:root[data-theme="hc"] .cm-md-code-pre,
+:root[data-theme="dracula"] .cm-md-code-pre {
+  --hl-comment: #7b8496;
+  --hl-keyword: #c678dd;
+  --hl-string: #98c379;
+  --hl-number: #d19a66;
+  --hl-title: #61afef;
+  --hl-type: #e5c07b;
+  --hl-attr: #e06c75;
+}
+.cm-md-code-pre .hljs-comment,
+.cm-md-code-pre .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.cm-md-code-pre .hljs-keyword,
+.cm-md-code-pre .hljs-selector-tag,
+.cm-md-code-pre .hljs-literal,
+.cm-md-code-pre .hljs-section,
+.cm-md-code-pre .hljs-doctag { color: var(--hl-keyword); }
+.cm-md-code-pre .hljs-string,
+.cm-md-code-pre .hljs-regexp,
+.cm-md-code-pre .hljs-addition,
+.cm-md-code-pre .hljs-meta-string { color: var(--hl-string); }
+.cm-md-code-pre .hljs-number,
+.cm-md-code-pre .hljs-symbol,
+.cm-md-code-pre .hljs-bullet,
+.cm-md-code-pre .hljs-link { color: var(--hl-number); }
+.cm-md-code-pre .hljs-title,
+.cm-md-code-pre .hljs-name,
+.cm-md-code-pre .hljs-selector-id,
+.cm-md-code-pre .hljs-selector-class { color: var(--hl-title); }
+.cm-md-code-pre .hljs-type,
+.cm-md-code-pre .hljs-built_in,
+.cm-md-code-pre .hljs-class .hljs-title,
+.cm-md-code-pre .hljs-params { color: var(--hl-type); }
+.cm-md-code-pre .hljs-attr,
+.cm-md-code-pre .hljs-attribute,
+.cm-md-code-pre .hljs-variable,
+.cm-md-code-pre .hljs-template-variable,
+.cm-md-code-pre .hljs-tag,
+.cm-md-code-pre .hljs-deletion { color: var(--hl-attr); }
+.cm-md-code-pre .hljs-meta { color: var(--hl-comment); }
+.cm-md-code-pre .hljs-emphasis { font-style: italic; }
+.cm-md-code-pre .hljs-strong { font-weight: 700; }

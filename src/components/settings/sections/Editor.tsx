@@ -20,19 +20,9 @@ export function Editor() {
   const snapshotOnSave = useSettings((s) => s.snapshotOnSave);
   const shortcutStyleItems = useMemo(
     () =>
-      (["all", "bubble", "slash", "toolbar"] as const).map((id) => ({
+      (["all", "slash", "toolbar"] as const).map((id) => ({
         id,
         label: t(`settings.editor.shortcutStyle.${id}`),
-      })),
-    [t],
-  );
-  const bubbleTrigger = useSettings((s) => s.bubbleTrigger);
-  const bubbleAllowed = shortcutStyle === "all" || shortcutStyle === "bubble";
-  const bubbleTriggerItems = useMemo(
-    () =>
-      (["selection", "rightClick"] as const).map((id) => ({
-        id,
-        label: t(`settings.editor.bubbleTrigger.${id}`),
       })),
     [t],
   );
@@ -82,35 +72,6 @@ export function Editor() {
               (shortcutStyle === m.id ? " active" : "")
             }
             onClick={() => setShortcutStyle(m.id)}
-          >
-            <div className="settings-row-l">
-              <div className="settings-label">{m.label}</div>
-            </div>
-            <div className="settings-choice-dot" />
-          </button>
-        ))}
-      </div>
-      <div className="settings-card" aria-disabled={!bubbleAllowed}>
-        <div className="settings-card-h">
-          {t("settings.editor.bubbleTriggerCard")}
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-help">
-              {t("settings.editor.bubbleTriggerHelp")}
-            </div>
-          </div>
-        </div>
-        {bubbleTriggerItems.map((m) => (
-          <button
-            type="button"
-            key={m.id}
-            disabled={!bubbleAllowed}
-            className={
-              "settings-row settings-choice-row" +
-              (bubbleTrigger === m.id ? " active" : "")
-            }
-            onClick={() => setPreference("bubbleTrigger", m.id)}
           >
             <div className="settings-row-l">
               <div className="settings-label">{m.label}</div>

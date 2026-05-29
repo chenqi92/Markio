@@ -37,6 +37,7 @@ export function AI() {
   const temperature = useSettings((s) => s.aiTemperature);
   const maxTokens = useSettings((s) => s.aiMaxTokens);
   const providerConfigs = useSettings((s) => s.aiProviderConfigs);
+  const aiSources = useSettings((s) => s.aiSources);
   const setAi = useSettings((s) => s.setAi);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -69,6 +70,25 @@ export function AI() {
     setTestResult(null);
   };
 
+  // ── AI 源池：同时配置多个源，对话 / embedding / rerank 各自从这里选 ──
+  const addSource = (id: AIProviderId) => {
+    if (!aiSources.some((s) => s.provider === id)) {
+      setAi({
+        aiSources: [
+          ...aiSources,
+          { provider: id, label: getProvider(id)?.name ?? id },
+        ],
+      });
+    }
+    switchProvider(id);
+  };
+  const removeSource = (id: AIProviderId) => {
+    const next = aiSources.filter((s) => s.provider !== id);
+    if (next.length === 0) return;
+    setAi({ aiSources: next });
+    if (id === provider) switchProvider(next[0]!.provider);
+  };
+
   // 切换 provider 时刷新"是否已配"
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +111,18 @@ export function AI() {
     setSavingKey(true);
     try {
       await api.secretSet(`ai:${provider}`, keyDraft);
-      setAi({ aiKeyConfigured: true });
+      const inPool = aiSources.some((s) => s.provider === provider);
+      setAi({
+        aiKeyConfigured: true,
+        ...(inPool
+          ? {}
+          : {
+              aiSources: [
+                ...aiSources,
+                { provider, label: getProvider(provider)?.name ?? provider },
+              ],
+            }),
+      });
       setKeyDraft("");
       setTestResult("✓ 已存入系统钥匙串");
     } catch (e) {
@@ -175,25 +206,52 @@ export function AI() {
       </div>
 
       <div className="settings-card">
-        <div className="settings-card-h">API 提供方</div>
-        <div className="settings-row">
-          <div className="settings-row-l">
-            <div className="settings-label">当前提供方</div>
-            <div className="settings-help">
-              切换后会自动恢复该提供方上次的 endpoint / 模型（API Key 始终独立保存）
+        <div className="settings-card-h">AI 源</div>
+        <div className="settings-help" style={{ padding: "0 0 8px" }}>
+          可同时配置多个源（每个源的 API Key 独立保存）。点选一个源在下方编辑其
+          Key / 端点 / 模型；对话、知识库 embedding、rerank 都从这些源里选。
+        </div>
+        <div className="ai-source-pool">
+          {aiSources.map((src) => (
+            <div
+              key={src.provider}
+              className={
+                "ai-source-chip" + (src.provider === provider ? " active" : "")
+              }
+              onClick={() => switchProvider(src.provider)}
+              role="button"
+              tabIndex={0}
+            >
+              <span className="ai-source-name">
+                {getProvider(src.provider)?.name ?? src.label}
+              </span>
+              {aiSources.length > 1 && (
+                <button
+                  type="button"
+                  className="ai-source-del"
+                  title="从源池移除"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeSource(src.provider);
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
-          </div>
+          ))}
           <SelectBtn
-            value={provider}
-            options={AI_PROVIDERS.map((p) => {
-              const saved = providerConfigs[p.id]?.model || providerConfigs[p.id]?.endpoint;
-              return {
-                value: p.id,
-                label: `${p.name} · ${p.sub}${saved && provider !== p.id ? " · 已记住" : ""}`,
-              };
-            })}
-            onChange={(v) => switchProvider(v)}
-            minMenuWidth={320}
+            value=""
+            options={[
+              { value: "", label: "+ 添加源…" },
+              ...AI_PROVIDERS.filter(
+                (p) => !aiSources.some((s) => s.provider === p.id),
+              ).map((p) => ({ value: p.id, label: `${p.name} · ${p.sub}` })),
+            ]}
+            onChange={(v) => {
+              if (v) addSource(v as AIProviderId);
+            }}
+            minMenuWidth={300}
           />
         </div>
       </div>

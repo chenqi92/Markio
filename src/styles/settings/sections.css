@@ -431,3 +431,44 @@
   margin-top: 10px;
 }
 
+
+/* AI 源池：可同时配置多个源的 chips + 添加菜单 */
+.ai-source-pool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+.ai-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 11px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-pane-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+.ai-source-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.ai-source-chip.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+.ai-source-chip .ai-source-del {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1;
+}
+.ai-source-chip .ai-source-del:hover { background: var(--bg-hover); color: var(--text); }

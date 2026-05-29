@@ -335,6 +335,7 @@ interface SettingsState {
       aiUseCurrentFile: boolean;
       aiUseWorkspace: boolean;
       aiProviderConfigs: SettingsState["aiProviderConfigs"];
+      aiSources: SettingsState["aiSources"];
     }>,
   ) => void;
 }

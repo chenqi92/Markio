@@ -27,6 +27,10 @@ async function getMermaid(themeId: string): Promise<MermaidModule> {
       securityLevel: "strict",
       theme: dark ? "dark" : "default",
       fontFamily: "var(--font-sans), system-ui, sans-serif",
+      // 用原生 SVG <text> 渲染标签，而不是 <foreignObject> 里的 HTML——
+      // 后者在 DOMPurify 清洗（svg profile）时会被剥成空框没文字。
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
     });
     initializedTheme = themeId;
   }

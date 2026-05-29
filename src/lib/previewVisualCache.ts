@@ -35,6 +35,8 @@ function cacheKey(spec: PreviewVisualSpec, node: Element, themeId: string): stri
     : node.textContent;
   if (!source) return null;
   const parts = [
+    // 渲染管线版本：升一位让旧缓存（如 mermaid 空框 SVG）失效，无需用户清缓存
+    "v2",
     spec.kind,
     spec.themeSensitive ? themeId : "",
     source,

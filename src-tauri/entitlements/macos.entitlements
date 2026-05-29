@@ -17,8 +17,6 @@
     <true/>
     <key>com.apple.security.network.client</key>
     <true/>
-    <key>com.apple.security.print</key>
-    <false/>
     <!--
         Apple Notes 导入 / 系统分享需要 osascript 与 Notes / Mail / Messages 通信。
         temporary-exception 在 MAS 审核时需要附上用途说明（README）。

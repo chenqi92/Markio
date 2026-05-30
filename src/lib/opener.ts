@@ -54,8 +54,12 @@ export async function openExternal(url: string): Promise<void> {
       await o.openUrl(url);
       fallbackWindow?.close();
       return;
-    } catch {
-      // fallback
+    } catch (err) {
+      // 常见原因：capabilities 缺 opener 的 URL scope（opener:allow-default-urls
+      // / opener:default），open_url 被 scope 校验拒绝。打出来便于定位，再走 fallback。
+      if (typeof console !== "undefined") {
+        console.error("[opener] openUrl failed:", url, err);
+      }
     }
   }
   if (fallbackWindow) {

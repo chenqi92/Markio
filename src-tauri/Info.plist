@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Tauri 会把本文件 merge 进生成的 Info.plist。
+        ITSAppUsesNonExemptEncryption=false：应用只用标准 HTTPS / 系统加密，
+        属于出口管制豁免，避免每次提交都被问出口合规问题。
+    -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+</dict>
+</plist>

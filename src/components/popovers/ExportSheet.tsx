@@ -138,7 +138,7 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
               <div className="ex-hint">
                 导出 PDF 会调起系统打印对话框；DOCX / EPUB 需要本地装好 <code>pandoc</code>。
               </div>
-              {IS_MAC && (
+              {IS_MAC && !__MARKIO_MAS__ && (
                 <>
                   <div className="ex-section-h" style={{ marginTop: 12 }}>
                     分享到系统应用

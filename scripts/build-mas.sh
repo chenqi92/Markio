@@ -30,7 +30,8 @@ BUNDLE_ID="com.welape.mdview"
 : "${APPLE_INSTALLER_IDENTITY:?需要设置 APPLE_INSTALLER_IDENTITY（Mac Installer Distribution 证书）}"
 : "${APPLE_TEAM_ID:?需要设置 APPLE_TEAM_ID}"
 
-BASE_ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.entitlements"
+# MAS 专用 entitlements：不含 apple-events（temporary-exception 在 MAS 无法授权）。
+BASE_ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.mas.entitlements"
 INHERIT_ENTITLEMENTS="$ROOT_DIR/src-tauri/entitlements/macos.inherit.entitlements"
 DIST_DIR="$ROOT_DIR/dist-mas"
 MAS_ENTITLEMENTS="$DIST_DIR/macos.mas.entitlements"
@@ -60,6 +61,8 @@ fi
 echo "==> 1. 构建前端 + 通用二进制（aarch64 + x86_64）"
 cd "$ROOT_DIR"
 pnpm install --frozen-lockfile
+# 让前端编译期裁掉沙盒下无法合规的 macOS 系统集成功能（Apple Notes 导入 / 系统分享）
+export VITE_MARKIO_MAS=1
 pnpm tauri build --target universal-apple-darwin --bundles app \
   --config '{"bundle":{"createUpdaterArtifacts":false}}'
 

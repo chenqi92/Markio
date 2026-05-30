@@ -10,6 +10,9 @@ export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
   define: {
     __MARKIO_AI_REGION__: JSON.stringify(process.env.VITE_MARKIO_AI_REGION ?? ""),
+    // Mac App Store 构建：编译期裁掉沙盒下无法合规的 macOS 系统集成功能
+    // （Apple Notes 导入、osascript 系统分享），由 scripts/build-mas.sh 置 1。
+    __MARKIO_MAS__: JSON.stringify(process.env.VITE_MARKIO_MAS === "1"),
   },
   resolve: {
     alias: {

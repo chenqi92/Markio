@@ -330,7 +330,9 @@ export function ImportExport() {
             );
           })}
         </div>
-        {typeof navigator !== "undefined" && navigator.platform.startsWith("Mac") && (
+        {!__MARKIO_MAS__ &&
+          typeof navigator !== "undefined" &&
+          navigator.platform.startsWith("Mac") && (
           <div style={{ padding: "0 16px 12px" }}>
             <button
               type="button"

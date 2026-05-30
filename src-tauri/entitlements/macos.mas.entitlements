@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Mac App Store 专用 entitlements。
+        与 macos.entitlements 的区别：移除整组 apple-events（automation +
+        temporary-exception）。原因：
+          1. com.apple.security.temporary-exception.* 在 Mac App Store 的
+             Capabilities 里无法勾选，MAS provisioning profile 永远授权不了，
+             带它签名会被 App Store 以 "entitlement not permitted" 拒绝。
+          2. 沙盒下用 osascript 控制 Notes / Mail / Reminders 受 TCC 限制，
+             审核员也测不通。
+        所以 MAS 版编译期（VITE_MARKIO_MAS=1）裁掉 Apple Notes 导入与系统分享，
+        对应 entitlement 一并去掉，只保留打开文件夹与网络访问所需的权限。
+    -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

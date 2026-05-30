@@ -2591,6 +2591,7 @@ dependencies = [
  "ammonia",
  "axum",
  "base64 0.22.1",
+ "cc",
  "chrono",
  "encoding_rs",
  "encoding_rs_io",

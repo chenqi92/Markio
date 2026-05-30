@@ -12,9 +12,7 @@ import {
   type AIProviderId,
 } from "@/lib/ai-providers";
 import {
-  getAIRegionPolicy,
   isProviderAllowedInCurrentRegion,
-  MAINLAND_AI_COMPLIANCE_NOTICE,
 } from "@/lib/ai-region-policy";
 import { AIModelPicker } from "../AIModelPicker";
 import { RagGraphMini } from "../RagGraphMini";
@@ -53,7 +51,6 @@ export function AI() {
   const confirmDialog = useDialog((s) => s.confirm);
 
   const def = getProvider(provider);
-  const aiRegionPolicy = getAIRegionPolicy();
   const providerAllowed = isProviderAllowedInCurrentRegion(provider);
 
   // endpoint / model 改动时落到当前 provider 的槽位，下次切回来还在。
@@ -189,12 +186,6 @@ export function AI() {
   return (
     <>
       <SectionHeader id="ai" />
-
-      {aiRegionPolicy.region === "cn" && (
-        <div className="settings-banner warn">
-          {MAINLAND_AI_COMPLIANCE_NOTICE}
-        </div>
-      )}
 
       <div className="settings-card">
         <CardTitle tip="这些开关会决定发送给 AI 的上下文范围。">

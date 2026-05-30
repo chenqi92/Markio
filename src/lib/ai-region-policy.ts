@@ -2,6 +2,7 @@ import type { AIProviderId } from "./ai-providers";
 
 export type AIRegionMode = "auto" | "cn" | "global";
 export type AIRegion = "cn" | "global";
+export type AIRegionSource = "build" | "storefront" | "runtime";
 
 export const MAINLAND_AI_PROVIDER_IDS = [
   "deepseek",
@@ -9,6 +10,7 @@ export const MAINLAND_AI_PROVIDER_IDS = [
   "zhipu",
   "dashscope",
   "moonshot",
+  "xiaomi",
   "ollama",
 ] as const satisfies readonly AIProviderId[];
 
@@ -19,7 +21,7 @@ const MAINLAND_AI_PROVIDER_SET: ReadonlySet<AIProviderId> = new Set(
 export const MAINLAND_DEFAULT_AI_PROVIDER_ID: AIProviderId = "ollama";
 
 export const MAINLAND_AI_COMPLIANCE_NOTICE =
-  "当前按中国大陆合规策略运行：境外未备案模型服务入口已隐藏，仅保留本地模型与国内模型源。";
+  "当前版本仅支持本地模型与可用模型源，请在设置中选择可用模型源。";
 
 const MAINLAND_TIME_ZONES = new Set([
   "Asia/Shanghai",
@@ -27,6 +29,20 @@ const MAINLAND_TIME_ZONES = new Set([
   "Asia/Harbin",
   "Asia/Urumqi",
 ]);
+
+const MAINLAND_STOREFRONT_CODES = new Set([
+  "CN",
+  "CHN",
+  "156",
+  "CHINA",
+  "MAINLAND",
+]);
+
+let runtimeAIRegionOverride: {
+  region: AIRegion;
+  source: AIRegionSource;
+  countryCode?: string | null;
+} | null = null;
 
 export function parseAIRegionMode(value: string | undefined): AIRegionMode {
   const normalized = (value ?? "").trim().toLowerCase();
@@ -43,6 +59,32 @@ export function getConfiguredAIRegionMode(): AIRegionMode {
   return parseAIRegionMode(__MARKIO_AI_REGION__);
 }
 
+export function storefrontCountryCodeToAIRegion(
+  countryCode: string | null | undefined,
+): AIRegion | null {
+  const normalized = (countryCode ?? "").trim().toUpperCase();
+  if (!normalized) return null;
+  return MAINLAND_STOREFRONT_CODES.has(normalized) ? "cn" : "global";
+}
+
+export function setRuntimeAIRegionOverride(
+  region: AIRegion | null,
+  source: AIRegionSource = "runtime",
+  countryCode?: string | null,
+): void {
+  runtimeAIRegionOverride = region ? { region, source, countryCode } : null;
+}
+
+export function setRuntimeAIRegionFromStorefront(
+  countryCode: string | null | undefined,
+): AIRegion | null {
+  const region = storefrontCountryCodeToAIRegion(countryCode);
+  if (region) {
+    setRuntimeAIRegionOverride(region, "storefront", countryCode ?? null);
+  }
+  return region;
+}
+
 function localeHasMainlandRegion(locale: string): boolean {
   try {
     return new Intl.Locale(locale).region?.toUpperCase() === "CN";
@@ -53,6 +95,8 @@ function localeHasMainlandRegion(locale: string): boolean {
 }
 
 export function detectRuntimeAIRegion(): AIRegion {
+  if (runtimeAIRegionOverride) return runtimeAIRegionOverride.region;
+
   if (typeof navigator !== "undefined") {
     const languages =
       navigator.languages && navigator.languages.length > 0
@@ -86,12 +130,26 @@ export function getAIRegionPolicy(): {
   mode: AIRegionMode;
   region: AIRegion;
   forced: boolean;
+  source: AIRegionSource;
+  countryCode?: string | null;
 } {
   const mode = getConfiguredAIRegionMode();
+  const runtimeRegion = detectRuntimeAIRegion();
+  const forced = mode !== "auto";
+  if (!forced && runtimeAIRegionOverride) {
+    return {
+      mode,
+      region: runtimeRegion,
+      forced,
+      source: runtimeAIRegionOverride.source,
+      countryCode: runtimeAIRegionOverride.countryCode,
+    };
+  }
   return {
     mode,
-    region: resolveAIRegion(mode, detectRuntimeAIRegion()),
-    forced: mode !== "auto",
+    region: resolveAIRegion(mode, runtimeRegion),
+    forced,
+    source: forced ? "build" : "runtime",
   };
 }
 

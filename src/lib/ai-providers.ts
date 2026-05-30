@@ -25,6 +25,7 @@ export type AIProviderId =
   | "zhipu"
   | "dashscope"
   | "moonshot"
+  | "xiaomi"
   | "mistral"
   | "together"
   | "custom";
@@ -124,6 +125,20 @@ const MAINLAND_AI_PROVIDERS: AIProviderDef[] = [
       { id: "moonshot-v1-32k", name: "Moonshot v1 32K", tag: "默认" },
       { id: "moonshot-v1-128k", name: "Moonshot v1 128K", tag: "长文档" },
       { id: "moonshot-v1-8k", name: "Moonshot v1 8K", tag: "便宜" },
+    ],
+  },
+  {
+    id: "xiaomi",
+    name: "小米 MiMo",
+    sub: "MiMo-V2.5 · 国内",
+    defaultEndpoint: "https://api.xiaomimimo.com/v1",
+    defaultModel: "mimo-v2.5-pro",
+    keyPlaceholder: "MIMO_API_KEY",
+    keyOptional: false,
+    models: [
+      { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", tag: "默认 · 推理" },
+      { id: "mimo-v2.5", name: "MiMo V2.5", tag: "多模态" },
+      { id: "mimo-v2-flash", name: "MiMo V2 Flash", tag: "快速" },
     ],
   },
   {
@@ -318,6 +333,20 @@ const ALL_AI_PROVIDERS: AIProviderDef[] =
     ],
   },
   {
+    id: "xiaomi",
+    name: "小米 MiMo",
+    sub: "MiMo-V2.5",
+    defaultEndpoint: "https://api.xiaomimimo.com/v1",
+    defaultModel: "mimo-v2.5-pro",
+    keyPlaceholder: "MIMO_API_KEY",
+    keyOptional: false,
+    models: [
+      { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", tag: "默认 · 推理" },
+      { id: "mimo-v2.5", name: "MiMo V2.5", tag: "多模态" },
+      { id: "mimo-v2-flash", name: "MiMo V2 Flash", tag: "快速" },
+    ],
+  },
+  {
     id: "mistral",
     name: "Mistral",
     sub: "Mistral Large / Codestral",
@@ -371,8 +400,20 @@ const ALL_AI_PROVIDERS: AIProviderDef[] =
   },
 ];
 
-export const AI_PROVIDERS: AIProviderDef[] =
-  filterProvidersForCurrentRegion(ALL_AI_PROVIDERS);
+function computeAIProviders(): AIProviderDef[] {
+  return filterProvidersForCurrentRegion(ALL_AI_PROVIDERS);
+}
+
+export let AI_PROVIDERS: AIProviderDef[] = computeAIProviders();
+
+export function refreshAIProvidersForCurrentRegion(): void {
+  AI_PROVIDERS = computeAIProviders();
+}
+
+export function getAIProviders(): AIProviderDef[] {
+  refreshAIProvidersForCurrentRegion();
+  return AI_PROVIDERS;
+}
 
 const ALL_PROVIDER_INDEX: Record<string, AIProviderDef> = ALL_AI_PROVIDERS.reduce(
   (acc, p) => {
@@ -382,31 +423,33 @@ const ALL_PROVIDER_INDEX: Record<string, AIProviderDef> = ALL_AI_PROVIDERS.reduc
   {} as Record<string, AIProviderDef>,
 );
 
-const PROVIDER_INDEX: Record<string, AIProviderDef> = AI_PROVIDERS.reduce(
-  (acc, p) => {
-    acc[p.id] = p;
-    return acc;
-  },
-  {} as Record<string, AIProviderDef>,
-);
+function providerIndex(): Record<string, AIProviderDef> {
+  return getAIProviders().reduce(
+    (acc, p) => {
+      acc[p.id] = p;
+      return acc;
+    },
+    {} as Record<string, AIProviderDef>,
+  );
+}
 
 function isKnownProviderId(id: string): id is AIProviderId {
   return id in ALL_PROVIDER_INDEX;
 }
 
 export function getProvider(id: string): AIProviderDef | undefined {
-  return PROVIDER_INDEX[id];
+  return providerIndex()[id];
 }
 
 export function getProviderModels(id: string): AIProviderModel[] {
-  return PROVIDER_INDEX[id]?.models ?? [];
+  return providerIndex()[id]?.models ?? [];
 }
 
 export function getProviderDefaults(id: string): {
   endpoint: string;
   model: string;
 } {
-  const p = PROVIDER_INDEX[id];
+  const p = providerIndex()[id];
   return {
     endpoint: p?.defaultEndpoint ?? "",
     model: p?.defaultModel ?? "",
@@ -415,7 +458,7 @@ export function getProviderDefaults(id: string): {
 
 export function getDefaultAIProviderId(): AIProviderId {
   if (isMainlandAIRegion()) return MAINLAND_DEFAULT_AI_PROVIDER_ID;
-  return AI_PROVIDERS[0]?.id ?? MAINLAND_DEFAULT_AI_PROVIDER_ID;
+  return getAIProviders()[0]?.id ?? MAINLAND_DEFAULT_AI_PROVIDER_ID;
 }
 
 export function getDefaultAIProviderDefaults(): {

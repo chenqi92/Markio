@@ -121,12 +121,14 @@ const ALL_SMART_CHANNEL_MODEL_OPTIONS = [
   "aiDefault" | "deepCurrent" | "fastCurrent" | "localOllama"
 >[];
 
-export const SMART_CHANNEL_MODEL_OPTIONS = ALL_SMART_CHANNEL_MODEL_OPTIONS.filter(
-  (option) =>
-    !isMainlandAIRegion() ||
-    option.value === "aiDefault" ||
-    option.value === "localOllama",
-);
+export function getSmartChannelModelOptions() {
+  return ALL_SMART_CHANNEL_MODEL_OPTIONS.filter(
+    (option) =>
+      !isMainlandAIRegion() ||
+      option.value === "aiDefault" ||
+      option.value === "localOllama",
+  );
+}
 
 export const SMART_CHANNEL_SCOPE_OPTIONS = [
   { value: "currentFile", label: "仅当前文档" },

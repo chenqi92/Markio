@@ -3,6 +3,7 @@ import {
   isProviderAllowedInRegion,
   parseAIRegionMode,
   resolveAIRegion,
+  storefrontCountryCodeToAIRegion,
 } from "./ai-region-policy";
 
 describe("ai-region-policy", () => {
@@ -24,8 +25,17 @@ describe("ai-region-policy", () => {
   it("blocks overseas AI providers in mainland region", () => {
     expect(isProviderAllowedInRegion("openai", "cn")).toBe(false);
     expect(isProviderAllowedInRegion("anthropic", "cn")).toBe(false);
+    expect(isProviderAllowedInRegion("openrouter", "cn")).toBe(false);
     expect(isProviderAllowedInRegion("deepseek", "cn")).toBe(true);
+    expect(isProviderAllowedInRegion("xiaomi", "cn")).toBe(true);
     expect(isProviderAllowedInRegion("ollama", "cn")).toBe(true);
     expect(isProviderAllowedInRegion("openai", "global")).toBe(true);
+  });
+
+  it("maps App Store storefront codes to runtime regions", () => {
+    expect(storefrontCountryCodeToAIRegion("CHN")).toBe("cn");
+    expect(storefrontCountryCodeToAIRegion("CN")).toBe("cn");
+    expect(storefrontCountryCodeToAIRegion("USA")).toBe("global");
+    expect(storefrontCountryCodeToAIRegion(null)).toBeNull();
   });
 });

@@ -114,6 +114,7 @@ pub struct ChatRequest {
     // anthropic / google 走专有协议；其余都走 OpenAI 兼容（chat completions）。
     // 已支持：anthropic | openai | google | deepseek | ollama | nvidia | xai |
     //         groq | openrouter | siliconflow | zhipu | dashscope | moonshot |
+    //         xiaomi |
     //         mistral | together | custom
     pub provider: String,
     pub api_key: Option<String>,
@@ -154,7 +155,7 @@ pub async fn chat(req: ChatRequest) -> Result<ChatResponse, String> {
 //
 // 当前实现：OpenAI 兼容协议（覆盖 openai / deepseek / groq / moonshot / xai /
 // nvidia / openrouter / together / mistral / siliconflow / zhipu / dashscope /
-// ollama / custom = 14 个 provider）。Anthropic 与 Google 的 tool 协议字段
+// xiaomi / ollama / custom = 15 个 provider）。Anthropic 与 Google 的 tool 协议字段
 // 不一样，后续单独实现，先报明确错误避免静默 fallback。
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,8 +319,8 @@ async fn call_openai_compat_with_tools(req: AgentRequest) -> Result<AgentTurnRes
     let mut payload = serde_json::json!({
         "model": req.model,
         "messages": messages,
-        "max_tokens": req.max_tokens.unwrap_or(4096),
     });
+    set_openai_compat_max_tokens(&mut payload, &req.provider, req.max_tokens);
     if !tools_json.is_empty() {
         payload["tools"] = serde_json::json!(tools_json);
         // auto: 让模型自己决定是否调工具
@@ -1052,8 +1053,8 @@ async fn call_openai_compat(req: ChatRequest) -> Result<ChatResponse, String> {
     let mut payload = serde_json::json!({
         "model": req.model,
         "messages": messages,
-        "max_tokens": req.max_tokens.unwrap_or(4096),
     });
+    set_openai_compat_max_tokens(&mut payload, &req.provider, req.max_tokens);
     if let Some(t) = req.temperature {
         payload["temperature"] = serde_json::json!(t);
     }
@@ -1126,12 +1127,26 @@ fn default_openai_compat_endpoint(provider: &str) -> String {
         "zhipu" => "https://open.bigmodel.cn/api/paas/v4",
         "dashscope" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "moonshot" => "https://api.moonshot.cn/v1",
+        "xiaomi" => "https://api.xiaomimimo.com/v1",
         "mistral" => "https://api.mistral.ai/v1",
         "together" => "https://api.together.xyz/v1",
         // custom 或未知 provider 不强行回填，让前端的报错信息更直白
         _ => "https://api.openai.com/v1",
     }
     .to_string()
+}
+
+fn set_openai_compat_max_tokens(
+    payload: &mut serde_json::Value,
+    provider: &str,
+    max_tokens: Option<u32>,
+) {
+    let field = if provider == "xiaomi" {
+        "max_completion_tokens"
+    } else {
+        "max_tokens"
+    };
+    payload[field] = serde_json::json!(max_tokens.unwrap_or(4096));
 }
 
 // ─── 模型列表拉取 ────────────────────────────────────────────────
@@ -1610,10 +1625,10 @@ async fn stream_openai_compat(
     let mut payload = serde_json::json!({
         "model": req.model,
         "messages": messages,
-        "max_tokens": req.max_tokens.unwrap_or(4096),
         "stream": true,
         "stream_options": { "include_usage": true },
     });
+    set_openai_compat_max_tokens(&mut payload, &req.provider, req.max_tokens);
     if let Some(t) = req.temperature {
         payload["temperature"] = serde_json::json!(t);
     }

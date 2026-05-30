@@ -22,7 +22,14 @@ import { installDigestScheduler } from "./lib/digestScheduler";
 import { setLocale as setI18nLocale } from "./i18n";
 import { applyFonts } from "./lib/fonts";
 import { devLog, installDevLogger } from "./lib/devLogger";
-import { sanitizeAIStateForCurrentRegion } from "./lib/ai-providers";
+import {
+  refreshAIProvidersForCurrentRegion,
+  sanitizeAIStateForCurrentRegion,
+} from "./lib/ai-providers";
+import {
+  getConfiguredAIRegionMode,
+  setRuntimeAIRegionFromStorefront,
+} from "./lib/ai-region-policy";
 import "./i18n";
 
 function shouldInstallDevLogger(): boolean {
@@ -31,6 +38,31 @@ function shouldInstallDevLogger(): boolean {
   const queryEnabled = new URLSearchParams(window.location.search).get("devlog") === "1";
   const storageEnabled = localStorage.getItem("markio.devLog") === "1";
   return envEnabled || queryEnabled || storageEnabled;
+}
+
+async function configureAIRegion() {
+  if (getConfiguredAIRegionMode() !== "auto") {
+    refreshAIProvidersForCurrentRegion();
+    return;
+  }
+
+  if (isDesktop()) {
+    try {
+      const countryCode = await api.appStorefrontCountryCode();
+      const region = setRuntimeAIRegionFromStorefront(countryCode);
+      if (region) {
+        devLog("info", "ai.region.storefront", { countryCode, region });
+      } else {
+        devLog("info", "ai.region.storefront.unavailable", { countryCode });
+      }
+    } catch (e) {
+      devLog("warn", "ai.region.storefront.failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  refreshAIProvidersForCurrentRegion();
 }
 
 async function bootstrap() {
@@ -61,6 +93,7 @@ async function bootstrap() {
   // 再同步水合每个 zustand persist store，最后才 render，避免主题闪烁。
   await trace("preloadTauriStorage", () => preloadTauriStorage());
   await trace("migrateLegacySettingSecrets", () => migrateLegacySettingSecrets());
+  await trace("configureAIRegion", () => configureAIRegion());
   await trace("rehydrateAll", () =>
     Promise.all([
       useSettings.persist.rehydrate(),

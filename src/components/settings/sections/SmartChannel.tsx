@@ -12,9 +12,9 @@ import {
   SectionHeader,
   SMART_CHANNEL_CHUNKS_OPTIONS,
   SMART_CHANNEL_LIMIT_OPTIONS,
-  SMART_CHANNEL_MODEL_OPTIONS,
   SMART_CHANNEL_SCOPE_OPTIONS,
   SMART_CHANNEL_STYLE_OPTIONS,
+  getSmartChannelModelOptions,
 } from "../_shared";
 
 export function SmartChannelSettings() {
@@ -30,6 +30,7 @@ export function SmartChannelSettings() {
   const setToast = useUI((s) => s.setToast);
   const ws = useWorkspaceStore((s) => s.activeWorkspace());
   const confirmDialog = useDialog((s) => s.confirm);
+  const modelOptions = getSmartChannelModelOptions();
 
   const [usage, setUsage] = useState<{ used: number; limit: number }>({
     used: 0,
@@ -155,7 +156,7 @@ export function SmartChannelSettings() {
           </div>
           <SelectBtn
             value={modelSource}
-            options={SMART_CHANNEL_MODEL_OPTIONS}
+            options={modelOptions}
             onChange={(v) => setPreference("smartChannelModelSource", v)}
           />
         </div>

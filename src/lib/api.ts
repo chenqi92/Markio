@@ -308,6 +308,8 @@ export const api = {
   },
 
   outline: (source: string) => invoke<OutlineItem[]>("md_outline", { source }),
+  appStorefrontCountryCode: () =>
+    invoke<string | null>("app_storefront_country_code"),
 
   // workspace 注册
   workspaceRegister: (path: string) =>

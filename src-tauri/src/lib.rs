@@ -18,6 +18,7 @@ mod rss;
 mod s3_ops;
 mod secrets;
 mod state;
+mod storefront;
 mod watcher;
 mod webdav_ops;
 mod window_state;
@@ -333,6 +334,11 @@ fn md_render(
 #[tauri::command]
 fn md_outline(source: String) -> Vec<OutlineItem> {
     markdown::outline_only(&source)
+}
+
+#[tauri::command]
+fn app_storefront_country_code() -> Option<String> {
+    storefront::country_code()
 }
 
 /// 流式渲染：按一级标题切片，每片单独渲染 HTML 并通过事件发出。
@@ -2303,6 +2309,7 @@ pub fn run() {
             md_render_stream,
             md_cancel_stream,
             md_outline,
+            app_storefront_country_code,
             workspace_register,
             workspace_unregister,
             watcher_health,

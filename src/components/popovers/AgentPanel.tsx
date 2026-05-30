@@ -6,7 +6,6 @@ import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
 import {
   isExternalAgentAllowedInCurrentRegion,
-  MAINLAND_AI_COMPLIANCE_NOTICE,
 } from "@/lib/ai-region-policy";
 import type {
   AgentEvent,
@@ -59,6 +58,10 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
       if (first) setProvider(first.id);
     });
   }, [agentAllowed]);
+
+  useEffect(() => {
+    if (!agentAllowed) onClose();
+  }, [agentAllowed, onClose]);
 
   useEffect(() => {
     if (blockRef.current) {
@@ -117,11 +120,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const run = async () => {
     if (!prompt.trim() || running) return;
     if (!agentAllowed) {
-      setToast({
-        stage: "error",
-        message: MAINLAND_AI_COMPLIANCE_NOTICE,
-      });
-      setTimeout(() => setToast(null), 2500);
+      onClose();
       return;
     }
     if (!activeProvider?.available) {
@@ -200,6 +199,8 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
     await api.agentCancel(running).catch(() => {});
   };
 
+  if (!agentAllowed) return null;
+
   return (
     <div className="workspace-overlay" onClick={(e) => e.stopPropagation()}>
       <div
@@ -241,31 +242,25 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             fontSize: 12,
           }}
         >
-          {agentAllowed ? (
-            <div style={{ display: "flex", gap: 4 }}>
-              {providers.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={"settings-btn" + (provider === p.id ? " active" : "")}
-                  onClick={() => setProvider(p.id)}
-                  disabled={!p.available || !!running}
-                  title={p.available ? p.binaryPath ?? "" : "未在 PATH 中检测到二进制"}
-                  style={{
-                    padding: "3px 10px",
-                    fontSize: 11,
-                    opacity: p.available ? 1 : 0.4,
-                  }}
-                >
-                  {providerDisplayName(p.id)}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="settings-banner warn" style={{ margin: 0 }}>
-              {MAINLAND_AI_COMPLIANCE_NOTICE}
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 4 }}>
+            {providers.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={"settings-btn" + (provider === p.id ? " active" : "")}
+                onClick={() => setProvider(p.id)}
+                disabled={!p.available || !!running}
+                title={p.available ? p.binaryPath ?? "" : "未在 PATH 中检测到二进制"}
+                style={{
+                  padding: "3px 10px",
+                  fontSize: 11,
+                  opacity: p.available ? 1 : 0.4,
+                }}
+              >
+                {providerDisplayName(p.id)}
+              </button>
+            ))}
+          </div>
 
           <div style={{ display: "flex", gap: 4 }}>
             {(["safe", "poweruser"] as const).map((m) => (

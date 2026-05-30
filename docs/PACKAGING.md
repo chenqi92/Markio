@@ -66,6 +66,14 @@ PROVISIONING_PROFILE="$HOME/Downloads/markio_mas.provisionprofile" \
 上传：
 - 打开 Xcode → Window → Organizer → Mac Apps，把 `.pkg` 拖进来 → Distribute App
 - 或者直接打开 **Transporter.app**（Mac App Store 上免费下载），把 `.pkg` 拖进去
+- 或者配置 App Store Connect API Key 后执行：
+
+```bash
+APP_STORE_CONNECT_API_KEY="ABC123DEFG" \
+APP_STORE_CONNECT_API_ISSUER="00000000-0000-0000-0000-000000000000" \
+APP_STORE_CONNECT_API_KEY_PATH="$HOME/.private_keys/AuthKey_ABC123DEFG.p8" \
+./scripts/upload-mas.sh
+```
 
 ## 四、直发渠道（DMG + 公证）
 

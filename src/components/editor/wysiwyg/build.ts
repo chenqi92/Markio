@@ -217,10 +217,19 @@ export function build(state: EditorState): BuildResult {
     atomic.push({ from, to, deco: Decoration.mark({}) });
   };
 
-  /** 给一个范围加 mark 装饰（行内文字样式） */
-  const mark = (from: number, to: number, cls: string) => {
+  /** 给一个范围加 mark 装饰（行内文字样式），可选挂 DOM 属性（如 data-href） */
+  const mark = (
+    from: number,
+    to: number,
+    cls: string,
+    attributes?: Record<string, string>,
+  ) => {
     if (from >= to) return;
-    decos.push({ from, to, deco: Decoration.mark({ class: cls }) });
+    decos.push({
+      from,
+      to,
+      deco: Decoration.mark(attributes ? { class: cls, attributes } : { class: cls }),
+    });
   };
 
   let visibleFrom = 0;
@@ -459,8 +468,20 @@ export function build(state: EditorState): BuildResult {
         return;
       }
       if (n === "URL") {
-        // 链接 URL 部分隐藏，留 label 显形
-        hide(node.from, node.to);
+        const parentName = node.node.parent?.name;
+        if (
+          parentName === "Link" ||
+          parentName === "Image" ||
+          parentName === "LinkReference"
+        ) {
+          // [label](url) / ![alt](url) 的目标，或引用定义里的 url —— 隐藏
+          hide(node.from, node.to);
+        } else if (parentName !== "Autolink") {
+          // 裸 URL（GFM autolink）：URL 本身就是可见正文，保持显形且可点
+          const raw = state.doc.sliceString(node.from, node.to);
+          mark(node.from, node.to, "cm-md-link", { "data-href": raw });
+        }
+        // parent === Autolink 时已在 Autolink 分支整体标过，跳过
         return;
       }
 
@@ -482,7 +503,32 @@ export function build(state: EditorState): BuildResult {
         return;
       }
       if (n === "Link") {
-        mark(node.from, node.to, "cm-md-link");
+        // 把目标 URL 挂到 span 上，点击时 mousedown handler 直接读 data-href
+        // 路由（外链 / 库内文件 / 锚点），无需再回解析语法树。
+        const urlNode = node.node.getChild("URL");
+        const href = urlNode
+          ? state.doc.sliceString(urlNode.from, urlNode.to)
+          : "";
+        mark(
+          node.from,
+          node.to,
+          "cm-md-link",
+          href ? { "data-href": href } : undefined,
+        );
+        return;
+      }
+      if (n === "Autolink") {
+        // <https://…> / <a@b.com>：尖括号交给 LinkMark 隐藏，URL 文本保持显形可点
+        const urlNode = node.node.getChild("URL");
+        if (urlNode) {
+          const raw = state.doc.sliceString(urlNode.from, urlNode.to);
+          // 邮箱 autolink 没有 scheme，补 mailto: 才能交给系统邮件
+          const href =
+            !/^[a-z][a-z0-9+.-]*:/i.test(raw) && raw.includes("@")
+              ? `mailto:${raw}`
+              : raw;
+          mark(urlNode.from, urlNode.to, "cm-md-link", { "data-href": href });
+        }
         return;
       }
       if (n === "Image") {

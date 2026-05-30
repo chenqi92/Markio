@@ -60,6 +60,83 @@ export function joinPath(...parts: string[]): string {
     .join("/");
 }
 
+/**
+ * 把 markdown 链接里的相对路径解析成绝对磁盘路径。
+ * - 去掉 #anchor 和 ?query
+ * - decodeURIComponent（空格 %20、中文等被编码的字符）
+ * - 折叠 `./` 与 `../`
+ *
+ * `baseFilePath` 是当前笔记的绝对路径（解析基准取其所在目录）。
+ * 返回 null 表示无法解析（空路径 / 纯锚点）。
+ */
+export function resolveRelativePath(
+  baseFilePath: string,
+  href: string,
+): string | null {
+  if (!baseFilePath || !href) return null;
+  let rel = href.split("#")[0]!.split("?")[0]!;
+  if (!rel) return null;
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    // 非法 % 转义序列：按原样处理
+  }
+  rel = rel.replace(/\\/g, "/");
+
+  const driveRe = /^[a-zA-Z]:\//;
+  let prefix = "";
+  let segments: string[];
+  if (rel.startsWith("/")) {
+    prefix = "/";
+    segments = rel.split("/");
+  } else if (driveRe.test(rel)) {
+    prefix = rel.slice(0, 3);
+    segments = rel.slice(3).split("/");
+  } else {
+    const baseDir = dirname(baseFilePath).replace(/\\/g, "/");
+    if (baseDir.startsWith("/")) prefix = "/";
+    else if (driveRe.test(baseDir)) prefix = baseDir.slice(0, 3);
+    const baseSegs = baseDir
+      .replace(driveRe, "")
+      .replace(/^\//, "")
+      .split("/")
+      .filter(Boolean);
+    segments = [...baseSegs, ...rel.split("/")];
+  }
+
+  const stack: string[] = [];
+  for (const seg of segments) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      stack.pop();
+      continue;
+    }
+    stack.push(seg);
+  }
+  return prefix + stack.join("/");
+}
+
+/**
+ * 生成标题锚点 slug，与 Rust 端 markdown::slugify 行为对齐：
+ * 字母数字（含 CJK）转小写保留，空白 / - / _ 折叠成单个 -，去掉首尾 -。
+ * 注意不处理同名标题的 `-2` 去重后缀（少见，调用方按需兜底）。
+ */
+export function slugifyHeading(text: string): string {
+  let out = "";
+  let lastDash = false;
+  for (const ch of text) {
+    if (/[\p{L}\p{N}]/u.test(ch)) {
+      out += ch.toLowerCase();
+      lastDash = false;
+    } else if (/[\s\-_]/.test(ch) && !lastDash && out.length > 0) {
+      out += "-";
+      lastDash = true;
+    }
+  }
+  while (out.endsWith("-")) out = out.slice(0, -1);
+  return out || "section";
+}
+
 export function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): T {
   let t: ReturnType<typeof setTimeout> | null = null;
   return ((...args: Parameters<T>) => {

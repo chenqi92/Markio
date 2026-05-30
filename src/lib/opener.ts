@@ -4,8 +4,9 @@
 // 用法：
 //   await openExternal("https://example.com");
 //
-// 仅放行 http(s)。其他协议（javascript:、file:、自定义 scheme 等）拒绝，
-// 防止 markdown / AI 输出里的恶意链接绕过浏览器同源限制或本地协议处理器。
+// 放行 http(s) 与 mailto / tel（交给系统邮件 / 电话处理器）。其他协议
+//（javascript:、file:、自定义 scheme 等）拒绝，防止 markdown / AI 输出里的
+// 恶意链接绕过浏览器同源限制或本地协议处理器。
 
 let cachedOpener: typeof import("@tauri-apps/plugin-opener") | null = null;
 let triedOpener = false;
@@ -25,7 +26,12 @@ export function isSafeExternalUrl(url: string): boolean {
   if (!url) return false;
   try {
     const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    return (
+      u.protocol === "https:" ||
+      u.protocol === "http:" ||
+      u.protocol === "mailto:" ||
+      u.protocol === "tel:"
+    );
   } catch {
     return false;
   }

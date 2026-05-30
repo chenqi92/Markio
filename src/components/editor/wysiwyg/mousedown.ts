@@ -13,10 +13,29 @@
 
 import { EditorView } from "@codemirror/view";
 
+import { classifyHref, navigateMarkdownLink } from "@/lib/linkNav";
+import { slugifyHeading } from "@/lib/utils";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 
 import { eventElementTarget } from "./util";
+
+/** 在文档里找到 slug 匹配的标题行起点，找不到返回 null。 */
+function headingPosForSlug(view: EditorView, slug: string): number | null {
+  const doc = view.state.doc;
+  const seen = new Map<string, number>();
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i);
+    const m = line.text.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (!m) continue;
+    let s = slugifyHeading(m[2]!);
+    const cnt = seen.get(s) ?? 0;
+    seen.set(s, cnt + 1);
+    if (cnt > 0) s = `${s}-${cnt + 1}`; // 与 Rust 端同名标题去重后缀对齐
+    if (s === slug) return line.from;
+  }
+  return null;
+}
 
 export const wysiwygMousedown = EditorView.domEventHandlers({
   mousedown(e, view) {
@@ -57,6 +76,44 @@ export const wysiwygMousedown = EditorView.domEventHandlers({
           .getState()
           .setToast({ stage: "error", message: `未找到笔记：${wikiHost.textContent}` });
         window.setTimeout(() => useUI.getState().setToast(null), 1800);
+      }
+      return;
+    }
+    // 点击普通行内链接 / autolink / 裸 URL（span.cm-md-link，带 data-href）：
+    //   - 普通点击 → 外链开浏览器 / 库内文件开标签页 / 锚点滚到对应标题
+    //   - Alt/Option 点击 OR 无 data-href → 把光标移进去编辑
+    const linkHost = target.closest<HTMLElement>(".cm-md-link");
+    if (linkHost) {
+      const href = linkHost.dataset.href;
+      if (href && !e.altKey) {
+        e.preventDefault();
+        if (classifyHref(href) === "anchor") {
+          let slug = href.slice(1);
+          try {
+            slug = decodeURIComponent(slug);
+          } catch {
+            // 保持原值
+          }
+          slug = slugifyHeading(slug);
+          const pos = headingPosForSlug(view, slug);
+          if (pos != null) {
+            view.dispatch({
+              selection: { anchor: pos },
+              effects: EditorView.scrollIntoView(pos, { y: "start" }),
+            });
+            view.focus();
+          }
+          return;
+        }
+        const base = useTabs.getState().activeTab()?.path;
+        void navigateMarkdownLink(href, base);
+        return;
+      }
+      const pos = view.posAtDOM(linkHost);
+      if (pos != null) {
+        view.dispatch({ selection: { anchor: pos } });
+        view.focus();
+        e.preventDefault();
       }
       return;
     }

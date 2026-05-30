@@ -317,6 +317,10 @@
   text-decoration: underline;
   text-decoration-color: var(--accent-glow);
   text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cm-host[data-mode="wysiwyg"] .cm-md-link:hover {
+  text-decoration-thickness: 2px;
 }
 .cm-host[data-mode="wysiwyg"] .cm-md-image {
   color: var(--accent-2);

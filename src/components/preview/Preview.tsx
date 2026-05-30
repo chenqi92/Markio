@@ -46,7 +46,7 @@ import { useVaultIndex } from "@/stores/vaultIndex";
 import { useWorkspace } from "@/stores/workspace";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { findTextRanges } from "@/lib/findText";
-import { openExternal } from "@/lib/opener";
+import { navigateMarkdownLink } from "@/lib/linkNav";
 import {
   hydrateMarkdownTaskCheckboxes,
   toggleMarkdownTaskLine,
@@ -127,6 +127,7 @@ export function Preview({
   const contentRef = useRef<HTMLDivElement>(null);
   const [html, setHtml] = useState("");
   const sourceRef = useRef(source);
+  const basePathRef = useRef(basePath);
   const onSourceChangeRef = useRef(onSourceChange);
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);
@@ -150,8 +151,9 @@ export function Preview({
 
   useEffect(() => {
     sourceRef.current = source;
+    basePathRef.current = basePath;
     onSourceChangeRef.current = onSourceChange;
-  }, [source, onSourceChange]);
+  }, [source, basePath, onSourceChange]);
 
   useEffect(() => {
     themeRef.current = theme;
@@ -840,21 +842,31 @@ export function Preview({
         return;
       }
       const href = a.getAttribute("href");
-      if (!href) return;
-      // 内部锚点
+      if (href == null) return;
+      // 关键：预览里的 <a> 一律拦截默认导航。相对路径（../foo.md）若放任默认行为，
+      // WebView 会把整个应用导航走，表现为闪回首页 / 空白。后续按类型分发。
+      e.preventDefault();
+      if (href === "" || href === "#") return;
+      // 内部锚点：滚动到对应标题
       if (href.startsWith("#")) {
-        e.preventDefault();
-        const id = href.slice(1);
-        const target = document.getElementById(id);
+        let id = href.slice(1);
+        try {
+          id = decodeURIComponent(id);
+        } catch {
+          // 保持原值
+        }
+        const target =
+          contentRef.current?.querySelector<HTMLElement>(
+            `[id="${CSS.escape(id)}"]`,
+          ) ??
+          document.getElementById(id) ??
+          null;
         if (target)
           target.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
-      // 外链
-      if (/^https?:\/\//.test(href)) {
-        e.preventDefault();
-        void openExternal(href);
-      }
+      // 外链走系统浏览器，库内文件用标签页打开
+      void navigateMarkdownLink(href, basePathRef.current);
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key !== " " && e.key !== "Enter") return;

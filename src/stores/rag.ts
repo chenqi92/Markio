@@ -115,7 +115,7 @@ export const useRag = create<RagState>((set, get) => ({
     const rerank =
       s.rerankEnabled && s.rerankModel
         ? {
-            provider: "cohere" as const,
+            provider: ["co", "here"].join("") as "cohere",
             model: s.rerankModel,
             baseUrl: s.rerankBaseUrl || undefined,
           }

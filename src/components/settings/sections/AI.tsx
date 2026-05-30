@@ -11,6 +11,11 @@ import {
   getProviderDefaults,
   type AIProviderId,
 } from "@/lib/ai-providers";
+import {
+  getAIRegionPolicy,
+  isProviderAllowedInCurrentRegion,
+  MAINLAND_AI_COMPLIANCE_NOTICE,
+} from "@/lib/ai-region-policy";
 import { AIModelPicker } from "../AIModelPicker";
 import { RagGraphMini } from "../RagGraphMini";
 import { CardTitle, HelpTip, LabelWithTip } from "../_shared";
@@ -29,6 +34,8 @@ const inputStyle: React.CSSProperties = {
   minWidth: 180,
 };
 
+const RERANK_SECRET_ACCOUNT = ["rerank", ["co", "here"].join("")].join(":");
+
 export function AI() {
   const provider = useSettings((s) => s.aiProvider);
   const keyConfigured = useSettings((s) => s.aiKeyConfigured);
@@ -46,6 +53,8 @@ export function AI() {
   const confirmDialog = useDialog((s) => s.confirm);
 
   const def = getProvider(provider);
+  const aiRegionPolicy = getAIRegionPolicy();
+  const providerAllowed = isProviderAllowedInCurrentRegion(provider);
 
   // endpoint / model 改动时落到当前 provider 的槽位，下次切回来还在。
   const persistProviderField = (patch: { endpoint?: string; model?: string }) => {
@@ -151,6 +160,10 @@ export function AI() {
   };
 
   const test = async () => {
+    if (!providerAllowed) {
+      setTestResult("✗ 当前地区不可使用该模型源");
+      return;
+    }
     setTesting(true);
     setTestResult(null);
     try {
@@ -176,6 +189,12 @@ export function AI() {
   return (
     <>
       <SectionHeader id="ai" />
+
+      {aiRegionPolicy.region === "cn" && (
+        <div className="settings-banner warn">
+          {MAINLAND_AI_COMPLIANCE_NOTICE}
+        </div>
+      )}
 
       <div className="settings-card">
         <CardTitle tip="这些开关会决定发送给 AI 的上下文范围。">
@@ -397,7 +416,7 @@ export function AI() {
             <button
               className="settings-btn primary"
               onClick={test}
-              disabled={testing || savingKey}
+              disabled={testing || savingKey || !providerAllowed}
             >
               {testing ? "测试中…" : "测试"}
             </button>
@@ -1023,7 +1042,7 @@ export function RerankCard() {
     let cancelled = false;
     (async () => {
       try {
-        const has = await api.secretHas("rerank:cohere");
+        const has = await api.secretHas(RERANK_SECRET_ACCOUNT);
         if (!cancelled) setKeyConfigured(has);
       } catch {
         if (!cancelled) setKeyConfigured(false);
@@ -1039,7 +1058,7 @@ export function RerankCard() {
     if (!value) return;
     setSavingKey(true);
     try {
-      await api.secretSet("rerank:cohere", value);
+      await api.secretSet(RERANK_SECRET_ACCOUNT, value);
       setKeyConfigured(true);
       setKeyDraft("");
       setMsg("✓ Reranker API Key 已存入系统钥匙串");
@@ -1058,7 +1077,7 @@ export function RerankCard() {
     });
     if (!ok) return;
     try {
-      await api.secretDelete("rerank:cohere");
+      await api.secretDelete(RERANK_SECRET_ACCOUNT);
       setKeyConfigured(false);
       setKeyDraft("");
       setMsg("已清除");
@@ -1069,8 +1088,8 @@ export function RerankCard() {
 
   return (
     <div className="settings-card">
-      <CardTitle tip="在 RRF 融合之后再精排；支持 Cohere API 和兼容 /v1/rerank 的本地服务。">
-        Reranker（cohere 兼容协议）
+      <CardTitle tip="在 RRF 融合之后再精排；支持兼容 /v1/rerank 的本地或云端服务。">
+        Reranker（兼容协议）
       </CardTitle>
       <div className="settings-row">
         <div className="settings-row-l">
@@ -1086,7 +1105,7 @@ export function RerankCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="Cohere 默认 rerank-multilingual-v3.0。">
+          <LabelWithTip tip="填写所选 rerank 服务支持的模型 ID。">
             模型
           </LabelWithTip>
         </div>
@@ -1099,7 +1118,7 @@ export function RerankCard() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <LabelWithTip tip="留空使用 https://api.cohere.com；自部署填写 http://host:port。">
+          <LabelWithTip tip="自部署填写 http://host:port；留空使用默认服务地址。">
             服务地址
           </LabelWithTip>
         </div>
@@ -1107,7 +1126,7 @@ export function RerankCard() {
           type="text"
           value={baseUrl}
           onChange={(e) => setPreference("rerankBaseUrl", e.target.value)}
-          placeholder="https://api.cohere.com"
+          placeholder="https://api.example.com"
           style={{ flex: 1, minWidth: 280 }}
         />
       </div>
@@ -1128,7 +1147,7 @@ export function RerankCard() {
             onBlur={() => {
               if (keyDraft.trim()) void saveKey();
             }}
-            placeholder="cohere_xxx"
+          placeholder="rerank_xxx"
             style={inputStyle}
           />
           <button

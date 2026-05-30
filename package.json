@@ -10,10 +10,12 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
+    "build:cn": "VITE_MARKIO_AI_REGION=cn pnpm build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "tauri:build:cn": "VITE_MARKIO_AI_REGION=cn pnpm tauri:build",
     "lint": "eslint src tests/e2e scripts/*.mjs vite.config.ts eslint.config.js playwright.config.ts",
     "test": "vitest run src",
     "e2e": "playwright test",

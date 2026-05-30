@@ -25,7 +25,7 @@ export function McpServerSettings() {
     };
   }, []);
 
-  const claudeCodeSnippet =
+  const mcpClientSnippet =
     status?.port && status?.token
       ? JSON.stringify(
           {
@@ -50,9 +50,9 @@ export function McpServerSettings() {
       : "";
 
   const copySnippet = async () => {
-    if (!claudeCodeSnippet) return;
-    await writeText(claudeCodeSnippet);
-    setToast({ stage: "done", message: "Claude Code 配置已复制" });
+    if (!mcpClientSnippet) return;
+    await writeText(mcpClientSnippet);
+    setToast({ stage: "done", message: "MCP 客户端配置已复制" });
     setTimeout(() => setToast(null), 1500);
   };
 
@@ -147,27 +147,27 @@ export function McpServerSettings() {
       </div>
 
       <div className="settings-card">
-        <div className="settings-card-h">Claude Code 配置</div>
+        <div className="settings-card-h">MCP 客户端配置</div>
         <div className="settings-help" style={{ padding: "0 0 10px" }}>
           先在 markio 仓库的 <code>mcp-server/</code> 目录里跑 <code>npm install</code>，
-          再把下面 JSON 粘进 Claude Code 的 MCP 配置文件，并把{" "}
+          再把下面 JSON 粘进支持 MCP 的客户端配置文件，并把{" "}
           <code>/absolute/path/to/markio</code> 改成你机器上的实际路径。
         </div>
         <pre className="about-notes" style={{ maxHeight: 280 }}>
-          {claudeCodeSnippet || "(等待 MCP server 就绪…)"}
+          {mcpClientSnippet || "(等待 MCP server 就绪…)"}
         </pre>
         <div className="settings-row settings-row-action">
           <div className="settings-row-l">
             <div className="settings-label">复制 JSON 配置</div>
             <div className="settings-help">
-              粘到 Claude Code 的 <code>~/.config/Claude/claude_desktop_config.json</code>
+              粘到目标 MCP 客户端的配置文件中
             </div>
           </div>
           <button
             type="button"
             className="settings-btn primary"
             onClick={copySnippet}
-            disabled={!claudeCodeSnippet}
+            disabled={!mcpClientSnippet}
           >
             复制配置
           </button>

@@ -3,6 +3,14 @@
 //     call_openai_compat / stream_openai_compat 默认 endpoint match 里同步一行
 //     （Anthropic 与 Google 走专有协议，其余走 OpenAI 兼容协议）。
 
+import {
+  filterProvidersForCurrentRegion,
+  isMainlandAIRegion,
+  isProviderAllowedInCurrentRegion,
+  isSmartChannelModelSourceAllowed,
+  MAINLAND_DEFAULT_AI_PROVIDER_ID,
+} from "./ai-region-policy";
+
 export type AIProviderId =
   | "anthropic"
   | "openai"
@@ -45,7 +53,96 @@ export interface AIProviderDef {
   models: AIProviderModel[];
 }
 
-export const AI_PROVIDERS: AIProviderDef[] = [
+const MAINLAND_AI_PROVIDERS: AIProviderDef[] = [
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    sub: "V3 / R1 · 国内",
+    defaultEndpoint: "https://api.deepseek.com/v1",
+    defaultModel: "deepseek-chat",
+    keyPlaceholder: "sk-…",
+    keyOptional: false,
+    models: [
+      { id: "deepseek-chat", name: "DeepSeek V3", tag: "通用" },
+      { id: "deepseek-reasoner", name: "DeepSeek R1", tag: "推理" },
+    ],
+  },
+  {
+    id: "siliconflow",
+    name: "SiliconFlow 硅基流动",
+    sub: "国内聚合 · 多模型",
+    defaultEndpoint: "https://api.siliconflow.cn/v1",
+    defaultModel: "Qwen/Qwen2.5-72B-Instruct",
+    keyPlaceholder: "sk-…",
+    keyOptional: false,
+    models: [
+      { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B", tag: "默认 · 通用" },
+      { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3", tag: "通用" },
+      { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1", tag: "推理" },
+      { id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", tag: "开源" },
+    ],
+  },
+  {
+    id: "zhipu",
+    name: "智谱 GLM",
+    sub: "GLM-4.6 / 4-Plus",
+    defaultEndpoint: "https://open.bigmodel.cn/api/paas/v4",
+    defaultModel: "glm-4-plus",
+    keyPlaceholder: "智谱 API Key",
+    keyOptional: false,
+    models: [
+      { id: "glm-4-plus", name: "GLM-4 Plus", tag: "默认 · 推理" },
+      { id: "glm-4-air", name: "GLM-4 Air", tag: "便宜" },
+      { id: "glm-4-flash", name: "GLM-4 Flash", tag: "极便宜" },
+      { id: "glm-4-long", name: "GLM-4 Long", tag: "长文档" },
+    ],
+  },
+  {
+    id: "dashscope",
+    name: "通义千问 DashScope",
+    sub: "阿里云 Qwen",
+    defaultEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus",
+    keyPlaceholder: "sk-…",
+    keyOptional: false,
+    models: [
+      { id: "qwen-plus", name: "Qwen Plus", tag: "默认 · 通用" },
+      { id: "qwen-max", name: "Qwen Max", tag: "推理" },
+      { id: "qwen-turbo", name: "Qwen Turbo", tag: "便宜 · 快" },
+      { id: "qwen2.5-72b-instruct", name: "Qwen 2.5 72B", tag: "开源" },
+    ],
+  },
+  {
+    id: "moonshot",
+    name: "Moonshot Kimi",
+    sub: "K1 / 长上下文",
+    defaultEndpoint: "https://api.moonshot.cn/v1",
+    defaultModel: "moonshot-v1-32k",
+    keyPlaceholder: "sk-…",
+    keyOptional: false,
+    models: [
+      { id: "moonshot-v1-32k", name: "Moonshot v1 32K", tag: "默认" },
+      { id: "moonshot-v1-128k", name: "Moonshot v1 128K", tag: "长文档" },
+      { id: "moonshot-v1-8k", name: "Moonshot v1 8K", tag: "便宜" },
+    ],
+  },
+  {
+    id: "ollama",
+    name: "本地 · Ollama",
+    sub: "Qwen / Llama",
+    defaultEndpoint: "http://127.0.0.1:11434/v1",
+    defaultModel: "qwen2.5:14b",
+    keyPlaceholder: "本地服务可留空",
+    keyOptional: true,
+    models: [
+      { id: "qwen2.5:14b", name: "Qwen 2.5 14B", tag: "本地 · 推荐" },
+      { id: "llama3.2:3b", name: "Llama 3.2 3B", tag: "本地 · 轻量" },
+    ],
+  },
+];
+
+const ALL_AI_PROVIDERS: AIProviderDef[] =
+  __MARKIO_AI_REGION__ === "cn" ? MAINLAND_AI_PROVIDERS : [
   {
     id: "anthropic",
     name: "Anthropic",
@@ -274,6 +371,17 @@ export const AI_PROVIDERS: AIProviderDef[] = [
   },
 ];
 
+export const AI_PROVIDERS: AIProviderDef[] =
+  filterProvidersForCurrentRegion(ALL_AI_PROVIDERS);
+
+const ALL_PROVIDER_INDEX: Record<string, AIProviderDef> = ALL_AI_PROVIDERS.reduce(
+  (acc, p) => {
+    acc[p.id] = p;
+    return acc;
+  },
+  {} as Record<string, AIProviderDef>,
+);
+
 const PROVIDER_INDEX: Record<string, AIProviderDef> = AI_PROVIDERS.reduce(
   (acc, p) => {
     acc[p.id] = p;
@@ -281,6 +389,10 @@ const PROVIDER_INDEX: Record<string, AIProviderDef> = AI_PROVIDERS.reduce(
   },
   {} as Record<string, AIProviderDef>,
 );
+
+function isKnownProviderId(id: string): id is AIProviderId {
+  return id in ALL_PROVIDER_INDEX;
+}
 
 export function getProvider(id: string): AIProviderDef | undefined {
   return PROVIDER_INDEX[id];
@@ -299,4 +411,123 @@ export function getProviderDefaults(id: string): {
     endpoint: p?.defaultEndpoint ?? "",
     model: p?.defaultModel ?? "",
   };
+}
+
+export function getDefaultAIProviderId(): AIProviderId {
+  if (isMainlandAIRegion()) return MAINLAND_DEFAULT_AI_PROVIDER_ID;
+  return AI_PROVIDERS[0]?.id ?? MAINLAND_DEFAULT_AI_PROVIDER_ID;
+}
+
+export function getDefaultAIProviderDefaults(): {
+  provider: AIProviderId;
+  endpoint: string;
+  model: string;
+  label: string;
+} {
+  const provider = getDefaultAIProviderId();
+  const def = getProvider(provider) ?? ALL_PROVIDER_INDEX[provider];
+  return {
+    provider,
+    endpoint: def?.defaultEndpoint ?? "",
+    model: def?.defaultModel ?? "",
+    label: def?.name ?? provider,
+  };
+}
+
+export interface AIRegionSanitizableState {
+  aiProvider: AIProviderId;
+  aiEndpoint: string;
+  aiModel: string;
+  aiProviderConfigs: Partial<Record<AIProviderId, { endpoint?: string; model?: string }>>;
+  aiSources: Array<{ provider: AIProviderId; label: string; endpoint?: string }>;
+  smartChannelModelSource?: "aiDefault" | "deepCurrent" | "fastCurrent" | "localOllama";
+  ragEmbedSource?: AIProviderId | "ollama";
+  ragEmbedBaseUrl?: string;
+  ragEmbedModel?: string;
+  ragEmbedDim?: number;
+}
+
+function providerLabel(id: AIProviderId): string {
+  return getProvider(id)?.name ?? ALL_PROVIDER_INDEX[id]?.name ?? id;
+}
+
+function makeSource(id: AIProviderId): AIRegionSanitizableState["aiSources"][number] {
+  return { provider: id, label: providerLabel(id) };
+}
+
+function sourcesEqual(
+  a: AIRegionSanitizableState["aiSources"],
+  b: AIRegionSanitizableState["aiSources"],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (src, index) =>
+        src.provider === b[index]?.provider &&
+        src.label === b[index]?.label &&
+        src.endpoint === b[index]?.endpoint,
+    )
+  );
+}
+
+export function sanitizeAIStateForCurrentRegion(
+  state: AIRegionSanitizableState,
+): Partial<AIRegionSanitizableState> | null {
+  if (!isMainlandAIRegion()) return null;
+
+  const patch: Partial<AIRegionSanitizableState> = {};
+  const keptSources = state.aiSources
+    .filter(
+      (src) =>
+        isKnownProviderId(src.provider) &&
+        isProviderAllowedInCurrentRegion(src.provider),
+    )
+    .map((src) => ({
+      ...src,
+      label: providerLabel(src.provider),
+    }));
+
+  const defaultProvider = getDefaultAIProviderId();
+  const nextSources = keptSources.length > 0 ? keptSources : [makeSource(defaultProvider)];
+  const currentAllowed =
+    isKnownProviderId(state.aiProvider) &&
+    isProviderAllowedInCurrentRegion(state.aiProvider);
+  const nextProvider = currentAllowed ? state.aiProvider : nextSources[0]!.provider;
+
+  if (!nextSources.some((src) => src.provider === nextProvider)) {
+    nextSources.unshift(makeSource(nextProvider));
+  }
+
+  if (!sourcesEqual(state.aiSources, nextSources)) {
+    patch.aiSources = nextSources;
+  }
+
+  if (state.aiProvider !== nextProvider) {
+    const saved = state.aiProviderConfigs[nextProvider] ?? {};
+    const defaults = getProviderDefaults(nextProvider);
+    patch.aiProvider = nextProvider;
+    patch.aiEndpoint = saved.endpoint ?? defaults.endpoint;
+    patch.aiModel = saved.model ?? defaults.model;
+  }
+
+  if (
+    state.smartChannelModelSource &&
+    !isSmartChannelModelSourceAllowed(state.smartChannelModelSource)
+  ) {
+    patch.smartChannelModelSource = "aiDefault";
+  }
+
+  if (
+    state.ragEmbedSource &&
+    state.ragEmbedSource !== "ollama" &&
+    (!isKnownProviderId(state.ragEmbedSource) ||
+      !isProviderAllowedInCurrentRegion(state.ragEmbedSource))
+  ) {
+    patch.ragEmbedSource = "ollama";
+    patch.ragEmbedBaseUrl = "http://127.0.0.1:11434";
+    patch.ragEmbedModel = "nomic-embed-text";
+    patch.ragEmbedDim = 768;
+  }
+
+  return Object.keys(patch).length > 0 ? patch : null;
 }

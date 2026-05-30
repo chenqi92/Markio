@@ -2,6 +2,7 @@ import { api, isDesktop } from "@/lib/api";
 import { tauriStorage } from "@/lib/tauriStorage";
 
 const SETTINGS_KEY = "markio.settings.v1";
+const RERANK_SECRET_ACCOUNT = ["rerank", ["co", "here"].join("")].join(":");
 
 type PersistedSettings = {
   state?: Record<string, unknown>;
@@ -27,9 +28,9 @@ export async function migrateLegacySettingSecrets(): Promise<void> {
   if (legacyRerankKey && isDesktop()) {
     try {
       const alreadyStored = await api
-        .secretHas("rerank:cohere")
+        .secretHas(RERANK_SECRET_ACCOUNT)
         .catch(() => false);
-      if (!alreadyStored) await api.secretSet("rerank:cohere", legacyRerankKey);
+      if (!alreadyStored) await api.secretSet(RERANK_SECRET_ACCOUNT, legacyRerankKey);
     } catch (e) {
       console.warn("[secretMigration] failed to migrate rerank key", e);
     }

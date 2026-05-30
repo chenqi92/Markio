@@ -5,6 +5,8 @@ import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { api, type RagStatus } from "@/lib/api";
+import { isProviderAllowedInCurrentRegion } from "@/lib/ai-region-policy";
+import type { AIProviderId } from "@/lib/ai-providers";
 import { Toggle, Slider, SelectBtn } from "../../ui/controls";
 import { CardTitle, LabelWithTip } from "../_shared";
 import { RepoGraphCard, RerankCard } from "./AI";
@@ -12,12 +14,34 @@ import { RepoGraphCard, RerankCard } from "./AI";
 /** OpenAI 兼容协议的 embedding 源预设：选中后自动填 baseUrl/model/dim；
  *  Key 复用「AI 源池」里 ai:{aiProviderId} 的 Key，无需在这里重复填。 */
 const EMBEDDING_PRESETS: ReadonlyArray<{
-  aiProviderId: string;
+  aiProviderId: AIProviderId;
   label: string;
   baseUrl: string;
   model: string;
   dim: number;
-}> = [
+}> = __MARKIO_AI_REGION__ === "cn" ? [
+  {
+    aiProviderId: "siliconflow",
+    label: "SiliconFlow · BAAI/bge-m3 (1024)",
+    baseUrl: "https://api.siliconflow.cn",
+    model: "BAAI/bge-m3",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "zhipu",
+    label: "智谱 GLM · embedding-2 (1024)",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "embedding-2",
+    dim: 1024,
+  },
+  {
+    aiProviderId: "dashscope",
+    label: "通义千问 · text-embedding-v3 (1024)",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "text-embedding-v3",
+    dim: 1024,
+  },
+] : [
   {
     aiProviderId: "openai",
     label: "OpenAI · text-embedding-3-small (1536)",
@@ -170,9 +194,29 @@ export function RagSettings() {
     : 0;
   const dbSizeKb = status ? Math.max(1, Math.round(status.dbSize / 1024)) : 0;
 
+  const availableEmbeddingPresets = useMemo(
+    () =>
+      EMBEDDING_PRESETS.filter((preset) =>
+        isProviderAllowedInCurrentRegion(preset.aiProviderId),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      embedSource !== "ollama" &&
+      !availableEmbeddingPresets.some((preset) => preset.aiProviderId === embedSource)
+    ) {
+      setPreference("ragEmbedSource", "ollama");
+      setPreference("ragEmbedBaseUrl", "http://127.0.0.1:11434");
+      setPreference("ragEmbedModel", "nomic-embed-text");
+      setPreference("ragEmbedDim", 768);
+    }
+  }, [availableEmbeddingPresets, embedSource, setPreference]);
+
   const sourceOptions = [
     { value: "ollama", label: "本地 Ollama（离线 · 免费）" },
-    ...EMBEDDING_PRESETS.map((p) => ({ value: p.aiProviderId, label: p.label })),
+    ...availableEmbeddingPresets.map((p) => ({ value: p.aiProviderId, label: p.label })),
   ];
 
   return (
@@ -234,7 +278,7 @@ export function RagSettings() {
       <div className="settings-card">
         <div className="settings-card-h">Embedding 源</div>
         <div className="settings-help" style={{ padding: "0 0 6px" }}>
-          向量化用哪个源。本地 Ollama 离线免费；云端源走 OpenAI 兼容协议，
+          向量化用哪个源。本地 Ollama 离线免费；云端源走兼容协议，
           <b>Key 复用上方「AI 源」池</b>（ai:{"{"}源{"}"}），不用在这里重复填。
         </div>
         <div className="settings-row">
@@ -252,19 +296,19 @@ export function RagSettings() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip={isOllama ? "需要先运行 ollama serve。" : "兼容 OpenAI Embedding 协议的服务地址。"}>
+            <LabelWithTip tip={isOllama ? "需要先运行 ollama serve。" : "兼容 Embedding 协议的服务地址。"}>
               {isOllama ? "Ollama 端点" : "Base URL"}
             </LabelWithTip>
           </div>
           <TextInput
             value={embedBaseUrl}
-            placeholder={isOllama ? "http://127.0.0.1:11434" : "https://api.openai.com"}
+            placeholder={isOllama ? "http://127.0.0.1:11434" : "https://api.example.com"}
             onChange={(v) => setPreference("ragEmbedBaseUrl", v)}
           />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <LabelWithTip tip={isOllama ? "推荐 nomic-embed-text（768 维），需先通过 Ollama 拉取。" : "如 text-embedding-3-small。"}>
+            <LabelWithTip tip={isOllama ? "推荐 nomic-embed-text（768 维），需先通过 Ollama 拉取。" : "填写所选服务支持的 embedding 模型 ID。"}>
               Embedding 模型
             </LabelWithTip>
           </div>

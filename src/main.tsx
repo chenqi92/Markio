@@ -22,6 +22,7 @@ import { installDigestScheduler } from "./lib/digestScheduler";
 import { setLocale as setI18nLocale } from "./i18n";
 import { applyFonts } from "./lib/fonts";
 import { devLog, installDevLogger } from "./lib/devLogger";
+import { sanitizeAIStateForCurrentRegion } from "./lib/ai-providers";
 import "./i18n";
 
 function shouldInstallDevLogger(): boolean {
@@ -76,13 +77,18 @@ async function bootstrap() {
   );
 
   const s = useSettings.getState();
-  applyTheme(s.theme);
+  const aiRegionPatch = sanitizeAIStateForCurrentRegion(s);
+  if (aiRegionPatch) {
+    useSettings.setState(aiRegionPatch);
+  }
+  const settings = useSettings.getState();
+  applyTheme(settings.theme);
   applyFonts({
-    uiFontFamily: s.uiFontFamily,
-    bodyFontFamily: s.bodyFontFamily,
-    monoFontFamily: s.monoFontFamily,
+    uiFontFamily: settings.uiFontFamily,
+    bodyFontFamily: settings.bodyFontFamily,
+    monoFontFamily: settings.monoFontFamily,
   });
-  setI18nLocale(s.locale);
+  setI18nLocale(settings.locale);
   useSettings.subscribe((next, prev) => {
     if (next.locale !== prev.locale) setI18nLocale(next.locale);
   });

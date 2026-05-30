@@ -8,6 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../ui/Icon";
 import type { SelectOption } from "../ui/controls";
+import { isMainlandAIRegion } from "@/lib/ai-region-policy";
 
 export function fileNameFromPath(path: string): string {
   return path.split(/[\\/]/).pop() || "untitled";
@@ -111,14 +112,21 @@ export const WECHAT_STYLE_OPTIONS = [
   { value: "minimal", label: "极简 · 文章" },
 ] as const satisfies readonly SelectOption<"warmMagazine" | "cleanTech" | "inkClassic" | "minimal">[];
 
-export const SMART_CHANNEL_MODEL_OPTIONS = [
+const ALL_SMART_CHANNEL_MODEL_OPTIONS = [
   { value: "aiDefault", label: "跟随 AI 助手设置" },
-  { value: "currentClaude", label: "Claude（当前账户）" },
-  { value: "currentOpenAI", label: "OpenAI（当前账户）" },
+  { value: "deepCurrent", label: "深度模式（当前账户）" },
+  { value: "fastCurrent", label: "快速模式（当前账户）" },
   { value: "localOllama", label: "本地 Ollama" },
 ] as const satisfies readonly SelectOption<
-  "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama"
+  "aiDefault" | "deepCurrent" | "fastCurrent" | "localOllama"
 >[];
+
+export const SMART_CHANNEL_MODEL_OPTIONS = ALL_SMART_CHANNEL_MODEL_OPTIONS.filter(
+  (option) =>
+    !isMainlandAIRegion() ||
+    option.value === "aiDefault" ||
+    option.value === "localOllama",
+);
 
 export const SMART_CHANNEL_SCOPE_OPTIONS = [
   { value: "currentFile", label: "仅当前文档" },

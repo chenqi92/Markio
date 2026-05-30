@@ -12,7 +12,15 @@ import { recordOp } from "@/stores/opsLog";
 import { api } from "@/lib/api";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
-import { getProviderModels } from "@/lib/ai-providers";
+import {
+  getDefaultAIProviderDefaults,
+  getProvider,
+  getProviderModels,
+} from "@/lib/ai-providers";
+import {
+  isProviderAllowedInCurrentRegion,
+  MAINLAND_AI_COMPLIANCE_NOTICE,
+} from "@/lib/ai-region-policy";
 import {
   runAgent,
   type AgentMsg,
@@ -168,13 +176,16 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   );
   const history: AIMsgRecord[] = activeSession?.messages ?? [];
 
-  const configured = provider === "ollama" || keyConfigured;
+  const providerAllowed = isProviderAllowedInCurrentRegion(provider);
+  const providerName = getProvider(provider)?.name ?? provider;
+  const configured = providerAllowed && (provider === "ollama" || keyConfigured);
 
   const subtitle = useMemo(() => {
+    if (!providerAllowed) return "当前地区不可用";
     if (!configured) return "未配置 · 设置 → AI 助手 接入";
     const m = MODES.find((x) => x.id === aiMode);
-    return `${m?.sub ?? ""} · ${provider} · ${model}`;
-  }, [configured, aiMode, provider, model]);
+    return `${m?.sub ?? ""} · ${providerName} · ${model}`;
+  }, [configured, aiMode, providerAllowed, providerName, model]);
 
   const modelList = getProviderModels(provider);
 
@@ -197,11 +208,20 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
   // 切 provider 时如果当前 model 不在列表里，回到第一个
   useEffect(() => {
+    if (!providerAllowed) {
+      const defaults = getDefaultAIProviderDefaults();
+      setAi({
+        aiProvider: defaults.provider,
+        aiEndpoint: defaults.endpoint,
+        aiModel: defaults.model,
+      });
+      return;
+    }
     if (modelList.length === 0) return;
     if (!modelList.find((m) => m.id === model)) {
       setAi({ aiModel: modelList[0]!.id });
     }
-  }, [provider, modelList, model, setAi]);
+  }, [providerAllowed, modelList, model, setAi]);
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
@@ -229,6 +249,17 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     appendMessage(sessionId, userMsg);
     setDraft("");
     setBusy(true);
+
+    if (!providerAllowed) {
+      appendMessage(sessionId, {
+        id: `m${now + 1}`,
+        role: "assistant",
+        text: MAINLAND_AI_COMPLIANCE_NOTICE,
+        time: Date.now(),
+      });
+      setBusy(false);
+      return;
+    }
 
     if (!configured) {
       appendMessage(sessionId, {

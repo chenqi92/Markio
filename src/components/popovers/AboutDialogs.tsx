@@ -322,7 +322,7 @@ markio 不运行广告、跟踪、遥测或分析。markio 没有云账号，开
 
 可选第三方服务
 只有在你主动配置后才会运行：
-· AI 提供方（OpenAI / Anthropic / Google Gemini / DeepSeek / Ollama / 自定义 OpenAI 兼容端点 等）
+· AI 提供方（本地模型、国内模型服务或你自行配置的模型端点等）
 · 同步与存储（WebDAV / S3 / Dropbox / Google Drive / Git 远端 等）
 · 图片上传 / 发布（PicGo / 微信公众号工具 等）
 使用这些集成时，你选择发送的内容与凭据会直接发送给对应服务，受该服务自身的条款与隐私政策约束，开发者不会接收或保存。

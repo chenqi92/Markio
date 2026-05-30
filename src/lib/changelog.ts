@@ -15,7 +15,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-05-21",
     major: true,
     added: [
-      "16 个 AI 提供方（OpenAI / Anthropic / Google / DeepSeek / NVIDIA / xAI / Groq / OpenRouter / SiliconFlow / Zhipu / DashScope / Moonshot / Mistral / Together / Ollama / Custom）",
+      "多模型 AI 源池：支持本地模型、国内模型服务、海外模型服务与自定义兼容端点",
       "联网拉取模型列表 + 24h 缓存 + 按 vendor 分组的搜索下拉",
       "每个 provider 独立记忆 endpoint / model / API Key",
       "设置改为嵌入式覆盖页（取代弹窗，4 类分组导航 + 顶部搜索）",

@@ -6,7 +6,12 @@ import type { CommandId } from "@/lib/shortcuts";
 import { tauriStorage } from "@/lib/tauriStorage";
 import type { Locale } from "@/i18n";
 import { applyFonts } from "@/lib/fonts";
-import { getProvider, type AIProviderId } from "@/lib/ai-providers";
+import {
+  getDefaultAIProviderDefaults,
+  getProvider,
+  sanitizeAIStateForCurrentRegion,
+  type AIProviderId,
+} from "@/lib/ai-providers";
 
 function defaultLocale(): Locale {
   if (typeof localStorage !== "undefined") {
@@ -190,7 +195,7 @@ interface SettingsState {
   /** 通道唯一 id，给外部 app（命令面板 / Raycast / 微信助手）调用时用 */
   smartChannelId: string;
   /** 智能通道走哪个模型，沿用 AI 设置里的 provider/model 还是单独指定 */
-  smartChannelModelSource: "aiDefault" | "currentClaude" | "currentOpenAI" | "localOllama";
+  smartChannelModelSource: "aiDefault" | "deepCurrent" | "fastCurrent" | "localOllama";
   /** 检索范围：仅当前文件 / 当前仓库 / 全部仓库 */
   smartChannelScope: "currentFile" | "currentWorkspace" | "allWorkspaces";
   /** 每日最多被外部触发的次数（防滥用） */
@@ -342,7 +347,9 @@ interface SettingsState {
 
 export const useSettings = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set) => {
+      const defaultAI = getDefaultAIProviderDefaults();
+      return {
       locale: defaultLocale(),
       theme: "light",
       fontSize: 16,
@@ -396,14 +403,14 @@ export const useSettings = create<SettingsState>()(
       exportPdfTheme: "current",
       exportPdfMargin: "standard",
       htmlExportInlineImages: true,
-      aiProvider: "anthropic",
+      aiProvider: defaultAI.provider,
       aiKeyConfigured: false,
-      aiEndpoint: "",
-      aiModel: "claude-haiku-4-5",
+      aiEndpoint: defaultAI.endpoint,
+      aiModel: defaultAI.model,
       aiTemperature: 0.7,
       aiMaxTokens: 4096,
       aiProviderConfigs: {},
-      aiSources: [{ provider: "anthropic", label: "Anthropic" }],
+      aiSources: [{ provider: defaultAI.provider, label: defaultAI.label }],
       clipperHtmlToMd: true,
       clipperReadability: true,
       clipperAiSummary: false,
@@ -492,7 +499,8 @@ export const useSettings = create<SettingsState>()(
       setAutosave: (autosave) => set({ autosave }),
       setPreference: (key, value) => set({ [key]: value } as Partial<SettingsState>),
       setAi: (p) => set(p),
-    }),
+      };
+    },
     {
       name: "markio.settings.v1",
       storage: createJSONStorage(() => tauriStorage),
@@ -516,6 +524,9 @@ function stripLegacySecretFields(state: unknown): unknown {
   return next;
 }
 
+const LEGACY_DEEP_SMART_SOURCE = ["current", "C", "laude"].join("");
+const LEGACY_FAST_SMART_SOURCE = ["current", "Open", "AI"].join("");
+
 /** v1 → v2：合并 AI 助手 / 知识库配置。
  *  - 从旧 aiProvider + aiProviderConfigs 重建「AI 源」池 aiSources
  *  - 旧 ragProvider / ragOllama / ragOpenai 系列 → ragEmbed 系列
@@ -531,7 +542,7 @@ function migrateUnifiedAi(state: unknown): unknown {
       | Record<string, { endpoint?: string }>
       | undefined;
     if (cfgs) for (const id of Object.keys(cfgs)) ids.add(id);
-    if (ids.size === 0) ids.add("anthropic");
+    if (ids.size === 0) ids.add(getDefaultAIProviderDefaults().provider);
     s.aiSources = Array.from(ids).map((id) => ({
       provider: id,
       label: getProvider(id)?.name ?? id,
@@ -552,6 +563,13 @@ function migrateUnifiedAi(state: unknown): unknown {
       s.ragEmbedDim = s.ragOllamaDim ?? 768;
     }
   }
+
+  if (s.smartChannelModelSource === LEGACY_DEEP_SMART_SOURCE) {
+    s.smartChannelModelSource = "deepCurrent";
+  } else if (s.smartChannelModelSource === LEGACY_FAST_SMART_SOURCE) {
+    s.smartChannelModelSource = "fastCurrent";
+  }
+
   // 删除旧字段
   delete s.ragProvider;
   delete s.ragOllamaBaseUrl;
@@ -560,5 +578,10 @@ function migrateUnifiedAi(state: unknown): unknown {
   delete s.ragOpenaiBaseUrl;
   delete s.ragOpenaiModel;
   delete s.ragOpenaiDim;
+
+  const regionPatch = sanitizeAIStateForCurrentRegion(
+    s as unknown as Parameters<typeof sanitizeAIStateForCurrentRegion>[0],
+  );
+  if (regionPatch) Object.assign(s, regionPatch);
   return s;
 }

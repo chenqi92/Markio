@@ -4,6 +4,10 @@ import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
+import {
+  isExternalAgentAllowedInCurrentRegion,
+  MAINLAND_AI_COMPLIANCE_NOTICE,
+} from "@/lib/ai-region-policy";
 import type {
   AgentEvent,
   AgentPermission,
@@ -19,11 +23,15 @@ type Block =
   | { kind: "result"; text: string; tokens?: { input: number | null; output: number | null } }
   | { kind: "error"; message: string };
 
-const PROVIDER_LABEL: Record<AgentProvider, string> = {
-  claude: "Claude Code",
-  codex: "Codex CLI",
-  gemini: "Gemini CLI",
+const NEUTRAL_PROVIDER_LABEL: Record<AgentProvider, string> = {
+  claude: "本地 Agent A",
+  codex: "本地 Agent B",
+  gemini: "本地 Agent C",
 };
+
+function providerDisplayName(id: AgentProvider): string {
+  return NEUTRAL_PROVIDER_LABEL[id];
+}
 
 function newSessionId() {
   return `ag${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -40,15 +48,17 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [running, setRunning] = useState<string | null>(null);
   const blockRef = useRef<HTMLDivElement>(null);
+  const agentAllowed = isExternalAgentAllowedInCurrentRegion();
 
   useEffect(() => {
+    if (!agentAllowed) return;
     void api.agentListProviders().then((list) => {
       setProviders(list);
       // 自动选第一个可用的 provider
       const first = list.find((p) => p.available);
       if (first) setProvider(first.id);
     });
-  }, []);
+  }, [agentAllowed]);
 
   useEffect(() => {
     if (blockRef.current) {
@@ -106,10 +116,18 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
 
   const run = async () => {
     if (!prompt.trim() || running) return;
+    if (!agentAllowed) {
+      setToast({
+        stage: "error",
+        message: MAINLAND_AI_COMPLIANCE_NOTICE,
+      });
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
     if (!activeProvider?.available) {
       setToast({
         stage: "error",
-        message: `${PROVIDER_LABEL[provider]} 未检测到二进制`,
+        message: `${providerDisplayName(provider)} 未检测到二进制`,
       });
       setTimeout(() => setToast(null), 2500);
       return;
@@ -193,7 +211,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             <div className="ai-glow" />
             <div>
               <div style={{ fontWeight: 600, fontSize: 13 }}>
-                Local Agent · {PROVIDER_LABEL[provider]}
+                Local Agent · {providerDisplayName(provider)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
                 spawn 本地 CLI，在当前 vault 工作目录内运行。{" "}
@@ -223,25 +241,31 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             fontSize: 12,
           }}
         >
-          <div style={{ display: "flex", gap: 4 }}>
-            {providers.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={"settings-btn" + (provider === p.id ? " active" : "")}
-                onClick={() => setProvider(p.id)}
-                disabled={!p.available || !!running}
-                title={p.available ? p.binaryPath ?? "" : "未在 PATH 中检测到二进制"}
-                style={{
-                  padding: "3px 10px",
-                  fontSize: 11,
-                  opacity: p.available ? 1 : 0.4,
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {agentAllowed ? (
+            <div style={{ display: "flex", gap: 4 }}>
+              {providers.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={"settings-btn" + (provider === p.id ? " active" : "")}
+                  onClick={() => setProvider(p.id)}
+                  disabled={!p.available || !!running}
+                  title={p.available ? p.binaryPath ?? "" : "未在 PATH 中检测到二进制"}
+                  style={{
+                    padding: "3px 10px",
+                    fontSize: 11,
+                    opacity: p.available ? 1 : 0.4,
+                  }}
+                >
+                  {providerDisplayName(p.id)}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="settings-banner warn" style={{ margin: 0 }}>
+              {MAINLAND_AI_COMPLIANCE_NOTICE}
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 4 }}>
             {(["safe", "poweruser"] as const).map((m) => (
@@ -347,7 +371,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
               type="button"
               className="settings-btn"
               onClick={() => void run()}
-              disabled={!prompt.trim() || !activeProvider?.available}
+              disabled={!prompt.trim() || !activeProvider?.available || !agentAllowed}
               style={{ padding: "8px 14px" }}
             >
               发送 ⌘↵
@@ -364,7 +388,7 @@ function BlockView({ block }: { block: Block }) {
     case "init":
       return (
         <div style={pill("var(--text-3)")}>
-          <Icon name="bot" size={11} /> 已连接 {PROVIDER_LABEL[block.provider]} ·{" "}
+          <Icon name="bot" size={11} /> 已连接 {providerDisplayName(block.provider)} ·{" "}
           <code style={{ fontSize: 10 }}>{block.binary}</code>
         </div>
       );

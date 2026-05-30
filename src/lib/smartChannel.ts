@@ -19,12 +19,17 @@ import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { reportDiagnostic } from "@/stores/diagnostics";
+import {
+  isProviderAllowedInCurrentRegion,
+  isSmartChannelModelSourceAllowed,
+} from "@/lib/ai-region-policy";
+import type { AIProviderId } from "@/lib/ai-providers";
 
 export type SmartChannelScope = "currentFile" | "currentWorkspace" | "allWorkspaces";
 export type SmartChannelModelSource =
   | "aiDefault"
-  | "currentClaude"
-  | "currentOpenAI"
+  | "deepCurrent"
+  | "fastCurrent"
   | "localOllama";
 
 export interface SmartChannelHit {
@@ -71,10 +76,20 @@ const STYLE_PROMPT: Record<
 
 const MODEL_SOURCE_LABEL: Record<SmartChannelModelSource, string> = {
   aiDefault: "AI 助手默认",
-  currentClaude: "Claude（当前账户）",
-  currentOpenAI: "OpenAI（当前账户）",
+  deepCurrent: "深度模式（当前账户）",
+  fastCurrent: "快速模式（当前账户）",
   localOllama: "本地 Ollama",
 };
+
+const DEEP_CURRENT_MODEL =
+  __MARKIO_AI_REGION__ === "cn"
+    ? null
+    : ({ provider: "anthropic", model: "claude-haiku-4-5" } as const);
+
+const FAST_CURRENT_MODEL =
+  __MARKIO_AI_REGION__ === "cn"
+    ? null
+    : ({ provider: "openai", model: "gpt-4o-mini" } as const);
 
 export function smartChannelModelLabel(src: SmartChannelModelSource): string {
   return MODEL_SOURCE_LABEL[src];
@@ -141,16 +156,25 @@ function incrementSmartChannelUsage(): { used: number; limit: number } {
 }
 
 function resolveProviderModel(src: SmartChannelModelSource): {
-  provider: "anthropic" | "openai" | "deepseek" | "ollama" | "google" | "custom";
+  provider: AIProviderId;
   model: string;
   endpoint?: string;
 } {
   const s = useSettings.getState();
-  switch (src) {
-    case "currentClaude":
-      return { provider: "anthropic", model: "claude-haiku-4-5" };
-    case "currentOpenAI":
-      return { provider: "openai", model: "gpt-4o-mini" };
+  const safeSource = isSmartChannelModelSourceAllowed(src) ? src : "aiDefault";
+  switch (safeSource) {
+    case "deepCurrent":
+      return DEEP_CURRENT_MODEL ?? {
+        provider: "ollama",
+        model: "qwen2.5:14b",
+        endpoint: "http://127.0.0.1:11434/v1",
+      };
+    case "fastCurrent":
+      return FAST_CURRENT_MODEL ?? {
+        provider: "ollama",
+        model: "qwen2.5:14b",
+        endpoint: "http://127.0.0.1:11434/v1",
+      };
     case "localOllama":
       return {
         provider: "ollama",
@@ -159,8 +183,15 @@ function resolveProviderModel(src: SmartChannelModelSource): {
       };
     case "aiDefault":
     default:
+      if (!isProviderAllowedInCurrentRegion(s.aiProvider)) {
+        return {
+          provider: "ollama",
+          model: "qwen2.5:14b",
+          endpoint: "http://127.0.0.1:11434/v1",
+        };
+      }
       return {
-        provider: s.aiProvider === "custom" ? "openai" : (s.aiProvider as "anthropic"),
+        provider: s.aiProvider,
         model: s.aiModel,
         endpoint: s.aiEndpoint || undefined,
       };

@@ -8,6 +8,9 @@ const port = 18642;
 
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
+  define: {
+    __MARKIO_AI_REGION__: JSON.stringify(process.env.VITE_MARKIO_AI_REGION ?? ""),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

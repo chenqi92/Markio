@@ -10,6 +10,7 @@ import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
 import { shortcutText } from "@/lib/shortcuts";
+import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
 import type { ViewMode } from "@/types";
 import { THEMES } from "@/themes";
 
@@ -144,14 +145,18 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         ico: "clock",
         run: () => openPulse(true),
       },
-      {
-        id: "agent",
-        group: "AI",
-        l1: "本地 Agent…",
-        l2: "spawn 本地 claude / codex / gemini CLI 操作 vault",
-        ico: "bot",
-        run: () => openAgent(true),
-      },
+      ...(isExternalAgentAllowedInCurrentRegion()
+        ? [
+            {
+              id: "agent",
+              group: "AI",
+              l1: "本地 Agent…",
+              l2: "spawn 本地 CLI 操作 vault",
+              ico: "bot",
+              run: () => openAgent(true),
+            } satisfies Cmd,
+          ]
+        : []),
       {
         id: "smart-channel-query",
         group: "AI",

@@ -328,9 +328,10 @@ fn parser_options() -> Options {
 }
 
 /// 把 YAML frontmatter 文本渲染成只读属性表。手写解析，只覆盖三种常见结构：
-///   * `key: value`
-///   * `key:` 后跟缩进 `- item` 列表
-///   * 折叠/字面标量（`>-` `|` 等）的缩进续行
+/// * `key: value`
+/// * `key:` 后跟缩进 `- item` 列表
+/// * 折叠/字面标量（`>-` `|` 等）的缩进续行
+///
 /// 不追求完整 YAML 语义（刻意不引入 yaml 依赖）。无可解析行时返回空串。
 fn render_frontmatter(yaml: &str) -> String {
     let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();

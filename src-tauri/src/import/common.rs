@@ -376,6 +376,7 @@ pub(super) fn unique_child_path(dir: &Path, name: &str) -> PathBuf {
 
 /// Notion：用户导出的 zip 内是若干 `Page Title hash.md` + 关联资源；
 /// 重写 `[文本](Page%20Title%20hash.md)` 为 `[[Page Title]]` 风格。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn copy_dir_incremental(
     root: &Path,
     src: &Path,
@@ -501,4 +502,3 @@ pub(super) fn copy_import_file_inc(
     session.record(key);
     Ok(())
 }
-

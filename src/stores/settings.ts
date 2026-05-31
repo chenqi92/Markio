@@ -117,7 +117,7 @@ type PreferenceKey =
 export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
 
 export interface DriveConfig {
-  /** 用户选择的本地同步目录绝对路径；空串表示未配置 */
+  /** 存储目标路径：iCloud 为本地目录；WebDAV/S3/Dropbox/GDrive 为远端根。空串表示未配置 */
   folder: string;
   /** 是否启用 */
   enabled: boolean;

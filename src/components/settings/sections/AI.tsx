@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSettings } from "@/stores/settings";
+import { useSettings, type DriveConfig } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { api } from "@/lib/api";
@@ -704,7 +704,9 @@ export function WebDavCard() {
   const baseUrl = useSettings((s) => s.webdavBaseUrl);
   const username = useSettings((s) => s.webdavUsername);
   const remoteDir = useSettings((s) => s.webdavRemoteDir);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
+  const syncCfg: DriveConfig = driveConfigs.webdav ?? { folder: remoteDir || "markio", enabled: false };
   const [password, setPassword] = useState("");
   const [stored, setStored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -724,6 +726,21 @@ export function WebDavCard() {
   }, [baseUrl]);
 
   const auth = () => ({ username, password });
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      webdav: { ...syncCfg, folder: syncCfg.folder || remoteDir || "markio", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !baseUrl) {
+      setMsg({ kind: "err", text: "启用同步前请先填写 WebDAV 服务地址" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
 
   const wrap = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -854,9 +871,26 @@ export function WebDavCard() {
         <input
           type="text"
           value={remoteDir}
-          onChange={(e) => setPreference("webdavRemoteDir", e.target.value)}
+          onChange={(e) => {
+            setPreference("webdavRemoteDir", e.target.value);
+            updateSyncCfg({ folder: e.target.value || "markio" });
+          }}
           placeholder="markio"
           style={{ flex: 1, minWidth: 220 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <LabelWithTip tip="开启后，状态栏“立刻同步”和自动同步会把当前仓库与此 WebDAV 目录双向同步。">
+            启用 WebDAV 同步
+          </LabelWithTip>
+          <div className="settings-help">
+            同步根目录：{syncCfg.folder || remoteDir || "markio"}
+          </div>
+        </div>
+        <Toggle
+          on={syncCfg.enabled && !!baseUrl}
+          onChange={setSyncEnabled}
         />
       </div>
       {/* 测试连接已经移到上方 .sync-card-status，这里只留初始化 / 列出 */}
@@ -866,7 +900,9 @@ export function WebDavCard() {
           disabled={!baseUrl || busy !== null}
           onClick={() =>
             wrap("远端目录初始化", () =>
-              api.webdavMkcol(baseUrl, auth(), remoteDir || "/"),
+              remoteDir
+                ? api.webdavMkcol(baseUrl, auth(), remoteDir)
+                : api.webdavTest(baseUrl, auth()),
             )
           }
         >

@@ -338,7 +338,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(skipped, 0);
-        assert!(names.iter().any(|n| n == ""));
+        assert!(names.iter().any(|n| n.is_empty()));
         assert!(names.iter().any(|n| n == "notes"));
         assert!(!names.iter().any(|n| n.starts_with("node_modules")));
         assert!(!names.iter().any(|n| n.starts_with(".markio")));

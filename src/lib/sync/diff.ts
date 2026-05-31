@@ -182,13 +182,21 @@ export function planDiff(
     }
 
     if (base && !tomb) {
-      // 本地曾同步过但现在没了，又不是软删（无 tombstone）→ 视为本地丢失，重新拉
-      // 这种情况通常是用户在文件系统里手动删了文件但没走 Markio 回收站
-      actions.push({
-        relPath,
-        kind: "download",
-        reason: "local_missing_with_baseline",
-      });
+      // 本地曾同步过但现在没了。若远端仍是上次同步版本，则把本地删除传播到远端；
+      // 若远端之后又变了，保守拉回远端版本，避免抹掉其它设备的新编辑。
+      if (remote.hash === base.remoteEtag) {
+        actions.push({
+          relPath,
+          kind: "delete_remote",
+          reason: "local_missing_remote_unchanged",
+        });
+      } else {
+        actions.push({
+          relPath,
+          kind: "download",
+          reason: "local_missing_remote_modified",
+        });
+      }
       continue;
     }
 

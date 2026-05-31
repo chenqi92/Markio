@@ -2,9 +2,9 @@
 //!
 //! 历史上是单文件 1399 行；按 provider 拆到子模块以便维护：
 //!
-//! - `common`       共享：常量 / ImportReport / ImportManifest / LegacyImportDir /
-//!                  sanitize / unique_child_path / copy_dir_incremental /
-//!                  is_markdown_path / is_org_path / ManifestSession / finalize_report
+//! - `common` 共享：常量 / ImportReport / ImportManifest / LegacyImportDir /
+//!   sanitize / unique_child_path / copy_dir_incremental /
+//!   is_markdown_path / is_org_path / ManifestSession / finalize_report
 //! - `notion`       Notion 导出 zip + `[[wiki]]` 链接重写
 //! - `obsidian`     Obsidian vault 目录递归复制
 //! - `roam`         Roam Research Markdown zip

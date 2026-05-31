@@ -44,10 +44,11 @@ export async function loadManifest(
     const parsed = JSON.parse(raw) as Partial<SyncManifest>;
     if (parsed.version !== 1) return emptyManifest(drive, remoteRoot);
     if (parsed.drive !== drive) return emptyManifest(drive, remoteRoot);
+    if (parsed.remoteRoot !== remoteRoot) return emptyManifest(drive, remoteRoot);
     return {
       version: 1,
       drive: parsed.drive,
-      remoteRoot: parsed.remoteRoot ?? remoteRoot,
+      remoteRoot,
       lastSyncAt: typeof parsed.lastSyncAt === "number" ? parsed.lastSyncAt : 0,
       files: typeof parsed.files === "object" && parsed.files !== null
         ? (parsed.files as Record<string, SyncBaseline>)

@@ -259,7 +259,13 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::backlinks::line_has_unlinked;
+    use super::super::tokens::extract_tokens_into;
+    use super::super::trash::{
+        trash_dir, trash_item_paths, trash_list, trash_move, trash_purge, trash_restore,
+    };
     use std::collections::BTreeSet;
+    use std::path::PathBuf;
 
     fn make_test_workspace(name: &str) -> PathBuf {
         let unique = format!(

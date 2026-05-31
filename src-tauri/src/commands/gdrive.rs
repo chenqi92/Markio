@@ -4,16 +4,14 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-use crate::{
-    gdrive_ops, oauth, secrets, validate_body_size, MAX_SYNC_BODY_BYTES,
-};
+use crate::{gdrive_ops, oauth, secrets, validate_body_size, MAX_SYNC_BODY_BYTES};
 
 const GDRIVE_TOKENS_ACCOUNT: &str = "gdrive:tokens";
 const GDRIVE_CLIENT_ACCOUNT: &str = "gdrive:client_id";
 
 fn load_gdrive_tokens() -> Result<gdrive_ops::GDriveTokens, String> {
-    let raw = secrets::get(GDRIVE_TOKENS_ACCOUNT)?
-        .ok_or_else(|| "尚未授权 Google Drive".to_string())?;
+    let raw =
+        secrets::get(GDRIVE_TOKENS_ACCOUNT)?.ok_or_else(|| "尚未授权 Google Drive".to_string())?;
     serde_json::from_str(&raw).map_err(|e| format!("Drive token 解析失败：{e}"))
 }
 
@@ -127,6 +125,23 @@ pub async fn gdrive_upload(
         parent_id.as_deref().filter(|s| !s.is_empty()),
         bytes,
         &mime_type,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn gdrive_create_folder(
+    name: String,
+    parent_id: Option<String>,
+) -> Result<String, String> {
+    if name.contains('/') || name.contains('\\') || name.trim().is_empty() || name.len() > 255 {
+        return Err("Drive 文件夹名无效".to_string());
+    }
+    let (tokens, _) = gdrive_session().await?;
+    gdrive_ops::create_folder(
+        &tokens,
+        name.trim(),
+        parent_id.as_deref().filter(|s| !s.is_empty()),
     )
     .await
 }

@@ -85,6 +85,22 @@ describe("loadManifest", () => {
     expect(m.files).toEqual({});
   });
 
+  it("remoteRoot 不匹配（用户换了远端目录）→ emptyManifest", async () => {
+    const io = makeIo({
+      "/ws": JSON.stringify({
+        version: 1,
+        drive: "webdav",
+        remoteRoot: "/old",
+        lastSyncAt: 123,
+        files: { "a.md": BASE },
+        tombstones: {},
+      }),
+    });
+    const m = await loadManifest("/ws", "webdav", "/markio", io);
+    expect(m.remoteRoot).toBe("/markio");
+    expect(m.files).toEqual({});
+  });
+
   it("正常解析", async () => {
     const original: SyncManifest = {
       version: 1,

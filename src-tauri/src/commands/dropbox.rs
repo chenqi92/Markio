@@ -6,8 +6,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::{
-    dropbox_ops, oauth, secrets, validate_body_size, validate_remote_rel_path,
-    MAX_SYNC_BODY_BYTES,
+    dropbox_ops, oauth, secrets, validate_body_size, validate_remote_rel_path, MAX_SYNC_BODY_BYTES,
 };
 
 const DROPBOX_TOKENS_ACCOUNT: &str = "dropbox:tokens";
@@ -31,6 +30,17 @@ async fn dropbox_session() -> Result<(dropbox_ops::DropboxTokens, String), Strin
     dropbox_ops::ensure_fresh(&mut tokens, &client_id).await?;
     save_dropbox_tokens(&tokens)?;
     Ok((tokens, client_id))
+}
+
+fn normalize_dropbox_path(path: &str, allow_root: bool) -> Result<String, String> {
+    let trimmed = path.trim();
+    let without_slash = trimmed.trim_start_matches('/');
+    validate_remote_rel_path(without_slash, allow_root)?;
+    if without_slash.is_empty() {
+        Ok(String::new())
+    } else {
+        Ok(format!("/{without_slash}"))
+    }
 }
 
 #[tauri::command]
@@ -102,13 +112,24 @@ pub fn dropbox_signout() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn dropbox_list(path: String) -> Result<dropbox_ops::DropboxList, String> {
+    let path = normalize_dropbox_path(&path, true)?;
     let (tokens, _) = dropbox_session().await?;
     dropbox_ops::list_folder(&tokens, &path).await
 }
 
 #[tauri::command]
+pub async fn dropbox_list_continue(cursor: String) -> Result<dropbox_ops::DropboxList, String> {
+    let cursor = cursor.trim();
+    if cursor.is_empty() || cursor.len() > 4096 {
+        return Err("Dropbox cursor 无效".to_string());
+    }
+    let (tokens, _) = dropbox_session().await?;
+    dropbox_ops::list_folder_continue(&tokens, cursor).await
+}
+
+#[tauri::command]
 pub async fn dropbox_upload(path: String, body_base64: String) -> Result<(), String> {
-    validate_remote_rel_path(&path, false)?;
+    let path = normalize_dropbox_path(&path, false)?;
     validate_body_size("Dropbox 上传内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
     let bytes = STANDARD
         .decode(body_base64)
@@ -118,8 +139,15 @@ pub async fn dropbox_upload(path: String, body_base64: String) -> Result<(), Str
 }
 
 #[tauri::command]
+pub async fn dropbox_create_folder(path: String) -> Result<(), String> {
+    let path = normalize_dropbox_path(&path, false)?;
+    let (tokens, _) = dropbox_session().await?;
+    dropbox_ops::create_folder(&tokens, &path).await
+}
+
+#[tauri::command]
 pub async fn dropbox_download(path: String) -> Result<String, String> {
-    validate_remote_rel_path(&path, false)?;
+    let path = normalize_dropbox_path(&path, false)?;
     let (tokens, _) = dropbox_session().await?;
     let bytes = dropbox_ops::download(&tokens, &path).await?;
     Ok(STANDARD.encode(bytes))
@@ -127,7 +155,7 @@ pub async fn dropbox_download(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn dropbox_delete(path: String) -> Result<(), String> {
-    validate_remote_rel_path(&path, false)?;
+    let path = normalize_dropbox_path(&path, false)?;
     let (tokens, _) = dropbox_session().await?;
     dropbox_ops::delete(&tokens, &path).await
 }

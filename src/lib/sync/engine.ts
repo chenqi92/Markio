@@ -31,7 +31,7 @@ import {
 export interface LocalFs {
   /** 列本地仓库的所有 markdown / 资源文件（排除 .markio/） */
   scan(workspacePath: string): Promise<FileEntry[]>;
-  /** 读本地文件文本 */
+  /** 读本地文件内容。当前 Tauri 实现统一传 base64，避免二进制资源损坏。 */
   read(workspacePath: string, relPath: string): Promise<string>;
   /** 写本地文件，返回新的 hash + mtime */
   write(
@@ -87,6 +87,7 @@ export async function runSync(
 
     setStage("scan_local");
     const localFiles = await deps.localFs.scan(workspacePath);
+    const localByPath = new Map(localFiles.map((file) => [file.relPath, file]));
 
     if (deps.isCancelled?.()) {
       setStage("cancelled");
@@ -137,6 +138,7 @@ export async function runSync(
         remoteRoot,
         action,
         manifest,
+        localByPath,
         deps,
         now,
       );
@@ -171,13 +173,21 @@ async function executeAction(
   remoteRoot: string,
   action: SyncReport["plan"]["actions"][number],
   manifest: SyncManifest,
+  localByPath: Map<string, FileEntry>,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
   return withRetry(action.relPath, async () => {
     switch (action.kind) {
       case "upload":
-        return await doUpload(workspacePath, remoteRoot, action.relPath, deps, now);
+        return await doUpload(
+          workspacePath,
+          remoteRoot,
+          action.relPath,
+          localByPath.get(action.relPath),
+          deps,
+          now,
+        );
       case "download":
         return await doDownload(workspacePath, remoteRoot, action.relPath, deps, now);
       case "delete_remote": {
@@ -190,7 +200,15 @@ async function executeAction(
         return placeholderOk(action.relPath, now);
       }
       case "conflict":
-        return await doConflict(workspacePath, remoteRoot, action, manifest, deps, now);
+        return await doConflict(
+          workspacePath,
+          remoteRoot,
+          action,
+          manifest,
+          localByPath,
+          deps,
+          now,
+        );
     }
   });
 }
@@ -199,20 +217,19 @@ async function doUpload(
   workspacePath: string,
   remoteRoot: string,
   relPath: string,
+  localFile: FileEntry | undefined,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
   const content = await deps.localFs.read(workspacePath, relPath);
   await deps.adapter.ensureParentDir(remoteRoot, relPath);
   const { etag, mtime } = await deps.adapter.put(remoteRoot, relPath, content);
-  // 同步后 local hash 重算成本高（这里我们信 fs.write 的反向：上传内容跟本地一致）
-  // 真正的本地 hash/mtime 由 scan 时给的 entry 提供；这里用 now 兜底
   return {
     ok: true,
     relPath,
     baseline: {
-      localMtime: now(),
-      localHash: etag, // 临时：上层执行前可以传 entry 进来精确化
+      localMtime: localFile?.mtime ?? now(),
+      localHash: localFile?.hash ?? etag,
       remoteEtag: etag,
       remoteMtime: mtime,
       lastSyncedAt: now(),
@@ -251,6 +268,7 @@ async function doConflict(
   remoteRoot: string,
   action: SyncReport["plan"]["actions"][number],
   _manifest: SyncManifest,
+  localByPath: Map<string, FileEntry>,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
@@ -265,14 +283,28 @@ async function doConflict(
   }
   switch (res.kind) {
     case "keep_local":
-      return await doUpload(workspacePath, remoteRoot, action.relPath, deps, now);
+      return await doUpload(
+        workspacePath,
+        remoteRoot,
+        action.relPath,
+        localByPath.get(action.relPath),
+        deps,
+        now,
+      );
     case "keep_remote":
       return await doDownload(workspacePath, remoteRoot, action.relPath, deps, now);
     case "fork": {
       // 远端版本另存到 forkPath；当前路径走 keep_local
       const remote = await deps.adapter.get(remoteRoot, action.relPath);
       await deps.localFs.write(workspacePath, res.forkPath, remote.content);
-      return await doUpload(workspacePath, remoteRoot, action.relPath, deps, now);
+      return await doUpload(
+        workspacePath,
+        remoteRoot,
+        action.relPath,
+        localByPath.get(action.relPath),
+        deps,
+        now,
+      );
     }
   }
 }

@@ -139,7 +139,9 @@ pub(super) fn enml_to_markdown(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::import::{import_logseq, import_roam};
     use std::io::Write;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {

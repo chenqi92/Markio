@@ -26,12 +26,12 @@ mod window_state;
 use commands::{
     agent::{agent_cancel, agent_list_providers, agent_run},
     dropbox::{
-        dropbox_authorize, dropbox_delete, dropbox_download, dropbox_list, dropbox_signout,
-        dropbox_status, dropbox_upload,
+        dropbox_authorize, dropbox_create_folder, dropbox_delete, dropbox_download, dropbox_list,
+        dropbox_list_continue, dropbox_signout, dropbox_status, dropbox_upload,
     },
     gdrive::{
-        gdrive_authorize, gdrive_delete, gdrive_download, gdrive_list, gdrive_signout,
-        gdrive_status, gdrive_upload,
+        gdrive_authorize, gdrive_create_folder, gdrive_delete, gdrive_download, gdrive_list,
+        gdrive_signout, gdrive_status, gdrive_upload,
     },
     git::{
         git_checkout, git_clone, git_commit, git_fetch, git_has_pat, git_init, git_list_branches,
@@ -46,7 +46,10 @@ use commands::{
         rag_repo_graph, rag_search, rag_status,
     },
     rss::rss_fetch,
-    s3::{s3_delete_object, s3_get_object, s3_has_secret, s3_list_objects, s3_put_object, s3_set_secret},
+    s3::{
+        s3_delete_object, s3_get_object, s3_has_secret, s3_list_objects, s3_put_object,
+        s3_set_secret,
+    },
     secret::{secret_copy, secret_delete, secret_get, secret_has, secret_set},
     theme::{theme_delete, theme_dir_path, theme_import, theme_list, theme_read},
     webdav::{
@@ -73,7 +76,7 @@ use tauri::{Emitter, Manager};
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
 use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, TrashItem};
 use markdown::{OutlineItem, RenderResult};
-use state::{ensure_in_workspaces, signature_for, AppState, FileSig};
+use state::{ensure_in_workspaces, hash64, signature_for, AppState, FileSig};
 
 static MD_STREAM_CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
@@ -143,6 +146,15 @@ pub struct ImagePasteResult {
     pub local_path: Option<String>,
     pub uploaded: bool,
     pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncFileEntry {
+    pub rel_path: String,
+    pub mtime: i64,
+    pub hash: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -516,9 +528,63 @@ fn fs_read_text(state: tauri::State<'_, AppState>, path: String) -> Result<Strin
 }
 
 #[tauri::command]
-fn fs_read_file_base64(path: String) -> Result<String, String> {
-    let canon = std::fs::canonicalize(&path).map_err(|e| format!("读取文件失败：{e}"))?;
-    let meta = std::fs::metadata(&canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
+fn fs_read_file_base64(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
+    let canon = validate_path(&state, &path)?;
+    read_file_base64_checked(&canon)
+}
+
+fn modified_ms_for_path(path: &Path) -> i64 {
+    path.metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn validate_sync_rel_path(rel_path: &str) -> Result<String, String> {
+    let normalized = rel_path.replace('\\', "/");
+    validate_remote_rel_path(&normalized, false)?;
+    if normalized
+        .split('/')
+        .any(|segment| segment.starts_with('.') || segment.eq_ignore_ascii_case(".markio"))
+    {
+        return Err("同步路径不能包含隐藏目录或 Markio 内部目录".to_string());
+    }
+    Ok(normalized)
+}
+
+fn resolve_sync_user_path(
+    state: &AppState,
+    workspace: &str,
+    rel_path: &str,
+) -> Result<PathBuf, String> {
+    let ws = validate_path(state, workspace)?;
+    let rel = validate_sync_rel_path(rel_path)?;
+    let target = ws.join(rel);
+    let canon = if target.exists() {
+        target
+            .canonicalize()
+            .map_err(|e| format!("同步路径无效：{e}"))?
+    } else {
+        let parent = target
+            .parent()
+            .ok_or_else(|| "同步路径没有父目录".to_string())?;
+        let parent_canon = parent
+            .canonicalize()
+            .unwrap_or_else(|_| parent.to_path_buf());
+        let file_name = target
+            .file_name()
+            .ok_or_else(|| "同步路径文件名无效".to_string())?;
+        parent_canon.join(file_name)
+    };
+    ensure_path_in_workspace(&ws, &canon, "同步")?;
+    ensure_user_file_path(state, &canon, "同步")?;
+    Ok(canon)
+}
+
+fn read_file_base64_checked(canon: &Path) -> Result<String, String> {
+    let meta = std::fs::metadata(canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
     if !meta.is_file() {
         return Err("读取文件失败：目标不是文件".to_string());
     }
@@ -528,8 +594,248 @@ fn fs_read_file_base64(path: String) -> Result<String, String> {
             MAX_SYNC_BODY_BYTES / 1024 / 1024
         ));
     }
-    let bytes = std::fs::read(&canon).map_err(|e| format!("读取文件失败：{e}"))?;
+    let bytes = std::fs::read(canon).map_err(|e| format!("读取文件失败：{e}"))?;
     Ok(STANDARD.encode(bytes))
+}
+
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建父目录失败：{e}"))?;
+    }
+    let tmp = path.with_extension(format!(
+        "{}.tmp",
+        path.extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("markio")
+    ));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("写临时文件失败：{e}"))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("替换文件失败：{e}")
+    })
+}
+
+fn sync_file_entry(
+    root: &Path,
+    path: &Path,
+    meta: &std::fs::Metadata,
+) -> Result<SyncFileEntry, String> {
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|_| "同步扫描路径不在仓库中".to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let bytes = std::fs::read(path).map_err(|e| format!("读取同步文件失败：{e}"))?;
+    Ok(SyncFileEntry {
+        rel_path: rel,
+        mtime: modified_ms_for_path(path),
+        hash: format!("{:x}", hash64(&bytes)),
+        size: meta.len(),
+    })
+}
+
+#[tauri::command]
+fn fs_sync_scan(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<SyncFileEntry>, String> {
+    use crate::ignore::IgnoreRules;
+    let ws = validate_path(&state, &workspace)?;
+    let rules = IgnoreRules::load(&ws);
+    let mut out = Vec::new();
+    let mut stack = vec![(ws.clone(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 16 || out.len() > 20_000 {
+            break;
+        }
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ft.is_symlink() {
+                continue;
+            }
+            let rel = path.strip_prefix(&ws).ok();
+            if rel.is_some_and(|rel| rules.is_ignored(rel, ft.is_dir())) {
+                continue;
+            }
+            if ft.is_dir() {
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if !ft.is_file() {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.len() > MAX_SYNC_BODY_BYTES as u64 {
+                continue;
+            }
+            match sync_file_entry(&ws, &path, &meta) {
+                Ok(item) => out.push(item),
+                Err(e) => eprintln!("[sync.scan] 跳过 {}：{e}", path.display()),
+            }
+        }
+    }
+    out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    Ok(out)
+}
+
+#[tauri::command]
+fn fs_sync_read_file_base64(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    rel_path: String,
+) -> Result<String, String> {
+    let path = resolve_sync_user_path(&state, &workspace, &rel_path)?;
+    read_file_base64_checked(&path)
+}
+
+#[tauri::command]
+fn fs_sync_write_file_base64(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    rel_path: String,
+    body_base64: String,
+) -> Result<SigDto, String> {
+    validate_body_size("同步写入内容", &body_base64, MAX_SYNC_BODY_BYTES)?;
+    let path = resolve_sync_user_path(&state, &workspace, &rel_path)?;
+    let bytes = STANDARD
+        .decode(body_base64.trim())
+        .map_err(|e| format!("同步内容不是合法 base64：{e}"))?;
+    atomic_write_bytes(&path, &bytes)?;
+    let sig = signature_for(&path).map_err(|e| e.to_string())?;
+    Ok(sig.into())
+}
+
+#[tauri::command]
+fn fs_sync_soft_delete(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    rel_path: String,
+) -> Result<SigDto, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let path = resolve_sync_user_path(&state, &workspace, &rel_path)?;
+    let sig = signature_for(&path).map_err(|e| e.to_string())?;
+    fs_ops::trash_move(&ws.to_string_lossy(), &path.to_string_lossy())?;
+    Ok(sig.into())
+}
+
+fn validate_manifest_id(id: &str) -> Result<String, String> {
+    let id = id.trim();
+    if id.is_empty()
+        || id.len() > 48
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err("同步 manifest id 无效".to_string());
+    }
+    Ok(id.to_string())
+}
+
+fn sync_manifest_path(workspace: &Path, id: &str) -> Result<PathBuf, String> {
+    let id = validate_manifest_id(id)?;
+    Ok(workspace
+        .join(".markio")
+        .join("sync")
+        .join(format!("{id}.json")))
+}
+
+#[tauri::command]
+fn fs_sync_manifest_read(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    id: String,
+) -> Result<Option<String>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let path = sync_manifest_path(&ws, &id)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let meta = std::fs::metadata(&path).map_err(|e| format!("读取 manifest 信息失败：{e}"))?;
+    if !meta.is_file() || meta.len() > 2 * 1024 * 1024 {
+        return Err("同步 manifest 无效或过大".to_string());
+    }
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|e| format!("读取同步 manifest 失败：{e}"))
+}
+
+#[tauri::command]
+fn fs_sync_manifest_write(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    id: String,
+    content: String,
+) -> Result<(), String> {
+    if content.len() > 2 * 1024 * 1024 {
+        return Err("同步 manifest 过大".to_string());
+    }
+    let ws = validate_path(&state, &workspace)?;
+    let path = sync_manifest_path(&ws, &id)?;
+    fs_ops::atomic_write(&path, &content)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PickedFileBase64 {
+    path: String,
+    name: String,
+    body_base64: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FileDialogFilter {
+    name: String,
+    extensions: Vec<String>,
+}
+
+#[tauri::command]
+async fn fs_pick_file_base64(
+    app: tauri::AppHandle,
+    filters: Option<Vec<FileDialogFilter>>,
+) -> Result<Option<PickedFileBase64>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let mut dialog = app.dialog().file().set_title("选择上传文件");
+        for filter in filters.unwrap_or_default() {
+            let refs = filter
+                .extensions
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            dialog = dialog.add_filter(filter.name, &refs);
+        }
+        dialog.blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("选择文件失败：{e}"))?;
+
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let raw_path = path
+        .into_path()
+        .map_err(|e| format!("选择文件路径无效：{e}"))?;
+    let canon = std::fs::canonicalize(&raw_path).map_err(|e| format!("读取文件失败：{e}"))?;
+    let name = canon
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| "upload.bin".to_string());
+    let body_base64 = read_file_base64_checked(&canon)?;
+    Ok(Some(PickedFileBase64 {
+        path: canon.to_string_lossy().to_string(),
+        name,
+        body_base64,
+    }))
 }
 
 #[tauri::command]
@@ -1002,6 +1308,10 @@ async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("仅支持 http/https".to_string());
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL 不能包含用户名 / 密码".to_string());
+    }
+    reject_private_network_url(&parsed, "图片下载")?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -1069,11 +1379,16 @@ async fn image_paste_from_disk(
     req: ImagePasteFromDiskRequest,
 ) -> Result<ImagePasteResult, String> {
     use base64::Engine;
-    let bytes = std::fs::read(&req.src_path).map_err(|e| format!("读取拖入文件失败：{e}"))?;
-    if bytes.len() > 25 * 1024 * 1024 {
+    let src_path =
+        std::fs::canonicalize(&req.src_path).map_err(|e| format!("读取拖入文件失败：{e}"))?;
+    let meta = std::fs::metadata(&src_path).map_err(|e| format!("读取拖入文件信息失败：{e}"))?;
+    if !meta.is_file() {
+        return Err("拖入图片失败：目标不是文件".to_string());
+    }
+    if meta.len() > 25 * 1024 * 1024 {
         return Err("拖入图片过大（>25MB）".to_string());
     }
-    let mime = match std::path::Path::new(&req.src_path)
+    let mime = match src_path
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase())
@@ -1086,10 +1401,11 @@ async fn image_paste_from_disk(
         Some("bmp") => "image/bmp",
         Some("avif") => "image/avif",
         Some("svg") => "image/svg+xml",
-        _ => "application/octet-stream",
+        _ => return Err("仅支持拖入 png/jpg/gif/webp/bmp/avif/svg 图片文件".to_string()),
     }
     .to_string();
-    let file_name = std::path::Path::new(&req.src_path)
+    let bytes = std::fs::read(&src_path).map_err(|e| format!("读取拖入文件失败：{e}"))?;
+    let file_name = src_path
         .file_name()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string());
@@ -1132,6 +1448,7 @@ async fn webhook_post(
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err("URL 不能包含用户名 / 密码".to_string());
     }
+    reject_private_network_url(&parsed, "Webhook")?;
     if body_json.len() > 64 * 1024 {
         return Err("请求体过大（>64KB）".to_string());
     }
@@ -2107,6 +2424,45 @@ pub(crate) fn is_loopback_host(host: Option<&str>) -> bool {
     matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"))
 }
 
+fn is_private_network_host(host: Option<&str>) -> bool {
+    let Some(host) = host else {
+        return true;
+    };
+    let normalized = host
+        .trim()
+        .trim_matches(['[', ']'])
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if normalized.is_empty() || normalized == "localhost" || normalized.ends_with(".localhost") {
+        return true;
+    }
+    match normalized.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => {
+            let octets = ip.octets();
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+        }
+        Ok(std::net::IpAddr::V6(ip)) => {
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+        }
+        Err(_) => false,
+    }
+}
+
+fn reject_private_network_url(url: &reqwest::Url, label: &str) -> Result<(), String> {
+    if is_private_network_host(url.host_str()) {
+        return Err(format!("{label} 不允许访问 localhost、内网或链路本地地址"));
+    }
+    Ok(())
+}
+
 pub(crate) fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
     let url = reqwest::Url::parse(endpoint).map_err(|e| format!("API endpoint 无效：{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -2134,6 +2490,7 @@ fn allowed_hosts_for(provider: &str) -> &'static [&'static str] {
         "moonshot" => &["api.moonshot.cn"],
         "mistral" => &["api.mistral.ai"],
         "together" => &["api.together.xyz"],
+        "xiaomi" => &["api.xiaomimimo.com"],
         _ => &[],
     }
 }
@@ -2317,6 +2674,13 @@ pub fn run() {
             fs_read_dir,
             fs_read_text,
             fs_read_file_base64,
+            fs_pick_file_base64,
+            fs_sync_scan,
+            fs_sync_read_file_base64,
+            fs_sync_write_file_base64,
+            fs_sync_soft_delete,
+            fs_sync_manifest_read,
+            fs_sync_manifest_write,
             fs_open,
             fs_close,
             fs_save,
@@ -2410,13 +2774,16 @@ pub fn run() {
             dropbox_status,
             dropbox_signout,
             dropbox_list,
+            dropbox_list_continue,
             dropbox_upload,
+            dropbox_create_folder,
             dropbox_download,
             dropbox_delete,
             gdrive_authorize,
             gdrive_status,
             gdrive_signout,
             gdrive_list,
+            gdrive_create_folder,
             gdrive_upload,
             gdrive_download,
             gdrive_delete,
@@ -2561,7 +2928,9 @@ fn forward_cli_open_files(app: &tauri::AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{disk_changed_since_baseline, FileSig};
+    use super::{
+        check_ai_endpoint_host, disk_changed_since_baseline, is_private_network_host, FileSig,
+    };
 
     fn sig(mtime_ms: i64, hash: u64) -> FileSig {
         FileSig { mtime_ms, hash }
@@ -2605,5 +2974,20 @@ mod tests {
         let changed = disk_changed_since_baseline(disk, None, None, None).unwrap();
 
         assert!(changed.is_none());
+    }
+
+    #[test]
+    fn private_network_hosts_are_detected() {
+        assert!(is_private_network_host(Some("localhost")));
+        assert!(is_private_network_host(Some("127.0.0.1")));
+        assert!(is_private_network_host(Some("192.168.1.10")));
+        assert!(is_private_network_host(Some("fe80::1")));
+        assert!(!is_private_network_host(Some("example.com")));
+    }
+
+    #[test]
+    fn xiaomi_endpoint_host_is_allowed() {
+        assert!(check_ai_endpoint_host("xiaomi", "https://api.xiaomimimo.com/v1").is_ok());
+        assert!(check_ai_endpoint_host("xiaomi", "https://example.com/v1").is_err());
     }
 }

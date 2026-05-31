@@ -189,8 +189,8 @@ export function StatusBar() {
         title: "同步冲突",
         message:
           syncConflictFiles.length > 0
-            ? `需要在 Git 设置中解决：\n\n${syncConflictFiles.join("\n")}`
-            : `需要在 Git 设置中解决。${lastSyncError ? `\n\n${lastSyncError}` : ""}`,
+            ? `需要在同步设置中解决：\n\n${syncConflictFiles.join("\n")}`
+            : `需要在同步设置中解决。${lastSyncError ? `\n\n${lastSyncError}` : ""}`,
       });
       return;
     }

@@ -128,7 +128,7 @@ pub(super) fn is_word_char(c: char) -> bool {
 /// 在 line 中找 needle 的"未链接"出现：
 /// 排除已经被 `[[...]]` 包围的位置。
 /// 对 ASCII needle 强制词边界；CJK needle 不强制（中文无分词空格）。
-fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
+pub(super) fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
     let ascii_needle = needle.is_ascii();
     let bytes = line_lower.as_bytes();
     let nlen = needle.len();

@@ -374,6 +374,53 @@ pub async fn upload(
     Ok(parsed.id)
 }
 
+pub async fn create_folder(
+    tokens: &GDriveTokens,
+    name: &str,
+    parent_id: Option<&str>,
+) -> Result<String, String> {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "name".to_string(),
+        serde_json::Value::String(name.to_string()),
+    );
+    meta.insert(
+        "mimeType".to_string(),
+        serde_json::Value::String("application/vnd.google-apps.folder".to_string()),
+    );
+    if let Some(pid) = parent_id {
+        if !pid.is_empty() {
+            meta.insert(
+                "parents".to_string(),
+                serde_json::Value::Array(vec![serde_json::Value::String(pid.to_string())]),
+            );
+        }
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(format!("{API_HOST}/drive/v3/files?fields=id"))
+        .bearer_auth(&tokens.access_token)
+        .json(&meta)
+        .send()
+        .await
+        .map_err(|e| format!("Drive create folder 失败：{e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Drive create folder HTTP {status}: {text}"));
+    }
+    #[derive(Deserialize)]
+    struct R {
+        id: String,
+    }
+    let parsed: R =
+        serde_json::from_str(&text).map_err(|e| format!("Drive create folder 解析失败：{e}"))?;
+    Ok(parsed.id)
+}
+
 pub async fn download(tokens: &GDriveTokens, file_id: &str) -> Result<Vec<u8>, String> {
     let url = format!("{API_HOST}/drive/v3/files/{file_id}?alt=media");
     let client = reqwest::Client::builder()

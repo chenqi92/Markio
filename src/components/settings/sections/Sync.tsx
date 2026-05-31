@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSettings, type DriveId, type DriveConfig } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
-import { api, pickDirectory, pickFile } from "@/lib/api";
+import { api, pickDirectory } from "@/lib/api";
 import { displayPath } from "@/lib/utils";
 import { openExternal } from "@/lib/opener";
 import { type IconName } from "../../ui/Icon";
@@ -86,16 +86,13 @@ export function Sync() {
     }
   };
 
-  // 4 个存储目标的概览行；状态 dot 只反映"是否已配置"，
-  // 真实联通性还要看下方各卡片自己的 probe。S3 是网盘组里的一项，不单独列。
-  const enabledDrives = Object.entries(driveConfigs).filter(([id, c]) => {
-    if (id === "github" || id === "webdav") return false; // 这俩有专用卡，不计入网盘
-    return c?.folder && c?.enabled;
+  const webdavSyncEnabled = !!(driveConfigs.webdav?.enabled && webdavBaseUrl);
+  const totalDriveCount = (["icloud", "s3", "drop", "drive"] as DriveId[]).filter((id) => {
+    const cfg = driveConfigs[id];
+    if (!cfg?.enabled) return false;
+    if (id === "s3") return !!(s3Bucket && s3AccessKeyId);
+    return !!cfg.folder;
   }).length;
-  // s3 在网盘组里有 drawer，但其实写入用 s3Bucket/s3AccessKeyId 两个全局 settings；
-  // 概览展示 "S3 已配置" 计入网盘组的数量。
-  const s3Configured = !!(s3Bucket && s3AccessKeyId);
-  const totalDriveCount = enabledDrives + (s3Configured ? 1 : 0);
 
   const targets: Array<{
     id: string;
@@ -117,8 +114,12 @@ export function Sync() {
     {
       id: "webdav",
       label: "WebDAV",
-      sub: webdavBaseUrl ? webdavBaseUrl : "未配置",
-      dot: webdavBaseUrl ? "ok" : "off",
+      sub: webdavSyncEnabled
+        ? `已启用 · ${driveConfigs.webdav?.folder || webdavBaseUrl}`
+        : webdavBaseUrl
+          ? "已配置 · 未启用同步"
+          : "未配置",
+      dot: webdavSyncEnabled ? "ok" : webdavBaseUrl ? "warn" : "off",
       anchor: "mk-sync-card-webdav",
     },
     {
@@ -147,7 +148,7 @@ export function Sync() {
 
       {/* 顶部概览：5 个存储目标 + 状态点；点击滚到对应卡片 */}
       <div className="settings-card">
-        <div className="settings-card-h">存储与同步目标</div>
+        <div className="settings-card-h">Git 同步与云存储</div>
         <div className="sync-overview">
           {targets.map((t) => (
             <button
@@ -255,11 +256,12 @@ function DrivesCard() {
         : t("settings.sync.driveStatus.disconnected");
     }
     if (id === "s3") {
-      return s3Bucket && s3AccessKeyId
-        ? t("settings.sync.driveStatus.connected", {
-            folder: `${s3Bucket} · ${s3AccessKeyId.slice(0, 6)}…`,
-          })
-        : t("settings.sync.driveStatus.disconnected");
+      const cfg = driveConfigs.s3;
+      if (!s3Bucket || !s3AccessKeyId) return t("settings.sync.driveStatus.disconnected");
+      if (!cfg?.enabled) return t("settings.sync.driveStatus.paused");
+      return t("settings.sync.driveStatus.connected", {
+        folder: `${s3Bucket}/${cfg.folder || "markio"} · ${s3AccessKeyId.slice(0, 6)}…`,
+      });
     }
     const cfg = driveConfigs[id];
     if (!cfg || !cfg.folder) {
@@ -466,7 +468,9 @@ function S3DriveDrawer() {
   const s3AccessKeyId = useSettings((s) => s.s3AccessKeyId);
   const s3PublicBaseUrl = useSettings((s) => s.s3PublicBaseUrl);
   const s3PathStyle = useSettings((s) => s.s3PathStyle);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
+  const syncCfg: DriveConfig = driveConfigs.s3 ?? { folder: "markio", enabled: false };
 
   const [secret, setSecret] = useState("");
   const [hasStoredSecret, setHasStoredSecret] = useState(false);
@@ -491,6 +495,21 @@ function S3DriveDrawer() {
     publicBaseUrl: s3PublicBaseUrl || undefined,
     pathStyle: s3PathStyle,
   });
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      s3: { ...syncCfg, folder: syncCfg.folder || "markio", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && (!s3Endpoint || !s3Bucket || !s3AccessKeyId)) {
+      setMsg({ kind: "err", text: "启用同步前请先填写 endpoint / bucket / accessKeyId" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
 
   useEffect(() => {
     if (!s3Endpoint) {
@@ -701,6 +720,29 @@ function S3DriveDrawer() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
+          <div className="settings-label">同步前缀</div>
+          <div className="settings-help">自动同步会读写这个 prefix 下的仓库文件</div>
+        </div>
+        <input
+          type="text"
+          value={syncCfg.folder || "markio"}
+          onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+          placeholder="markio"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">启用 S3 同步</div>
+          <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+        </div>
+        <Toggle
+          on={syncCfg.enabled && !!s3Endpoint && !!s3Bucket && !!s3AccessKeyId}
+          onChange={setSyncEnabled}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
           <div className="settings-label">前缀（用于浏览）</div>
           <div className="settings-help">可选；只列出 key 以此开头的对象</div>
         </div>
@@ -802,7 +844,9 @@ function S3DriveDrawer() {
 
 function DropboxDriveDrawer() {
   const clientId = useSettings((s) => s.dropboxClientId);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
+  const syncCfg: DriveConfig = driveConfigs.drop ?? { folder: "/markio", enabled: false };
   const [status, setStatus] = useState<{
     connected: boolean;
     display: string;
@@ -815,11 +859,26 @@ function DropboxDriveDrawer() {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [listPath, setListPath] = useState("");
   const [entries, setEntries] = useState<
-    Array<{ tag: string; name: string; pathLower: string; size: number; serverModified: string }>
+    Array<{ tag: string; name: string; pathLower: string; pathDisplay: string; size: number; serverModified: string }>
     | null
   >(null);
   const [uploadPath, setUploadPath] = useState("");
   const confirmDialog = useDialog((s) => s.confirm);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      drop: { ...syncCfg, folder: syncCfg.folder || "/markio", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !status?.connected) {
+      setMsg({ kind: "err", text: "启用同步前请先完成 Dropbox 授权" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
 
   useEffect(() => {
     api.dropboxStatus().then(setStatus).catch(() => setStatus(null));
@@ -904,14 +963,13 @@ function DropboxDriveDrawer() {
       setMsg({ kind: "err", text: "上传路径需以 / 开头，例如 /markio/test.md" });
       return;
     }
-    const localFile = await pickFile([{ name: "Any", extensions: ["*"] }]);
-    if (!localFile) return;
+    const picked = await api.pickFileBase64();
+    if (!picked) return;
     setBusy("upload");
     setMsg(null);
     try {
-      const bodyBase64 = await api.readFileBase64(localFile);
-      await api.dropboxUpload(uploadPath.trim(), bodyBase64);
-      setMsg({ kind: "ok", text: `已上传 ${localFile} → ${uploadPath}` });
+      await api.dropboxUpload(uploadPath.trim(), picked.bodyBase64);
+      setMsg({ kind: "ok", text: `已上传 ${picked.path} → ${uploadPath}` });
     } catch (e) {
       setMsg({ kind: "err", text: String(e) });
     } finally {
@@ -993,6 +1051,29 @@ function DropboxDriveDrawer() {
         <>
           <div className="settings-row">
             <div className="settings-row-l">
+              <div className="settings-label">同步根目录</div>
+              <div className="settings-help">自动同步会读写这个 Dropbox 目录</div>
+            </div>
+            <input
+              type="text"
+              value={syncCfg.folder || "/markio"}
+              onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+              placeholder="/markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">启用 Dropbox 同步</div>
+              <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+            </div>
+            <Toggle
+              on={syncCfg.enabled && !!connected}
+              onChange={setSyncEnabled}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
               <div className="settings-label">浏览路径</div>
               <div className="settings-help">空字符串=根目录</div>
             </div>
@@ -1040,7 +1121,7 @@ function DropboxDriveDrawer() {
                       [{e.tag}]
                     </span>
                     <span style={{ flex: 1, wordBreak: "break-all" }}>
-                      {e.name}
+                      {e.pathDisplay || e.name}
                     </span>
                     {e.tag === "file" && (
                       <span style={{ color: "var(--text-3)", fontSize: 12 }}>
@@ -1051,7 +1132,7 @@ function DropboxDriveDrawer() {
                       className="settings-btn"
                       type="button"
                       disabled={busy !== null}
-                      onClick={() => del(e.pathLower || `/${e.name}`)}
+                      onClick={() => del(e.pathDisplay || e.pathLower || `/${e.name}`)}
                       style={{ padding: "2px 8px" }}
                     >
                       删除
@@ -1100,7 +1181,9 @@ function DropboxDriveDrawer() {
 
 function GDriveDriveDrawer() {
   const clientId = useSettings((s) => s.gdriveClientId);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
+  const syncCfg: DriveConfig = driveConfigs.drive ?? { folder: "root", enabled: false };
   const [status, setStatus] = useState<{
     connected: boolean;
     display: string;
@@ -1122,6 +1205,21 @@ function GDriveDriveDrawer() {
     | null
   >(null);
   const confirmDialog = useDialog((s) => s.confirm);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      drive: { ...syncCfg, folder: syncCfg.folder || "root", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !status?.connected) {
+      setMsg({ kind: "err", text: "启用同步前请先完成 Google Drive 授权" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
 
   useEffect(() => {
     api.gdriveStatus().then(setStatus).catch(() => setStatus(null));
@@ -1202,19 +1300,18 @@ function GDriveDriveDrawer() {
   };
 
   const upload = async () => {
-    const localFile = await pickFile([{ name: "Any", extensions: ["*"] }]);
-    if (!localFile) return;
+    const picked = await api.pickFileBase64();
+    if (!picked) return;
     setBusy("upload");
     setMsg(null);
     try {
-      const bodyBase64 = await api.readFileBase64(localFile);
-      const name = fileNameFromPath(localFile);
+      const name = picked.name || fileNameFromPath(picked.path);
       const id = await api.gdriveUpload(
         name,
         null,
         null,
-        bodyBase64,
-        contentTypeFromPath(localFile),
+        picked.bodyBase64,
+        contentTypeFromPath(picked.path),
       );
       setMsg({ kind: "ok", text: `已上传 ${name} (id=${id})` });
     } catch (e) {
@@ -1297,6 +1394,31 @@ function GDriveDriveDrawer() {
       </div>
       {connected && (
         <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">同步根文件夹 ID</div>
+              <div className="settings-help">
+                root 表示 Drive 根目录；也可以填一个 markio 文件夹的 ID
+              </div>
+            </div>
+            <input
+              type="text"
+              value={syncCfg.folder || "root"}
+              onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+              placeholder="root"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">启用 Google Drive 同步</div>
+              <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+            </div>
+            <Toggle
+              on={syncCfg.enabled && !!connected}
+              onChange={setSyncEnabled}
+            />
+          </div>
           <div className="settings-row">
             <div className="settings-row-l">
               <div className="settings-label">查询表达式 q</div>

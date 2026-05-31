@@ -113,6 +113,19 @@ export interface PasteImageResult {
   warning?: string | null;
 }
 
+export interface PickedFileBase64 {
+  path: string;
+  name: string;
+  bodyBase64: string;
+}
+
+export interface SyncFileEntry {
+  relPath: string;
+  mtime: number;
+  hash: string;
+  size: number;
+}
+
 export interface VaultFile {
   path: string;
   name: string;
@@ -879,14 +892,30 @@ export const api = {
         tag: string;
         name: string;
         pathLower: string;
+        pathDisplay: string;
         size: number;
         serverModified: string;
       }>;
       hasMore: boolean;
       cursor: string | null;
     }>("dropbox_list", { path }),
+  dropboxListContinue: (cursor: string) =>
+    invoke<{
+      entries: Array<{
+        tag: string;
+        name: string;
+        pathLower: string;
+        pathDisplay: string;
+        size: number;
+        serverModified: string;
+      }>;
+      hasMore: boolean;
+      cursor: string | null;
+    }>("dropbox_list_continue", { cursor }),
   dropboxUpload: (path: string, bodyBase64: string) =>
     invoke<void>("dropbox_upload", { path, bodyBase64 }),
+  dropboxCreateFolder: (path: string) =>
+    invoke<void>("dropbox_create_folder", { path }),
   dropboxDownload: (path: string) =>
     invoke<string>("dropbox_download", { path }),
   dropboxDelete: (path: string) => invoke<void>("dropbox_delete", { path }),
@@ -927,6 +956,8 @@ export const api = {
       bodyBase64,
       mimeType,
     }),
+  gdriveCreateFolder: (name: string, parentId: string | null) =>
+    invoke<string>("gdrive_create_folder", { name, parentId }),
   gdriveDownload: (fileId: string) =>
     invoke<string>("gdrive_download", { fileId }),
   gdriveDelete: (fileId: string) => invoke<void>("gdrive_delete", { fileId }),
@@ -1012,9 +1043,24 @@ export const api = {
 
   /** 只读文件内容，不登记保存基线；写入必须走 open/createNew + save。 */
   readText: (path: string) => invoke<string>("fs_read_text", { path }),
-  /** 读取本地文件为 base64，供云盘二进制安全上传使用。 */
+  /** 读取仓库内文件为 base64；任意本地文件上传应走 pickFileBase64。 */
   readFileBase64: (path: string) =>
     invoke<string>("fs_read_file_base64", { path }),
+  /** 由 Rust 侧弹出文件选择器并读取为 base64，避免前端传任意路径。 */
+  pickFileBase64: (filters?: { name: string; extensions: string[] }[]) =>
+    invoke<PickedFileBase64 | null>("fs_pick_file_base64", { filters }),
+  syncScan: (workspace: string) =>
+    invoke<SyncFileEntry[]>("fs_sync_scan", { workspace }),
+  syncReadFileBase64: (workspace: string, relPath: string) =>
+    invoke<string>("fs_sync_read_file_base64", { workspace, relPath }),
+  syncWriteFileBase64: (workspace: string, relPath: string, bodyBase64: string) =>
+    invoke<FileSig>("fs_sync_write_file_base64", { workspace, relPath, bodyBase64 }),
+  syncSoftDelete: (workspace: string, relPath: string) =>
+    invoke<FileSig>("fs_sync_soft_delete", { workspace, relPath }),
+  syncManifestRead: (workspace: string, id: string) =>
+    invoke<string | null>("fs_sync_manifest_read", { workspace, id }),
+  syncManifestWrite: (workspace: string, id: string, content: string) =>
+    invoke<void>("fs_sync_manifest_write", { workspace, id, content }),
 
   // dev 期日志投递（release 端 Rust 侧是 no-op）
   devLogAppend: (

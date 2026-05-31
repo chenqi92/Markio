@@ -2,6 +2,10 @@ import { api, isDesktop, type GitStatus } from "@/lib/api";
 import { useSettings } from "@/stores/settings";
 import { useSync } from "@/stores/sync";
 import { reportDiagnostic } from "@/stores/diagnostics";
+import { createCloudSyncTargets, type CloudSyncSettings, type CloudSyncTarget } from "@/lib/sync/adapters";
+import { createLocalFs, createManifestIO } from "@/lib/sync/local";
+import { runSync } from "@/lib/sync/engine";
+import type { SyncReport, SyncStage as CloudSyncStage } from "@/lib/sync/types";
 
 const FREQ_MS: Record<string, number> = {
   "30s": 30_000,
@@ -35,7 +39,17 @@ export interface SyncWorkflowDeps {
     files: string[],
   ) => Promise<void>;
   sync: () => SyncStoreApi;
-  settings: () => Pick<ReturnType<typeof useSettings.getState>, "syncConflictStrategy">;
+  settings: () => CloudSyncSettings;
+  createCloudTargets?: (settings: CloudSyncSettings) => CloudSyncTarget[];
+  runCloudTarget?: (
+    workspace: string,
+    target: CloudSyncTarget,
+    settings: CloudSyncSettings,
+    callbacks: {
+      onStage: (stage: CloudSyncStage, detail?: string) => void;
+      onProgress: (done: number, total: number, current?: string) => void;
+    },
+  ) => Promise<SyncReport>;
   report: typeof reportDiagnostic;
   now: () => Date;
   online: () => boolean;
@@ -86,11 +100,157 @@ function defaultDeps(): SyncWorkflowDeps {
       api.gitResolveConflict(workspace, strategy, files),
     sync: () => useSync.getState(),
     settings: () => useSettings.getState(),
+    createCloudTargets: createCloudSyncTargets,
+    runCloudTarget: runCloudSyncTarget,
     report: reportDiagnostic,
     now: () => new Date(),
     online: () =>
       typeof navigator === "undefined" ? true : navigator.onLine,
   };
+}
+
+function cloudStageLabel(stage: CloudSyncStage): string {
+  switch (stage) {
+    case "scan_local":
+      return "扫描本地";
+    case "scan_remote":
+      return "获取远端";
+    case "diff":
+      return "计算差异";
+    case "execute":
+      return "执行同步";
+    case "finalize":
+      return "写入同步状态";
+    case "cancelled":
+      return "已取消";
+    case "error":
+      return "同步失败";
+    case "idle":
+    default:
+      return "准备同步";
+  }
+}
+
+function cloudStoreStage(stage: CloudSyncStage): Parameters<SyncStoreApi["setStage"]>[0] {
+  switch (stage) {
+    case "scan_remote":
+      return "fetch";
+    case "execute":
+      return "push";
+    case "finalize":
+      return "done";
+    case "error":
+      return "error";
+    case "cancelled":
+    case "idle":
+      return "idle";
+    case "scan_local":
+    case "diff":
+    default:
+      return "preflight";
+  }
+}
+
+function summarizeCloudReports(reports: Array<{ target: CloudSyncTarget; report: SyncReport }>): string {
+  const parts = reports.map(({ target, report }) => {
+    const s = report.plan.summary;
+    const changed = s.upload + s.download + s.deleteLocal + s.deleteRemote;
+    if (changed === 0) return `${target.label} 无变更`;
+    const details = [
+      s.upload ? `上传 ${s.upload}` : "",
+      s.download ? `下载 ${s.download}` : "",
+      s.deleteRemote ? `删远端 ${s.deleteRemote}` : "",
+      s.deleteLocal ? `删本地 ${s.deleteLocal}` : "",
+    ].filter(Boolean);
+    return `${target.label} ${details.join(" · ")}`;
+  });
+  return `同步完成 · ${parts.join("；")}`;
+}
+
+async function runCloudSyncTarget(
+  workspace: string,
+  target: CloudSyncTarget,
+  settings: CloudSyncSettings,
+  callbacks: {
+    onStage: (stage: CloudSyncStage, detail?: string) => void;
+    onProgress: (done: number, total: number, current?: string) => void;
+  },
+): Promise<SyncReport> {
+  return runSync(
+    workspace,
+    target.remoteRoot,
+    {
+      conflictStrategy: settings.syncConflictStrategy,
+      now: Date.now,
+    },
+    {
+      adapter: target.adapter,
+      manifestIo: createManifestIO(target.manifestId),
+      localFs: createLocalFs(),
+      onStage: callbacks.onStage,
+      onProgress: callbacks.onProgress,
+    },
+  );
+}
+
+async function runCloudSyncWorkflow(
+  workspace: string,
+  targets: CloudSyncTarget[],
+  settings: CloudSyncSettings,
+  deps: SyncWorkflowDeps,
+  sync: SyncStoreApi,
+): Promise<void> {
+  const runner = deps.runCloudTarget ?? runCloudSyncTarget;
+  const reports: Array<{ target: CloudSyncTarget; report: SyncReport }> = [];
+
+  for (const target of targets) {
+    sync.setStage("preflight", `${target.label} · 准备同步`);
+    const report = await runner(workspace, target, settings, {
+      onStage(stage, detail) {
+        if (stage === "idle") return;
+        const label = detail || cloudStageLabel(stage);
+        sync.setStage(cloudStoreStage(stage), `${target.label} · ${label}`);
+      },
+      onProgress(done, total, current) {
+        if (total <= 0) return;
+        sync.setStage("push", `${target.label} · ${done}/${total}${current ? ` · ${current}` : ""}`);
+      },
+    });
+    reports.push({ target, report });
+
+    if (report.fatalError) {
+      throw new Error(`${target.label} 同步失败：${report.fatalError}`);
+    }
+
+    const failed = report.results.filter((r) => !r.ok);
+    if (failed.length > 0) {
+      const failedPaths = new Set(failed.map((r) => r.relPath));
+      const conflicts = report.plan.actions
+        .filter((action) => action.kind === "conflict" && failedPaths.has(action.relPath))
+        .map((action) => action.relPath);
+      if (conflicts.length > 0) {
+        const message = `${target.label} 同步冲突：${conflicts.length} 个文件需要处理`;
+        sync.setConflict(conflicts, message);
+        deps.report({
+          source: "sync",
+          severity: "error",
+          message: "云同步冲突",
+          detail: message,
+          workspace,
+        });
+        return;
+      }
+      throw new Error(
+        `${target.label} 同步有 ${failed.length} 个动作失败：${failed
+          .slice(0, 3)
+          .map((r) => `${r.relPath}: ${r.error}`)
+          .join("；")}`,
+      );
+    }
+  }
+
+  sync.setLastSync(deps.now().getTime());
+  sync.setStage("done", summarizeCloudReports(reports));
 }
 
 export async function runSyncWorkflow(
@@ -107,7 +267,16 @@ export async function runSyncWorkflow(
   }
   sync.setInflight(workspace, true);
   sync.setStage("preflight", "检查 Git 状态");
+  let activeMode: "git" | "cloud" = "git";
   try {
+    const settings = deps.settings();
+    const cloudTargets = deps.createCloudTargets?.(settings) ?? [];
+    if (cloudTargets.length > 0) {
+      activeMode = "cloud";
+      await runCloudSyncWorkflow(workspace, cloudTargets, settings, deps, sync);
+      return;
+    }
+
     let status: GitStatus;
     try {
       status = await deps.gitStatus(workspace);
@@ -208,7 +377,13 @@ export async function runSyncWorkflow(
     deps.report({
       source: "sync",
       severity: "error",
-      message: conflictFiles ? "Git 同步冲突" : "Git 同步失败",
+      message: conflictFiles
+        ? activeMode === "cloud"
+          ? "云同步冲突"
+          : "Git 同步冲突"
+        : activeMode === "cloud"
+          ? "云同步失败"
+          : "Git 同步失败",
       detail: message,
       workspace,
     });

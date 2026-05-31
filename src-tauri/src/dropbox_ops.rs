@@ -41,6 +41,7 @@ pub struct DropboxEntry {
     pub tag: String, // "file" | "folder" | "deleted"
     pub name: String,
     pub path_lower: String,
+    pub path_display: String,
     pub size: u64,
     pub server_modified: String,
 }
@@ -51,6 +52,28 @@ pub struct DropboxList {
     pub entries: Vec<DropboxEntry>,
     pub has_more: bool,
     pub cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawDropboxEntry {
+    #[serde(rename = ".tag")]
+    tag: String,
+    name: String,
+    #[serde(default)]
+    path_lower: String,
+    #[serde(default)]
+    path_display: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    server_modified: String,
+}
+
+#[derive(Deserialize)]
+struct RawDropboxList {
+    entries: Vec<RawDropboxEntry>,
+    has_more: bool,
+    cursor: String,
 }
 
 fn now_epoch() -> u64 {
@@ -242,27 +265,40 @@ pub async fn list_folder(tokens: &DropboxTokens, path: &str) -> Result<DropboxLi
     if !status.is_success() {
         return Err(format!("Dropbox list HTTP {status}: {text}"));
     }
-    #[derive(Deserialize)]
-    struct RawEntry {
-        #[serde(rename = ".tag")]
-        tag: String,
-        name: String,
-        #[serde(default)]
-        path_lower: String,
-        #[serde(default)]
-        size: u64,
-        #[serde(default)]
-        server_modified: String,
-    }
-    #[derive(Deserialize)]
-    struct R {
-        entries: Vec<RawEntry>,
-        has_more: bool,
-        cursor: String,
-    }
-    let parsed: R =
+    let parsed: RawDropboxList =
         serde_json::from_str(&text).map_err(|e| format!("Dropbox list 响应解析失败：{e}"))?;
-    Ok(DropboxList {
+    Ok(dropbox_list_from_raw(parsed))
+}
+
+pub async fn list_folder_continue(
+    tokens: &DropboxTokens,
+    cursor: &str,
+) -> Result<DropboxList, String> {
+    let body = serde_json::json!({ "cursor": cursor });
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(format!("{API_HOST}/2/files/list_folder/continue"))
+        .bearer_auth(&tokens.access_token)
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("Dropbox list_folder/continue 失败：{e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Dropbox list/continue HTTP {status}: {text}"));
+    }
+    let parsed: RawDropboxList = serde_json::from_str(&text)
+        .map_err(|e| format!("Dropbox list/continue 响应解析失败：{e}"))?;
+    Ok(dropbox_list_from_raw(parsed))
+}
+
+fn dropbox_list_from_raw(parsed: RawDropboxList) -> DropboxList {
+    DropboxList {
         entries: parsed
             .entries
             .into_iter()
@@ -270,13 +306,14 @@ pub async fn list_folder(tokens: &DropboxTokens, path: &str) -> Result<DropboxLi
                 tag: e.tag,
                 name: e.name,
                 path_lower: e.path_lower,
+                path_display: e.path_display,
                 size: e.size,
                 server_modified: e.server_modified,
             })
             .collect(),
         has_more: parsed.has_more,
         cursor: Some(parsed.cursor),
-    })
+    }
 }
 
 pub async fn upload(tokens: &DropboxTokens, path: &str, bytes: Vec<u8>) -> Result<(), String> {
@@ -313,6 +350,31 @@ pub async fn upload(tokens: &DropboxTokens, path: &str, bytes: Vec<u8>) -> Resul
         return Err(format!("Dropbox upload HTTP {status}: {text}"));
     }
     Ok(())
+}
+
+pub async fn create_folder(tokens: &DropboxTokens, path: &str) -> Result<(), String> {
+    let body = serde_json::json!({
+        "path": path,
+        "autorename": false,
+    });
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(format!("{API_HOST}/2/files/create_folder_v2"))
+        .bearer_auth(&tokens.access_token)
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("Dropbox create_folder 失败：{e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if status.is_success() || status.as_u16() == 409 {
+        return Ok(());
+    }
+    Err(format!("Dropbox create_folder HTTP {status}: {text}"))
 }
 
 pub async fn download(tokens: &DropboxTokens, path: &str) -> Result<Vec<u8>, String> {

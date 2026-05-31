@@ -26,6 +26,7 @@ pub(crate) fn is_allowed_secret_account(account: &str) -> bool {
             | "ai:moonshot"
             | "ai:mistral"
             | "ai:together"
+            | "ai:xiaomi"
             | "embed:openai"
             | "rerank:cohere"
     )

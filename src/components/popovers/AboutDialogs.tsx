@@ -5,7 +5,7 @@ import { Icon } from "../ui/Icon";
 import { useDiagnostics } from "@/stores/diagnostics";
 import { openExternal } from "@/lib/opener";
 import { writeImage, readImageAsPng } from "@/lib/clipboard";
-import { api, isDesktop, pickFile } from "@/lib/api";
+import { api, isDesktop } from "@/lib/api";
 import { useOpsLog } from "@/stores/opsLog";
 
 // ─── 共用：模态外壳 ────────────────────────────────────────────────
@@ -497,11 +497,12 @@ export function FeedbackDialog({
     setAttachError(null);
     setAttachBusy("file");
     try {
-      const path = await pickFile([
+      const picked = await api.pickFileBase64([
         { name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
       ]);
-      if (!path) return;
-      const base64 = await api.readFileBase64(path);
+      if (!picked) return;
+      const base64 = picked.bodyBase64;
+      const path = picked.path;
       const ext = path.split(".").pop()?.toLowerCase() || "png";
       const mime =
         ext === "jpg" || ext === "jpeg"

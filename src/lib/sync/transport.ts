@@ -20,14 +20,14 @@ export interface DriveAdapter {
   /** 列出 remoteRoot 下所有文件（递归），按 relPath 形式返回 */
   list(remoteRoot: string): Promise<FileEntry[]>;
 
-  /** 读单个文件内容（utf-8 文本；二进制走 base64 由 adapter 内部决定） */
+  /** 读单个文件内容。当前 adapter 统一返回 base64，避免图片/PDF 等资源损坏。 */
   get(remoteRoot: string, relPath: string): Promise<{
     content: string;
     etag: string;
     mtime: number;
   }>;
 
-  /** 写单个文件；返回写完后的 etag + mtime 用于回写 manifest */
+  /** 写单个文件（content 为 base64）；返回写完后的 etag + mtime 用于回写 manifest */
   put(
     remoteRoot: string,
     relPath: string,

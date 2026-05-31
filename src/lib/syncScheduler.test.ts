@@ -4,6 +4,8 @@ import {
   runSyncWorkflow,
   type SyncWorkflowDeps,
 } from "./syncScheduler";
+import type { CloudSyncTarget } from "@/lib/sync/adapters";
+import type { SyncReport } from "@/lib/sync/types";
 
 function gitStatus(patch: Partial<GitStatus> = {}): GitStatus {
   return {
@@ -205,5 +207,45 @@ describe("runSyncWorkflow", () => {
       "conflict",
       "按策略自动处理冲突 · 采用较新版本",
     ]);
+  });
+
+  it("runs enabled cloud targets instead of the Git workflow", async () => {
+    const { deps, calls, gitCalls } = makeDeps([gitStatus()]);
+    const target: CloudSyncTarget = {
+      id: "webdav",
+      settingsId: "webdav",
+      label: "WebDAV",
+      remoteRoot: "markio",
+      manifestId: "cloud-webdav",
+      adapter: {} as CloudSyncTarget["adapter"],
+    };
+    const report: SyncReport = {
+      stage: "idle",
+      startedAt: 1,
+      finishedAt: 2,
+      plan: {
+        actions: [],
+        summary: { upload: 0, download: 0, deleteRemote: 0, deleteLocal: 0, conflict: 0 },
+      },
+      results: [],
+    };
+    deps.createCloudTargets = vi.fn(() => [target]);
+    deps.runCloudTarget = vi.fn(async (_workspace, _target, _settings, callbacks) => {
+      callbacks.onStage("scan_local");
+      callbacks.onStage("finalize");
+      return report;
+    });
+
+    await runSyncWorkflow("/repo", deps);
+
+    expect(gitCalls).toEqual([]);
+    expect(deps.runCloudTarget).toHaveBeenCalledWith(
+      "/repo",
+      target,
+      { syncConflictStrategy: "ask" },
+      expect.any(Object),
+    );
+    expect(calls).toContainEqual(["lastSync", Date.parse("2026-05-20T00:00:00.000Z")]);
+    expect(calls).toContainEqual(["stage", "done", "同步完成 · WebDAV 无变更"]);
   });
 });

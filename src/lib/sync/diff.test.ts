@@ -216,7 +216,7 @@ describe("planDiff —— 决策表覆盖", () => {
     });
   });
 
-  it("本地丢失但 baseline 有 + 远端有 → download（用户手动删了，重新拉）", () => {
+  it("本地丢失但远端未变 → delete_remote（同步本地删除）", () => {
     const plan = planDiff(
       [],
       [fe("a.md", "h1")],
@@ -224,8 +224,21 @@ describe("planDiff —— 决策表覆盖", () => {
       opts(),
     );
     expect(plan.actions[0]).toMatchObject({
+      kind: "delete_remote",
+      reason: "local_missing_remote_unchanged",
+    });
+  });
+
+  it("本地丢失但远端已改 → download（保留其它设备新编辑）", () => {
+    const plan = planDiff(
+      [],
+      [fe("a.md", "h2")],
+      manifestWith({ "a.md": baseline("h1") }),
+      opts(),
+    );
+    expect(plan.actions[0]).toMatchObject({
       kind: "download",
-      reason: "local_missing_with_baseline",
+      reason: "local_missing_remote_modified",
     });
   });
 

@@ -19,7 +19,7 @@ pub struct TrashItem {
     pub is_dir: bool,
 }
 
-fn trash_dir(workspace: &str) -> PathBuf {
+pub(super) fn trash_dir(workspace: &str) -> PathBuf {
     PathBuf::from(workspace).join(".markio").join("trash")
 }
 
@@ -35,7 +35,7 @@ fn restore_from_trash(stored: &Path, dest: &Path) -> Result<(), String> {
     fs::rename(stored, dest).map_err(|e| e.to_string())
 }
 
-fn trash_item_paths(
+pub(super) fn trash_item_paths(
     dir: &Path,
     timestamp: i64,
     name: &str,
@@ -270,4 +270,3 @@ pub fn reveal_in_os(path: &str) -> Result<(), String> {
         Ok(())
     }
 }
-

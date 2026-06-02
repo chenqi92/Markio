@@ -185,10 +185,7 @@ pub fn trash_legacy_import_dir(workspace: &Path, path: &Path) -> Result<(), Stri
     if parse_legacy_dir_name(&name).is_none() {
         return Err("不是旧时间戳命名（<provider>-YYYYMMDD-HHMMSS），拒绝清理".into());
     }
-    crate::fs_ops::trash_move(
-        &workspace.to_string_lossy(),
-        &resolved.to_string_lossy(),
-    )
+    crate::fs_ops::trash_move(&workspace.to_string_lossy(), &resolved.to_string_lossy())
 }
 
 pub(super) fn parse_legacy_dir_name(name: &str) -> Option<(String, String)> {
@@ -409,7 +406,16 @@ pub(super) fn copy_dir_incremental(
         let from = entry.path();
         let to = dst.join(&name);
         if ft.is_dir() {
-            copy_dir_incremental(root, &from, &to, provider, session, count, skipped, depth + 1)?;
+            copy_dir_incremental(
+                root,
+                &from,
+                &to,
+                provider,
+                session,
+                count,
+                skipped,
+                depth + 1,
+            )?;
         } else if ft.is_file() {
             let meta = entry.metadata().map_err(|e| e.to_string())?;
             if meta.len() > MAX_IMPORT_ENTRY_BYTES {

@@ -5,8 +5,10 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
+use super::walker_io::{
+    attachment_kind, ignored_by_rules, is_hidden, is_markdown, modified_ms, MAX_DEPTH, MAX_ENTRIES,
+};
 use crate::ignore::IgnoreRules;
-use super::walker_io::{is_hidden, is_markdown, ignored_by_rules, attachment_kind, modified_ms, MAX_DEPTH, MAX_ENTRIES};
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -258,12 +260,12 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::backlinks::line_has_unlinked;
     use super::super::tokens::extract_tokens_into;
     use super::super::trash::{
         trash_dir, trash_item_paths, trash_list, trash_move, trash_purge, trash_restore,
     };
+    use super::*;
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 

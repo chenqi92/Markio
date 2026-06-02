@@ -13,9 +13,7 @@ pub struct ClipperStatusDto {
 }
 
 #[tauri::command]
-pub fn clipper_status(
-    runtime: tauri::State<'_, Arc<clipper::ClipperRuntime>>,
-) -> ClipperStatusDto {
+pub fn clipper_status(runtime: tauri::State<'_, Arc<clipper::ClipperRuntime>>) -> ClipperStatusDto {
     let s = runtime.status();
     ClipperStatusDto {
         port: s.port,

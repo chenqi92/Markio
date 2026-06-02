@@ -119,4 +119,3 @@ end run
 pub fn import_apple_notes(_workspace: &Path) -> Result<ImportReport, String> {
     Err("Apple Notes 导入仅在 macOS 可用".into())
 }
-

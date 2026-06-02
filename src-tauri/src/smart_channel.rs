@@ -140,7 +140,10 @@ async fn run(app: AppHandle, runtime: Arc<SmartChannelRuntime>) -> Result<(), St
 
 fn check_token(headers: &HeaderMap, expected: &Option<String>) -> Result<(), (StatusCode, String)> {
     let Some(want) = expected else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "SmartChannel 尚未就绪".into()));
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SmartChannel 尚未就绪".into(),
+        ));
     };
     let got = headers
         .get("authorization")
@@ -198,7 +201,10 @@ async fn query(
     });
     if let Err(e) = s.app.emit("smart-channel-request", &payload) {
         s.runtime.take_pending(&id);
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("派发请求失败：{e}")));
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("派发请求失败：{e}"),
+        ));
     }
 
     match tokio::time::timeout(Duration::from_secs(120), rx).await {

@@ -139,4 +139,3 @@ fn rewrite_notion_links(text: &str) -> String {
     }
     out
 }
-

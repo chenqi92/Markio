@@ -31,4 +31,3 @@ pub fn import_obsidian(src_dir: &Path, workspace: &Path) -> Result<ImportReport,
         report_path: None,
     }))
 }
-

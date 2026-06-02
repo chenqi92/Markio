@@ -126,7 +126,9 @@ fn is_known_embedding_host(host: Option<&str>) -> bool {
         "openrouter.ai",
         "api.voyageai.com",
     ];
-    HOSTS.iter().any(|known| h == *known || h.ends_with(&format!(".{known}")))
+    HOSTS
+        .iter()
+        .any(|known| h == *known || h.ends_with(&format!(".{known}")))
 }
 
 fn rag_jobs() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {

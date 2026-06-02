@@ -154,9 +154,8 @@ impl LoopbackListener {
                     match state.as_deref() {
                         Some(got) if got == expected => {}
                         _ => {
-                            return Err(
-                                "OAuth state 校验失败（缺失或不匹配，可能被中间人篡改）".to_string(),
-                            )
+                            return Err("OAuth state 校验失败（缺失或不匹配，可能被中间人篡改）"
+                                .to_string())
                         }
                     }
                 }

@@ -16,11 +16,11 @@ mod markdown;
 mod mcp;
 mod oauth;
 mod p2p;
-mod smart_channel;
 pub mod rag;
 mod rss;
 mod s3_ops;
 mod secrets;
+mod smart_channel;
 mod state;
 mod storefront;
 mod watcher;
@@ -32,10 +32,6 @@ use commands::{
     clipper::{
         clipper_set_active_workspace, clipper_set_config, clipper_set_summary, clipper_status,
     },
-    p2p::{
-        p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
-    },
-    smart_channel::{smart_channel_respond, smart_channel_set_config, smart_channel_status},
     dropbox::{
         dropbox_authorize, dropbox_create_folder, dropbox_delete, dropbox_download, dropbox_list,
         dropbox_list_continue, dropbox_signout, dropbox_status, dropbox_upload,
@@ -52,6 +48,9 @@ use commands::{
     icloud::icloud_default_path,
     import::{import_apple_notes, import_list_legacy_dirs, import_run, import_trash_legacy_dir},
     mcp::{mcp_set_active_workspace, mcp_status},
+    p2p::{
+        p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
+    },
     rag::{
         rag_cancel, rag_clear, rag_embed_test, rag_reindex, rag_reindex_file, rag_remove_file,
         rag_repo_graph, rag_search, rag_status,
@@ -62,6 +61,7 @@ use commands::{
         s3_set_secret,
     },
     secret::{secret_copy, secret_delete, secret_get, secret_has, secret_set},
+    smart_channel::{smart_channel_respond, smart_channel_set_config, smart_channel_status},
     theme::{theme_delete, theme_dir_path, theme_import, theme_list, theme_read},
     webdav::{
         webdav_delete, webdav_get, webdav_has_password, webdav_list, webdav_mkcol, webdav_put,
@@ -2693,7 +2693,9 @@ pub fn run() {
         .manage(AppState::default())
         .manage(std::sync::Arc::new(mcp::McpRuntime::default()))
         .manage(std::sync::Arc::new(clipper::ClipperRuntime::default()))
-        .manage(std::sync::Arc::new(smart_channel::SmartChannelRuntime::default()))
+        .manage(std::sync::Arc::new(
+            smart_channel::SmartChannelRuntime::default(),
+        ))
         .manage(std::sync::Arc::new(p2p::P2pRuntime::default()))
         .invoke_handler(tauri::generate_handler![
             md_render,

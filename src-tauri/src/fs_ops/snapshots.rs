@@ -151,4 +151,3 @@ pub fn list_all_snapshots(workspace: &str) -> Result<Vec<TimelineEntry>, String>
     out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     Ok(out)
 }
-

@@ -78,9 +78,7 @@ pub fn p2p_set_active_workspace(
 
 /// 打开配对窗口（5 分钟），返回 6 位配对码给用户口头/扫码告诉对端。
 #[tauri::command]
-pub fn p2p_open_pairing(
-    runtime: tauri::State<'_, Arc<p2p::P2pRuntime>>,
-) -> String {
+pub fn p2p_open_pairing(runtime: tauri::State<'_, Arc<p2p::P2pRuntime>>) -> String {
     runtime.open_pairing()
 }
 

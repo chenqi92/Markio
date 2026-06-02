@@ -436,13 +436,12 @@ async fn call_anthropic_with_tools(req: AgentRequest) -> Result<AgentTurnResult,
 
     let mut messages: Vec<serde_json::Value> = Vec::new();
     let mut pending_tool_results: Vec<serde_json::Value> = Vec::new();
-    let flush_results =
-        |pending: &mut Vec<serde_json::Value>, out: &mut Vec<serde_json::Value>| {
-            if !pending.is_empty() {
-                let content = std::mem::take(pending);
-                out.push(serde_json::json!({ "role": "user", "content": content }));
-            }
-        };
+    let flush_results = |pending: &mut Vec<serde_json::Value>, out: &mut Vec<serde_json::Value>| {
+        if !pending.is_empty() {
+            let content = std::mem::take(pending);
+            out.push(serde_json::json!({ "role": "user", "content": content }));
+        }
+    };
 
     for m in req.messages.iter() {
         match m {
@@ -489,8 +488,7 @@ async fn call_anthropic_with_tools(req: AgentRequest) -> Result<AgentTurnResult,
                     }
                 }
                 if !parts.is_empty() {
-                    messages
-                        .push(serde_json::json!({ "role": "assistant", "content": parts }));
+                    messages.push(serde_json::json!({ "role": "assistant", "content": parts }));
                 }
             }
         }
@@ -549,7 +547,10 @@ async fn call_anthropic_with_tools(req: AgentRequest) -> Result<AgentTurnResult,
     let v: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("解析响应失败：{e}"))?;
 
-    let model = v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string());
+    let model = v
+        .get("model")
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string());
     let usage = v.get("usage").cloned();
     let input_tokens = usage
         .as_ref()
@@ -657,13 +658,13 @@ async fn call_google_with_tools(req: AgentRequest) -> Result<AgentTurnResult, St
 
     let mut contents: Vec<serde_json::Value> = Vec::new();
     let mut pending_responses: Vec<serde_json::Value> = Vec::new();
-    let flush_responses =
-        |pending: &mut Vec<serde_json::Value>, out: &mut Vec<serde_json::Value>| {
-            if !pending.is_empty() {
-                let parts = std::mem::take(pending);
-                out.push(serde_json::json!({ "role": "user", "parts": parts }));
-            }
-        };
+    let flush_responses = |pending: &mut Vec<serde_json::Value>,
+                           out: &mut Vec<serde_json::Value>| {
+        if !pending.is_empty() {
+            let parts = std::mem::take(pending);
+            out.push(serde_json::json!({ "role": "user", "parts": parts }));
+        }
+    };
 
     for m in req.messages.iter() {
         match m {

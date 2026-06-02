@@ -226,5 +226,3 @@ fn copy_logseq_assets_dir(
     }
     Ok(())
 }
-
-

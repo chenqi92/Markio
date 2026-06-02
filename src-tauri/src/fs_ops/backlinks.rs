@@ -5,9 +5,9 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
-use crate::ignore::IgnoreRules;
-use super::walker_io::{is_hidden, is_markdown, ignored_by_rules, MAX_DEPTH};
 use super::search::MAX_GREP_FILE_SIZE;
+use super::walker_io::{ignored_by_rules, is_hidden, is_markdown, MAX_DEPTH};
+use crate::ignore::IgnoreRules;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

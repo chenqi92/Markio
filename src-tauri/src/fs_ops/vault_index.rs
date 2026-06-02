@@ -6,9 +6,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::ignore::IgnoreRules;
-use super::walker_io::{is_hidden, is_markdown, ignored_by_rules, modified_ms, atomic_write, MAX_DEPTH};
 use super::tokens::extract_tokens_into;
+use super::walker_io::{
+    atomic_write, ignored_by_rules, is_hidden, is_markdown, modified_ms, MAX_DEPTH,
+};
+use crate::ignore::IgnoreRules;
 
 // ─── 持久化 vault index ─────────────────────────────────────────────
 //
@@ -225,4 +227,3 @@ fn extract_file_tokens(path: &Path, size: u64) -> (Vec<String>, Vec<String>) {
     extract_tokens_into(&content, &mut tags, &mut mentions);
     (tags.into_iter().collect(), mentions.into_iter().collect())
 }
-

@@ -117,9 +117,7 @@ impl P2pRuntime {
 
     /// 首次需要启动 server 时返回 true（之后恒为 false），用于懒启动只跑一次。
     pub fn try_start(&self) -> bool {
-        !self
-            .started
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        !self.started.swap(true, std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn set_active_workspace(&self, p: Option<PathBuf>) {
@@ -240,7 +238,9 @@ fn start_mdns(runtime: Arc<P2pRuntime>, port: u16) -> Result<(), String> {
         Err(e) => eprintln!("[p2p] mDNS ServiceInfo 失败：{e}"),
     }
 
-    let receiver = mdns.browse(SERVICE_TYPE).map_err(|e| format!("mDNS browse: {e}"))?;
+    let receiver = mdns
+        .browse(SERVICE_TYPE)
+        .map_err(|e| format!("mDNS browse: {e}"))?;
     let rt = runtime.clone();
     // mdns-sd 的 receiver 是同步 channel，放到阻塞线程里读
     std::thread::spawn(move || {
@@ -248,21 +248,12 @@ fn start_mdns(runtime: Arc<P2pRuntime>, port: u16) -> Result<(), String> {
             match event {
                 ServiceEvent::ServiceResolved(info) => {
                     let props = info.get_properties();
-                    let device_id = props
-                        .get_property_val_str("id")
-                        .unwrap_or("")
-                        .to_string();
+                    let device_id = props.get_property_val_str("id").unwrap_or("").to_string();
                     if device_id.is_empty() {
                         continue;
                     }
-                    let name = props
-                        .get_property_val_str("name")
-                        .unwrap_or("")
-                        .to_string();
-                    let version = props
-                        .get_property_val_str("ver")
-                        .unwrap_or("")
-                        .to_string();
+                    let name = props.get_property_val_str("name").unwrap_or("").to_string();
+                    let version = props.get_property_val_str("ver").unwrap_or("").to_string();
                     let host = info
                         .get_addresses()
                         .iter()
@@ -363,12 +354,23 @@ fn pair_err(msg: &str) -> PairReply {
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum RpcReq {
-    Auth { token: String },
+    Auth {
+        token: String,
+    },
     List,
-    Get { rel_path: String },
-    Put { rel_path: String, content_base64: String },
-    Delete { rel_path: String },
-    Mkdir { rel_path: String },
+    Get {
+        rel_path: String,
+    },
+    Put {
+        rel_path: String,
+        content_base64: String,
+    },
+    Delete {
+        rel_path: String,
+    },
+    Mkdir {
+        rel_path: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -381,10 +383,18 @@ struct RpcResp {
 }
 
 fn rpc_ok(v: serde_json::Value) -> RpcResp {
-    RpcResp { ok: true, result: Some(v), error: None }
+    RpcResp {
+        ok: true,
+        result: Some(v),
+        error: None,
+    }
 }
 fn rpc_err(e: impl Into<String>) -> RpcResp {
-    RpcResp { ok: false, result: None, error: Some(e.into()) }
+    RpcResp {
+        ok: false,
+        result: None,
+        error: Some(e.into()),
+    }
 }
 
 async fn ws_sync(ws: WebSocketUpgrade, State(s): State<ServerState>) -> Response {
@@ -417,7 +427,11 @@ async fn handle_sync(mut socket: WebSocket, s: ServerState) {
                     .is_some_and(|t| constant_eq(t, token))
                     && snap.enabled;
                 authed = ok;
-                let resp = if ok { rpc_ok(serde_json::json!({"authed": true})) } else { rpc_err("auth 失败") };
+                let resp = if ok {
+                    rpc_ok(serde_json::json!({"authed": true}))
+                } else {
+                    rpc_err("auth 失败")
+                };
                 let _ = send_json(&mut socket, &resp).await;
                 if !ok {
                     break;
@@ -447,10 +461,8 @@ async fn handle_rpc(s: &ServerState, req: RpcReq) -> RpcResp {
     match req {
         RpcReq::Auth { .. } => rpc_ok(serde_json::json!({"authed": true})),
         RpcReq::List => {
-            let res = tauri::async_runtime::spawn_blocking(move || {
-                crate::sync_scan_workspace(&ws)
-            })
-            .await;
+            let res =
+                tauri::async_runtime::spawn_blocking(move || crate::sync_scan_workspace(&ws)).await;
             match res {
                 Ok(entries) => match serde_json::to_value(entries) {
                     Ok(v) => rpc_ok(v),
@@ -472,7 +484,10 @@ async fn handle_rpc(s: &ServerState, req: RpcReq) -> RpcResp {
             })
             .await
         }
-        RpcReq::Put { rel_path, content_base64 } => {
+        RpcReq::Put {
+            rel_path,
+            content_base64,
+        } => {
             blocking_state(app, move |state| {
                 use base64::{engine::general_purpose::STANDARD, Engine as _};
                 if content_base64.len() > 70 * 1024 * 1024 {

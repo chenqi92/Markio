@@ -21,11 +21,17 @@ pub fn html_to_markdown(html: &str, readability: bool) -> String {
 #[derive(Debug, Clone)]
 enum Token {
     /// 开标签：名字（小写）+ 属性
-    Open { name: String, attrs: Vec<(String, String)> },
+    Open {
+        name: String,
+        attrs: Vec<(String, String)>,
+    },
     /// 闭标签：名字（小写）
     Close { name: String },
     /// 自闭标签 `<br/>`：名字（小写）+ 属性
-    SelfClose { name: String, attrs: Vec<(String, String)> },
+    SelfClose {
+        name: String,
+        attrs: Vec<(String, String)>,
+    },
     /// 文本（未解码实体；解码留给渲染阶段，pre 内部也要原样保留）
     Text(String),
 }
@@ -99,9 +105,7 @@ fn tokenize(html: &str) -> Vec<Token> {
                 if let Some(tok) = parse_tag(inner) {
                     // 裸文本元素：把内容整体作为 Text 抓取到对应闭标签
                     let rawtext_name = match &tok {
-                        Token::Open { name, .. } if is_rawtext_element(name) => {
-                            Some(name.clone())
-                        }
+                        Token::Open { name, .. } if is_rawtext_element(name) => Some(name.clone()),
                         _ => None,
                     };
                     if let Some(name) = rawtext_name {
@@ -205,8 +209,8 @@ fn parse_tag(inner: &str) -> Option<Token> {
     };
 
     // 末尾的 '/' 表示自闭
-    let (rest, self_close_marker) = if rest.ends_with('/') {
-        (rest[..rest.len() - 1].trim_end(), true)
+    let (rest, self_close_marker) = if let Some(stripped) = rest.strip_suffix('/') {
+        (stripped.trim_end(), true)
     } else {
         (rest, false)
     };
@@ -259,7 +263,10 @@ fn parse_attrs(s: &str) -> Vec<(String, String)> {
             i += 1;
             continue;
         }
-        let name: String = chars[name_start..i].iter().collect::<String>().to_ascii_lowercase();
+        let name: String = chars[name_start..i]
+            .iter()
+            .collect::<String>()
+            .to_ascii_lowercase();
 
         // 跳过空白
         while i < n && chars[i].is_whitespace() {
@@ -581,7 +588,10 @@ impl Renderer {
             }
             "ul" => {
                 self.flush_line();
-                self.list_stack.push(ListCtx { ordered: false, index: 0 });
+                self.list_stack.push(ListCtx {
+                    ordered: false,
+                    index: 0,
+                });
             }
             "ol" => {
                 self.flush_line();
@@ -626,7 +636,7 @@ impl Renderer {
             "a" => {
                 // 链接文字后面在 close 处补 (href)；这里压栈 href。
                 let href = get_attr(attrs, "href")
-                    .map(|h| decode_entities(h))
+                    .map(decode_entities)
                     .unwrap_or_default();
                 self.a_href.push(href);
                 self.append_inline("[");
@@ -801,10 +811,7 @@ impl Renderer {
         }
 
         let fmt_row = |row: &Vec<String>| -> String {
-            let mut cells: Vec<String> = row
-                .iter()
-                .map(|c| escape_pipe(c.trim()))
-                .collect();
+            let mut cells: Vec<String> = row.iter().map(|c| escape_pipe(c.trim())).collect();
             while cells.len() < cols {
                 cells.push(String::new());
             }
@@ -1055,15 +1062,9 @@ mod tests {
             "[click](https://example.com)"
         );
         // 无引号属性
-        assert_eq!(
-            md("<a href=https://e.com>e</a>"),
-            "[e](https://e.com)"
-        );
+        assert_eq!(md("<a href=https://e.com>e</a>"), "[e](https://e.com)");
         // 单引号
-        assert_eq!(
-            md("<a href='https://e.com'>e</a>"),
-            "[e](https://e.com)"
-        );
+        assert_eq!(md("<a href='https://e.com'>e</a>"), "[e](https://e.com)");
     }
 
     #[test]
@@ -1143,7 +1144,10 @@ mod tests {
             r#"a & b < c > d "e" 'f'"#
         );
         assert_eq!(md("<p>x&nbsp;y</p>"), "x\u{00A0}y");
-        assert_eq!(md("<p>&mdash;&ndash;&hellip;</p>"), "\u{2014}\u{2013}\u{2026}");
+        assert_eq!(
+            md("<p>&mdash;&ndash;&hellip;</p>"),
+            "\u{2014}\u{2013}\u{2026}"
+        );
         assert_eq!(md("<p>&#65;&#x42;</p>"), "AB");
     }
 

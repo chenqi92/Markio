@@ -410,7 +410,15 @@ fn handle_claude_line(app: &AppHandle, sid: &str, line: ClaudeLine) {
                             emit(app, sid, AgentEvent::ThinkingDelta { text: thinking });
                         }
                         ClaudeContent::ToolUse { id, name, input } => {
-                            emit(app, sid, AgentEvent::ToolStart { id, tool: name, input });
+                            emit(
+                                app,
+                                sid,
+                                AgentEvent::ToolStart {
+                                    id,
+                                    tool: name,
+                                    input,
+                                },
+                            );
                         }
                         _ => {}
                     }

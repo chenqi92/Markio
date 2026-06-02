@@ -33,7 +33,12 @@ pub(super) fn is_markdown(name: &str) -> bool {
     is_markdown_name(name)
 }
 
-pub(super) fn ignored_by_rules(root: &Path, path: &Path, is_dir: bool, rules: &IgnoreRules) -> bool {
+pub(super) fn ignored_by_rules(
+    root: &Path,
+    path: &Path,
+    is_dir: bool,
+    rules: &IgnoreRules,
+) -> bool {
     if is_under_nested_code_project(root, path) {
         return true;
     }
@@ -422,4 +427,3 @@ pub fn delete(path: &str) -> Result<(), String> {
 pub fn make_dir(path: &str) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| e.to_string())
 }
-

@@ -386,7 +386,11 @@ pub async fn create_folder(tokens: &DropboxTokens, path: &str) -> Result<(), Str
 fn dropbox_error_summary(body: &str) -> String {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
-        .and_then(|v| v.get("error_summary").and_then(|s| s.as_str()).map(String::from))
+        .and_then(|v| {
+            v.get("error_summary")
+                .and_then(|s| s.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default()
 }
 

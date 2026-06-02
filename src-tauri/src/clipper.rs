@@ -134,7 +134,10 @@ async fn run(app: AppHandle, runtime: Arc<ClipperRuntime>) -> Result<(), String>
 
 fn check_token(headers: &HeaderMap, expected: &Option<String>) -> Result<(), (StatusCode, String)> {
     let Some(want) = expected else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "WebClipper 尚未就绪".into()));
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "WebClipper 尚未就绪".into(),
+        ));
     };
     let got = headers
         .get("authorization")
@@ -199,19 +202,20 @@ async fn clip(
 
     let now = chrono::Local::now();
     let frontmatter = build_frontmatter(&title, &url, &now.to_rfc3339(), req.selection);
-    let content = format!("{frontmatter}\n# {}\n\n{body}\n", yaml_inline_safe_heading(&title));
+    let content = format!(
+        "{frontmatter}\n# {}\n\n{body}\n",
+        yaml_inline_safe_heading(&title)
+    );
 
     let stamp = now.format("%Y%m%d-%H%M%S").to_string();
     let fname = format!("{}-{stamp}.md", sanitize_filename(&title));
     let dest = ws.join("Clipped").join(fname);
 
     let dest2 = dest.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::fs_ops::atomic_write(&dest2, &content)
-    })
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    tauri::async_runtime::spawn_blocking(move || crate::fs_ops::atomic_write(&dest2, &content))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let path_str = dest.to_string_lossy().to_string();
 
@@ -314,7 +318,10 @@ fn build_frontmatter(title: &str, url: &str, date: &str, selection: bool) -> Str
         fm.push_str(&format!("source: {}\n", yaml_quote(url)));
     }
     fm.push_str(&format!("clipped: {}\n", yaml_quote(date)));
-    fm.push_str(&format!("clip_kind: {}\n", if selection { "selection" } else { "page" }));
+    fm.push_str(&format!(
+        "clip_kind: {}\n",
+        if selection { "selection" } else { "page" }
+    ));
     fm.push_str("---\n");
     fm
 }

@@ -74,4 +74,3 @@ pub fn import_bear(src_archive: &Path, workspace: &Path) -> Result<ImportReport,
         report_path: None,
     }))
 }
-

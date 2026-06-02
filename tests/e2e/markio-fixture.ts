@@ -250,6 +250,9 @@ export async function installMarkioE2E(page: Page): Promise<void> {
         return null;
       },
     };
+    // i18next 在模块加载时同步初始化，读取的是 markio.locale（见 src/i18n/index.ts）；
+    // 仅设 markio.settings.v1 不够，欢迎页首屏会落到英文兜底，故显式模拟 zh-CN 用户。
+    localStorage.setItem("markio.locale", "zh-CN");
     localStorage.setItem(
       "markio.settings.v1",
       JSON.stringify({

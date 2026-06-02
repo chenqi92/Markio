@@ -125,7 +125,7 @@ test("wysiwyg wikilink opens the target note without locking the editor", async 
 
   await page.getByRole("treeitem", { name: /Daily\.md/ }).click();
   await page.getByTitle(/所见即所得/).click();
-  const link = page.locator(".bn-wikilink", { hasText: "Plan" });
+  const link = page.locator(".cm-md-wikilink", { hasText: "Plan" });
   await expect(link).toBeVisible();
 
   await link.click();

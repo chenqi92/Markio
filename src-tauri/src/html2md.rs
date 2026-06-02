@@ -733,10 +733,7 @@ impl Renderer {
             "em" | "i" => self.append_inline("*"),
             "del" | "s" | "strike" => self.append_inline("~~"),
             "a" => {
-                // 这里需要 href，但 Close 没有属性。
-                // 策略：在 on_open 时已写 "["；href 在 open 时暂存到 line 不现实。
-                // 改为：用占位在 open 存 href —— 见 fix below。
-                // 因为本实现把 href 缓存在 a_href_stack，这里取出。
+                // Close 标签没有属性，href 在 on_open 时压入 a_href_stack，这里弹出拼成 [text](href)
                 if let Some(href) = self.a_href_stack_pop() {
                     let piece = format!("]({})", href);
                     self.append_inline(&piece);

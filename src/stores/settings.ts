@@ -236,7 +236,8 @@ interface SettingsState {
   clipperAiSummary: boolean;
   clipperPdfSnapshot: boolean;
 
-  /** RSS 订阅源 + 拉取频率 + 是否走 AI 摘要。fetcher（Rust 端）暂未接，先做 CRUD。 */
+  /** RSS 订阅源 + 拉取频率 + 是否走 AI 摘要。rssFetchInterval 由 rssScheduler 后台消费；
+   *  AI 摘要待条目阅读器接入后生效。 */
   rssFetchInterval: "manual" | "15m" | "1h" | "4h" | "1d";
   rssAiSummary: boolean;
   rssFeeds: Array<{

@@ -37,6 +37,14 @@
   background: var(--bg-selected) !important;
 }
 
+/* 段落之间的空行：源码里每个空行在 wysiwyg 下都是真实的一行，按正文行高（1.75）
+ * 各占约 28px，远比分屏预览的段间距（p 的 16px margin）空旷。build.ts 给「真正空
+ * 且不在代码块 / frontmatter / 块公式内」的行打了 cm-md-blank，这里压低其行高贴近预览。
+ * 想更紧凑就把 line-height 调小，想更宽松就调大。 */
+.cm-host[data-mode="wysiwyg"] .cm-line.cm-md-blank {
+  line-height: 0.9;
+}
+
 /* line-level decorations
  * 注意：CM 不允许 .cm-line 之间出现 margin 形成的"空隙"——
  * 论坛 best practice：用 padding-top/bottom 让间距变成行自身的可点击区域，

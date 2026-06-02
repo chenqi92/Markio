@@ -165,6 +165,16 @@ export function build(state: EditorState): BuildResult {
   const docText = state.doc.toString();
   const fmEnd = frontmatterEnd(docText);
 
+  // 记录所有被某种「块 / 行级」处理接管的行号：标题、引用、列表、代码块、
+  // frontmatter，以及被块级 widget 替换掉的多行区间（块公式 / 代码 / frontmatter）。
+  // 段落之间的空行压缩只作用于「真正空且不落在上述任何区间内」的行。
+  const markedLines = new Set<number>();
+  const markLineRange = (from: number, to: number) => {
+    const start = state.doc.lineAt(Math.max(0, from)).number;
+    const end = state.doc.lineAt(Math.min(state.doc.length, to)).number;
+    for (let ln = start; ln <= end; ln++) markedLines.add(ln);
+  };
+
   // Math regions: detect once over the full doc (regex-only, no AST since
   // lezer-markdown has no math node by default). Skip the widget when the
   // cursor is inside so the user can edit the source plainly.
@@ -184,6 +194,7 @@ export function build(state: EditorState): BuildResult {
       to: range.to,
       deco: Decoration.mark({}),
     });
+    if (range.display) markLineRange(range.from, range.to);
   }
 
   // Wikilinks: same regex-based scan; rendered widget shows display text and
@@ -239,6 +250,7 @@ export function build(state: EditorState): BuildResult {
   const lineMark = (pos: number, cls: string) => {
     if (pos < visibleFrom || pos > visibleTo) return;
     const line = state.doc.lineAt(pos);
+    markedLines.add(line.number);
     decos.push({
       from: line.from,
       to: line.from,
@@ -254,6 +266,7 @@ export function build(state: EditorState): BuildResult {
     const endLine = state.doc.lineAt(toPos).number;
     for (let ln = startLine; ln <= endLine; ln++) {
       const line = state.doc.line(ln);
+      markedLines.add(ln);
       decos.push({
         from: line.from,
         to: line.from,
@@ -280,6 +293,7 @@ export function build(state: EditorState): BuildResult {
         }),
       });
       atomic.push({ from: 0, to: fmEnd, deco: Decoration.mark({}) });
+      markLineRange(0, fmEnd);
     } else {
       markLines(0, fmEnd, "cm-md-line cm-md-frontmatter-line");
     }
@@ -595,6 +609,7 @@ export function build(state: EditorState): BuildResult {
             to: node.to,
             deco: Decoration.mark({}),
           });
+          markLineRange(node.from, node.to);
           return;
         }
         markLines(node.from, node.to, "cm-md-line cm-md-codeblock");
@@ -606,6 +621,22 @@ export function build(state: EditorState): BuildResult {
       }
     },
     });
+  }
+
+  // 段落之间的空行在 wysiwyg 下仍是真实 .cm-line，按正文行高（~1.75）各占满一整行，
+  // 比分屏预览（间距由块 margin 控制、源码空行被折叠）观感空旷得多。给「真正空且未被
+  // 任何块 / 行级处理接管」的行加 cm-md-blank，CSS 据此压低其行高，贴近预览的段间距。
+  // 代码块 / frontmatter / 块公式内部的空行已登记进 markedLines，不受影响。
+  for (let ln = 1; ln <= state.doc.lines; ln++) {
+    if (markedLines.has(ln)) continue;
+    const line = state.doc.line(ln);
+    if (line.length === 0 || line.text.trim().length === 0) {
+      decos.push({
+        from: line.from,
+        to: line.from,
+        deco: Decoration.line({ class: "cm-md-blank" }),
+      });
+    }
   }
 
   decos.sort((a, b) => a.from - b.from || a.to - b.to);

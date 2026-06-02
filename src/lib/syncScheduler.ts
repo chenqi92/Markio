@@ -5,6 +5,7 @@ import { reportDiagnostic } from "@/stores/diagnostics";
 import { createCloudSyncTargets, type CloudSyncSettings, type CloudSyncTarget } from "@/lib/sync/adapters";
 import { createLocalFs, createManifestIO } from "@/lib/sync/local";
 import { runSync } from "@/lib/sync/engine";
+import { runP2PSync } from "@/lib/sync/p2pAdapter";
 import type { SyncReport, SyncStage as CloudSyncStage } from "@/lib/sync/types";
 
 const FREQ_MS: Record<string, number> = {
@@ -394,6 +395,96 @@ export async function runSyncWorkflow(
 
 async function runOnce(workspace: string): Promise<void> {
   await runSyncWorkflow(workspace);
+  // 主同步（git/cloud）完成后，再 best-effort 跑一遍 P2P 自动同步
+  await runP2PAutoSync(workspace);
+}
+
+/**
+ * P2P 自动同步：对「当前 mDNS 在线」的已配对对端逐个 best-effort 同步。
+ * - 只在 mobileP2pEnabled && mobileP2pAutoSync 时触发
+ * - 仅同步在线对端（离线的不尝试，避免每次 10s WS 超时拖慢）
+ * - 单个对端失败不影响其它；全程复用全局 sync 状态栏
+ */
+async function runP2PAutoSync(workspace: string): Promise<void> {
+  if (!isDesktop()) return;
+  const s = useSettings.getState();
+  if (!s.mobileP2pEnabled || !s.mobileP2pAutoSync) return;
+  const paired = s.mobileDevices.filter(
+    (d) => d.peerId && d.host && d.port && d.token,
+  );
+  if (paired.length === 0) return;
+
+  let live: Awaited<ReturnType<typeof api.p2pStatus>>;
+  try {
+    live = await api.p2pStatus();
+  } catch {
+    return;
+  }
+  const liveById = new Map(live.peers.map((p) => [p.deviceId, p]));
+
+  const sync = useSync.getState();
+  if (sync.isInflight(workspace)) return;
+
+  const targets = paired.filter((d) => liveById.has(d.peerId!));
+  if (targets.length === 0) return;
+
+  sync.setInflight(workspace, true);
+  try {
+    for (const d of targets) {
+      const peer = liveById.get(d.peerId!)!;
+      sync.setStage("preflight", `P2P · ${d.name} 准备同步`);
+      try {
+        const report = await runP2PSync(
+          {
+            peerId: d.peerId!,
+            name: d.name,
+            // 用 mDNS 当前解析到的 host/port（IP 可能变）
+            host: peer.host || d.host!,
+            port: peer.port || d.port!,
+            token: d.token!,
+          },
+          workspace,
+          s.syncConflictStrategy,
+          {
+            onStage: (stage, detail) => {
+              const st = stage as CloudSyncStage;
+              sync.setStage(
+                cloudStoreStage(st),
+                `P2P · ${d.name} · ${cloudStageLabel(st)}${detail ? ` · ${detail}` : ""}`,
+              );
+            },
+            onProgress: (done, total, current) => {
+              sync.setStage(
+                "push",
+                `P2P · ${d.name} · ${done}/${total}${current ? ` · ${current}` : ""}`,
+              );
+            },
+          },
+        );
+        if (report.stage === "error") {
+          reportDiagnostic({
+            source: "sync",
+            severity: "warning",
+            message: `P2P 自动同步失败（${d.name}）`,
+            detail: report.fatalError ?? "",
+            workspace,
+          });
+        }
+      } catch (e) {
+        reportDiagnostic({
+          source: "sync",
+          severity: "warning",
+          message: `P2P 自动同步失败（${d.name}）`,
+          detail: e,
+          workspace,
+        });
+      }
+    }
+    sync.setStage("done", "P2P 自动同步完成");
+    sync.setLastSync(Date.now());
+  } finally {
+    sync.setInflight(workspace, false);
+  }
 }
 
 function clearTimer() {

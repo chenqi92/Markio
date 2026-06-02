@@ -113,6 +113,7 @@ type PreferenceKey =
   | "rssAiSummary"
   | "rssFeeds"
   | "mobileP2pEnabled"
+  | "mobileP2pAutoSync"
   | "mobileDeviceName"
   | "mobileDevices";
 
@@ -256,6 +257,8 @@ interface SettingsState {
    *  后端走 mDNS 发现 + WebSocket 金库 RPC（p2p.rs）；配对成功后存对端的 host/port/token。
    *  macOS 上启用前要在 Info.plist 加 NSLocalNetworkUsageDescription。 */
   mobileP2pEnabled: boolean;
+  /** 自动同步：每次定时/手动同步后，对当前在线的已配对对端 best-effort 跑一次 P2P 同步 */
+  mobileP2pAutoSync: boolean;
   mobileDeviceName: string;
   mobileDevices: Array<{
     id: string;
@@ -428,6 +431,7 @@ export const useSettings = create<SettingsState>()(
       rssAiSummary: false,
       rssFeeds: [],
       mobileP2pEnabled: false,
+      mobileP2pAutoSync: false,
       mobileDeviceName: "我的设备",
       mobileDevices: [],
       aiUseCurrentFile: true,

@@ -21,6 +21,7 @@ interface DiscoveredPeer {
 
 export function MobileDevices() {
   const p2p = useSettings((s) => s.mobileP2pEnabled);
+  const autoSync = useSettings((s) => s.mobileP2pAutoSync);
   const deviceName = useSettings((s) => s.mobileDeviceName);
   const devices = useSettings((s) => s.mobileDevices);
   const conflictStrategy = useSettings((s) => s.syncConflictStrategy);
@@ -245,6 +246,19 @@ export function MobileDevices() {
           <button className="settings-btn" onClick={() => void renameDevice()}>
             改名
           </button>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">自动同步</div>
+            <div className="settings-help">
+              每次定时 / 手动同步后，自动与当前在线的已配对设备同步（离线设备跳过）
+            </div>
+          </div>
+          <Toggle
+            on={autoSync}
+            disabled={!p2p}
+            onChange={(v) => setPreference("mobileP2pAutoSync", v)}
+          />
         </div>
       </div>
 

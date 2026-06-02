@@ -18,7 +18,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpListener;
 
 use crate::state::AppState;
@@ -36,6 +36,7 @@ struct Inner {
     enabled: bool,
     readability: bool,
     html_to_md: bool,
+    ai_summary: bool,
     active_workspace: Option<PathBuf>,
 }
 
@@ -47,6 +48,7 @@ impl Default for Inner {
             enabled: false,
             readability: true,
             html_to_md: true,
+            ai_summary: false,
             active_workspace: None,
         }
     }
@@ -69,11 +71,12 @@ impl ClipperRuntime {
         }
     }
 
-    pub fn set_config(&self, enabled: bool, readability: bool, html_to_md: bool) {
+    pub fn set_config(&self, enabled: bool, readability: bool, html_to_md: bool, ai_summary: bool) {
         let mut g = self.inner.write().unwrap();
         g.enabled = enabled;
         g.readability = readability;
         g.html_to_md = html_to_md;
+        g.ai_summary = ai_summary;
     }
 
     pub fn set_active_workspace(&self, p: Option<PathBuf>) {
@@ -210,10 +213,48 @@ async fn clip(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
+    let path_str = dest.to_string_lossy().to_string();
+
+    // AI 摘要：Rust 不持有 AI provider 配置，派发事件给前端生成后经 clipper_set_summary 回写。
+    if cfg.ai_summary {
+        let text: String = body.chars().take(4000).collect();
+        let _ = s.app.emit(
+            "clip-summarize",
+            serde_json::json!({ "path": path_str, "title": title, "text": text }),
+        );
+    }
+
     Ok(Json(ClipResp {
         ok: true,
-        path: dest.to_string_lossy().to_string(),
+        path: path_str,
     }))
+}
+
+/// 把 AI 摘要写进剪藏文件的 frontmatter：若已有 `summary:` 行则替换，否则在闭合 `---` 前插入。
+pub(crate) fn insert_summary(content: &str, summary: &str) -> String {
+    let quoted = yaml_quote(summary);
+    // 找 frontmatter 块：以 "---\n" 开头，到下一行 "---"
+    if let Some(rest) = content.strip_prefix("---\n") {
+        if let Some(close_rel) = rest.find("\n---") {
+            let fm_body = &rest[..close_rel];
+            let after = &rest[close_rel..]; // 从 "\n---" 开始
+            let mut lines: Vec<String> = fm_body.lines().map(|l| l.to_string()).collect();
+            let mut replaced = false;
+            for line in lines.iter_mut() {
+                if line.trim_start().starts_with("summary:") {
+                    *line = format!("summary: {quoted}");
+                    replaced = true;
+                    break;
+                }
+            }
+            if !replaced {
+                lines.push(format!("summary: {quoted}"));
+            }
+            return format!("---\n{}{}", lines.join("\n"), after);
+        }
+    }
+    // 无 frontmatter：在最前面补一段
+    format!("---\nsummary: {quoted}\n---\n\n{content}")
 }
 
 fn resolve_workspace(
@@ -302,6 +343,26 @@ mod tests {
     fn yaml_quote_escapes() {
         assert_eq!(yaml_quote("a\"b"), "\"a\\\"b\"");
         assert_eq!(yaml_quote("line1\nline2"), "\"line1 line2\"");
+    }
+
+    #[test]
+    fn insert_summary_into_existing_frontmatter() {
+        let src = "---\ntitle: \"x\"\nclipped: \"t\"\n---\n# x\n\nbody";
+        let out = insert_summary(src, "一句话摘要");
+        assert!(out.contains("summary: \"一句话摘要\""));
+        assert!(out.contains("title: \"x\""));
+        assert!(out.contains("# x"));
+        // 再次插入应替换而非重复
+        let out2 = insert_summary(&out, "新摘要");
+        assert_eq!(out2.matches("summary:").count(), 1);
+        assert!(out2.contains("summary: \"新摘要\""));
+    }
+
+    #[test]
+    fn insert_summary_without_frontmatter() {
+        let out = insert_summary("just body", "摘要");
+        assert!(out.starts_with("---\nsummary: \"摘要\"\n---\n"));
+        assert!(out.contains("just body"));
     }
 
     #[test]

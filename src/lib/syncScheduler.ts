@@ -109,7 +109,7 @@ function defaultDeps(): SyncWorkflowDeps {
   };
 }
 
-function cloudStageLabel(stage: CloudSyncStage): string {
+export function cloudStageLabel(stage: CloudSyncStage): string {
   switch (stage) {
     case "scan_local":
       return "扫描本地";
@@ -131,7 +131,7 @@ function cloudStageLabel(stage: CloudSyncStage): string {
   }
 }
 
-function cloudStoreStage(stage: CloudSyncStage): Parameters<SyncStoreApi["setStage"]>[0] {
+export function cloudStoreStage(stage: CloudSyncStage): Parameters<SyncStoreApi["setStage"]>[0] {
   switch (stage) {
     case "scan_remote":
       return "fetch";

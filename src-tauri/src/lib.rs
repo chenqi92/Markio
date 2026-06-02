@@ -29,7 +29,9 @@ mod window_state;
 
 use commands::{
     agent::{agent_cancel, agent_list_providers, agent_run},
-    clipper::{clipper_set_active_workspace, clipper_set_config, clipper_status},
+    clipper::{
+        clipper_set_active_workspace, clipper_set_config, clipper_set_summary, clipper_status,
+    },
     p2p::{
         p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
     },
@@ -2836,6 +2838,7 @@ pub fn run() {
             clipper_status,
             clipper_set_config,
             clipper_set_active_workspace,
+            clipper_set_summary,
             smart_channel_status,
             smart_channel_set_config,
             smart_channel_respond,

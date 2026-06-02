@@ -37,7 +37,12 @@ export function installLocalServices() {
   // ── 2) 设置变化 → 推 clipper / smartChannel 配置（P2P 由 MobileDevices 开关直接推，避免无谓建身份） ──
   const pushConfig = (s: ReturnType<typeof useSettings.getState>) => {
     void api
-      .clipperSetConfig(s.clipperEnabled, s.clipperReadability, s.clipperHtmlToMd)
+      .clipperSetConfig(
+        s.clipperEnabled,
+        s.clipperReadability,
+        s.clipperHtmlToMd,
+        s.clipperAiSummary,
+      )
       .catch(() => undefined);
     void api
       .smartChannelSetConfig(s.smartChannelEnabled, s.smartChannelId)
@@ -48,6 +53,7 @@ export function installLocalServices() {
       s.clipperEnabled,
       s.clipperReadability,
       s.clipperHtmlToMd,
+      s.clipperAiSummary,
       s.smartChannelEnabled,
       s.smartChannelId,
     ].join("|");
@@ -87,4 +93,30 @@ export function installLocalServices() {
       await api.smartChannelRespond(id, { ok: false, error: (err as Error).message });
     }
   });
+
+  // ── 4) WebClipper AI 摘要：后端剪藏落库后派发 → 前端调当前 AI 生成一句话 → 回写 frontmatter ──
+  void listen<{ path: string; title: string; text: string }>(
+    "clip-summarize",
+    async (e) => {
+      const { path, text } = e.payload;
+      const s = useSettings.getState();
+      if (!s.clipperEnabled || !s.clipperAiSummary || !text.trim()) return;
+      try {
+        const res = await api.aiChat({
+          provider: s.aiProvider,
+          endpoint: s.aiEndpoint || undefined,
+          model: s.aiModel,
+          maxTokens: 120,
+          temperature: 0.3,
+          system:
+            "用一句话（中文，40 字以内）概括这篇文章的核心内容，只输出概括本身，不要任何前缀或引号。",
+          messages: [{ role: "user", content: text.slice(0, 4000) }],
+        });
+        const summary = res.text.trim().replace(/\s+/g, " ").slice(0, 200);
+        if (summary) await api.clipperSetSummary(path, summary);
+      } catch {
+        // 摘要为可选增强，失败静默
+      }
+    },
+  );
 }

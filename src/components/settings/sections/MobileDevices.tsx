@@ -4,8 +4,11 @@ import { useSettings } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
+import { useSync } from "@/stores/sync";
 import { api } from "@/lib/api";
 import { pairWithPeer, runP2PSync } from "@/lib/sync/p2pAdapter";
+import { cloudStageLabel, cloudStoreStage } from "@/lib/syncScheduler";
+import type { SyncStage as EngineSyncStage } from "@/lib/sync/types";
 import { SectionHeader } from "../_shared";
 
 interface DiscoveredPeer {
@@ -143,8 +146,16 @@ export function MobileDevices() {
       setTimeout(() => setToast(null), 2500);
       return;
     }
+    const sync = useSync.getState();
+    if (sync.isInflight(ws.path)) {
+      setToast({ stage: "error", message: "当前仓库正在同步中" });
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
     setBusy(device.id);
-    setToast({ stage: "uploading", message: `正在与 ${device.name} 同步…` });
+    // 复用全局 sync 状态栏（与云同步同一处展示阶段/进度）
+    sync.setInflight(ws.path, true);
+    sync.setStage("preflight", `P2P · ${device.name} 准备同步`);
     try {
       const report = await runP2PSync(
         {
@@ -156,16 +167,37 @@ export function MobileDevices() {
         },
         ws.path,
         conflictStrategy,
+        {
+          onStage: (stage, detail) => {
+            const s = stage as EngineSyncStage;
+            const label = cloudStageLabel(s);
+            sync.setStage(
+              cloudStoreStage(s),
+              `P2P · ${device.name} · ${label}${detail ? ` · ${detail}` : ""}`,
+            );
+          },
+          onProgress: (done, total, current) => {
+            sync.setStage(
+              "push",
+              `P2P · ${device.name} · ${done}/${total}${current ? ` · ${current}` : ""}`,
+            );
+          },
+        },
       );
       if (report.stage === "error") {
+        sync.setStatus("error", report.fatalError ?? "P2P 同步失败");
         setToast({ stage: "error", message: `同步失败：${report.fatalError ?? ""}` });
       } else {
         const n = report.results.filter((r) => r.ok).length;
+        sync.setStage("done", `P2P · ${device.name} 同步完成（${n} 项）`);
+        sync.setLastSync(Date.now());
         setToast({ stage: "done", message: `与 ${device.name} 同步完成（${n} 项）` });
       }
     } catch (e) {
+      sync.setStatus("error", (e as Error).message);
       setToast({ stage: "error", message: `同步失败：${(e as Error).message}` });
     } finally {
+      sync.setInflight(ws.path, false);
       setBusy(null);
       setTimeout(() => setToast(null), 2800);
     }

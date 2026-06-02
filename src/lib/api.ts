@@ -477,10 +477,16 @@ export const api = {
   // ── WebClipper 本地接收端 ──
   clipperStatus: () =>
     invoke<{ port: number | null; token: string | null; enabled: boolean }>("clipper_status"),
-  clipperSetConfig: (enabled: boolean, readability: boolean, htmlToMd: boolean) =>
-    invoke<void>("clipper_set_config", { enabled, readability, htmlToMd }),
+  clipperSetConfig: (
+    enabled: boolean,
+    readability: boolean,
+    htmlToMd: boolean,
+    aiSummary: boolean,
+  ) => invoke<void>("clipper_set_config", { enabled, readability, htmlToMd, aiSummary }),
   clipperSetActiveWorkspace: (workspace: string | null) =>
     invoke<void>("clipper_set_active_workspace", { workspace }),
+  clipperSetSummary: (path: string, summary: string) =>
+    invoke<void>("clipper_set_summary", { path, summary }),
 
   // ── SmartChannel 入站 ──
   smartChannelStatus: () =>

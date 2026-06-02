@@ -194,13 +194,10 @@ export function WebClipper() {
         </div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">
-              AI 摘要
-              <span className="settings-pill-soon">即将上线</span>
-            </div>
-            <div className="settings-help">保存时调用当前 AI 提供方生成一句话摘要写进 frontmatter（待接入）</div>
+            <div className="settings-label">AI 摘要</div>
+            <div className="settings-help">剪藏落库后调用当前 AI 提供方生成一句话摘要，写进 frontmatter 的 summary 字段</div>
           </div>
-          <Toggle on={aiSummary} disabled onChange={(v) => setPreference("clipperAiSummary", v)} />
+          <Toggle on={aiSummary} onChange={(v) => setPreference("clipperAiSummary", v)} />
         </div>
         <div className="settings-row">
           <div className="settings-row-l">

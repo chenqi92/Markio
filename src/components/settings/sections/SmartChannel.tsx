@@ -5,6 +5,7 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace as useWorkspaceStore } from "@/stores/workspace";
 import { useDialog } from "@/stores/dialog";
 import { writeText } from "@/lib/clipboard";
+import { api } from "@/lib/api";
 import { smartChannelQuery, getSmartChannelUsage } from "@/lib/smartChannel";
 import { shortcutText } from "@/lib/shortcuts";
 import {
@@ -36,6 +37,10 @@ export function SmartChannelSettings() {
     used: 0,
     limit: dailyLimit,
   });
+  const [endpoint, setEndpoint] = useState<{ port: number | null; token: string | null }>({
+    port: null,
+    token: null,
+  });
   const [testQuery, setTestQuery] = useState("");
   const [testing, setTesting] = useState(false);
   const [testAnswer, setTestAnswer] = useState<string | null>(null);
@@ -47,6 +52,25 @@ export function SmartChannelSettings() {
   useEffect(() => {
     setUsage(getSmartChannelUsage());
   }, [enabled, dailyLimit]);
+
+  // 入站接收端启动后回读端口 + token
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      api
+        .smartChannelStatus()
+        .then((s) => {
+          if (alive) setEndpoint({ port: s.port, token: s.token });
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const t = setInterval(load, 2000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [enabled]);
 
   const copyId = async () => {
     try {
@@ -264,24 +288,77 @@ export function SmartChannelSettings() {
         )}
       </div>
 
+      {enabled && (
+        <div className="settings-card">
+          <div className="settings-card-h">入站接收端（外部应用调用）</div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">HTTP 端点</div>
+              <div
+                className="settings-help"
+                style={{ fontFamily: "var(--font-mono)", userSelect: "all" }}
+              >
+                {endpoint.port
+                  ? `POST http://127.0.0.1:${endpoint.port}/query`
+                  : "（接收端启动中…）"}
+              </div>
+            </div>
+            <button
+              className="settings-btn"
+              disabled={!endpoint.port}
+              onClick={() =>
+                endpoint.port &&
+                void writeText(`http://127.0.0.1:${endpoint.port}/query`)
+              }
+            >
+              复制
+            </button>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">访问 token</div>
+              <div
+                className="settings-help"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  userSelect: "all",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: 320,
+                }}
+              >
+                {endpoint.token ?? "（启动中…）"}
+              </div>
+            </div>
+            <button
+              className="settings-btn"
+              disabled={!endpoint.token}
+              onClick={() => endpoint.token && void writeText(endpoint.token)}
+            >
+              复制
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="settings-card">
         <div className="settings-card-h">如何在其他工具里用</div>
         <div className="smart-howto">
           <p>
-            智能通道开启后才会在浏览器环境挂载 <code>window.__markioSmartChannel</code>；
-            关闭即解绑，避免内部 API 被无意暴露。在 Tauri 桌面端会附带本机进程内调用。
-            外部应用可通过以下方式触发：
+            智能通道开启后会在本机启动一个仅 127.0.0.1 的入站接收端（见上）。外部应用可通过以下方式触发：
           </p>
           <ol>
             <li>
               命令面板（<code>{shortcutText("⌘K")}</code>）搜索"<b>通过智能通道查询</b>"，把当前问题发给同一引擎。
             </li>
             <li>
-              Raycast / Alfred / 自建脚本通过 markio 的 webhook 触发器（路线图），
-              POST <code>{`{"channelId":"${channelId.slice(0, 14)}…","query":"…"}`}</code>。
+              Raycast / Alfred / 自建脚本 / 微信助手中转：带上 token 头
+              <code>Authorization: Bearer &lt;token&gt;</code>，
+              POST <code>{`{"query":"…"}`}</code> 到上面的端点；返回 <code>{`{"ok":true,"answer":"…","refs":[…]}`}</code>。
             </li>
             <li>
-              微信助手 webhook（见左侧"微信助手"）收到查询消息时自动转发到此通道、回答再推回微信（路线图，需入站接收端）。
+              浏览器环境另挂 <code>window.__markioSmartChannel</code>（同一引擎，devtools / 内嵌脚本可直接调）；关闭总开关即解绑。
             </li>
           </ol>
         </div>

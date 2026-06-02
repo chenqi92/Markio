@@ -1,5 +1,6 @@
 mod agent_cli;
 mod ai;
+mod clipper;
 mod commands;
 mod custom_themes;
 mod dev_log;
@@ -8,11 +9,14 @@ mod frontmatter;
 mod fs_ops;
 mod gdrive_ops;
 mod git_ops;
+mod html2md;
 mod ignore;
 mod import;
 mod markdown;
 mod mcp;
 mod oauth;
+mod p2p;
+mod smart_channel;
 pub mod rag;
 mod rss;
 mod s3_ops;
@@ -25,6 +29,11 @@ mod window_state;
 
 use commands::{
     agent::{agent_cancel, agent_list_providers, agent_run},
+    clipper::{clipper_set_active_workspace, clipper_set_config, clipper_status},
+    p2p::{
+        p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
+    },
+    smart_channel::{smart_channel_respond, smart_channel_set_config, smart_channel_status},
     dropbox::{
         dropbox_authorize, dropbox_create_folder, dropbox_delete, dropbox_download, dropbox_list,
         dropbox_list_continue, dropbox_signout, dropbox_status, dropbox_upload,
@@ -172,6 +181,19 @@ pub(crate) const MAX_SYNC_BODY_BYTES: usize = 50 * 1024 * 1024;
 const MAX_CRASH_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_CRASH_LOG_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_CRASH_READ_BYTES: u64 = 512 * 1024;
+
+/// 生成 32 字节随机 token（hex）。loopback HTTP / WS server 鉴权共用（mcp/clipper/smart_channel/p2p）。
+pub(crate) fn random_loopback_token() -> String {
+    let mut buf = [0u8; 32];
+    if getrandom::getrandom(&mut buf).is_err() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        return format!("{now:032x}");
+    }
+    hex::encode(buf)
+}
 
 pub(crate) fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
     let inner = state
@@ -554,7 +576,7 @@ fn validate_sync_rel_path(rel_path: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
-fn resolve_sync_user_path(
+pub(crate) fn resolve_sync_user_path(
     state: &AppState,
     workspace: &str,
     rel_path: &str,
@@ -583,7 +605,7 @@ fn resolve_sync_user_path(
     Ok(canon)
 }
 
-fn read_file_base64_checked(canon: &Path) -> Result<String, String> {
+pub(crate) fn read_file_base64_checked(canon: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(canon).map_err(|e| format!("读取文件信息失败：{e}"))?;
     if !meta.is_file() {
         return Err("读取文件失败：目标不是文件".to_string());
@@ -598,7 +620,7 @@ fn read_file_base64_checked(canon: &Path) -> Result<String, String> {
     Ok(STANDARD.encode(bytes))
 }
 
-fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建父目录失败：{e}"))?;
     }
@@ -639,10 +661,17 @@ fn fs_sync_scan(
     state: tauri::State<'_, AppState>,
     workspace: String,
 ) -> Result<Vec<SyncFileEntry>, String> {
-    use crate::ignore::IgnoreRules;
     let ws = validate_path(&state, &workspace)?;
-    let rules = IgnoreRules::load(&ws);
+    Ok(sync_scan_workspace(&ws))
+}
+
+/// 扫描仓库返回同步用文件清单（rel_path / mtime / FNV hash / size）。
+/// 供 fs_sync_scan 命令与 P2P 金库 RPC server 共用，保证两侧 hash 口径一致。
+pub(crate) fn sync_scan_workspace(ws: &Path) -> Vec<SyncFileEntry> {
+    use crate::ignore::IgnoreRules;
+    let rules = IgnoreRules::load(ws);
     let mut out = Vec::new();
+    let ws = ws.to_path_buf();
     let mut stack = vec![(ws.clone(), 0usize)];
     while let Some((dir, depth)) = stack.pop() {
         if depth > 16 || out.len() > 20_000 {
@@ -684,7 +713,7 @@ fn fs_sync_scan(
         }
     }
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
-    Ok(out)
+    out
 }
 
 #[tauri::command]
@@ -2661,6 +2690,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .manage(std::sync::Arc::new(mcp::McpRuntime::default()))
+        .manage(std::sync::Arc::new(clipper::ClipperRuntime::default()))
+        .manage(std::sync::Arc::new(smart_channel::SmartChannelRuntime::default()))
+        .manage(std::sync::Arc::new(p2p::P2pRuntime::default()))
         .invoke_handler(tauri::generate_handler![
             md_render,
             md_render_stream,
@@ -2801,6 +2833,17 @@ pub fn run() {
             rag_clear,
             rag_repo_graph,
             tray_set_visible,
+            clipper_status,
+            clipper_set_config,
+            clipper_set_active_workspace,
+            smart_channel_status,
+            smart_channel_set_config,
+            smart_channel_respond,
+            p2p_status,
+            p2p_set_config,
+            p2p_set_active_workspace,
+            p2p_open_pairing,
+            p2p_close_pairing,
         ])
         .setup(|app| {
             if let Err(e) = install_tray(app.handle()) {
@@ -2819,6 +2862,24 @@ pub fn run() {
                     .clone();
                 mcp::spawn(app.handle().clone(), runtime);
             }
+            // WebClipper / SmartChannel loopback server：同样异步启动，失败仅打日志。
+            {
+                let rt = app
+                    .handle()
+                    .state::<std::sync::Arc<clipper::ClipperRuntime>>()
+                    .inner()
+                    .clone();
+                clipper::spawn(app.handle().clone(), rt);
+            }
+            {
+                let rt = app
+                    .handle()
+                    .state::<std::sync::Arc<smart_channel::SmartChannelRuntime>>()
+                    .inner()
+                    .clone();
+                smart_channel::spawn(app.handle().clone(), rt);
+            }
+            // P2P 不在此启动：仅当前端 p2p_set_config(enabled=true) 时懒启动（避免无谓监听 0.0.0.0）。
             // markio://open?path=... 深链接：注册回调，把 path 当作 open-from-os 同一事件转发
             {
                 use tauri_plugin_deep_link::DeepLinkExt;

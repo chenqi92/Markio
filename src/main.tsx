@@ -20,6 +20,7 @@ import { preloadTauriStorage } from "./lib/tauriStorage";
 import { migrateLegacySettingSecrets } from "./lib/secretMigration";
 import { installDigestScheduler } from "./lib/digestScheduler";
 import { installRssScheduler } from "./lib/rssScheduler";
+import { installLocalServices } from "./lib/localServices";
 import { setLocale as setI18nLocale } from "./i18n";
 import { applyFonts } from "./lib/fonts";
 import { devLog, installDevLogger } from "./lib/devLogger";
@@ -140,6 +141,9 @@ async function bootstrap() {
 
   // RSS 订阅 · 按 rssFetchInterval 后台定时拉取（manual 时不自动拉）
   installRssScheduler();
+
+  // 本地服务桥接（WebClipper / SmartChannel 入站 / P2P）：推配置 + 活跃仓库 + 入站桥
+  installLocalServices();
 
   // 未捕获 promise / window error 也写到日志
   if (typeof window !== "undefined" && isDesktop()) {

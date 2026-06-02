@@ -1,40 +1,174 @@
-import { SelectBtn, Toggle } from "../../ui/controls";
+import { useEffect, useState } from "react";
+import { Toggle } from "../../ui/controls";
 import { useSettings } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
+import { useUI } from "@/stores/ui";
+import { useWorkspace } from "@/stores/workspace";
+import { api } from "@/lib/api";
+import { pairWithPeer, runP2PSync } from "@/lib/sync/p2pAdapter";
 import { SectionHeader } from "../_shared";
 
-const MOBILE_DEVICE_KINDS: Array<{
-  value: "iphone" | "ipad" | "android" | "mac" | "windows" | "other";
-  label: string;
-}> = [
-  { value: "iphone", label: "iPhone" },
-  { value: "ipad", label: "iPad" },
-  { value: "android", label: "Android" },
-  { value: "mac", label: "Mac" },
-  { value: "windows", label: "Windows" },
-  { value: "other", label: "其它" },
-];
+interface DiscoveredPeer {
+  deviceId: string;
+  name: string;
+  host: string;
+  port: number;
+  version: string;
+}
 
 export function MobileDevices() {
   const p2p = useSettings((s) => s.mobileP2pEnabled);
+  const deviceName = useSettings((s) => s.mobileDeviceName);
   const devices = useSettings((s) => s.mobileDevices);
+  const conflictStrategy = useSettings((s) => s.syncConflictStrategy);
   const setPreference = useSettings((s) => s.setPreference);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
+  const setToast = useUI((s) => s.setToast);
 
-  const addDevice = async () => {
+  const [peers, setPeers] = useState<DiscoveredPeer[]>([]);
+  const [pairCode, setPairCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // 启用后轮询 p2p_status：拿发现的对端 + 本机配对窗口状态
+  useEffect(() => {
+    if (!p2p) {
+      setPeers([]);
+      return;
+    }
+    let alive = true;
+    const load = () => {
+      api
+        .p2pStatus()
+        .then((s) => {
+          if (!alive) return;
+          setPeers(s.peers);
+          if (!s.pairingOpen) setPairCode((c) => (c ? null : c));
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const t = setInterval(load, 2500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [p2p]);
+
+  const toggleP2p = async (v: boolean) => {
+    setPreference("mobileP2pEnabled", v);
+    try {
+      await api.p2pSetConfig(v, deviceName || "我的设备");
+      // 同步把当前活跃仓库告诉后端（决定 P2P 暴露哪个仓库）
+      const ws = useWorkspace.getState().activeWorkspace();
+      await api.p2pSetActiveWorkspace(ws?.path ?? null);
+    } catch (e) {
+      setToast({ stage: "error", message: `P2P 启动失败：${(e as Error).message}` });
+      setTimeout(() => setToast(null), 2500);
+    }
+  };
+
+  const renameDevice = async () => {
     const name = await promptDialog({
-      title: "登记新设备",
-      message: "起一个易识别的名字（如「我的 iPhone」「公司 Mac」）",
-      defaultValue: "新设备",
-      confirmLabel: "登记",
+      title: "本机设备名",
+      message: "局域网内其它设备看到的名字",
+      defaultValue: deviceName,
+      confirmLabel: "保存",
     });
     if (!name) return;
-    const id = `dev_${Date.now().toString(36)}`;
-    setPreference("mobileDevices", [
-      ...devices,
-      { id, name, kind: "iphone", pairedAt: Date.now() },
-    ]);
+    setPreference("mobileDeviceName", name);
+    if (p2p) await api.p2pSetConfig(true, name).catch(() => undefined);
+  };
+
+  const openPairing = async () => {
+    try {
+      const code = await api.p2pOpenPairing();
+      setPairCode(code);
+    } catch (e) {
+      setToast({ stage: "error", message: (e as Error).message });
+      setTimeout(() => setToast(null), 2500);
+    }
+  };
+
+  const closePairing = async () => {
+    await api.p2pClosePairing().catch(() => undefined);
+    setPairCode(null);
+  };
+
+  // 与发现的对端配对：输入对端显示的 6 位码 → 换 token → 存为已配对设备
+  const pairPeer = async (peer: DiscoveredPeer) => {
+    const code = await promptDialog({
+      title: `与「${peer.name}」配对`,
+      message: "在对方设备「本机配对码」里生成 6 位码，填到这里",
+      defaultValue: "",
+      confirmLabel: "配对",
+    });
+    if (!code || !/^\d{6}$/.test(code.trim())) return;
+    setBusy(peer.deviceId);
+    try {
+      const r = await pairWithPeer(peer.host, peer.port, code.trim());
+      const cur = useSettings.getState().mobileDevices;
+      const id = `dev_${Date.now().toString(36)}`;
+      const next = cur.filter((d) => d.peerId !== r.peerId);
+      next.push({
+        id,
+        name: r.name || peer.name,
+        kind: "other",
+        pairedAt: Date.now(),
+        peerId: r.peerId,
+        host: peer.host,
+        port: peer.port,
+        token: r.token,
+      });
+      setPreference("mobileDevices", next);
+      setToast({ stage: "done", message: `已与 ${r.name || peer.name} 配对` });
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setToast({ stage: "error", message: `配对失败：${(e as Error).message}` });
+      setTimeout(() => setToast(null), 2800);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const syncWith = async (device: (typeof devices)[number]) => {
+    if (!device.peerId || !device.host || !device.port || !device.token) {
+      setToast({ stage: "error", message: "该设备缺少配对信息，请重新配对" });
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    const ws = useWorkspace.getState().activeWorkspace();
+    if (!ws) {
+      setToast({ stage: "error", message: "请先打开一个仓库" });
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    setBusy(device.id);
+    setToast({ stage: "uploading", message: `正在与 ${device.name} 同步…` });
+    try {
+      const report = await runP2PSync(
+        {
+          peerId: device.peerId,
+          name: device.name,
+          host: device.host,
+          port: device.port,
+          token: device.token,
+        },
+        ws.path,
+        conflictStrategy,
+      );
+      if (report.stage === "error") {
+        setToast({ stage: "error", message: `同步失败：${report.fatalError ?? ""}` });
+      } else {
+        const n = report.results.filter((r) => r.ok).length;
+        setToast({ stage: "done", message: `与 ${device.name} 同步完成（${n} 项）` });
+      }
+    } catch (e) {
+      setToast({ stage: "error", message: `同步失败：${(e as Error).message}` });
+    } finally {
+      setBusy(null);
+      setTimeout(() => setToast(null), 2800);
+    }
   };
 
   const removeDevice = async (id: string, name: string) => {
@@ -51,86 +185,141 @@ export function MobileDevices() {
     );
   };
 
-  const setKind = (id: string, kind: typeof MOBILE_DEVICE_KINDS[number]["value"]) => {
-    setPreference(
-      "mobileDevices",
-      devices.map((d) => (d.id === id ? { ...d, kind } : d)),
-    );
-  };
+  const paired = devices.filter((d) => d.peerId);
 
   return (
     <>
       <SectionHeader id="mobile" />
 
       <div className="settings-banner">
-        macOS 启用前需在 Info.plist 加 NSLocalNetworkUsageDescription；mDNS + WS
-        握手后端开发中。当前可登记设备清单，握手通道上线后即可激活。
+        P2P 局域网同步（桌面 ↔ 桌面）：两台 markio 在同一局域网内经 mDNS 自动发现、配对后用
+        WebSocket 直传整个仓库，不经云端。macOS 首次启用需在系统弹窗允许「本地网络」访问。
       </div>
 
       <div className="settings-card">
         <div className="settings-card-h">P2P 直连</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">
-              局域网内直连
-              <span className="settings-pill-soon">即将上线</span>
-            </div>
-            <div className="settings-help">
-              通过 mDNS 自动发现局域网内的 markio 实例，传输不经云端（握手通道开发中，暂不可用）
-            </div>
+            <div className="settings-label">启用局域网直连</div>
+            <div className="settings-help">开启后广播本机并发现同网段的其它 markio</div>
           </div>
-          <Toggle on={p2p} disabled onChange={(v) => setPreference("mobileP2pEnabled", v)} />
+          <Toggle on={p2p} onChange={(v) => void toggleP2p(v)} />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">本机设备名</div>
+            <div className="settings-help">{deviceName}</div>
+          </div>
+          <button className="settings-btn" onClick={() => void renameDevice()}>
+            改名
+          </button>
         </div>
       </div>
 
+      {p2p && (
+        <div className="settings-card">
+          <div className="settings-card-h">本机配对码</div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">
+                {pairCode ? (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 20, letterSpacing: 4 }}>
+                    {pairCode}
+                  </span>
+                ) : (
+                  "未开启配对窗口"
+                )}
+              </div>
+              <div className="settings-help">
+                {pairCode
+                  ? "把这串码告诉对方设备，让它在「局域网设备」里对本机发起配对（5 分钟内有效）"
+                  : "生成一个 6 位码，供对方设备配对本机"}
+              </div>
+            </div>
+            {pairCode ? (
+              <button className="settings-btn" onClick={() => void closePairing()}>
+                关闭
+              </button>
+            ) : (
+              <button className="settings-btn primary" onClick={() => void openPairing()}>
+                生成配对码
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {p2p && (
+        <div className="settings-card">
+          <div className="settings-card-h">局域网设备 ({peers.length})</div>
+          {peers.length === 0 ? (
+            <div className="settings-row">
+              <div className="settings-row-l">
+                <div className="settings-label" style={{ color: "var(--text-3)" }}>
+                  暂未发现其它 markio
+                </div>
+                <div className="settings-help">确保对方也开启了 P2P 且在同一局域网</div>
+              </div>
+            </div>
+          ) : (
+            peers.map((peer) => (
+              <div className="settings-row" key={peer.deviceId}>
+                <div className="settings-row-l">
+                  <div className="settings-label">{peer.name || peer.deviceId}</div>
+                  <div className="settings-help">
+                    {peer.host}:{peer.port} · v{peer.version}
+                  </div>
+                </div>
+                <button
+                  className="settings-btn primary"
+                  disabled={busy === peer.deviceId}
+                  onClick={() => void pairPeer(peer)}
+                >
+                  {busy === peer.deviceId ? "配对中…" : "配对"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       <div className="settings-card">
-        <div className="settings-card-h">已配对设备 ({devices.length})</div>
-        {devices.length === 0 ? (
+        <div className="settings-card-h">已配对设备 ({paired.length})</div>
+        {paired.length === 0 ? (
           <div className="settings-row">
             <div className="settings-row-l">
               <div className="settings-label" style={{ color: "var(--text-3)" }}>
                 还没有配对任何设备
               </div>
-              <div className="settings-help">点右侧「登记」开始</div>
+              <div className="settings-help">在上面「局域网设备」里发起配对</div>
             </div>
-            <button className="settings-btn primary" onClick={() => void addDevice()}>
-              登记设备
-            </button>
           </div>
         ) : (
-          <>
-            {devices.map((d) => (
-              <div className="settings-row" key={d.id}>
-                <div className="settings-row-l">
-                  <div className="settings-label">{d.name}</div>
-                  <div className="settings-help">
-                    配对于 {new Date(d.pairedAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <SelectBtn
-                    value={d.kind}
-                    options={MOBILE_DEVICE_KINDS.map((k) => ({
-                      value: k.value,
-                      label: k.label,
-                    }))}
-                    onChange={(v) => setKind(d.id, v)}
-                  />
-                  <button
-                    className="settings-btn settings-btn-danger"
-                    onClick={() => void removeDevice(d.id, d.name)}
-                  >
-                    解除
-                  </button>
+          paired.map((d) => (
+            <div className="settings-row" key={d.id}>
+              <div className="settings-row-l">
+                <div className="settings-label">{d.name}</div>
+                <div className="settings-help">
+                  {d.host}:{d.port} · 配对于 {new Date(d.pairedAt).toLocaleDateString()}
                 </div>
               </div>
-            ))}
-            <div className="settings-row" style={{ justifyContent: "flex-end" }}>
-              <button className="settings-btn primary" onClick={() => void addDevice()}>
-                登记设备
-              </button>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  className="settings-btn primary"
+                  disabled={busy === d.id}
+                  onClick={() => void syncWith(d)}
+                >
+                  {busy === d.id ? "同步中…" : "同步"}
+                </button>
+                <button
+                  className="settings-btn settings-btn-danger"
+                  onClick={() => void removeDevice(d.id, d.name)}
+                >
+                  解除
+                </button>
+              </div>
             </div>
-          </>
+          ))
         )}
       </div>
     </>

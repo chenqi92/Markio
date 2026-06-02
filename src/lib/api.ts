@@ -474,6 +474,44 @@ export const api = {
   mcpSetActiveWorkspace: (workspace: string | null) =>
     invoke<void>("mcp_set_active_workspace", { workspace }),
 
+  // ── WebClipper 本地接收端 ──
+  clipperStatus: () =>
+    invoke<{ port: number | null; token: string | null; enabled: boolean }>("clipper_status"),
+  clipperSetConfig: (enabled: boolean, readability: boolean, htmlToMd: boolean) =>
+    invoke<void>("clipper_set_config", { enabled, readability, htmlToMd }),
+  clipperSetActiveWorkspace: (workspace: string | null) =>
+    invoke<void>("clipper_set_active_workspace", { workspace }),
+
+  // ── SmartChannel 入站 ──
+  smartChannelStatus: () =>
+    invoke<{
+      port: number | null;
+      token: string | null;
+      enabled: boolean;
+      channelId: string | null;
+    }>("smart_channel_status"),
+  smartChannelSetConfig: (enabled: boolean, channelId: string | null) =>
+    invoke<void>("smart_channel_set_config", { enabled, channelId }),
+  smartChannelRespond: (id: string, payload: unknown) =>
+    invoke<boolean>("smart_channel_respond", { id, payload }),
+
+  // ── P2P 局域网同步 ──
+  p2pStatus: () =>
+    invoke<{
+      enabled: boolean;
+      deviceId: string;
+      deviceName: string;
+      wsPort: number | null;
+      pairingOpen: boolean;
+      peers: Array<{ deviceId: string; name: string; host: string; port: number; version: string }>;
+    }>("p2p_status"),
+  p2pSetConfig: (enabled: boolean, deviceName: string) =>
+    invoke<string>("p2p_set_config", { enabled, deviceName }),
+  p2pSetActiveWorkspace: (workspace: string | null) =>
+    invoke<void>("p2p_set_active_workspace", { workspace }),
+  p2pOpenPairing: () => invoke<string>("p2p_open_pairing"),
+  p2pClosePairing: () => invoke<void>("p2p_close_pairing"),
+
   agentListProviders: () => invoke<AgentProviderInfo[]>("agent_list_providers"),
   agentRun: (req: AgentRunRequest) => invoke<void>("agent_run", { req }),
   agentCancel: (sessionId: string) => invoke<void>("agent_cancel", { sessionId }),

@@ -104,6 +104,7 @@ type PreferenceKey =
   | "customThemeId"
   | "bubbleTrigger"
   | "aiProviderConfigs"
+  | "clipperEnabled"
   | "clipperHtmlToMd"
   | "clipperReadability"
   | "clipperAiSummary"
@@ -112,6 +113,7 @@ type PreferenceKey =
   | "rssAiSummary"
   | "rssFeeds"
   | "mobileP2pEnabled"
+  | "mobileDeviceName"
   | "mobileDevices";
 
 export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
@@ -225,9 +227,9 @@ interface SettingsState {
    *  对话 / embedding / rerank 三个用途各自从池里选源 + 模型。 */
   aiSources: Array<{ provider: AIProviderId; label: string; endpoint?: string }>;
 
-  /** Web Clipper：浏览器扩展把网页抓回 markio 时怎么处理。
-   *  扩展端本身在 Chrome / Edge / Firefox / Safari 商店分发；这里是 markio 桌面端
-   *  收到推送后的行为偏好。后端管道未接，先把开关存好。 */
+  /** Web Clipper：本机 loopback 接收端（clipper.rs）开关 + 浏览器扩展抓回后的处理偏好。
+   *  clipperEnabled=true 时 markio 启动本地 /clip 接收端，浏览器扩展把网页 POST 进来转 md 落库。 */
+  clipperEnabled: boolean;
   clipperHtmlToMd: boolean;
   clipperReadability: boolean;
   clipperAiSummary: boolean;
@@ -250,15 +252,21 @@ interface SettingsState {
     lastError?: string;
   }>;
 
-  /** 移动端 / 设备配对：UI 壳 + 已配对设备清单。
-   *  P2P 直连开关存好；实际握手 (mDNS + WebRTC / WS) 后端未接。
+  /** P2P 局域网同步（桌面↔桌面）：开关 + 本机设备名 + 已配对设备清单。
+   *  后端走 mDNS 发现 + WebSocket 金库 RPC（p2p.rs）；配对成功后存对端的 host/port/token。
    *  macOS 上启用前要在 Info.plist 加 NSLocalNetworkUsageDescription。 */
   mobileP2pEnabled: boolean;
+  mobileDeviceName: string;
   mobileDevices: Array<{
     id: string;
     name: string;
     kind: "iphone" | "ipad" | "android" | "mac" | "windows" | "other";
     pairedAt: number;
+    /** P2P 对端连接信息（配对后写入；缺省表示仅手动登记、未实际配对） */
+    peerId?: string;
+    host?: string;
+    port?: number;
+    token?: string;
   }>;
   /** AI 回答时是否把当前 .md 文件内容塞进 system prompt */
   aiUseCurrentFile: boolean;
@@ -411,6 +419,7 @@ export const useSettings = create<SettingsState>()(
       aiMaxTokens: 4096,
       aiProviderConfigs: {},
       aiSources: [{ provider: defaultAI.provider, label: defaultAI.label }],
+      clipperEnabled: false,
       clipperHtmlToMd: true,
       clipperReadability: true,
       clipperAiSummary: false,
@@ -419,6 +428,7 @@ export const useSettings = create<SettingsState>()(
       rssAiSummary: false,
       rssFeeds: [],
       mobileP2pEnabled: false,
+      mobileDeviceName: "我的设备",
       mobileDevices: [],
       aiUseCurrentFile: true,
       aiUseWorkspace: false,

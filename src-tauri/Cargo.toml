@@ -99,9 +99,13 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-global-shortcut = "2"
 
 # MCP server 出口：loopback HTTP server 给 mcp-server (Node) 转发 RPC
-axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1"] }
+# WebClipper / SmartChannel 入站、P2P WS 金库 RPC 也复用 axum（ws feature 供 P2P）
+axum = { version = "0.7", default-features = false, features = ["json", "tokio", "http1", "ws"] }
 tower = { version = "0.5", default-features = false }
 tower-http = { version = "0.6", default-features = false, features = ["cors"] }
+
+# P2P 局域网发现：mDNS 广播 / 浏览 _markio._tcp
+mdns-sd = "0.11"
 
 [profile.release]
 panic = "abort"

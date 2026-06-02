@@ -1,7 +1,7 @@
 // 通用同步引擎类型。引擎本身不知道任何具体云盘协议；
 // 各 driveId（webdav / s3 / dropbox / gdrive）通过实现 DriveAdapter 接入。
 
-export type DriveId = "webdav" | "s3" | "dropbox" | "gdrive";
+export type DriveId = "webdav" | "s3" | "dropbox" | "gdrive" | "p2p";
 
 /** 同步策略，复用 settings.syncConflictStrategy */
 export type ConflictStrategy = "ask" | "newest" | "local" | "remote";

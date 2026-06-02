@@ -8,6 +8,7 @@
 //! 看到的符号名跟原来一致，对外行为不变。
 
 pub mod agent;
+pub mod clipper;
 pub mod dropbox;
 pub mod gdrive;
 pub mod git;
@@ -15,9 +16,11 @@ pub mod history;
 pub mod icloud;
 pub mod import;
 pub mod mcp;
+pub mod p2p;
 pub mod rag;
 pub mod rss;
 pub mod s3;
 pub mod secret;
+pub mod smart_channel;
 pub mod theme;
 pub mod webdav;

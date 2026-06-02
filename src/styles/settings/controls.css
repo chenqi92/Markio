@@ -61,6 +61,7 @@
 }
 .sw.on { background: var(--accent); }
 .sw.on > span { transform: translateX(14px); }
+.sw.disabled { opacity: 0.45; cursor: not-allowed; }
 
 .select-btn {
   height: var(--settings-control-size);

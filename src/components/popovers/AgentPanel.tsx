@@ -18,7 +18,7 @@ type Block =
   | { kind: "init"; provider: AgentProvider; binary: string }
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool"; tool: string; input: unknown; output?: unknown; isError?: boolean }
+  | { kind: "tool"; id?: string; tool: string; input: unknown; output?: unknown; isError?: boolean }
   | { kind: "result"; text: string; tokens?: { input: number | null; output: number | null } }
   | { kind: "error"; message: string };
 
@@ -47,7 +47,17 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [running, setRunning] = useState<string | null>(null);
   const blockRef = useRef<HTMLDivElement>(null);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
   const agentAllowed = isExternalAgentAllowedInCurrentRegion();
+
+  // 组件卸载时兜底解绑事件监听（如路由切换强制卸载，避免监听泄漏）
+  useEffect(
+    () => () => {
+      unlistenRef.current?.();
+      unlistenRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!agentAllowed) return;
@@ -105,14 +115,15 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
       return [...cur, { kind: "thinking", text }];
     });
 
-  const closeToolWithOutput = (output: unknown, isError: boolean) =>
+  const closeToolWithOutput = (id: string, output: unknown, isError: boolean) =>
     setBlocks((cur) => {
       for (let i = cur.length - 1; i >= 0; i--) {
         const b = cur[i];
-        if (b && b.kind === "tool" && b.output === undefined) {
-          const updated: Block = { ...b, output, isError };
-          return [...cur.slice(0, i), updated, ...cur.slice(i + 1)];
-        }
+        if (!b || b.kind !== "tool" || b.output !== undefined) continue;
+        // 优先按 tool_use id 关联；无 id（其它 provider）时退回"最近一个未闭合的工具块"
+        if (id && b.id && b.id !== id) continue;
+        const updated: Block = { ...b, output, isError };
+        return [...cur.slice(0, i), updated, ...cur.slice(i + 1)];
       }
       return cur;
     });
@@ -155,10 +166,10 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             updateLastThinking(evt.text);
             break;
           case "tool_start":
-            appendBlock({ kind: "tool", tool: evt.tool, input: evt.input });
+            appendBlock({ kind: "tool", id: evt.id, tool: evt.tool, input: evt.input });
             break;
           case "tool_done":
-            closeToolWithOutput(evt.output, evt.is_error);
+            closeToolWithOutput(evt.id, evt.output, evt.is_error);
             break;
           case "result":
             appendBlock({
@@ -175,10 +186,12 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             if (unlisten) {
               unlisten();
               unlisten = null;
+              unlistenRef.current = null;
             }
             break;
         }
       });
+      unlistenRef.current = unlisten;
 
       await api.agentRun({
         sessionId,
@@ -190,13 +203,21 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
     } catch (err) {
       appendBlock({ kind: "error", message: (err as Error).message });
       setRunning(null);
-      if (unlisten) unlisten();
+      if (unlisten) {
+        unlisten();
+        unlistenRef.current = null;
+      }
     }
   };
 
   const cancel = async () => {
     if (!running) return;
-    await api.agentCancel(running).catch(() => {});
+    try {
+      await api.agentCancel(running);
+    } catch (err) {
+      setToast({ stage: "error", message: `取消失败：${(err as Error).message}` });
+      setTimeout(() => setToast(null), 2500);
+    }
   };
 
   if (!agentAllowed) return null;

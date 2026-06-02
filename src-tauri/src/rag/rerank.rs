@@ -102,7 +102,7 @@ pub fn rerank_blocking(
             return Err(format!(
                 "rerank API {}: {}",
                 status,
-                &text[..text.len().min(400)]
+                text.chars().take(400).collect::<String>()
             ));
         }
         let parsed: CohereResp =

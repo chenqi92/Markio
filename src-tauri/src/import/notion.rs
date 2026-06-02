@@ -127,9 +127,15 @@ fn rewrite_notion_links(text: &str) -> String {
                     }
                 }
             }
+            // '[' 是单字节 ASCII，直接推进
+            out.push('[');
+            i += 1;
+            continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        // 非 '[' 处按完整 UTF-8 字符推进，避免把多字节字节当 char 损坏中文/emoji
+        let ch = text[i..].chars().next().expect("i 始终落在 char 边界");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }

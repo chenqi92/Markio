@@ -465,9 +465,12 @@ export const SourceEditor = memo(function SourceEditor({
   useEffect(() => {
     if (!view) return;
 
+    // 记录当前挂在 window 上的拖选监听，effect 重跑 / 卸载时一并清理，避免悬空监听泄漏
+    let activeDragListeners: { move: (e: MouseEvent) => void; up: () => void } | null = null;
     const clearDragListeners = (move: (e: MouseEvent) => void, up: () => void) => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      activeDragListeners = null;
     };
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -508,6 +511,7 @@ export const SourceEditor = memo(function SourceEditor({
 
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
+      activeDragListeners = { move: handleMouseMove, up: handleMouseUp };
     };
 
     const handleContextMenu = (e: MouseEvent) => {
@@ -577,6 +581,9 @@ export const SourceEditor = memo(function SourceEditor({
     return () => {
       view.contentDOM.removeEventListener("mousedown", handleMouseDown, true);
       view.contentDOM.removeEventListener("contextmenu", handleContextMenu, true);
+      if (activeDragListeners) {
+        clearDragListeners(activeDragListeners.move, activeDragListeners.up);
+      }
     };
   }, [view, onTableContextMenu, onEditorContextMenu]);
 

@@ -27,8 +27,12 @@ async fn dropbox_session() -> Result<(dropbox_ops::DropboxTokens, String), Strin
     let mut tokens = load_dropbox_tokens()?;
     let client_id = secrets::get(DROPBOX_CLIENT_ACCOUNT)?
         .ok_or_else(|| "Dropbox client_id 丢失".to_string())?;
+    let before = tokens.access_token.clone();
     dropbox_ops::ensure_fresh(&mut tokens, &client_id).await?;
-    save_dropbox_tokens(&tokens)?;
+    // 仅在 token 实际刷新后回写钥匙串，避免每次 list/upload/download 都无谓写
+    if tokens.access_token != before {
+        save_dropbox_tokens(&tokens)?;
+    }
     Ok((tokens, client_id))
 }
 
@@ -105,9 +109,10 @@ pub fn dropbox_status() -> Result<dropbox_ops::DropboxStatus, String> {
 
 #[tauri::command]
 pub fn dropbox_signout() -> Result<(), String> {
-    let _ = secrets::delete(DROPBOX_TOKENS_ACCOUNT);
-    let _ = secrets::delete(DROPBOX_CLIENT_ACCOUNT);
-    Ok(())
+    // 聚合两个删除的错误并返回：钥匙串删除失败时不该静默显示"已登出"而 token 仍残留
+    let a = secrets::delete(DROPBOX_TOKENS_ACCOUNT);
+    let b = secrets::delete(DROPBOX_CLIENT_ACCOUNT);
+    a.and(b)
 }
 
 #[tauri::command]

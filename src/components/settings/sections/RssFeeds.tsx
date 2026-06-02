@@ -2,8 +2,8 @@ import { useState } from "react";
 import { SelectBtn, type SelectOption, Toggle } from "../../ui/controls";
 import { useSettings } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
-import { api } from "@/lib/api";
 import { openExternal } from "@/lib/opener";
+import { fetchRssFeed } from "@/lib/rssScheduler";
 import { SectionHeader } from "../_shared";
 
 const RSS_INTERVAL_OPTIONS = [
@@ -62,41 +62,11 @@ export function RssFeeds() {
     );
   };
 
-  /** 拉取单个 feed：调 Rust GET，对比 seenGuids 算新出现条目数。 */
+  /** 拉取单个 feed：与后台调度器共用 fetchRssFeed，仅在此处额外维护按钮 busy 态。 */
   const refreshFeed = async (id: string) => {
-    const f = feeds.find((x) => x.id === id);
-    if (!f) return;
     setBusyIds((s) => new Set(s).add(id));
     try {
-      const r = await api.rssFetch(f.url);
-      const seen = new Set(f.seenGuids ?? []);
-      const fresh = r.items.filter((it) => !seen.has(it.guid)).length;
-      const nextGuids = r.items
-        .map((it) => it.guid)
-        .filter(Boolean)
-        .slice(0, 50);
-      // 不要在闭包里用 feeds（已变陈旧），从 store 重新取
-      const cur = useSettings.getState().rssFeeds;
-      const updated = cur.map((x) =>
-        x.id === id
-          ? {
-              ...x,
-              lastFetchedAt: Date.now(),
-              seenGuids: nextGuids,
-              unread: (x.unread ?? 0) + fresh,
-              lastError: undefined,
-            }
-          : x,
-      );
-      setPreference("rssFeeds", updated);
-    } catch (e) {
-      const cur = useSettings.getState().rssFeeds;
-      setPreference(
-        "rssFeeds",
-        cur.map((x) =>
-          x.id === id ? { ...x, lastError: (e as Error).message, lastFetchedAt: Date.now() } : x,
-        ),
-      );
+      await fetchRssFeed(id);
     } finally {
       setBusyIds((s) => {
         const next = new Set(s);
@@ -236,7 +206,7 @@ export function RssFeeds() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">拉取频率</div>
-            <div className="settings-help">fetcher 接好后按此频率后台拉取（手动 = 只在你点刷新时拉）</div>
+            <div className="settings-help">按此频率后台自动拉取（手动 = 只在你点刷新时拉）</div>
           </div>
           <SelectBtn
             value={interval}
@@ -247,7 +217,7 @@ export function RssFeeds() {
         <div className="settings-row">
           <div className="settings-row-l">
             <div className="settings-label">AI 摘要</div>
-            <div className="settings-help">每条新条目调用当前 AI 提供方生成 1 句话摘要</div>
+            <div className="settings-help">条目阅读器接入后，每条新条目调用当前 AI 提供方生成 1 句话摘要（暂存设置）</div>
           </div>
           <Toggle on={aiSummary} onChange={(v) => setPreference("rssAiSummary", v)} />
         </div>

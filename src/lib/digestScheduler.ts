@@ -63,11 +63,25 @@ export interface DigestSendResult {
   message: string;
 }
 
+// 进行中的发送：调度器 tick 与"立即发送"按钮、或两次 tick 重叠时复用同一次请求，
+// 避免并发向 webhook 重复推送 / 竞态写 lastSentDate。
+let inflight: Promise<DigestSendResult> | null = null;
+
 /** 立即发送一次摘要（设置面板的"立即发送"按钮 + 调度器都用） */
 export async function sendDigestNow(opts?: {
   /** 默认 true：发送成功后写入 lastSentDate */
   markSent?: boolean;
 }): Promise<DigestSendResult> {
+  if (inflight) return inflight;
+  inflight = doSendDigest(opts);
+  try {
+    return await inflight;
+  } finally {
+    inflight = null;
+  }
+}
+
+async function doSendDigest(opts?: { markSent?: boolean }): Promise<DigestSendResult> {
   const settings = useSettings.getState();
   if (!settings.wxAssistantEnabled) {
     return { ok: false, message: "微信助手未启用" };

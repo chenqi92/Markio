@@ -124,13 +124,12 @@ export function getSmartChannelUsage(): { date: string; used: number; limit: num
   return { date: rec.date, used: rec.used, limit };
 }
 
-function hasSmartChannelQuota(): { used: number; limit: number; allowed: boolean } {
-  const limit = useSettings.getState().smartChannelDailyLimit;
-  const usage = getSmartChannelUsage();
-  return { used: usage.used, limit, allowed: usage.used < limit };
-}
-
-function incrementSmartChannelUsage(): { used: number; limit: number } {
+/**
+ * 原子预占一个配额名额：read-check-write 全程同步（无 await），JS 单线程内不可被打断，
+ * 因此并发查询不会都通过检查再各自 +1 而越过上限。调用失败时用 releaseSmartChannelQuota 回滚。
+ * 注：localStorage 仍可被页面脚本篡改重置；彻底的防篡改配额需移到后端（见文末 TODO）。
+ */
+function reserveSmartChannelQuota(): { allowed: boolean; used: number; limit: number } {
   const limit = useSettings.getState().smartChannelDailyLimit;
   const today = todayKey();
   let used = 0;
@@ -143,6 +142,7 @@ function incrementSmartChannelUsage(): { used: number; limit: number } {
   } catch {
     /* ignore */
   }
+  if (used >= limit) return { allowed: false, used, limit };
   used += 1;
   try {
     localStorage.setItem(
@@ -152,7 +152,25 @@ function incrementSmartChannelUsage(): { used: number; limit: number } {
   } catch {
     /* ignore */
   }
-  return { used, limit };
+  return { allowed: true, used, limit };
+}
+
+/** 预占后调用失败时回滚一个名额（仅当仍是今日记录时）。 */
+function releaseSmartChannelQuota(): void {
+  const today = todayKey();
+  try {
+    const raw = localStorage.getItem(QUOTA_KEY);
+    if (!raw) return;
+    const rec = JSON.parse(raw) as QuotaRecord;
+    if (rec.date !== today) return;
+    const used = Math.max(0, rec.used - 1);
+    localStorage.setItem(
+      QUOTA_KEY,
+      JSON.stringify({ date: today, used } satisfies QuotaRecord),
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 function resolveProviderModel(src: SmartChannelModelSource): {
@@ -377,58 +395,63 @@ export async function smartChannelQuery(
   if (!s.smartChannelEnabled) {
     throw new Error("智能通道未启用，请到 设置 → 智能通道 中开启。");
   }
-  const quota = hasSmartChannelQuota();
+  // 先原子预占名额，再做检索/调用；失败回滚，避免并发越过上限。
+  const quota = reserveSmartChannelQuota();
   if (!quota.allowed) {
     throw new Error(
       `今日智能通道调用已达上限（${quota.limit} 次），明天再来或在设置中调高上限。`,
     );
   }
 
-  const scope = req.scope ?? s.smartChannelScope;
-  const modelSource = req.modelSource ?? s.smartChannelModelSource;
-  const maxChunks = req.maxChunks ?? s.smartChannelMaxChunks;
+  try {
+    const scope = req.scope ?? s.smartChannelScope;
+    const modelSource = req.modelSource ?? s.smartChannelModelSource;
+    const maxChunks = req.maxChunks ?? s.smartChannelMaxChunks;
 
-  const refs = await retrieve(scope, req.query, maxChunks);
-  const { provider, model, endpoint } = resolveProviderModel(modelSource);
+    const refs = await retrieve(scope, req.query, maxChunks);
+    const { provider, model, endpoint } = resolveProviderModel(modelSource);
 
-  const ctxBlock = refs
-    .map((h, i) => {
-      const file = h.path.split("/").slice(-1)[0] ?? h.path;
-      const workspace = h.workspace ? `\n仓库：${h.workspace}` : "";
-      const heading = h.heading ? `\n小节：${h.heading}` : "";
-      return `### 片段 ${i + 1} · ${file}（${h.source}）${workspace}${heading}\n${h.snippet}`;
-    })
-    .join("\n\n---\n\n");
+    const ctxBlock = refs
+      .map((h, i) => {
+        const file = h.path.split("/").slice(-1)[0] ?? h.path;
+        const workspace = h.workspace ? `\n仓库：${h.workspace}` : "";
+        const heading = h.heading ? `\n小节：${h.heading}` : "";
+        return `### 片段 ${i + 1} · ${file}（${h.source}）${workspace}${heading}\n${h.snippet}`;
+      })
+      .join("\n\n---\n\n");
 
-  const systemParts = [
-    "你是 markio 文档库的智能通道，会基于用户的本地笔记库回答问题。",
-    STYLE_PROMPT[s.smartChannelResponseStyle],
-    '若提供了片段，请只依据片段回答；片段不足以回答时直接说"未检索到相关内容"，不要编造。',
-  ];
-  if (ctxBlock) {
-    systemParts.push(`仓库相关片段：\n\n${ctxBlock}`);
+    const systemParts = [
+      "你是 markio 文档库的智能通道，会基于用户的本地笔记库回答问题。",
+      STYLE_PROMPT[s.smartChannelResponseStyle],
+      '若提供了片段，请只依据片段回答；片段不足以回答时直接说"未检索到相关内容"，不要编造。',
+    ];
+    if (ctxBlock) {
+      systemParts.push(`仓库相关片段：\n\n${ctxBlock}`);
+    }
+
+    const result = await api.aiChat({
+      provider,
+      endpoint,
+      model,
+      maxTokens: 800,
+      temperature: 0.2,
+      system: systemParts.join("\n\n"),
+      messages: [{ role: "user", content: req.query }],
+    });
+
+    const ws = useWorkspace.getState().activeWorkspace();
+    return {
+      answer: result.text,
+      refs,
+      workspace: scope === "allWorkspaces" ? "allWorkspaces" : ws?.path,
+      model: result.model ?? model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+    };
+  } catch (e) {
+    releaseSmartChannelQuota();
+    throw e;
   }
-
-  const result = await api.aiChat({
-    provider,
-    endpoint,
-    model,
-    maxTokens: 800,
-    temperature: 0.2,
-    system: systemParts.join("\n\n"),
-    messages: [{ role: "user", content: req.query }],
-  });
-  incrementSmartChannelUsage();
-
-  const ws = useWorkspace.getState().activeWorkspace();
-  return {
-    answer: result.text,
-    refs,
-    workspace: scope === "allWorkspaces" ? "allWorkspaces" : ws?.path,
-    model: result.model ?? model,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-  };
 }
 
 /**

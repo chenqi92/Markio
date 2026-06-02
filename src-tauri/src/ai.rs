@@ -1550,17 +1550,31 @@ pub async fn chat_stream(app: AppHandle, stream_id: String, req: ChatRequest) {
 }
 
 /// 按 SSE 协议从字节流中切出 `data: ...` 负载。
+/// 用字节缓冲累积，只在完整 event（空行分隔）边界处解码：event 分隔符是 ASCII 换行，
+/// 多字节 UTF-8 字符不含换行字节，因此整块解码不会把一个字符切在两个网络 chunk 之间。
 struct SseReader {
-    buf: String,
+    buf: Vec<u8>,
+}
+
+/// 找出最早出现的 event 分隔符，返回 (起始字节索引, 分隔符长度)。
+fn find_event_sep(buf: &[u8]) -> Option<(usize, usize)> {
+    let nn = buf.windows(2).position(|w| w == b"\n\n");
+    let rnrn = buf.windows(4).position(|w| w == b"\r\n\r\n");
+    match (nn, rnrn) {
+        (Some(a), Some(b)) => Some(if a <= b { (a, 2) } else { (b, 4) }),
+        (Some(a), None) => Some((a, 2)),
+        (None, Some(b)) => Some((b, 4)),
+        (None, None) => None,
+    }
 }
 
 impl SseReader {
     fn new() -> Self {
-        Self { buf: String::new() }
+        Self { buf: Vec::new() }
     }
 
     fn push(&mut self, chunk: &[u8]) -> Result<(), String> {
-        self.buf.push_str(&String::from_utf8_lossy(chunk));
+        self.buf.extend_from_slice(chunk);
         if self.buf.len() > MAX_SSE_BUFFER_BYTES {
             return Err("SSE 响应过大，已中断连接".to_string());
         }
@@ -1571,15 +1585,11 @@ impl SseReader {
     fn drain_events(&mut self) -> Vec<String> {
         let mut out = Vec::new();
         loop {
-            let Some(idx) = self.buf.find("\n\n").or_else(|| self.buf.find("\r\n\r\n")) else {
+            let Some((idx, sep_len)) = find_event_sep(&self.buf) else {
                 break;
             };
-            let sep_len = if self.buf[idx..].starts_with("\r\n\r\n") {
-                4
-            } else {
-                2
-            };
-            let event_block: String = self.buf.drain(..idx + sep_len).collect();
+            let block: Vec<u8> = self.buf.drain(..idx + sep_len).collect();
+            let event_block = String::from_utf8_lossy(&block);
             let mut data = String::new();
             for line in event_block.lines() {
                 let line = line.trim_end_matches('\r');

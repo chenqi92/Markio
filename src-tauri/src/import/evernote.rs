@@ -18,20 +18,24 @@ pub fn import_evernote(src_enex: &Path, workspace: &Path) -> Result<ImportReport
     let mut reader = Reader::from_str(&text);
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
-    let mut current_tag = String::new();
+    // 用标签栈而非单个 current_tag：<content> 内若有嵌套 HTML 子标签，
+    // 子标签的 Start 不会覆盖归类，content 内所有文本仍累计到 content。
+    let mut stack: Vec<String> = Vec::new();
     let mut title = String::new();
     let mut content = String::new();
     let mut count = 0;
     let mut skipped = 0;
     let warnings: Vec<String> = Vec::new();
+    let in_tag = |stack: &[String], tag: &str| stack.iter().any(|t| t == tag);
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                current_tag = String::from_utf8_lossy(e.name().as_ref()).into_owned();
-                if current_tag == "note" {
+                let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                if name == "note" {
                     title.clear();
                     content.clear();
                 }
+                stack.push(name);
             }
             Ok(Event::End(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
@@ -58,18 +62,19 @@ pub fn import_evernote(src_enex: &Path, workspace: &Path) -> Result<ImportReport
                         session.record(key);
                     }
                 }
-                current_tag.clear();
+                stack.pop();
             }
             Ok(Event::Text(e)) => {
                 let txt = String::from_utf8_lossy(&e.into_inner()).into_owned();
-                match current_tag.as_str() {
-                    "title" => title.push_str(&txt),
-                    "content" => content.push_str(&txt),
-                    _ => {}
+                // content 优先：嵌套在 content 里的纯文本也归到正文
+                if in_tag(&stack, "content") {
+                    content.push_str(&txt);
+                } else if in_tag(&stack, "title") {
+                    title.push_str(&txt);
                 }
             }
             Ok(Event::CData(e)) => {
-                if current_tag == "content" {
+                if in_tag(&stack, "content") {
                     content.push_str(&String::from_utf8_lossy(&e.into_inner()));
                 }
             }

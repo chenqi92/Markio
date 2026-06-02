@@ -100,7 +100,13 @@ export interface SyncOpts {
 
 /** 执行单步动作的结果 */
 export type ActionResult =
-  | { ok: true; relPath: string; baseline: SyncBaseline }
+  | {
+      ok: true;
+      relPath: string;
+      baseline: SyncBaseline;
+      /** 同一动作额外产生的、需要写入基线的路径（如 fork 把远端另存为 forkPath 后也推到远端） */
+      extraBaselines?: Array<{ relPath: string; baseline: SyncBaseline }>;
+    }
   | { ok: false; relPath: string; error: string; transient: boolean };
 
 export interface SyncReport {

@@ -14,7 +14,12 @@ interface ScopeMode {
   id: AIScope;
   icon: IconName;
   label: string;
-  hint: (ctx: { fileCount: number; folder: string | null; openCount: number }) => string;
+  hint: (ctx: {
+    fileCount: number;
+    folder: string | null;
+    openCount: number;
+    scopeTag: string | null;
+  }) => string;
 }
 
 const SCOPE_MODES: ScopeMode[] = [
@@ -40,13 +45,13 @@ const SCOPE_MODES: ScopeMode[] = [
     id: "tag",
     icon: "tag",
     label: "按标签",
-    hint: () => "选择标签…",
+    hint: ({ scopeTag }) => (scopeTag ? `#${scopeTag}` : "选择标签…"),
   },
   {
     id: "custom",
     icon: "sparkle",
     label: "手动选择",
-    hint: () => "0 篇",
+    hint: () => "在输入栏 @ 附加",
   },
 ];
 
@@ -65,6 +70,7 @@ function formatRelative(ts: number): string {
 export function AISidebar({ aiMode }: { aiMode: string }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
+  const vaultTags = useVaultIndex((s) => (ws ? s.index[ws.path]?.tags : undefined));
   const openCount = useTabs((s) => s.tabs.length);
   const activePath = useTabs((s) => {
     const id = s.activeId;
@@ -74,7 +80,9 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
   const sessions = useAISessions((s) => s.sessions);
   const activeId = useAISessions((s) => s.activeId);
   const scope = useAISessions((s) => s.scope);
+  const scopeTag = useAISessions((s) => s.scopeTag);
   const setScope = useAISessions((s) => s.setScope);
+  const setScopeTag = useAISessions((s) => s.setScopeTag);
   const createSession = useAISessions((s) => s.createSession);
   const setActive = useAISessions((s) => s.setActive);
   const deleteSession = useAISessions((s) => s.deleteSession);
@@ -99,6 +107,17 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
   const folder = activePath
     ? activePath.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop() ?? null
     : null;
+  const availableTags = useMemo(
+    () => [...(vaultTags ?? [])].sort((a, b) => a.localeCompare(b)),
+    [vaultTags],
+  );
+
+  // 选了"按标签"但标签已不在索引里（笔记改过）时，清掉失效的 scopeTag
+  useEffect(() => {
+    if (scope === "tag" && scopeTag && vaultTags && !vaultTags.includes(scopeTag)) {
+      setScopeTag(null);
+    }
+  }, [scope, scopeTag, vaultTags, setScopeTag]);
 
   return (
     <aside className="ai-sidebar">
@@ -162,11 +181,52 @@ export function AISidebar({ aiMode }: { aiMode: string }) {
                   fileCount,
                   folder,
                   openCount,
+                  scopeTag,
                 })}
               </span>
             </button>
           ))}
         </div>
+
+        {scope === "tag" && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              padding: "8px 8px 4px",
+            }}
+          >
+            {availableTags.length === 0 ? (
+              <div style={{ fontSize: 11, color: "var(--text-3)", padding: "2px 4px" }}>
+                当前仓库索引里没有标签（先在笔记里用 #标签，或重建索引）
+              </div>
+            ) : (
+              availableTags.map((t) => {
+                const active = t === scopeTag;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setScopeTag(active ? null : t)}
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      cursor: "pointer",
+                      border: "0.5px solid var(--border)",
+                      background: active ? "var(--accent)" : "var(--bg-pane-2)",
+                      color: active ? "#fff" : "var(--text-2)",
+                    }}
+                  >
+                    #{t}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       <div className="ai-sb-section ai-sb-sessions">
@@ -295,6 +355,7 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
   const processed = status?.progress?.processed ?? 0;
   const total = status?.progress?.total ?? 0;
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : null;
+  const lastError = status?.progress?.lastError ?? null;
 
   const runBuild = async () => {
     if (busy || running) return;
@@ -327,6 +388,11 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
         {pct != null && (
           <div className="rag-cta-bar">
             <div className="rag-cta-bar-fill" style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        {lastError && (
+          <div className="rag-cta-sub" style={{ color: "#dc2626", marginTop: 4 }}>
+            ⚠ {lastError}
           </div>
         )}
       </div>
@@ -373,6 +439,11 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
       <div className="rag-cta-sub">
         {totalDocs} 篇 · {totalChunks} 片段 · {formatIndexedAt(indexedAt)}
       </div>
+      {lastError && (
+        <div className="rag-cta-sub" style={{ color: "#dc2626" }}>
+          ⚠ 上次索引有部分失败：{lastError}
+        </div>
+      )}
       <div className="rag-cta-actions">
         <button
           type="button"

@@ -96,8 +96,8 @@ export type AgentEvent =
   | { type: "init"; session_id: string | null; provider: AgentProvider; binary: string }
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
-  | { type: "tool_start"; tool: string; input: unknown }
-  | { type: "tool_done"; tool: string; output: unknown; is_error: boolean }
+  | { type: "tool_start"; id: string; tool: string; input: unknown }
+  | { type: "tool_done"; id: string; tool: string; output: unknown; is_error: boolean }
   | {
       type: "result";
       text: string;

@@ -32,15 +32,21 @@ interface SelectBtnProps<T extends SelectValue = string> {
 export function Toggle({
   on,
   onChange,
+  disabled = false,
 }: {
   on: boolean;
   onChange?: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      className={classNames("sw", on && "on")}
-      onClick={() => onChange?.(!on)}
+      className={classNames("sw", on && "on", disabled && "disabled")}
+      onClick={() => {
+        if (disabled) return;
+        onChange?.(!on);
+      }}
+      disabled={disabled}
       aria-pressed={on}
     >
       <span />

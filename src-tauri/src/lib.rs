@@ -2403,8 +2403,8 @@ fn fs_trash_purge(
 
 // ─── AI ─────────────────────────────────────────────────────────────
 
-/// 关键词检索：从仓库里抽 query 相关的片段（带上下文行），喂给 AI 当 RAG 占位实现。
-/// 真正向量 RAG 见 docs/ARCHITECTURE.md「AI · 上下文检索」章节的演进计划。
+/// 关键词检索：从仓库里抽 query 相关的片段（带上下文行），作为未建向量索引时的 grep 兜底。
+/// 真正的向量 RAG 已在 commands::rag 全套实现（rag_reindex / rag_search 等），此处仅为 fallback。
 #[tauri::command]
 fn ai_retrieve(
     state: tauri::State<'_, AppState>,

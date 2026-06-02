@@ -281,7 +281,7 @@ export function SmartChannelSettings() {
               POST <code>{`{"channelId":"${channelId.slice(0, 14)}…","query":"…"}`}</code>。
             </li>
             <li>
-              微信助手 webhook（见左侧"微信助手"）收到查询消息时自动转发到此通道，回答再推回微信。
+              微信助手 webhook（见左侧"微信助手"）收到查询消息时自动转发到此通道、回答再推回微信（路线图，需入站接收端）。
             </li>
           </ol>
         </div>

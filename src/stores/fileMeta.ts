@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { pathKey } from "@/lib/utils";
+import { tauriStorage } from "@/lib/tauriStorage";
 
 /** 文件级用户元数据：收藏 / 颜色 / 标记 (区别于 #tag 来自文档内容)。
- *  存在 localStorage 里，按绝对路径索引；文件被重命名 / 移动后这里不会自动跟随，
+ *  桌面端走 tauriStorage(plugin-store)，与其它 store 共享 store.bin；浏览器 dev 回退 localStorage。
+ *  按绝对路径索引；文件被重命名 / 移动后这里不会自动跟随，
  *  右键菜单 / FileTree 在调用 rename 时主动迁移条目。 */
 export interface FileMetaEntry {
   bookmark?: boolean;
@@ -103,7 +105,7 @@ export const useFileMeta = create<FileMetaState>()(
     }),
     {
       name: "markio.fileMeta.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tauriStorage),
     },
   ),
 );

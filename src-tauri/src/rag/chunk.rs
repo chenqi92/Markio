@@ -53,28 +53,28 @@ pub fn split(source: &str) -> Vec<Chunk> {
         if body.trim().is_empty() {
             continue;
         }
-        let mut parts = split_section_body(&body);
-        // 给每个 part 补上 heading + 计算偏移
-        let mut cursor = sec.start;
-        for p in parts.drain(..) {
-            let part_len = p.chars().count();
-            let start = cursor;
-            let end = cursor + part_len;
-            cursor = end.saturating_sub(part_len.min(OVERLAP_CHARS));
-            if p.trim().chars().count() < MIN_CHARS && !sec.heading.is_empty() {
-                // 太短的内容并入 heading 即可
-            }
-            let token_count = estimate_tokens(&p);
+        // part 的 start/end 是相对 body 的 char 偏移（指向该 chunk 的新增正文，不含为上下文
+        // 而前置的 overlap 尾部），加上 sec.start 即源文绝对偏移，UI 高亮据此可精确定位。
+        for part in split_section_body(&body) {
+            let token_count = estimate_tokens(&part.text);
             out.push(Chunk {
                 heading: sec.heading.clone(),
-                body: p,
-                char_start: start.min(end),
-                char_end: end,
+                body: part.text,
+                char_start: sec.start + part.start,
+                char_end: sec.start + part.end,
                 token_count,
             });
         }
     }
     out
+}
+
+/// section 内部聚合出的一块：`text` 含可能前置的 overlap，`start/end` 是相对 body 的 char 偏移，
+/// 只覆盖本块新增的段落（不含 overlap），保证相邻块偏移在源文中不重叠、可精确高亮。
+struct BodyPart {
+    text: String,
+    start: usize,
+    end: usize,
 }
 
 fn char_slice(source: &str, start: usize, end: usize) -> String {
@@ -169,22 +169,42 @@ fn parse_heading(s: &str) -> Option<(usize, String)> {
     Some((i, title))
 }
 
-/// 在 section 内部按段落聚合到 MAX_CHARS，相邻 chunk overlap OVERLAP_CHARS。
-fn split_section_body(body: &str) -> Vec<String> {
-    if body.chars().count() <= MAX_CHARS {
-        return vec![body.to_string()];
+/// 按 "\n\n" 切段并保留每段相对 body 的 char 偏移 (start, end)，过滤纯空白段。
+fn paragraph_spans(body: &str) -> Vec<(String, usize, usize)> {
+    let mut out = Vec::new();
+    let mut pos = 0usize; // 当前 char 偏移
+    for seg in body.split("\n\n") {
+        let seg_len = seg.chars().count();
+        let start = pos;
+        let end = pos + seg_len;
+        if !seg.trim().is_empty() {
+            out.push((seg.to_string(), start, end));
+        }
+        pos = end + 2; // 跳过分隔符 "\n\n"（2 个 char）
     }
-    let paragraphs: Vec<&str> = body
-        .split("\n\n")
-        .filter(|p| !p.trim().is_empty())
-        .collect();
-    let mut chunks: Vec<String> = Vec::new();
+    out
+}
+
+/// 在 section 内部按段落聚合到 MAX_CHARS，相邻 chunk overlap OVERLAP_CHARS。
+/// 偏移只记录新增段落的覆盖范围，overlap 尾部不计入偏移。
+fn split_section_body(body: &str) -> Vec<BodyPart> {
+    let total = body.chars().count();
+    if total <= MAX_CHARS {
+        return vec![BodyPart {
+            text: body.to_string(),
+            start: 0,
+            end: total,
+        }];
+    }
+    let mut chunks: Vec<BodyPart> = Vec::new();
     let mut current = String::new();
     let mut current_chars = 0usize;
-    for p in paragraphs {
+    let mut cur_start: Option<usize> = None;
+    let mut cur_end = 0usize;
+    for (p, p_start, p_end) in paragraph_spans(body) {
         let p_len = p.chars().count();
         if current_chars + p_len + 2 > MAX_CHARS && !current.is_empty() {
-            // flush
+            // flush；overlap 尾部前置到下一块，但不计入偏移
             let tail: String = current
                 .chars()
                 .rev()
@@ -193,24 +213,40 @@ fn split_section_body(body: &str) -> Vec<String> {
                 .into_iter()
                 .rev()
                 .collect();
-            chunks.push(std::mem::take(&mut current));
+            chunks.push(BodyPart {
+                text: std::mem::take(&mut current),
+                start: cur_start.take().unwrap_or(0),
+                end: cur_end,
+            });
             current.push_str(&tail);
             current_chars = tail.chars().count();
+        }
+        if cur_start.is_none() {
+            cur_start = Some(p_start);
         }
         if !current.is_empty() {
             current.push_str("\n\n");
             current_chars += 2;
         }
-        current.push_str(p);
+        current.push_str(&p);
         current_chars += p_len;
+        cur_end = p_end;
         if current_chars > MAX_CHARS * 2 {
             // 单个段落本身就过大，硬切
-            chunks.push(std::mem::take(&mut current));
+            chunks.push(BodyPart {
+                text: std::mem::take(&mut current),
+                start: cur_start.take().unwrap_or(0),
+                end: cur_end,
+            });
             current_chars = 0;
         }
     }
     if !current.trim().is_empty() {
-        chunks.push(current);
+        chunks.push(BodyPart {
+            text: current,
+            start: cur_start.unwrap_or(0),
+            end: cur_end,
+        });
     }
     chunks
 }

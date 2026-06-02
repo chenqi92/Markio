@@ -262,6 +262,18 @@
   vertical-align: middle;
 }
 
+/* "即将上线 / 待后端接入"标记：用于尚未接通后端的开关，避免用户误以为已生效 */
+.settings-pill-soon {
+  margin-left: 8px;
+  font-size: 10px;
+  padding: 1px 7px;
+  background: color-mix(in srgb, var(--text-3) 14%, transparent);
+  color: var(--text-3);
+  border-radius: 999px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 /* danger 按钮：删除 / 解除等高风险操作的红色文字按钮 */
 .settings-btn.settings-btn-danger { color: var(--danger, #c1432f); }
 .settings-btn.settings-btn-danger:hover:not(:disabled) {

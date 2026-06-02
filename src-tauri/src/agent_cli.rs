@@ -112,11 +112,17 @@ pub enum AgentEvent {
     ThinkingDelta { text: String },
     /// 工具开始执行
     ToolStart {
+        /// Claude 的 tool_use id；前端据此把 ToolDone 关联回对应的 ToolStart
+        #[serde(default)]
+        id: String,
         tool: String,
         input: serde_json::Value,
     },
     /// 工具执行完成（success or error）
     ToolDone {
+        /// 对应 ToolStart 的 id（来自 Claude 的 tool_use_id）
+        #[serde(default)]
+        id: String,
         tool: String,
         output: serde_json::Value,
         is_error: bool,
@@ -279,11 +285,15 @@ enum ClaudeContent {
     },
     ToolUse {
         #[serde(default)]
+        id: String,
+        #[serde(default)]
         name: String,
         #[serde(default)]
         input: serde_json::Value,
     },
     ToolResult {
+        #[serde(default)]
+        tool_use_id: String,
         #[serde(default)]
         content: serde_json::Value,
         #[serde(default)]
@@ -399,8 +409,8 @@ fn handle_claude_line(app: &AppHandle, sid: &str, line: ClaudeLine) {
                         ClaudeContent::Thinking { thinking } if !thinking.is_empty() => {
                             emit(app, sid, AgentEvent::ThinkingDelta { text: thinking });
                         }
-                        ClaudeContent::ToolUse { name, input } => {
-                            emit(app, sid, AgentEvent::ToolStart { tool: name, input });
+                        ClaudeContent::ToolUse { id, name, input } => {
+                            emit(app, sid, AgentEvent::ToolStart { id, tool: name, input });
                         }
                         _ => {}
                     }
@@ -411,11 +421,17 @@ fn handle_claude_line(app: &AppHandle, sid: &str, line: ClaudeLine) {
             // user 消息里嵌的是 tool_result
             if let Some(msg) = line.message {
                 for c in msg.content {
-                    if let ClaudeContent::ToolResult { content, is_error } = c {
+                    if let ClaudeContent::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } = c
+                    {
                         emit(
                             app,
                             sid,
                             AgentEvent::ToolDone {
+                                id: tool_use_id,
                                 tool: String::new(),
                                 output: content,
                                 is_error,

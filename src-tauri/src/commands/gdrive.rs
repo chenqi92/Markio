@@ -24,8 +24,12 @@ async fn gdrive_session() -> Result<(gdrive_ops::GDriveTokens, String), String> 
     let mut tokens = load_gdrive_tokens()?;
     let client_id =
         secrets::get(GDRIVE_CLIENT_ACCOUNT)?.ok_or_else(|| "Drive client_id 丢失".to_string())?;
+    let before = tokens.access_token.clone();
     gdrive_ops::ensure_fresh(&mut tokens, &client_id).await?;
-    save_gdrive_tokens(&tokens)?;
+    // 仅在 token 实际刷新后回写钥匙串
+    if tokens.access_token != before {
+        save_gdrive_tokens(&tokens)?;
+    }
     Ok((tokens, client_id))
 }
 
@@ -88,9 +92,10 @@ pub fn gdrive_status() -> Result<gdrive_ops::GDriveStatus, String> {
 
 #[tauri::command]
 pub fn gdrive_signout() -> Result<(), String> {
-    let _ = secrets::delete(GDRIVE_TOKENS_ACCOUNT);
-    let _ = secrets::delete(GDRIVE_CLIENT_ACCOUNT);
-    Ok(())
+    // 聚合两个删除的错误并返回，删除失败时不静默显示"已登出"
+    let a = secrets::delete(GDRIVE_TOKENS_ACCOUNT);
+    let b = secrets::delete(GDRIVE_CLIENT_ACCOUNT);
+    a.and(b)
 }
 
 #[tauri::command]

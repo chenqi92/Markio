@@ -45,6 +45,13 @@ export const useRag = create<RagState>((set, get) => ({
       set((st) => ({ status: { ...st.status, [workspaceId]: r } }));
     } catch (e) {
       console.warn("[rag.status] failed", e);
+      reportDiagnostic({
+        source: "rag",
+        severity: "warning",
+        message: "RAG 状态读取失败",
+        detail: e,
+        workspace: workspacePath,
+      });
     }
   },
 

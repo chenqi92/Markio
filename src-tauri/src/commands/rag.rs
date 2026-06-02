@@ -415,7 +415,10 @@ pub async fn rag_remove_file(
     }
     let ws_str = ws.to_string_lossy().to_string();
     let dim = peek_embed_dim(&ws).unwrap_or(768);
+    // 与 reindex / reindex_file / clear 一样取 workspace 互斥锁，避免在写任务进行中并发改同一 DB。
+    let guard = begin_rag_job(&ws_str)?;
     tokio::task::spawn_blocking(move || {
+        let _guard = guard;
         let handle = rag::rag_handle(&ws_str, dim)?;
         rag::index::remove_file(handle.clone(), &p)?;
         emit_rag_status_for_handle(&app, &handle);

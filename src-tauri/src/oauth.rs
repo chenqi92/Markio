@@ -148,9 +148,16 @@ impl LoopbackListener {
                 return Err(format!("OAuth 授权被拒绝：{err}"));
             }
             if let Some(code) = code {
-                if let (Some(expected), Some(got)) = (expected_state, state.as_ref()) {
-                    if expected != got {
-                        return Err("OAuth state 校验失败（可能被中间人篡改）".to_string());
+                // 只要本次授权带了 expected_state（CSRF token），回调就必须带上且完全匹配的 state；
+                // 缺失或不匹配一律拒绝，杜绝"回调不带 state 即可绕过校验"。
+                if let Some(expected) = expected_state {
+                    match state.as_deref() {
+                        Some(got) if got == expected => {}
+                        _ => {
+                            return Err(
+                                "OAuth state 校验失败（缺失或不匹配，可能被中间人篡改）".to_string(),
+                            )
+                        }
                     }
                 }
                 return Ok(code);

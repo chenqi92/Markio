@@ -71,12 +71,15 @@ export function MobileDevices() {
         <div className="settings-card-h">P2P 直连</div>
         <div className="settings-row">
           <div className="settings-row-l">
-            <div className="settings-label">局域网内直连</div>
+            <div className="settings-label">
+              局域网内直连
+              <span className="settings-pill-soon">即将上线</span>
+            </div>
             <div className="settings-help">
-              通过 mDNS 自动发现局域网内的 markio 实例，传输不经云端
+              通过 mDNS 自动发现局域网内的 markio 实例，传输不经云端（握手通道开发中，暂不可用）
             </div>
           </div>
-          <Toggle on={p2p} onChange={(v) => setPreference("mobileP2pEnabled", v)} />
+          <Toggle on={p2p} disabled onChange={(v) => setPreference("mobileP2pEnabled", v)} />
         </div>
       </div>
 

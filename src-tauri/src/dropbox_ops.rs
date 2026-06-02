@@ -371,10 +371,23 @@ pub async fn create_folder(tokens: &DropboxTokens, path: &str) -> Result<(), Str
         .map_err(|e| format!("Dropbox create_folder 失败：{e}"))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    if status.is_success() || status.as_u16() == 409 {
+    if status.is_success() {
+        return Ok(());
+    }
+    // 409 既可能是"目录已存在"（可视为成功），也可能是父路径不存在 / 权限不足等真错误。
+    // 只有 error_summary 指向 path/conflict 才当作已存在，其余 409 一律上报。
+    if status.as_u16() == 409 && dropbox_error_summary(&text).contains("path/conflict") {
         return Ok(());
     }
     Err(format!("Dropbox create_folder HTTP {status}: {text}"))
+}
+
+/// 从 Dropbox 错误响应里取 error_summary（形如 "path/conflict/folder/."）。解析失败返回空串。
+fn dropbox_error_summary(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("error_summary").and_then(|s| s.as_str()).map(String::from))
+        .unwrap_or_default()
 }
 
 pub async fn download(tokens: &DropboxTokens, path: &str) -> Result<Vec<u8>, String> {
@@ -425,9 +438,12 @@ pub async fn delete(tokens: &DropboxTokens, path: &str) -> Result<(), String> {
         .map_err(|e| format!("Dropbox delete 失败：{e}"))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    if !status.is_success() && status.as_u16() != 409 {
-        // 409 通常是 path/not_found，可以视为已删除
-        return Err(format!("Dropbox delete HTTP {status}: {text}"));
+    if status.is_success() {
+        return Ok(());
     }
-    Ok(())
+    // 409 仅当 error_summary 指向 not_found 才视为"已删除"，权限不足等其它 409 上报。
+    if status.as_u16() == 409 && dropbox_error_summary(&text).contains("not_found") {
+        return Ok(());
+    }
+    Err(format!("Dropbox delete HTTP {status}: {text}"))
 }

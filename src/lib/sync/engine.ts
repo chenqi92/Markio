@@ -88,6 +88,7 @@ export async function runSync(
     setStage("scan_local");
     const localFiles = await deps.localFs.scan(workspacePath);
     const localByPath = new Map(localFiles.map((file) => [file.relPath, file]));
+    let remoteByPath = new Map<string, FileEntry>();
 
     if (deps.isCancelled?.()) {
       setStage("cancelled");
@@ -104,6 +105,7 @@ export async function runSync(
         transient: false,
       });
     }
+    remoteByPath = new Map(remoteFiles.map((file) => [file.relPath, file]));
 
     let manifest = await loadManifest(
       workspacePath,
@@ -126,10 +128,11 @@ export async function runSync(
 
     setStage("execute");
     let done = 0;
+    let cancelledMidway = false;
     const total = plan.actions.length;
     for (const action of plan.actions) {
       if (deps.isCancelled?.()) {
-        setStage("cancelled");
+        cancelledMidway = true;
         break;
       }
       deps.onProgress?.(done, total, action.relPath);
@@ -139,6 +142,7 @@ export async function runSync(
         action,
         manifest,
         localByPath,
+        remoteByPath,
         deps,
         now,
       );
@@ -150,10 +154,23 @@ export async function runSync(
         } else {
           manifest = setBaseline(manifest, action.relPath, r.baseline);
         }
+        // fork 等动作可能额外产生需要落基线的路径（如 forkPath 推到远端后）
+        for (const extra of r.extraBaselines ?? []) {
+          manifest = setBaseline(manifest, extra.relPath, extra.baseline);
+        }
       }
       done++;
     }
     deps.onProgress?.(done, total);
+
+    if (cancelledMidway) {
+      // 被取消的部分同步：保存已完成动作的基线，但不刷新 lastSyncAt，
+      // 避免把未完成的一轮记成"成功完成时间点"。
+      setStage("cancelled");
+      await saveManifest(workspacePath, manifest, deps.manifestIo);
+      report.finishedAt = now();
+      return report;
+    }
 
     setStage("finalize");
     manifest = { ...manifest, lastSyncAt: now() };
@@ -174,6 +191,7 @@ async function executeAction(
   action: SyncReport["plan"]["actions"][number],
   manifest: SyncManifest,
   localByPath: Map<string, FileEntry>,
+  remoteByPath: Map<string, FileEntry>,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
@@ -185,6 +203,7 @@ async function executeAction(
           remoteRoot,
           action.relPath,
           localByPath.get(action.relPath),
+          remoteByPath.get(action.relPath),
           deps,
           now,
         );
@@ -206,6 +225,7 @@ async function executeAction(
           action,
           manifest,
           localByPath,
+          remoteByPath,
           deps,
           now,
         );
@@ -218,9 +238,25 @@ async function doUpload(
   remoteRoot: string,
   relPath: string,
   localFile: FileEntry | undefined,
+  remoteFile: FileEntry | undefined,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
+  // 内容相同短路：远端已存在且 hash 与本地一致（仅当该 adapter 的 etag 与内容 hash 可比时才会相等，
+  // 不可比的 adapter 永远不相等，不会误判），直接收编为已同步，省一次整文件上传。
+  if (remoteFile && localFile && remoteFile.hash === localFile.hash) {
+    return {
+      ok: true,
+      relPath,
+      baseline: {
+        localMtime: localFile.mtime,
+        localHash: localFile.hash,
+        remoteEtag: remoteFile.hash,
+        remoteMtime: remoteFile.mtime,
+        lastSyncedAt: now(),
+      },
+    };
+  }
   const content = await deps.localFs.read(workspacePath, relPath);
   await deps.adapter.ensureParentDir(remoteRoot, relPath);
   const { etag, mtime } = await deps.adapter.put(remoteRoot, relPath, content);
@@ -269,6 +305,7 @@ async function doConflict(
   action: SyncReport["plan"]["actions"][number],
   _manifest: SyncManifest,
   localByPath: Map<string, FileEntry>,
+  remoteByPath: Map<string, FileEntry>,
   deps: SyncDeps,
   now: () => number,
 ): Promise<ActionResult> {
@@ -288,23 +325,49 @@ async function doConflict(
         remoteRoot,
         action.relPath,
         localByPath.get(action.relPath),
+        remoteByPath.get(action.relPath),
         deps,
         now,
       );
     case "keep_remote":
       return await doDownload(workspacePath, remoteRoot, action.relPath, deps, now);
     case "fork": {
-      // 远端版本另存到 forkPath；当前路径走 keep_local
+      // 远端版本另存到 forkPath 并推回远端（两边都保留该副本）；当前路径走 keep_local。
       const remote = await deps.adapter.get(remoteRoot, action.relPath);
-      await deps.localFs.write(workspacePath, res.forkPath, remote.content);
-      return await doUpload(
+      const { hash: forkHash, mtime: forkLocalMtime } = await deps.localFs.write(
+        workspacePath,
+        res.forkPath,
+        remote.content,
+      );
+      await deps.adapter.ensureParentDir(remoteRoot, res.forkPath);
+      const forkPut = await deps.adapter.put(remoteRoot, res.forkPath, remote.content);
+      const localResult = await doUpload(
         workspacePath,
         remoteRoot,
         action.relPath,
         localByPath.get(action.relPath),
+        remoteByPath.get(action.relPath),
         deps,
         now,
       );
+      if (!localResult.ok) return localResult;
+      // forkPath 已在本地与远端都落地，立即记录基线，避免下一轮把它当全新本地文件再次上传。
+      return {
+        ...localResult,
+        extraBaselines: [
+          ...(localResult.extraBaselines ?? []),
+          {
+            relPath: res.forkPath,
+            baseline: {
+              localMtime: forkLocalMtime,
+              localHash: forkHash,
+              remoteEtag: forkPut.etag,
+              remoteMtime: forkPut.mtime,
+              lastSyncedAt: now(),
+            },
+          },
+        ],
+      };
     }
   }
 }

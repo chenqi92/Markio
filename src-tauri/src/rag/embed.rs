@@ -125,10 +125,14 @@ async fn call_ollama(cfg: &EmbedConfig, inputs: &[String]) -> Result<EmbedResult
         let arr2 = item
             .as_array()
             .ok_or_else(|| "Ollama embeddings 子项不是数组".to_string())?;
-        let vec: Vec<f32> = arr2
-            .iter()
-            .filter_map(|x| x.as_f64().map(|f| f as f32))
-            .collect();
+        let mut vec: Vec<f32> = Vec::with_capacity(arr2.len());
+        for x in arr2 {
+            // 非数值项直接报错，避免静默丢维度得到偏短向量、绕过后续维度校验
+            let f = x
+                .as_f64()
+                .ok_or_else(|| "Ollama embedding 向量包含非数值项".to_string())?;
+            vec.push(f as f32);
+        }
         if dim == 0 {
             dim = vec.len();
         }
@@ -188,10 +192,14 @@ async fn call_openai(cfg: &EmbedConfig, inputs: &[String]) -> Result<EmbedResult
             .get("embedding")
             .and_then(|x| x.as_array())
             .ok_or_else(|| "Embedding 响应子项缺 embedding 字段".to_string())?;
-        let vec: Vec<f32> = arr2
-            .iter()
-            .filter_map(|x| x.as_f64().map(|f| f as f32))
-            .collect();
+        let mut vec: Vec<f32> = Vec::with_capacity(arr2.len());
+        for x in arr2 {
+            // 非数值项直接报错，避免静默丢维度得到偏短向量、绕过后续维度校验
+            let f = x
+                .as_f64()
+                .ok_or_else(|| "Embedding 向量包含非数值项".to_string())?;
+            vec.push(f as f32);
+        }
         if dim == 0 {
             dim = vec.len();
         }

@@ -166,27 +166,32 @@ fn write_askpass(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// 临时文件 RAII：函数无论正常返回、`?` 早退还是 panic，Drop 都会删掉 askpass 脚本，
+/// 避免含 PAT 读取逻辑的脚本残留在全局临时目录。
+struct TempFileGuard(PathBuf);
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 fn run_command_auth(
     mut cmd: Command,
     pat: Option<&str>,
     args_for_error: &str,
 ) -> Result<String, String> {
-    let askpass = if pat.filter(|s| !s.is_empty()).is_some() {
+    let _askpass_guard = if pat.filter(|s| !s.is_empty()).is_some() {
         let path = askpass_path();
         write_askpass(&path)?;
         cmd.env("GIT_ASKPASS", &path)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("MARKIO_GIT_PAT", pat.unwrap_or_default());
-        Some(path)
+        Some(TempFileGuard(path))
     } else {
         cmd.env("GIT_TERMINAL_PROMPT", "0");
         None
     };
-    let output = cmd.output().map_err(map_io);
-    if let Some(path) = askpass {
-        let _ = std::fs::remove_file(path);
-    }
-    let output = output?;
+    let output = cmd.output().map_err(map_io)?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {

@@ -82,6 +82,29 @@ function parseTime(value: string | undefined, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * put 之后立刻 stat 确认会撞上 S3/Dropbox/GDrive 列表的最终一致性窗口（刚写入的对象
+ * 短时间内列不出来）。这里做有限退避重试，避免单次 stat miss 直接让整轮 upload 失败。
+ */
+async function statWithRetry(
+  fn: () => Promise<FileEntry>,
+  attempts = 4,
+  baseDelayMs = 300,
+): Promise<FileEntry> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 function remoteHash(kind: string, ...parts: Array<string | number | undefined>): string {
   return `${kind}:${parts.map((p) => String(p ?? "")).join(":")}`;
 }
@@ -252,7 +275,7 @@ export function createWebDavAdapter(config: {
     async put(remoteRoot, relPath, content) {
       const full = joinRel(remoteRoot, relPath);
       await api.webdavPut(config.baseUrl, auth(), full, content);
-      const meta = await stat(remoteRoot, relPath);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
       return { etag: meta.hash, mtime: meta.mtime };
     },
     delete(remoteRoot, relPath) {
@@ -320,7 +343,7 @@ export function createS3Adapter(config: S3Config): DriveAdapter {
     },
     async put(remoteRoot, relPath, content) {
       await api.s3PutObject(config, keyFor(remoteRoot, relPath), content, contentTypeFromPath(relPath));
-      const meta = await stat(remoteRoot, relPath);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
       return { etag: meta.hash, mtime: meta.mtime };
     },
     delete(remoteRoot, relPath) {
@@ -401,7 +424,7 @@ export function createDropboxAdapter(): DriveAdapter {
     },
     async put(remoteRoot, relPath, content) {
       await api.dropboxUpload(fullPath(remoteRoot, relPath), content);
-      const meta = await stat(remoteRoot, relPath);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
       return { etag: meta.hash, mtime: meta.mtime };
     },
     delete(remoteRoot, relPath) {
@@ -544,7 +567,7 @@ export function createGDriveAdapter(): DriveAdapter {
         contentTypeFromPath(relPath),
       );
       fileIds.set(relPath, id);
-      const meta = await stat(remoteRoot, relPath);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
       return { etag: meta.hash, mtime: meta.mtime };
     },
     async delete(remoteRoot, relPath) {

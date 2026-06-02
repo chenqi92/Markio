@@ -35,6 +35,11 @@ fn hmac256(key: &[u8], data: &[u8]) -> Vec<u8> {
     m.finalize().into_bytes().to_vec()
 }
 
+/// 按字符（而非字节）安全截断，避免在多字节 UTF-8 中间切片 panic（OSS/MinIO 错误响应可能含中文）。
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
 fn iso8601_now() -> (String, String) {
     let now = chrono::Utc::now();
     let dt = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -306,7 +311,7 @@ pub async fn list_objects(
         return Err(format!(
             "S3 LIST HTTP {}: {}",
             status,
-            &body[..body.len().min(400)]
+            truncate_chars(&body, 400)
         ));
     }
     parse_list_xml(&body)
@@ -394,7 +399,7 @@ pub async fn get_object(cfg: &S3Config, key: &str) -> Result<Vec<u8>, String> {
         return Err(format!(
             "S3 GET HTTP {}: {}",
             status,
-            &text[..text.len().min(400)]
+            truncate_chars(&text, 400)
         ));
     }
     let bytes = resp
@@ -446,7 +451,7 @@ pub async fn delete_object(cfg: &S3Config, key: &str) -> Result<(), String> {
         return Err(format!(
             "S3 DELETE HTTP {}: {}",
             status,
-            &text[..text.len().min(400)]
+            truncate_chars(&text, 400)
         ));
     }
     Ok(())
@@ -474,69 +479,24 @@ pub async fn put_object(
         ));
     }
     let endpoint = endpoint_url(&cfg.endpoint)?;
-    let endpoint_authority = authority(&endpoint)?;
+    let (host, url_base) = resolve_host_and_url_base(cfg, &endpoint)?;
     let path_style = cfg.path_style.unwrap_or(false);
-    let (full_url, host) = if path_style {
-        let h = endpoint_authority.clone();
-        (
-            format!(
-                "{}://{}/{}/{}",
-                endpoint.scheme(),
-                endpoint_authority,
-                cfg.bucket,
-                uri_encode(key, false)
-            ),
-            h,
-        )
-    } else {
-        let h = format!("{}.{}", cfg.bucket, endpoint_authority);
-        (
-            format!("{}://{}/{}", endpoint.scheme(), h, uri_encode(key, false)),
-            h,
-        )
-    };
-
-    let (amz_date, date_stamp) = iso8601_now();
-    let payload_hash = sha256_hex(&body);
-
-    // canonical headers
-    let canonical_headers =
-        format!("content-type:{content_type}\nhost:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
-    let signed_headers = "content-type;host;x-amz-content-sha256;x-amz-date";
-
     let canonical_uri = if path_style {
         format!("/{}/{}", cfg.bucket, uri_encode(key, false))
     } else {
         format!("/{}", uri_encode(key, false))
     };
-    let canonical_request =
-        format!("PUT\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
+    let full_url = format!("{url_base}{canonical_uri}");
 
-    let region = if cfg.region.is_empty() {
-        "us-east-1"
-    } else {
-        cfg.region.as_str()
-    };
-    let credential_scope = format!("{date_stamp}/{region}/s3/aws4_request");
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{}\n{}\n{}",
-        amz_date,
-        credential_scope,
-        sha256_hex(canonical_request.as_bytes())
-    );
-
-    let k_date = hmac256(
-        format!("AWS4{}", cfg.secret_access_key).as_bytes(),
-        date_stamp.as_bytes(),
-    );
-    let k_region = hmac256(&k_date, region.as_bytes());
-    let k_service = hmac256(&k_region, b"s3");
-    let k_signing = hmac256(&k_service, b"aws4_request");
-    let signature = hex::encode(hmac256(&k_signing, string_to_sign.as_bytes()));
-
-    let authorization = format!(
-        "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
-        cfg.access_key_id, credential_scope, signed_headers, signature
+    // 复用 sign_request（含 content-type 分支），不再重复一份 SigV4 实现，避免两处签名 drift。
+    let (authorization, amz_date, payload_hash) = sign_request(
+        cfg,
+        "PUT",
+        &canonical_uri,
+        "",
+        &host,
+        Some(content_type),
+        &body,
     );
 
     let client = reqwest::Client::builder()
@@ -560,7 +520,7 @@ pub async fn put_object(
         return Err(format!(
             "S3 PUT HTTP {}: {}",
             status,
-            &text[..text.len().min(400)]
+            truncate_chars(&text, 400)
         ));
     }
     // 公开 URL

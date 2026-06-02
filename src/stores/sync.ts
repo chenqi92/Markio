@@ -38,18 +38,26 @@ export const useSync = create<SyncState>((set, get) => ({
   conflictFiles: [],
   inflight: {},
   setStatus: (status, error) =>
-    set({
-      status,
-      stage:
-        status === "syncing"
-          ? get().stage
-          : status === "error"
-            ? get().stage === "conflict"
-              ? "conflict"
-              : "error"
-            : "idle",
-      lastError: error === undefined ? null : error,
-      conflictFiles: status === "error" ? get().conflictFiles : [],
+    set((s) => {
+      // 存在尚未解决的冲突时，idle 转换（如离线早退）不静默清掉冲突信息，
+      // 否则状态栏会误显示"空闲"而漏报待处理冲突。清冲突走 setStage(done/idle) 或重跑同步。
+      const unresolvedConflict = s.stage === "conflict" && s.conflictFiles.length > 0;
+      if (status === "idle" && unresolvedConflict) {
+        return { lastError: error === undefined ? s.lastError : error };
+      }
+      return {
+        status,
+        stage:
+          status === "syncing"
+            ? s.stage
+            : status === "error"
+              ? s.stage === "conflict"
+                ? "conflict"
+                : "error"
+              : "idle",
+        lastError: error === undefined ? null : error,
+        conflictFiles: status === "error" ? s.conflictFiles : [],
+      };
     }),
   setStage: (stage, summary) =>
     set({

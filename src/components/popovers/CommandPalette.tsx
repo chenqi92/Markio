@@ -10,6 +10,7 @@ import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
 import { shortcutText } from "@/lib/shortcuts";
+import { displayPath } from "@/lib/utils";
 import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
 import type { ViewMode } from "@/types";
 import { THEMES } from "@/themes";
@@ -231,7 +232,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       id: `file:${h.path}`,
       group: "文件",
       l1: h.name,
-      l2: h.path,
+      l2: displayPath(h.path),
       ico: "note",
       run: () => {
         if (ws) openFile(ws.id, h.path);
@@ -246,7 +247,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         id: `recent:${r.path}`,
         group: "最近打开",
         l1: r.name,
-        l2: r.path,
+        l2: displayPath(r.path),
         ico: "clock",
         run: () => {
           if (ws) openFile(ws.id, r.path);

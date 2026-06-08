@@ -11,7 +11,10 @@
   width: 6px;
   margin-left: -3px;
   cursor: col-resize;
-  z-index: 5;
+  /* 高于 .toolbar-wrap(140)/.toolbar-row-format(141)：resizer 会向 .main 内
+     探出 3px(margin-left:-3px)，而 .main 未建立独立层叠上下文，工具栏的
+     z-index 会与 resizer 在同一上下文比较，低 z-index 会让 hover 辉光顶部被工具栏盖住 */
+  z-index: 150;
   position: relative;
   background: transparent;
   transition: background 160ms;

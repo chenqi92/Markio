@@ -214,6 +214,11 @@ export class TableWidget extends WidgetType {
     const dom = buildTableDom(parseTableSource(this.source));
     dom.dataset.sourceLength = String(this.source.length);
     this.cleanup = installTableDomHandlers(view, dom);
+    // attach 进文档、完成布局后量一次每个 cell 的 scrollHeight，否则多行内容
+    // 在未聚焦时被 textarea 的 rows=1 + overflow:hidden 裁掉。
+    requestAnimationFrame(() => {
+      if (dom.isConnected) resizeAllTableCells(dom);
+    });
     return dom;
   }
   ignoreEvent() {
@@ -360,6 +365,13 @@ function resizeTableCellEditor(cell: HTMLElement) {
   if (!(cell instanceof HTMLTextAreaElement)) return;
   cell.style.height = "auto";
   cell.style.height = `${Math.max(24, cell.scrollHeight)}px`;
+}
+
+/** 把 host 内所有 cell 按内容撑高。textarea 初始 rows=1 + overflow:hidden，
+ *  未聚焦时多行内容会被裁掉，需要 attach 进 DOM 后量一次 scrollHeight。 */
+function resizeAllTableCells(host: HTMLElement) {
+  const cells = host.querySelectorAll<HTMLTextAreaElement>("textarea.cm-md-table-cell");
+  cells.forEach((cell) => resizeTableCellEditor(cell));
 }
 
 function focusAdjacentTableCell(cell: HTMLElement, direction: -1 | 1) {

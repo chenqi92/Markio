@@ -68,6 +68,23 @@ function commitCodeFenceLang(view: EditorView, host: HTMLElement, value: string)
   return true;
 }
 
+/** 删除整段围栏代码块（含语言行与结束 ```）。给所见即所得里「卡在 ``` 里的
+ *  表格 / 误并进围栏的内容」一个直接删除入口——widget 吞事件，没法拖选删。 */
+function deleteCodeFence(view: EditorView, host: HTMLElement): boolean {
+  const range = codeFenceRangeFromHost(view, host);
+  if (!range) return false;
+  const doc = view.state.doc;
+  let to = range.to;
+  if (to < doc.length && doc.sliceString(to, to + 1) === "\n") to += 1;
+  view.dispatch({
+    changes: { from: range.from, to, insert: "" },
+    selection: { anchor: range.from },
+    userEvent: "delete",
+  });
+  view.focus();
+  return true;
+}
+
 function commitCodeFenceBody(view: EditorView, host: HTMLElement, value: string): boolean {
   const range = codeFenceRangeFromHost(view, host);
   if (!range) return false;
@@ -161,6 +178,7 @@ function installCodeFenceDomHandlers(
 
   const input = host.querySelector<HTMLInputElement>(".cm-md-code-lang-input");
   const edit = host.querySelector<HTMLButtonElement>(".cm-md-code-edit");
+  const del = host.querySelector<HTMLButtonElement>(".cm-md-code-delete");
   const body = host.querySelector<HTMLElement>(".cm-md-code-body");
 
   if (input) {
@@ -189,6 +207,18 @@ function installCodeFenceDomHandlers(
       event.preventDefault();
       event.stopPropagation();
       startCodeFenceBodyEdit(view, host, source);
+    });
+  }
+
+  if (del) {
+    on(del, "mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    on(del, "click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteCodeFence(view, host);
     });
   }
 
@@ -255,7 +285,13 @@ export class CodeFenceWidget extends WidgetType {
     edit.textContent = "编辑";
     edit.setAttribute("aria-label", "编辑代码块内容");
 
-    head.append(input, edit);
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "cm-md-code-delete";
+    del.textContent = "删除";
+    del.setAttribute("aria-label", "删除代码块");
+
+    head.append(input, edit, del);
 
     const body = document.createElement("div");
     body.className = "cm-md-code-body";

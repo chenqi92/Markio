@@ -191,6 +191,26 @@
   color: var(--text);
   background: var(--bg-hover);
 }
+.cm-md-code-delete {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 11px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-pane);
+  color: var(--text-3);
+  font: 12px/1 var(--font-sans);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms, border-color 120ms;
+}
+.cm-md-code-widget:hover .cm-md-code-delete,
+.cm-md-code-delete:focus-visible { opacity: 1; }
+.cm-md-code-delete:hover {
+  border-color: color-mix(in srgb, #d92d20 50%, var(--border));
+  color: #d92d20;
+  background: color-mix(in srgb, #d92d20 10%, transparent);
+}
 .cm-md-code-body {
   display: flex;
   align-items: stretch;

@@ -10,6 +10,27 @@
 
 import type { EditorView } from "@codemirror/view";
 import { EditorSelection, type SelectionRange } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+
+/**
+ * pos 是否落在 fenced code / 缩进代码块里。代码块里的 `| a | b |` 是代码文本，
+ * 不是 GFM 表格 —— 不能套用单元格选区 / Tab 切格 / Backspace 清格那套交互，
+ * 否则用户没法对「卡在 ``` 里的表格」做普通文本选中与删除。取不到语法树时
+ * 当作不在代码块里（退回原有表格识别）。
+ */
+function isInsideCodeBlock(view: EditorView, pos: number): boolean {
+  try {
+    let node: ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]> | null =
+      syntaxTree(view.state).resolveInner(pos, 0);
+    while (node) {
+      if (node.name === "FencedCode" || node.name === "CodeBlock") return true;
+      node = node.parent;
+    }
+  } catch {
+    // ignore：无语法树时按非代码块处理
+  }
+  return false;
+}
 
 export interface TableInfo {
   /** 表格在 doc 中的 [from, to) 字符范围（含分隔行 + 数据行，含尾部换行） */
@@ -446,6 +467,10 @@ function detectTableAtPosition(view: EditorView, head: number): TableInfo | null
 
   // 当前行必须以 `|` 开头（去掉 leading space 后）才考虑
   if (!/^\s*\|/.test(curLine.text)) return null;
+
+  // ``` 围栏 / 缩进代码块里的 `| … |` 是代码，不当表格处理（否则单元格选区 /
+  // Tab 切格 / 退格清格会拦截普通文本选中与删除）。
+  if (isInsideCodeBlock(view, head)) return null;
 
   // 向上找表格起点
   let topLine = curLine.number;

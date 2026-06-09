@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import type { EditorView } from "@codemirror/view";
 import {
   applyTableAction,
   applyTableActionToText,
   clearTableRect,
+  detectTable,
   moveTableCell,
   parseTabularText,
   pasteTableText,
@@ -60,6 +64,27 @@ function fakeView(text: string, pos: number) {
 }
 
 const table = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+
+function realView(doc: string, cursor: number): EditorView {
+  const state = EditorState.create({
+    doc,
+    selection: { anchor: cursor },
+    extensions: [markdown({ base: markdownLanguage })],
+  });
+  return { state } as unknown as EditorView;
+}
+
+describe("table detection fence-awareness", () => {
+  it("does not detect a table inside a fenced code block", () => {
+    const doc = "```chart\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```\n";
+    expect(detectTable(realView(doc, doc.indexOf("| 1")))).toBeNull();
+  });
+
+  it("still detects a normal standalone table", () => {
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    expect(detectTable(realView(doc, doc.indexOf("| 1")))).not.toBeNull();
+  });
+});
 
 describe("table editing", () => {
   it("parses TSV and markdown table clipboard data", () => {

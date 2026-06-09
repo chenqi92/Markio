@@ -41,4 +41,31 @@ series:
     expect(chart.labels).toEqual(["桌面", "移动"]);
     expect(chart.series[0]!.data).toEqual([42, 58]);
   });
+
+  it("accepts area and scatter as cartesian types", () => {
+    for (const type of ["area", "scatter"]) {
+      const chart = parseChartSource(`{
+        "type": "${type}",
+        "labels": ["A", "B", "C"],
+        "series": [{ "name": "v", "data": [1, 2, 3] }]
+      }`);
+      expect(chart.type).toBe(type);
+      expect(chart.series[0]!.data).toEqual([1, 2, 3]);
+    }
+  });
+
+  it("treats donut like pie (positive slices)", () => {
+    const chart = parseChartSource(`{
+      "type": "donut",
+      "labels": ["a", "b"],
+      "values": [3, 1]
+    }`);
+    expect(chart.type).toBe("donut");
+    expect(chart.labels).toEqual(["a", "b"]);
+    expect(chart.series[0]!.data).toEqual([3, 1]);
+  });
+
+  it("rejects unknown chart types", () => {
+    expect(() => parseChartSource('{ "type": "radar", "values": [1] }')).toThrow();
+  });
 });

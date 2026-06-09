@@ -4,7 +4,7 @@ import {
   type VisualSchedulerOptions,
 } from "./visualScheduler";
 
-export type ChartKind = "bar" | "line" | "pie";
+export type ChartKind = "bar" | "line" | "area" | "scatter" | "pie" | "donut";
 
 export interface ChartSeries {
   name: string;
@@ -151,7 +151,16 @@ function parseLooseChart(source: string): Record<string, unknown> {
 
 function parseChartType(value: unknown): ChartKind {
   const type = stringValue(value)?.toLowerCase() ?? "bar";
-  if (type === "bar" || type === "line" || type === "pie") return type;
+  if (
+    type === "bar" ||
+    type === "line" ||
+    type === "area" ||
+    type === "scatter" ||
+    type === "pie" ||
+    type === "donut"
+  ) {
+    return type;
+  }
   throw new Error(`不支持的图表类型：${type}`);
 }
 
@@ -202,7 +211,7 @@ function normalizeChart(raw: Record<string, unknown>): ChartConfig {
     data: item.data.slice(0, pointCount),
   }));
 
-  if (type === "pie") {
+  if (type === "pie" || type === "donut") {
     const values = series[0]!.data
       .slice(0, labels.length)
       .map((value) => Math.max(0, value));
@@ -304,7 +313,10 @@ function xFor(index: number, count: number) {
   return PLOT.left + (width / (count - 1)) * index;
 }
 
-function cartesianSvg(config: ChartConfig, mode: "bar" | "line") {
+function cartesianSvg(
+  config: ChartConfig,
+  mode: "bar" | "line" | "area" | "scatter",
+) {
   const svg = svgNode("svg", {
     class: "chart-svg",
     viewBox: `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,
@@ -393,20 +405,48 @@ function cartesianSvg(config: ChartConfig, mode: "bar" | "line") {
         );
       });
     });
+  } else if (mode === "scatter") {
+    config.series.forEach((series, seriesIndex) => {
+      series.data.forEach((value, index) => {
+        svg.append(
+          svgNode("circle", {
+            class: "chart-point chart-scatter-point",
+            cx: xFor(index, config.labels.length),
+            cy: y(value),
+            r: 4.5,
+            fill: color(seriesIndex),
+          }),
+        );
+      });
+    });
   } else {
+    const zeroY = y(0);
     config.series.forEach((series, seriesIndex) => {
       const points = series.data.map((value, index) => [
         xFor(index, config.labels.length),
         y(value),
       ]);
-      const path = svgNode("path", {
-        class: "chart-line",
-        d: points
-          .map(([xx, yy], index) => `${index === 0 ? "M" : "L"} ${xx!.toFixed(2)} ${yy!.toFixed(2)}`)
-          .join(" "),
-        stroke: color(seriesIndex),
-      });
-      svg.append(path);
+      const line = points
+        .map(([xx, yy], index) => `${index === 0 ? "M" : "L"} ${xx!.toFixed(2)} ${yy!.toFixed(2)}`)
+        .join(" ");
+      if (mode === "area" && points.length > 0) {
+        const lastX = points[points.length - 1]![0]!;
+        const firstX = points[0]![0]!;
+        svg.append(
+          svgNode("path", {
+            class: "chart-area",
+            d: `${line} L ${lastX.toFixed(2)} ${zeroY.toFixed(2)} L ${firstX.toFixed(2)} ${zeroY.toFixed(2)} Z`,
+            fill: color(seriesIndex),
+          }),
+        );
+      }
+      svg.append(
+        svgNode("path", {
+          class: "chart-line",
+          d: line,
+          stroke: color(seriesIndex),
+        }),
+      );
       if (points.length <= 40) {
         points.forEach(([xx, yy]) => {
           svg.append(
@@ -478,6 +518,18 @@ function pieSvg(config: ChartConfig) {
     angle = next;
   });
 
+  // donut：中间挖一个与卡片底色一致的圆，让饼变成环；中心文字落在洞里。
+  if (config.type === "donut") {
+    svg.append(
+      svgNode("circle", {
+        class: "chart-donut-hole",
+        cx,
+        cy,
+        r: radius * 0.58,
+      }),
+    );
+  }
+
   const totalText = svgNode("text", {
     class: "chart-pie-total",
     x: cx,
@@ -499,13 +551,12 @@ function pieSvg(config: ChartConfig) {
 
 function legend(config: ChartConfig) {
   const wrap = create("div", "chart-legend");
-  const total =
-    config.type === "pie"
-      ? config.series[0]!.data.reduce((sum, value) => sum + value, 0)
-      : 0;
-  const names =
-    config.type === "pie"
-      ? config.labels.map((label, index) => {
+  const circular = config.type === "pie" || config.type === "donut";
+  const total = circular
+    ? config.series[0]!.data.reduce((sum, value) => sum + value, 0)
+    : 0;
+  const names = circular
+    ? config.labels.map((label, index) => {
           const value = config.series[0]!.data[index] ?? 0;
           const percent = total > 0 ? ` · ${Math.round((value / total) * 100)}%` : "";
           return `${label} ${formatNumber(value, config.unit)}${percent}`;
@@ -527,7 +578,7 @@ function dataTable(config: ChartConfig) {
   const table = create("table");
   const thead = create("thead");
   const headRow = create("tr");
-  if (config.type === "pie") {
+  if (config.type === "pie" || config.type === "donut") {
     for (const text of ["项目", "值"]) {
       const th = create("th", undefined, text);
       th.setAttribute("scope", "col");
@@ -573,7 +624,11 @@ function chartFigure(config: ChartConfig) {
   head.append(create("div", "chart-title", config.title));
   if (config.subtitle) head.append(create("div", "chart-subtitle", config.subtitle));
   const viewport = create("div", "chart-viewport");
-  viewport.append(config.type === "pie" ? pieSvg(config) : cartesianSvg(config, config.type));
+  viewport.append(
+    config.type === "pie" || config.type === "donut"
+      ? pieSvg(config)
+      : cartesianSvg(config, config.type),
+  );
   figure.append(head, legend(config), viewport, dataTable(config));
   return figure;
 }

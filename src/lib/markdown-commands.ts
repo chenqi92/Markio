@@ -59,29 +59,33 @@ function buildTableFromText(input: string): string | null {
 }
 
 export interface ChartTypeSpec {
-  id: "bar" | "line" | "pie";
+  id: "bar" | "line" | "area" | "scatter" | "pie" | "donut";
   label: string;
-  /** 对应 Icon 组件里的图标名（柱/线/饼各一个）。 */
-  icon: "chart" | "chart-line" | "chart-pie";
+  /** 对应 Icon 组件里的图标名。 */
+  icon: "chart" | "chart-line" | "chart-area" | "chart-scatter" | "chart-pie" | "chart-donut";
   sub: string;
 }
 
 // 图表类型注册表：工具栏的二次选择 + Slash 菜单都从这里生成。以后新增类型
-// （散点 / 雷达 …）只要往这里加一项 + 在 chartTemplate 里补模板即可。
+// （雷达 / 漏斗 …）只要往这里加一项 + 在 chartTemplate 里补模板，并在 charts.ts
+// 的渲染器里支持对应 type 即可。
 export const CHART_TYPES: ChartTypeSpec[] = [
   { id: "bar", label: "柱状图", icon: "chart", sub: "分类对比 bar" },
   { id: "line", label: "折线图", icon: "chart-line", sub: "趋势变化 line" },
+  { id: "area", label: "面积图", icon: "chart-area", sub: "累积趋势 area" },
+  { id: "scatter", label: "散点图", icon: "chart-scatter", sub: "分布相关 scatter" },
   { id: "pie", label: "饼图", icon: "chart-pie", sub: "占比分布 pie" },
+  { id: "donut", label: "环形图", icon: "chart-donut", sub: "占比分布 donut" },
 ];
 
 function chartTemplate(id: ChartTypeSpec["id"]): { template: string; select: string } {
-  if (id === "line") {
+  if (id === "line" || id === "area") {
     return {
       select: "周访问量",
       template: [
         "```chart",
         "{",
-        '  "type": "line",',
+        `  "type": "${id}",`,
         '  "title": "周访问量",',
         '  "labels": ["周一", "周二", "周三", "周四", "周五"],',
         '  "series": [',
@@ -92,13 +96,30 @@ function chartTemplate(id: ChartTypeSpec["id"]): { template: string; select: str
       ].join("\n"),
     };
   }
-  if (id === "pie") {
+  if (id === "scatter") {
+    return {
+      select: "样本分布",
+      template: [
+        "```chart",
+        "{",
+        '  "type": "scatter",',
+        '  "title": "样本分布",',
+        '  "labels": ["1", "2", "3", "4", "5", "6"],',
+        '  "series": [',
+        '    { "name": "样本", "data": [12, 28, 9, 33, 21, 40] }',
+        "  ]",
+        "}",
+        "```",
+      ].join("\n"),
+    };
+  }
+  if (id === "pie" || id === "donut") {
     return {
       select: "占比分布",
       template: [
         "```chart",
         "{",
-        '  "type": "pie",',
+        `  "type": "${id}",`,
         '  "title": "占比分布",',
         '  "labels": ["移动端", "桌面端", "其它"],',
         '  "values": [62, 31, 7]',

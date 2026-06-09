@@ -270,6 +270,29 @@ const PATHS = {
       <path d="M12 12l7.8 4.5" />
     </>
   ),
+  "chart-area": (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h17" />
+      <path d="M4 16l4-4 3 2 5-6 5 3v8H4Z" />
+    </>
+  ),
+  "chart-scatter": (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h17" />
+      <circle cx="8" cy="14" r="1.2" />
+      <circle cx="12" cy="9" r="1.2" />
+      <circle cx="15" cy="13" r="1.2" />
+      <circle cx="19" cy="7" r="1.2" />
+    </>
+  ),
+  "chart-donut": (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="3.5" />
+    </>
+  ),
   diagram: (
     <>
       <rect x="3" y="4" width="6" height="5" rx="1.5" />

@@ -116,6 +116,8 @@ export const useTabs = create<TabsState>((set, get) => ({
       content = opened.content;
       sig = opened.sig;
     } catch (e) {
+      // 文件已被外部删除 / 移动时，清掉它的最近记录，避免「最近」里残留点不开的死项。
+      useRecents.getState().forget(path);
       useUI.getState().setToast({
         stage: "error",
         message: `无法读取文件：${(e as Error).message}`,

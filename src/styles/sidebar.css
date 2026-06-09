@@ -162,7 +162,10 @@
 }
 
 /* tree */
-.tree { padding: 6px 6px 40px; flex: 1; min-height: 0; }
+/* overflow-anchor: none —— 展开目录插入子行时，关掉浏览器的滚动锚定，
+ * 否则它会为「保持某个锚点不动」反向调整 scrollTop，表现为点开的目录
+ * 往上窜、整列上移。关掉后插入的子项总是把下方内容往下推，目录原地展开。 */
+.tree { padding: 6px 6px 40px; flex: 1; min-height: 0; overflow-anchor: none; }
 .tree-section {
   display: flex; align-items: center; gap: 6px;
   padding: 10px 8px 6px;

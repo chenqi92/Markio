@@ -1,5 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "../ui/Icon";
+
+// 全局只允许一个右键菜单存在：新菜单挂载时关掉上一个仍开着的（可能来自另一处
+// state，如「最近」分区的标题菜单 vs 文件项菜单，单靠 contextmenu 冒泡 +
+// defaultPrevented 关不掉跨 state 的旧菜单）。二级 / 子菜单是同一实例内部渲染，
+// 不算新挂载，不受影响。
+let activeClose: (() => void) | null = null;
 
 export interface CtxItem {
   label?: string;
@@ -22,6 +28,19 @@ export function ContextMenu({
   items: CtxItem[];
   onClose: () => void;
 }) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    // 挂载即接管：先关掉上一个菜单，再把自己登记为当前活跃菜单。
+    const self = () => onCloseRef.current();
+    const prev = activeClose;
+    if (prev && prev !== self) prev();
+    activeClose = self;
+    return () => {
+      if (activeClose === self) activeClose = null;
+    };
+  }, []);
+
   useEffect(() => {
     const dismissClick = () => onClose();
     // 在另一个行/区域上右键时，那个 handler 会先 setState({新菜单}) 并 e.preventDefault()；

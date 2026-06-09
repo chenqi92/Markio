@@ -8,6 +8,7 @@ import { RecentSection } from "./RecentSection";
 import { TrashSection } from "./TrashSection";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
+import { useRecents } from "@/stores/recents";
 import { writeText } from "@/lib/clipboard";
 import { useFileIcons } from "@/stores/fileIcons";
 import { useFileMeta, FILE_COLOR_PALETTE } from "@/stores/fileMeta";
@@ -719,6 +720,7 @@ function TreeContextMenu({
         // 已打开的 tab / 用户元数据需要同步指向新路径，否则保存会落到旧路径上
         relocateTabs(node.path, to);
         moveFileMeta(node.path, to);
+        useRecents.getState().relocate(node.path, to);
         flash("已重命名");
         if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
@@ -787,6 +789,7 @@ function TreeContextMenu({
         await api.rename(node.path, dest);
         relocateTabs(node.path, dest);
         moveFileMeta(node.path, dest);
+        useRecents.getState().relocate(node.path, dest);
         flash("已移动");
         await loadDir(ws.id, curParent);
         await loadDir(ws.id, norm);
@@ -906,6 +909,7 @@ function TreeContextMenu({
       try {
         await api.trashMove(ws.path, node.path);
         closeTabsForPath(node.path);
+        useRecents.getState().forgetUnder(node.path);
         void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
         flash(node.isDir ? "文件夹已移到回收站" : "已移到回收站");
         await loadDir(ws.id, parentPath(node.path));
@@ -936,6 +940,7 @@ function TreeContextMenu({
       try {
         await api.remove(node.path);
         closeTabsForPath(node.path);
+        useRecents.getState().forgetUnder(node.path);
         if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
           await loadDir(ws.id, parentPath(node.path));

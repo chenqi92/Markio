@@ -16,8 +16,9 @@ import { WidgetType } from "@codemirror/view";
 import { renderChartBlock } from "@/lib/charts";
 import { renderGraphvizBlock } from "@/lib/diagrams";
 import { renderMermaidBlock } from "@/lib/mermaid";
+import { renderServerBlock } from "@/lib/serverBlock";
 
-export type VisualLang = "mermaid" | "dot" | "chart";
+export type VisualLang = "mermaid" | "dot" | "chart" | "server";
 
 // Rendering visual fenced blocks inside the editor runs on CodeMirror's startup
 // decoration path. Keep the WYSIWYG editor lightweight; split/preview mode owns
@@ -29,6 +30,17 @@ export function detectVisualLang(lang: string): VisualLang | null {
   if (lower === "mermaid") return "mermaid";
   if (lower === "dot" || lower === "graphviz") return "dot";
   if (lower === "chart" || lower === "markio-chart" || lower === "charts") return "chart";
+  if (
+    lower === "server" ||
+    lower === "conn" ||
+    lower === "connection" ||
+    lower === "credential" ||
+    lower === "credentials" ||
+    lower === "cred" ||
+    lower === "secret"
+  ) {
+    return "server";
+  }
   return null;
 }
 
@@ -48,6 +60,10 @@ async function renderVisualWidget(
       host.classList.add("graphviz-block");
       host.setAttribute("data-graphviz", encoded);
       await renderGraphvizBlock(host, signal);
+    } else if (kind === "server") {
+      host.classList.add("server-block");
+      host.setAttribute("data-server", encoded);
+      renderServerBlock(host);
     } else {
       host.classList.add("chart-block");
       host.setAttribute("data-chart", encoded);

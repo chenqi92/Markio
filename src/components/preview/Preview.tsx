@@ -31,6 +31,7 @@ import { renderDiagramsLazy } from "@/lib/diagrams";
 import { enhanceMarkdownImages } from "@/lib/markdown-images";
 import { renderMathLazy } from "@/lib/math";
 import { renderMermaidLazy } from "@/lib/mermaid";
+import { renderServerBlocksLazy } from "@/lib/serverBlock";
 import {
   blockExternalImages,
   unblockAllRemoteImages,
@@ -412,6 +413,7 @@ export function Preview({
     let mathHandle: VisualBlockHandle | null = null;
     let mermaidHandle: VisualBlockHandle | null = null;
     let diagramHandle: VisualBlockHandle | null = null;
+    let serverHandle: VisualBlockHandle | null = null;
     let unblockImages: (() => void) | null = null;
 
     // 默认拦截 http(s) 图片，避免 canary / 追踪像素。用户在 Settings → 通用
@@ -473,6 +475,10 @@ export function Preview({
       if (cancelled) return;
       diagramHandle = renderDiagramsLazy(root);
     });
+    perfMeasure("preview:renderServerBlocks", () => {
+      if (cancelled) return;
+      serverHandle = renderServerBlocksLazy(root);
+    });
     // Rebuild the line→top anchor map after layout is in place. Heavy renders
     // (mermaid SVG, katex, images) settle asynchronously, so we re-collect
     // whenever content size changes — via ResizeObserver on the content root.
@@ -519,6 +525,7 @@ export function Preview({
       mathHandle?.disconnect();
       mermaidHandle?.disconnect();
       diagramHandle?.disconnect();
+      serverHandle?.disconnect();
       resizeObserver?.disconnect();
       unblockImages?.();
       document.removeEventListener(LOAD_ALL_REMOTE_IMAGES_EVENT, onLoadAllRemote);

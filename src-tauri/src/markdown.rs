@@ -183,6 +183,13 @@ fn is_plantuml_lang(lang: &str) -> bool {
     matches!(lang, "plantuml" | "puml")
 }
 
+fn is_server_lang(lang: &str) -> bool {
+    matches!(
+        lang,
+        "server" | "conn" | "connection" | "credential" | "credentials" | "cred" | "secret"
+    )
+}
+
 fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
@@ -438,6 +445,7 @@ fn sanitize(html: &str) -> String {
         "data-graphviz",
         "data-plantuml",
         "data-plantuml-server",
+        "data-server",
         "data-line",
     ]);
     b.add_tag_attributes("input", &["type", "checked", "disabled"]);
@@ -644,6 +652,13 @@ pub fn render_with_line_offset(
                     } else if is_graphviz_lang(&code_info.lang) {
                         html.push_str(&format!(
                             "<div class=\"graphviz-block\" data-graphviz=\"{}\"{}>{}</div>",
+                            urlencode(&code_buf),
+                            ln_attr,
+                            escape_html(&code_buf)
+                        ));
+                    } else if is_server_lang(&code_info.lang) {
+                        html.push_str(&format!(
+                            "<div class=\"server-block\" data-server=\"{}\"{}>{}</div>",
                             urlencode(&code_buf),
                             ln_attr,
                             escape_html(&code_buf)
@@ -977,6 +992,15 @@ mod tests {
         assert!(res.html.contains("class=\"graphviz-block\""));
         assert!(res.html.contains("data-graphviz="));
         assert!(!res.html.contains("data-lang=\"dot\""));
+    }
+
+    #[test]
+    fn render_outputs_server_blocks() {
+        let src = "```server\nname: db\nhost: 192.168.1.10\nport: 3306\nuser: root\npassword: pass\n```";
+        let res = render(src, None, &[]);
+        assert!(res.html.contains("class=\"server-block\""));
+        assert!(res.html.contains("data-server="));
+        assert!(!res.html.contains("data-lang=\"server\""));
     }
 
     #[test]

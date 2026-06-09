@@ -857,3 +857,164 @@
 .cm-host .cm-line ::selection {
   background: transparent !important;
 }
+
+/* ─── 服务器 / 凭据卡片（```server 围栏） ─── */
+.server-stack {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+.cm-md-fenced-widget .server-stack {
+  margin: 0;
+}
+.server-card {
+  margin: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-pane) 92%, var(--bg-pane-2));
+  font-family: var(--font-sans);
+}
+.server-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-bottom: 0.5px solid var(--border);
+  background: color-mix(in srgb, var(--bg-pane-2) 60%, transparent);
+}
+.server-icon {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.server-head-text {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 1px;
+}
+.server-name {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-subtitle {
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-connect {
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 0.5px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 550;
+  font-family: var(--font-sans);
+  color: #fff;
+  background: var(--accent);
+  transition: filter 0.12s ease;
+}
+.server-connect:hover {
+  filter: brightness(1.08);
+}
+.server-connect.server-copied {
+  background: #30a46c;
+  border-color: #30a46c;
+}
+.server-body {
+  display: grid;
+}
+.server-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+.server-row + .server-row {
+  border-top: 0.5px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.server-label {
+  flex-shrink: 0;
+  width: 52px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.server-value-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.server-value {
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+.server-secret {
+  letter-spacing: 1px;
+}
+.server-note {
+  font-family: var(--font-sans);
+  color: var(--text-2);
+  white-space: normal;
+}
+.server-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+.server-link:hover {
+  text-decoration: underline;
+}
+.server-row[data-kind="lan"] .server-value,
+.server-row[data-kind="host"] .server-value {
+  color: var(--text);
+}
+.server-copy,
+.server-reveal {
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 0.5px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  color: var(--text-3);
+  background: var(--bg-pane);
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.server-copy:hover,
+.server-reveal:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+.server-copy.server-copied {
+  color: #30a46c;
+  border-color: color-mix(in srgb, #30a46c 50%, var(--border));
+}
+.server-error {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+}

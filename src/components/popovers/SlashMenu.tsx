@@ -189,6 +189,16 @@ const ITEMS = (close: () => void): Item[] => {
       },
     },
     {
+      id: "server",
+      mark: "🔒",
+      ttl: "服务器 / 凭据",
+      sub: "IP / 端口 / 账号密码，可点击连接",
+      run: () => {
+        finish();
+        markdownCommands.serverBlock();
+      },
+    },
+    {
       id: "graphviz",
       icon: "diagram",
       ttl: "Graphviz / DOT",

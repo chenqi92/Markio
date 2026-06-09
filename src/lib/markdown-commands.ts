@@ -185,6 +185,33 @@ export const markdownCommands = {
         selectText: "月度趋势",
       },
     ),
+  serverBlock: () =>
+    runRegisteredMarkdownCommand("serverBlock") ||
+    insertBlock(
+      [
+        "```server",
+        "name: 生产数据库",
+        "type: mysql",
+        "host: 192.168.1.10",
+        "port: 3306",
+        "user: root",
+        "password: change-me",
+        "lan: 10.0.0.10",
+        "note: 仅内网访问",
+        "---",
+        "name: 后台管理",
+        "type: web",
+        "url: https://admin.example.com",
+        "user: admin",
+        "password: change-me",
+        "```",
+      ].join("\n"),
+      {
+        atLineStart: true,
+        ensureBlankLines: true,
+        selectText: "生产数据库",
+      },
+    ),
   graphviz: () =>
     runRegisteredMarkdownCommand("graphviz") ||
     insertBlock("```dot\ndigraph G {\n  A -> B\n}\n```", {

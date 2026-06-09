@@ -103,8 +103,15 @@ export class VisualFenceWidget extends WidgetType {
     void renderVisualWidget(el, this.kind, this.source, this.abort.signal);
     return el;
   }
-  ignoreEvent() {
-    return false;
+  ignoreEvent(event: Event): boolean {
+    // 交互控件（复制 / 显隐密码 / 连接 / 链接 / details 展开）自己处理事件，
+    // 返回 true 让编辑器忽略 —— 否则一点按钮编辑器就把光标放进围栏，触发源码
+    // 编辑态（参考 Obsidian：widget 内的交互元素拦下自己的事件）。点卡片空白
+    // 处仍 return false，走默认行为（定位光标 → 切到源码编辑）。
+    const target = event.target as HTMLElement | null;
+    return !!target?.closest(
+      "button, a, summary, input, select, textarea, label, .server-copy, .server-reveal, .server-connect, .server-link",
+    );
   }
   destroy() {
     this.abort.abort();

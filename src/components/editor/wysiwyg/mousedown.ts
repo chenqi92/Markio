@@ -127,9 +127,19 @@ export const wysiwygMousedown = EditorView.domEventHandlers({
       e.preventDefault();
       return;
     }
-    // 点击 mermaid / dot / chart widget → 把光标移进 fenced code 第二行（源码体）
+    // 点击 mermaid / dot / chart / server widget → 把光标移进 fenced code 第二行（源码体）
     const fencedHost = target.closest<HTMLElement>(".cm-md-fenced-widget");
     if (fencedHost) {
+      // server 卡片等 widget 内的交互控件（复制 / 显隐密码 / 连接 / 链接 /
+      // details 展开）自己处理点击，不要把光标移进源码 —— 否则一点按钮就进
+      // 编辑态。点卡片空白处仍走下面的逻辑切到源码编辑。
+      if (
+        target.closest(
+          "button, a, summary, input, select, textarea, label, .server-copy, .server-reveal, .server-connect, .server-link",
+        )
+      ) {
+        return;
+      }
       const pos = view.posAtDOM(fencedHost);
       if (pos != null) {
         const firstLine = view.state.doc.lineAt(pos);

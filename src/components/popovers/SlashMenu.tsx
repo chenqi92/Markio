@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { deleteBeforeCursor } from "@/lib/editor-bridge";
-import { markdownCommands } from "@/lib/markdown-commands";
+import { markdownCommands, CHART_TYPES } from "@/lib/markdown-commands";
 
 interface Item {
   id: string;
@@ -178,16 +178,16 @@ const ITEMS = (close: () => void): Item[] => {
         markdownCommands.mermaid();
       },
     },
-    {
-      id: "chart",
-      icon: "chart",
-      ttl: "图表",
-      sub: "bar / line / pie",
+    ...CHART_TYPES.map((t) => ({
+      id: `chart-${t.id}`,
+      icon: t.icon,
+      ttl: `图表 · ${t.label}`,
+      sub: t.sub,
       run: () => {
         finish();
-        markdownCommands.chart();
+        markdownCommands.chartType(t.id);
       },
-    },
+    })),
     {
       id: "server",
       mark: "🔒",

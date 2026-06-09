@@ -58,6 +58,83 @@ function buildTableFromText(input: string): string | null {
     .join("\n");
 }
 
+export interface ChartTypeSpec {
+  id: "bar" | "line" | "pie";
+  label: string;
+  /** 对应 Icon 组件里的图标名（柱/线/饼各一个）。 */
+  icon: "chart" | "chart-line" | "chart-pie";
+  sub: string;
+}
+
+// 图表类型注册表：工具栏的二次选择 + Slash 菜单都从这里生成。以后新增类型
+// （散点 / 雷达 …）只要往这里加一项 + 在 chartTemplate 里补模板即可。
+export const CHART_TYPES: ChartTypeSpec[] = [
+  { id: "bar", label: "柱状图", icon: "chart", sub: "分类对比 bar" },
+  { id: "line", label: "折线图", icon: "chart-line", sub: "趋势变化 line" },
+  { id: "pie", label: "饼图", icon: "chart-pie", sub: "占比分布 pie" },
+];
+
+function chartTemplate(id: ChartTypeSpec["id"]): { template: string; select: string } {
+  if (id === "line") {
+    return {
+      select: "周访问量",
+      template: [
+        "```chart",
+        "{",
+        '  "type": "line",',
+        '  "title": "周访问量",',
+        '  "labels": ["周一", "周二", "周三", "周四", "周五"],',
+        '  "series": [',
+        '    { "name": "访问", "data": [120, 200, 150, 280, 240] }',
+        "  ]",
+        "}",
+        "```",
+      ].join("\n"),
+    };
+  }
+  if (id === "pie") {
+    return {
+      select: "占比分布",
+      template: [
+        "```chart",
+        "{",
+        '  "type": "pie",',
+        '  "title": "占比分布",',
+        '  "labels": ["移动端", "桌面端", "其它"],',
+        '  "values": [62, 31, 7]',
+        "}",
+        "```",
+      ].join("\n"),
+    };
+  }
+  return {
+    select: "月度趋势",
+    template: [
+      "```chart",
+      "{",
+      '  "type": "bar",',
+      '  "title": "月度趋势",',
+      '  "labels": ["一月", "二月", "三月"],',
+      '  "series": [',
+      '    { "name": "收入", "data": [12, 18, 24] },',
+      '    { "name": "成本", "data": [8, 11, 14] }',
+      "  ]",
+      "}",
+      "```",
+    ].join("\n"),
+  };
+}
+
+/** 按类型插入图表模板（工具栏 / Slash 的二次选择都走它）。 */
+export function insertChart(id: ChartTypeSpec["id"] = "bar") {
+  const { template, select } = chartTemplate(id);
+  insertBlock(template, {
+    atLineStart: true,
+    ensureBlankLines: true,
+    selectText: select,
+  });
+}
+
 export const markdownCommands = {
   h1: () => runRegisteredMarkdownCommand("h1") || prefixLine("# "),
   h2: () => runRegisteredMarkdownCommand("h2") || prefixLine("## "),
@@ -163,28 +240,9 @@ export const markdownCommands = {
       ensureBlankLines: true,
       selectText: "graph LR",
     }),
-  chart: () =>
-    runRegisteredMarkdownCommand("chart") ||
-    insertBlock(
-      [
-        "```chart",
-        "{",
-        '  "type": "bar",',
-        '  "title": "月度趋势",',
-        '  "labels": ["一月", "二月", "三月"],',
-        '  "series": [',
-        '    { "name": "收入", "data": [12, 18, 24] },',
-        '    { "name": "成本", "data": [8, 11, 14] }',
-        "  ]",
-        "}",
-        "```",
-      ].join("\n"),
-      {
-        atLineStart: true,
-        ensureBlankLines: true,
-        selectText: "月度趋势",
-      },
-    ),
+  chart: () => runRegisteredMarkdownCommand("chart") || insertChart("bar"),
+  /** 指定类型插入图表（工具栏 / Slash 二次选择用）。 */
+  chartType: (id: ChartTypeSpec["id"]) => insertChart(id),
   serverBlock: () =>
     runRegisteredMarkdownCommand("serverBlock") ||
     insertBlock(

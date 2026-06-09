@@ -256,6 +256,20 @@ const PATHS = {
       <rect x="17" y="10" width="3" height="6" rx="1" />
     </>
   ),
+  "chart-line": (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h17" />
+      <path d="M7 15l4-4 3 2 5-6" />
+    </>
+  ),
+  "chart-pie": (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 12V3" />
+      <path d="M12 12l7.8 4.5" />
+    </>
+  ),
   diagram: (
     <>
       <rect x="3" y="4" width="6" height="5" rx="1.5" />

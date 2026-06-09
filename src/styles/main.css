@@ -134,6 +134,42 @@
   background: var(--accent-soft);
   border-color: var(--accent);
 }
+.chart-type-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  min-width: 132px;
+  padding: 4px;
+  display: grid;
+  gap: 1px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-soft);
+  z-index: 2000;
+}
+.chart-type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 500 13px/1.2 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--tr), color var(--tr);
+}
+.chart-type-item:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+.chart-type-label {
+  flex: 1;
+}
 
 /* AI button */
 .tb-btn.ai-btn-tb {

@@ -5,7 +5,7 @@ import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useDialog } from "@/stores/dialog";
 import { classNames } from "@/lib/utils";
-import { markdownCommands } from "@/lib/markdown-commands";
+import { markdownCommands, CHART_TYPES } from "@/lib/markdown-commands";
 import { shortcutText } from "@/lib/shortcuts";
 import { LOAD_ALL_REMOTE_IMAGES_EVENT } from "@/lib/remoteImageGuard";
 import type { ViewMode } from "@/types";
@@ -316,9 +316,7 @@ function FormatRow() {
         <Btn title="Mermaid" onClick={markdownCommands.mermaid}>
           <span style={{ fontSize: 12, lineHeight: 1 }}>◇</span>
         </Btn>
-        <Btn title={shortcutText("图表 ⌘⌥G")} onClick={markdownCommands.chart}>
-          <Icon name="chart" size={12} />
-        </Btn>
+        <ChartInsertButton />
         <Btn title="Graphviz / DOT" onClick={markdownCommands.graphviz}>
           <Icon name="diagram" size={12} />
         </Btn>
@@ -335,6 +333,70 @@ function FormatRow() {
           <span style={{ fontSize: 11, letterSpacing: -2 }}>―</span>
         </Btn>
       </div>
+    </div>
+  );
+}
+
+function ChartInsertButton() {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="tb-popover-host" ref={wrapRef}>
+      <button
+        type="button"
+        className="tb-btn"
+        title={shortcutText("图表 ⌘⌥G")}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onClick={(e) => e.preventDefault()}
+      >
+        <Icon name="chart" size={12} />
+      </button>
+      {open && (
+        <div
+          className="chart-type-popover"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          {CHART_TYPES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="chart-type-item"
+              onClick={() => {
+                markdownCommands.chartType(t.id);
+                setOpen(false);
+              }}
+            >
+              <Icon name={t.icon} size={14} />
+              <span className="chart-type-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

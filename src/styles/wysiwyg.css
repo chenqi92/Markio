@@ -24,17 +24,20 @@
   /* 跟阅读/预览一致的自适应宽度：窄屏不挤、宽屏铺得开，不再固定一小块 */
   max-width: clamp(720px, 80%, 1200px);
   margin: 0 auto;
-  caret-color: var(--accent);
+  /* 隐藏浏览器原生细光标，统一用 CM 绘制的光标（可控宽度、跟随行高）。
+   * 大号标题里原生 1px 光标显得过细、和字号不匹配。 */
+  caret-color: transparent;
 }
 .cm-host[data-mode="wysiwyg"] .cm-activeLine {
   background: transparent;
 }
-.cm-host[data-mode="wysiwyg"] .cm-selectionBackground {
-  background: transparent !important;
-}
-.cm-host[data-mode="wysiwyg"] .cm-content ::selection,
-.cm-host[data-mode="wysiwyg"] .cm-line ::selection {
-  background: var(--bg-selected) !important;
+/* 选区改用 CM 绘制层（markdown.css 里的 .cm-selectionBackground）。原生
+ * ::selection 在标题 / 装饰 span / widget 上覆盖不全、半透明叠色发花，绘制层
+ * 在文字背后整块铺，跨标题和装饰都连续。此处不再覆盖，回退到 markdown.css 的
+ * 绘制层选区 + 原生 ::selection 透明。 */
+.cm-host[data-mode="wysiwyg"] .cm-cursor {
+  /* 加粗光标：1px 在 2em 标题里太细，2px 更贴近字重；高度本就跟随行高。 */
+  border-left-width: 2px;
 }
 
 /* 段落之间的空行：源码里每个空行在 wysiwyg 下都是真实的一行，按正文行高（1.75）

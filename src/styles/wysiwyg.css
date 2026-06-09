@@ -625,6 +625,13 @@
   background: var(--bg-hover);
   color: var(--accent);
 }
+.cm-md-table-menu-item.danger {
+  color: #d92d20;
+}
+.cm-md-table-menu-item.danger:hover {
+  background: color-mix(in srgb, #d92d20 12%, transparent);
+  color: #d92d20;
+}
 .cm-md-table-widget table {
   width: 100%;
   border-collapse: collapse;

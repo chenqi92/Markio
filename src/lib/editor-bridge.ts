@@ -4,6 +4,7 @@
  * SourceEditor 挂载时把 EditorView 注册进来，卸载时清理。
  * 外部组件用 `runEditorCommand` 包装的指令操作选区 / 插入文本。
  */
+import { syntaxTree } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 
 let active: EditorView | null = null;
@@ -111,6 +112,36 @@ export function prefixLine(prefix: string) {
   view.focus();
 }
 
+/**
+ * 若 pos 落在 fenced code / 缩进代码块 / 表格内部，返回该块最后一行的行尾位置，
+ * 否则返回 null。
+ *
+ * 用于把「插入新块」的落点挪出围栏：在渲染后的图表 / 表格 widget 上点一下，光标
+ * 其实停在源码围栏体里（mousedown 会把它移进 ``` 内）。此时直接 insertBlock 会把
+ * 新的图表 / 表格塞进旧围栏的结束 ``` 之前，两块挤进同一个 code fence 而无法渲染。
+ */
+function fenceBoundaryAfter(view: EditorView, pos: number): number | null {
+  const state = view.state;
+  try {
+    let node: ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]> | null =
+      syntaxTree(state).resolveInner(pos, 0);
+    while (node) {
+      if (
+        node.name === "FencedCode" ||
+        node.name === "CodeBlock" ||
+        node.name === "Table"
+      ) {
+        const endLine = state.doc.lineAt(Math.min(node.to, state.doc.length));
+        return endLine.to;
+      }
+      node = node.parent;
+    }
+  } catch {
+    // 非 markdown 语言上下文（或测试里的 fake state）取不到语法树时，退回普通插入。
+  }
+  return null;
+}
+
 /** 在光标位置插入一段文本（支持多行模板） */
 export function insertBlock(
   template: string,
@@ -126,7 +157,13 @@ export function insertBlock(
   const sel = view.state.selection.main;
   let from = sel.from;
   let to = sel.to;
-  if (options?.atLineStart) {
+  const fenceBoundary = fenceBoundaryAfter(view, sel.from);
+  if (fenceBoundary != null) {
+    // 光标在围栏 / 表格内部：落点改到该块结尾行尾，配合 ensureBlankLines 起新行，
+    // 把新块插到围栏外面而不是塞进结束 ``` 之前。
+    from = fenceBoundary;
+    to = fenceBoundary;
+  } else if (options?.atLineStart) {
     const startLine = view.state.doc.lineAt(sel.from);
     const endLine = view.state.doc.lineAt(sel.to);
     if (sel.empty) {

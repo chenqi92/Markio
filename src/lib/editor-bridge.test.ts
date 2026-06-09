@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { insertBlock, registerEditor } from "./editor-bridge";
 
 class FakeDoc {
@@ -89,5 +91,54 @@ describe("editor bridge block insertion", () => {
         selection: { anchor: 10, head: 13 },
       }),
     );
+  });
+});
+
+// 用真实 EditorState（带 markdown 解析）验证围栏外重定向：fake doc 取不到语法树，
+// 只有真状态能命中 fenceBoundaryAfter。
+function mountRealEditor(text: string, cursor: number) {
+  const state = EditorState.create({
+    doc: text,
+    selection: { anchor: cursor },
+    extensions: [markdown({ base: markdownLanguage })],
+  });
+  const dispatch = vi.fn();
+  registerEditor({ state, dispatch, focus: vi.fn() } as never);
+  return dispatch;
+}
+
+describe("editor bridge fenced-block redirect", () => {
+  afterEach(() => registerEditor(null));
+
+  it("redirects insertion to after the closing fence when cursor is inside it", () => {
+    const doc = "```chart\n{\"type\":\"bar\"}\n```\n";
+    const cursor = doc.indexOf("type"); // 光标落在围栏体里
+    const dispatch = mountRealEditor(doc, cursor);
+
+    insertBlock("```server\nhost: 1.1.1.1\n```", {
+      atLineStart: true,
+      ensureBlankLines: true,
+    });
+
+    const closeFenceEnd = doc.indexOf("```", 3) + 3; // 结束 ``` 行尾
+    const call = dispatch.mock.calls[0]![0] as {
+      changes: { from: number; to: number; insert: string };
+    };
+    expect(call.changes.from).toBe(closeFenceEnd);
+    expect(call.changes.to).toBe(closeFenceEnd);
+    // 新内容应在围栏外，不会把 server 块塞进 chart 围栏里
+    expect(call.changes.insert).toContain("```server");
+  });
+
+  it("leaves ordinary paragraph insertion at the line start", () => {
+    const doc = "hello world\n";
+    const dispatch = mountRealEditor(doc, 6);
+
+    insertBlock("| A |\n| --- |", { atLineStart: true, ensureBlankLines: true });
+
+    const call = dispatch.mock.calls[0]![0] as {
+      changes: { from: number; to: number };
+    };
+    expect(call.changes.from).toBe(0);
   });
 });

@@ -439,25 +439,48 @@ function tableActionCoordsFromButton(host: HTMLElement, button: HTMLElement) {
   return { row, col, active };
 }
 
+/** 删除整张表：把 host 对应的源码区间连同其后多余的一个换行一起删掉。 */
+function deleteWholeTable(view: EditorView, host: HTMLElement): boolean {
+  const range = tableRangeFromHost(view, host);
+  if (!range) return false;
+  const doc = view.state.doc;
+  let to = range.to;
+  // 收掉块尾的换行，避免删完留下一行空行
+  if (to < doc.length && doc.sliceString(to, to + 1) === "\n") to += 1;
+  view.dispatch({
+    changes: { from: range.from, to, insert: "" },
+    selection: { anchor: range.from },
+    userEvent: "delete",
+  });
+  view.focus();
+  return true;
+}
+
 function runTableButtonAction(view: EditorView, host: HTMLElement, button: HTMLElement): boolean {
-  const action = button.dataset.action as WysiwygTableAction | undefined;
+  const action = button.dataset.action;
   if (!action) return false;
+  if (action === "deleteTable") {
+    const ok = deleteWholeTable(view, host);
+    hideTableMenu(host);
+    return ok;
+  }
   const { row, col, active } = tableActionCoordsFromButton(host, button);
-  const ok = applyTableWidgetAction(view, host, row, col, action, active);
+  const ok = applyTableWidgetAction(view, host, row, col, action as WysiwygTableAction, active);
   hideTableMenu(host);
   return ok;
 }
 
 function appendTableMenuButton(
   menu: HTMLElement,
-  action: WysiwygTableAction,
+  action: WysiwygTableAction | "deleteTable",
   label: string,
   row: number,
   col: number,
+  danger = false,
 ) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "cm-md-table-menu-item";
+  button.className = "cm-md-table-menu-item" + (danger ? " danger" : "");
   button.dataset.action = action;
   button.dataset.row = String(row);
   button.dataset.col = String(col);
@@ -483,6 +506,7 @@ function showTableMenu(host: HTMLElement, cell: HTMLElement, event: MouseEvent) 
     appendTableMenuButton(menu, "insertColRight", "右侧插入列", row, col);
     appendTableMenuButton(menu, "deleteCol", "删除列", row, col);
   }
+  appendTableMenuButton(menu, "deleteTable", "删除表格", row, col, true);
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
   menu.hidden = false;

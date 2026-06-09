@@ -28,7 +28,7 @@ export function RecentSection() {
   const customIcons = useFileIcons((s) => s.icons);
   const confirmDialog = useDialog((s) => s.confirm);
   const setToast = useUI((s) => s.setToast);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [ctx, setCtx] = useState<
     | { x: number; y: number; path: string; wsId: string; name: string }
     | null

@@ -117,14 +117,20 @@ export function prefixLine(prefix: string) {
  * 否则返回 null。
  *
  * 用于把「插入新块」的落点挪出围栏：在渲染后的图表 / 表格 widget 上点一下，光标
- * 其实停在源码围栏体里（mousedown 会把它移进 ``` 内）。此时直接 insertBlock 会把
- * 新的图表 / 表格塞进旧围栏的结束 ``` 之前，两块挤进同一个 code fence 而无法渲染。
+ * 其实停在源码围栏体里（mousedown 会把它移进 ``` 内）；或者图表是最后一个块、
+ * 光标停在 widget 之后（= 围栏 node.to 边界）。此时直接 insertBlock 会把新的图表
+ * / 表格塞进旧围栏的结束 ``` 之前，两块挤进同一个 code fence 而无法渲染。
+ *
+ * 用 side=-1 解析：光标停在围栏结束边界（块 widget 把光标放在 node.to）时，偏向
+ * 「在此结束的节点」= 该围栏，从而能识别到；side=0 在文档末尾边界会落到 Document
+ * 上漏判。光标在围栏开始边界（widget 之前）时 side=-1 偏向上一个节点，不会误判，
+ * 保证「在图表前插入」仍插到图表前面。
  */
 function fenceBoundaryAfter(view: EditorView, pos: number): number | null {
   const state = view.state;
   try {
     let node: ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]> | null =
-      syntaxTree(state).resolveInner(pos, 0);
+      syntaxTree(state).resolveInner(pos, -1);
     while (node) {
       if (
         node.name === "FencedCode" ||

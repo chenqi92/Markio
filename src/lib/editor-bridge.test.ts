@@ -130,6 +130,35 @@ describe("editor bridge fenced-block redirect", () => {
     expect(call.changes.insert).toContain("```server");
   });
 
+  it("redirects when cursor sits right after the fence (block-widget end boundary)", () => {
+    // 图表是最后一个块、无尾随换行：光标停在围栏末尾（doc 末）。插入应落到围栏
+    // 之外（doc 末），而不是被 atLineStart 拉到结束 ``` 行首、塞进围栏里。
+    const doc = "```chart\n{\"type\":\"bar\"}\n```";
+    const dispatch = mountRealEditor(doc, doc.length);
+
+    insertBlock("```chart\n{\"type\":\"pie\"}\n```", {
+      atLineStart: true,
+      ensureBlankLines: true,
+    });
+
+    const call = dispatch.mock.calls[0]![0] as {
+      changes: { from: number; to: number };
+    };
+    expect(call.changes.from).toBe(doc.length);
+  });
+
+  it("inserts before the chart when cursor is at the fence start boundary", () => {
+    const doc = "```chart\n{\"type\":\"bar\"}\n```";
+    const dispatch = mountRealEditor(doc, 0);
+
+    insertBlock("文字", { atLineStart: true, ensureBlankLines: true });
+
+    const call = dispatch.mock.calls[0]![0] as {
+      changes: { from: number; to: number };
+    };
+    expect(call.changes.from).toBe(0);
+  });
+
   it("leaves ordinary paragraph insertion at the line start", () => {
     const doc = "hello world\n";
     const dispatch = mountRealEditor(doc, 6);

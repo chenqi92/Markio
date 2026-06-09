@@ -462,6 +462,24 @@ export const SourceEditor = memo(function SourceEditor({
     return () => view.contentDOM.removeEventListener("keydown", handler, true);
   }, [view]);
 
+  // 代码块 / 表格 widget 内的编辑 textarea 被聚焦时，点别处常常没法把焦点 / 选区
+  // 移出去：很多 widget 的 mousedown 调了 preventDefault，浏览器默认的「换焦点」被
+  // 拦掉，textarea 一直保持 focus + 选区，于是「选中代码块内容后点外面移不出去」。
+  // 这里用捕获阶段的全局 mousedown（早于 widget 的 stopPropagation）：只要点到了
+  // 当前编辑 textarea 之外，就主动 blur 它（blur 会 commit 内容并释放选区）。
+  useEffect(() => {
+    if (!view) return;
+    const onDownCapture = (e: MouseEvent) => {
+      const active = document.activeElement as HTMLElement | null;
+      if (!active?.matches?.(".cm-md-code-editor, .cm-md-table-cell")) return;
+      const target = e.target as Node | null;
+      if (target && (active === target || active.contains(target))) return;
+      active.blur();
+    };
+    document.addEventListener("mousedown", onDownCapture, true);
+    return () => document.removeEventListener("mousedown", onDownCapture, true);
+  }, [view]);
+
   useEffect(() => {
     if (!view) return;
 

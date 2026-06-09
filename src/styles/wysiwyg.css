@@ -31,12 +31,21 @@
 .cm-host[data-mode="wysiwyg"] .cm-activeLine {
   background: transparent;
 }
-/* 选区改用 CM 绘制层（markdown.css 里的 .cm-selectionBackground）。原生
- * ::selection 在标题 / 装饰 span / widget 上覆盖不全、半透明叠色发花，绘制层
- * 在文字背后整块铺，跨标题和装饰都连续。此处不再覆盖，回退到 markdown.css 的
- * 绘制层选区 + 原生 ::selection 透明。 */
+/* 选区用原生 ::selection（画在文字上），而不是 CM 绘制层 —— 所见即所得里标题 /
+ * 代码块 / callout 等行 / 块都有自己的背景色，会盖住绘制层（.cm-selectionLayer
+ * 在内容背后），导致选区只在没有背景的左右边距露出来。原生 ::selection 直接画在
+ * 文字上，跨标题 / 装饰都可见。绘制层在此置透明。 */
+.cm-host[data-mode="wysiwyg"] .cm-selectionBackground {
+  background: transparent !important;
+}
+.cm-host[data-mode="wysiwyg"] .cm-content ::selection,
+.cm-host[data-mode="wysiwyg"] .cm-line ::selection {
+  /* 比 --bg-selected（偏淡）更明显一点，标题里也看得清。 */
+  background: color-mix(in srgb, var(--accent) 24%, transparent) !important;
+}
 .cm-host[data-mode="wysiwyg"] .cm-cursor {
-  /* 加粗光标：1px 在 2em 标题里太细，2px 更贴近字重；高度本就跟随行高。 */
+  /* 加粗光标：1px 在 2em 标题里太细，2px 更贴近字重；高度本就跟随行高。
+   * 绘制光标在内容上层，不会被背景色盖住（与选区绘制层相反）。 */
   border-left-width: 2px;
 }
 

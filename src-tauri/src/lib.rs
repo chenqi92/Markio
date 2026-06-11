@@ -682,12 +682,15 @@ fn sync_file_entry(
 }
 
 #[tauri::command]
-fn fs_sync_scan(
+async fn fs_sync_scan(
     state: tauri::State<'_, AppState>,
     workspace: String,
 ) -> Result<Vec<SyncFileEntry>, String> {
     let ws = validate_path(&state, &workspace)?;
-    Ok(sync_scan_workspace(&ws))
+    // 整库读+哈希每个文件，主线程跑会冻结窗口；放 spawn_blocking。
+    tokio::task::spawn_blocking(move || sync_scan_workspace(&ws))
+        .await
+        .map_err(|e| format!("sync scan join 失败：{e}"))
 }
 
 /// 扫描仓库返回同步用文件清单（rel_path / mtime / FNV hash / size）。
@@ -2327,12 +2330,16 @@ async fn export_pandoc(
 
 /// 扫描 workspace 全部 md 的 frontmatter，返回每条笔记 → 字段 → 多值。
 #[tauri::command]
-fn fs_scan_frontmatter(
+async fn fs_scan_frontmatter(
     state: tauri::State<'_, AppState>,
     workspace: String,
 ) -> Result<Vec<frontmatter::NoteFrontmatter>, String> {
     let ws = validate_path(&state, &workspace)?;
-    frontmatter::scan(&ws.to_string_lossy())
+    // 整库扫描读每个 .md 抽 frontmatter，是 IO/CPU 密集活；放 spawn_blocking
+    // 不冻结事件循环（PropertyExplorer 每次切仓库都会触发）。
+    tokio::task::spawn_blocking(move || frontmatter::scan(&ws.to_string_lossy()))
+        .await
+        .map_err(|e| format!("frontmatter scan join 失败：{e}"))?
 }
 
 // MCP 状态查询 + 本地 AI Agent CLI 命令已迁移到 commands::mcp / commands::agent
@@ -2497,18 +2504,20 @@ fn fs_trash_purge(
 /// 关键词检索：从仓库里抽 query 相关的片段（带上下文行），作为未建向量索引时的 grep 兜底。
 /// 真正的向量 RAG 已在 commands::rag 全套实现（rag_reindex / rag_search 等），此处仅为 fallback。
 #[tauri::command]
-fn ai_retrieve(
+async fn ai_retrieve(
     state: tauri::State<'_, AppState>,
     workspace: String,
     query: String,
     k: Option<usize>,
 ) -> Result<Vec<AiContext>, String> {
     let ws = validate_path(&state, &workspace)?;
-    Ok(fs_ops::retrieve_context(
-        &ws.to_string_lossy(),
-        &query,
-        k.unwrap_or(5),
-    ))
+    // 全库 grep（最多读 3000 个 .md 各 2MB）；主线程跑会冻结整个事件循环。
+    let ws_str = ws.to_string_lossy().to_string();
+    tokio::task::spawn_blocking(move || {
+        fs_ops::retrieve_context(&ws_str, &query, k.unwrap_or(5))
+    })
+    .await
+    .map_err(|e| format!("ai_retrieve join 失败：{e}"))
 }
 
 pub(crate) fn is_loopback_host(host: Option<&str>) -> bool {

@@ -580,8 +580,12 @@ pub fn render_with_line_offset(
         html.push_str(&piece);
     };
 
+    // 预计算所有 '\n' 的字节偏移：原来每个事件都 source[..start].matches('\n').count()
+    // 从头数换行，是 O(n × 事件数) 二次方，大文档预览爆炸。改为二分(partition_point) O(log n)。
+    let newline_offsets: Vec<usize> = source.match_indices('\n').map(|(i, _)| i).collect();
+
     for (ev, range) in parser {
-        let line = source[..range.start].matches('\n').count() + 1 + line_offset;
+        let line = newline_offsets.partition_point(|&off| off < range.start) + 1 + line_offset;
         let ev = rewrite_asset_event(ev, base_path, allowed_roots);
         if let Some((_lvl, _)) = heading.as_mut() {
             match &ev {

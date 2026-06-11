@@ -109,6 +109,22 @@ pub fn signature_for(path: &Path) -> std::io::Result<FileSig> {
     Ok(FileSig { mtime_ms, hash })
 }
 
+/// 同 signature_for，但用调用方已有的字节算哈希，省掉重新读盘。
+/// 仅在「磁盘内容确定等于这些字节」时可用（如刚 atomic_write 写完）。
+pub fn signature_for_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<FileSig> {
+    let meta = std::fs::metadata(path)?;
+    let mtime_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    Ok(FileSig {
+        mtime_ms,
+        hash: hash64(bytes),
+    })
+}
+
 pub fn hash64(bytes: &[u8]) -> u64 {
     // FNV-1a 64-bit；足够检测意外改动
     let mut h: u64 = 0xcbf29ce484222325;

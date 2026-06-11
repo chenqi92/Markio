@@ -87,7 +87,7 @@ use tauri::{Emitter, Manager};
 use ai::{AgentRequest, AgentTurnResult, ChatRequest, ChatResponse};
 use fs_ops::{AiContext, Attachment, Backlink, FileEntry, GrepHit, TrashItem};
 use markdown::{OutlineItem, RenderResult};
-use state::{ensure_in_workspaces, hash64, signature_for, AppState, FileSig};
+use state::{ensure_in_workspaces, hash64, signature_for, signature_for_bytes, AppState, FileSig};
 
 static MD_STREAM_CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
@@ -995,7 +995,8 @@ fn fs_save(
         }
     }
     fs_ops::atomic_write(&canon, &content)?;
-    let sig = signature_for(&canon).map_err(|e| e.to_string())?;
+    // 刚原子写入的内容就是 content.as_bytes()，直接据此算 sig，省掉一次整文件回读。
+    let sig = signature_for_bytes(&canon, content.as_bytes()).map_err(|e| e.to_string())?;
     state.record_open(&canon, sig)?;
     Ok(sig.into())
 }
@@ -1010,7 +1011,7 @@ fn fs_create_new(
     let canon = validate_path(&state, &path)?;
     ensure_user_file_path(&state, &canon, "创建")?;
     fs_ops::create_new(&canon, &content)?;
-    let sig = signature_for(&canon).map_err(|e| e.to_string())?;
+    let sig = signature_for_bytes(&canon, content.as_bytes()).map_err(|e| e.to_string())?;
     state.record_open(&canon, sig)?;
     Ok(sig.into())
 }

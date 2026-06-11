@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
@@ -151,6 +159,88 @@ function highlightSegments(
   if (last < preview.length) parts.push({ text: preview.slice(last), hit: false });
   return parts;
 }
+
+/** 单条搜索结果行。memo 化：鼠标移过列表时只有「旧选中 / 新选中」两行的 selected
+ *  变了，其余行 props 不变 → 跳过重渲染，不再对全部 ~200 行重跑一遍正则高亮。 */
+const ResultRow = memo(function ResultRow({
+  hit,
+  index,
+  selected,
+  showWs,
+  filterRegex,
+  onOpen,
+  onHover,
+  refs,
+}: {
+  hit: HitWithMeta;
+  index: number;
+  selected: boolean;
+  showWs: boolean;
+  filterRegex: RegExp | null;
+  onOpen: (hit: HitWithMeta) => void;
+  onHover: (index: number) => void;
+  refs: MutableRefObject<(HTMLButtonElement | null)[]>;
+}) {
+  return (
+    <button
+      type="button"
+      ref={(el) => {
+        refs.current[index] = el;
+      }}
+      className={"cmdk-item" + (selected ? " sel" : "")}
+      onClick={() => onOpen(hit)}
+      onMouseEnter={() => onHover(index)}
+    >
+      <div className="ico">
+        <Icon name="note" size={14} />
+      </div>
+      <div className="lbl">
+        <div className="l1">
+          {hit.name}
+          {hit.line > 0 && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 11,
+                color: "var(--text-3)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              : {hit.line}
+            </span>
+          )}
+          {showWs && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 10,
+                color: "var(--text-4)",
+                padding: "1px 5px",
+                border: "0.5px solid var(--border)",
+                borderRadius: 4,
+              }}
+            >
+              {hit.wsName}
+            </span>
+          )}
+        </div>
+        <div className="l2">
+          {filterRegex
+            ? highlightSegments(hit.preview || hit.path, filterRegex).map((seg, k) =>
+                seg.hit ? (
+                  <mark key={k} className="gs-hl">
+                    {seg.text}
+                  </mark>
+                ) : (
+                  <span key={k}>{seg.text}</span>
+                ),
+              )
+            : hit.preview || hit.path}
+        </div>
+      </div>
+    </button>
+  );
+});
 
 /**
  * 全文搜索（⌘⇧F）：Aa/W/.* 三个客户端切换 + 范围 / 类型 / 标签 / 时间 4 个面筛选 +
@@ -610,65 +700,17 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
                   </button>
                 </div>
                 {filtered.map((h, i) => (
-                  <button
-                    type="button"
-                    ref={(el) => {
-                      itemRefs.current[i] = el;
-                    }}
+                  <ResultRow
                     key={i}
-                    className={"cmdk-item" + (i === sel ? " sel" : "")}
-                    onClick={() => void openHit(h)}
-                    onMouseEnter={() => setSel(i)}
-                  >
-                    <div className="ico">
-                      <Icon name="note" size={14} />
-                    </div>
-                    <div className="lbl">
-                      <div className="l1">
-                        {h.name}
-                        {h.line > 0 && (
-                          <span
-                            style={{
-                              marginLeft: 8,
-                              fontSize: 11,
-                              color: "var(--text-3)",
-                              fontFamily: "var(--font-mono)",
-                            }}
-                          >
-                            : {h.line}
-                          </span>
-                        )}
-                        {scope === "all" && (
-                          <span
-                            style={{
-                              marginLeft: 8,
-                              fontSize: 10,
-                              color: "var(--text-4)",
-                              padding: "1px 5px",
-                              border: "0.5px solid var(--border)",
-                              borderRadius: 4,
-                            }}
-                          >
-                            {h.wsName}
-                          </span>
-                        )}
-                      </div>
-                      <div className="l2">
-                        {filterRegex
-                          ? highlightSegments(h.preview || h.path, filterRegex).map(
-                              (seg, k) =>
-                                seg.hit ? (
-                                  <mark key={k} className="gs-hl">
-                                    {seg.text}
-                                  </mark>
-                                ) : (
-                                  <span key={k}>{seg.text}</span>
-                                ),
-                            )
-                          : h.preview || h.path}
-                      </div>
-                    </div>
-                  </button>
+                    hit={h}
+                    index={i}
+                    selected={i === sel}
+                    showWs={scope === "all"}
+                    filterRegex={filterRegex}
+                    onOpen={openHit}
+                    onHover={setSel}
+                    refs={itemRefs}
+                  />
                 ))}
               </>
             )}

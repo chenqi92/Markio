@@ -64,6 +64,15 @@ const MAX_PASTE_IMAGES = 8;
 const MAX_PASTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const SPLIT_WIDTH_KEY = "markio.split.sourcePercent";
 
+/** 非 split 模式下的客户端字数估算（CJK 按字、西文按词），用于大纲信息页与状态栏。
+ *  仅近似 Rust count_words；split 模式仍用 Rust 的精确值。 */
+function estimateWordCount(text: string): number {
+  const stripped = text.replace(/```[\s\S]*?```/g, " ");
+  const cjk = stripped.match(/[㐀-鿿぀-ヿ가-힯]/g)?.length ?? 0;
+  const words = stripped.match(/[A-Za-z0-9]+/g)?.length ?? 0;
+  return cjk + words;
+}
+
 function buildS3Key(notePath: string, fileName?: string): string {
   const stem = (fileName || "image").replace(/[^a-zA-Z0-9._-]+/g, "-");
   const noteStem =
@@ -182,6 +191,34 @@ export function EditorArea({ onMeta }: Props) {
   );
 
   const renderMode = mode;
+
+  // 源码 / 所见即所得模式下 Preview 不挂载，没人提供大纲元数据 → 大纲面板会停在上次
+  // split 的旧数据（甚至切 tab 都不更新），点击跳不动、拖拽重排还会按陈旧索引动错段落。
+  // 这里在非 split 模式下从当前内容直接算大纲（Rust md_outline，与 split 同一解析器，
+  // 配合 Outline 的数量守卫保证重排安全）+ 客户端字数，喂回 meta。
+  useEffect(() => {
+    if (renderMode === "split") return; // split 由 Preview onMeta 提供
+    const content = tab?.content ?? "";
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void api
+        .outline(content)
+        .then((outline) => {
+          if (cancelled) return;
+          const words = estimateWordCount(content);
+          onMetaInternal({
+            outline,
+            words,
+            readingMinutes: Math.max(1, Math.round(words / 250)),
+          });
+        })
+        .catch(() => undefined);
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [renderMode, tab?.content, tab?.path, onMetaInternal]);
 
   useEffect(() => {
     if (!tab || !lineJump || lineJump.path !== tab.path || lineJump.line <= 0) {

@@ -13,7 +13,7 @@ import { writeText } from "@/lib/clipboard";
 import { useFileIcons } from "@/stores/fileIcons";
 import { useFileMeta, FILE_COLOR_PALETTE } from "@/stores/fileMeta";
 import { api, parseError, pickDirectory } from "@/lib/api";
-import { displayPath } from "@/lib/utils";
+import { displayPath, pathKey, samePath } from "@/lib/utils";
 import { useUI } from "@/stores/ui";
 import { useRag } from "@/stores/rag";
 import { useDialog } from "@/stores/dialog";
@@ -494,10 +494,12 @@ const TreeRow = memo(function TreeRow({
 }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const openFile = useTabs((s) => s.openFile);
-  const customIcon = useFileIcons((s) => s.icons[node.path]);
-  const meta = useFileMeta((s) => s.byPath[node.path]) ?? {};
+  const customIcon = useFileIcons((s) => s.icons[pathKey(node.path)]);
+  const meta = useFileMeta((s) => s.byPath[pathKey(node.path)]) ?? {};
 
-  const isActive = activePath === node.path;
+  // samePath：重命名后 activePath 可能是 '/'-分隔而 node.path 是 '\'-分隔(Windows)，
+  // 裸 === 会丢高亮。
+  const isActive = activePath ? samePath(activePath, node.path) : false;
   const onClick = async () => {
     if (node.isDir) {
       onToggle(node);
@@ -598,7 +600,7 @@ function TreeContextMenu({
   const dirtyTabsUnder = useTabs((s) => s.dirtyTabsUnder);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
-  const fileMeta = useFileMeta((s) => s.byPath[node.path]) ?? {};
+  const fileMeta = useFileMeta((s) => s.byPath[pathKey(node.path)]) ?? {};
   const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
   const setColor = useFileMeta((s) => s.setColor);
   const addMark = useFileMeta((s) => s.addMark);
@@ -718,6 +720,7 @@ function TreeContextMenu({
         // 已打开的 tab / 用户元数据需要同步指向新路径，否则保存会落到旧路径上
         relocateTabs(node.path, to);
         moveFileMeta(node.path, to);
+        useFileIcons.getState().relocate(node.path, to);
         useRecents.getState().relocate(node.path, to);
         flash("已重命名");
         if (ws) {
@@ -776,9 +779,11 @@ function TreeContextMenu({
         errToast("目标目录在此节点内");
         return;
       }
-      // 不允许目标 = 当前所在目录（原地不动）
+      // 不允许目标 = 当前所在目录（原地不动）。norm 来自原生目录选择器（Windows 是
+      // '\'-分隔），curParent 是 '/'-分隔，必须用 samePath 比较，否则该守卫在 Windows
+      // 上永远不触发，移动会变成无意义的同目录 rename + 元数据键被改成混合分隔符。
       const curParent = parentPath(node.path);
-      if (norm === curParent.replace(/[\\/]+$/, "")) {
+      if (samePath(norm, curParent)) {
         errToast("已在该目录下");
         return;
       }
@@ -787,6 +792,7 @@ function TreeContextMenu({
         await api.rename(node.path, dest);
         relocateTabs(node.path, dest);
         moveFileMeta(node.path, dest);
+        useFileIcons.getState().relocate(node.path, dest);
         useRecents.getState().relocate(node.path, dest);
         flash("已移动");
         await loadDir(ws.id, curParent);
@@ -908,6 +914,7 @@ function TreeContextMenu({
         await api.trashMove(ws.path, node.path);
         closeTabsForPath(node.path);
         useRecents.getState().forgetUnder(node.path);
+        useFileIcons.getState().forget(node.path);
         void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
         flash(node.isDir ? "文件夹已移到回收站" : "已移到回收站");
         await loadDir(ws.id, parentPath(node.path));
@@ -939,6 +946,7 @@ function TreeContextMenu({
         await api.remove(node.path);
         closeTabsForPath(node.path);
         useRecents.getState().forgetUnder(node.path);
+        useFileIcons.getState().forget(node.path);
         if (ws) {
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
           await loadDir(ws.id, parentPath(node.path));

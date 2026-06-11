@@ -102,8 +102,10 @@ export const useTabs = create<TabsState>((set, get) => ({
 
   openFile: async (workspaceId, path, opts) => {
     const silent = opts?.silent === true;
+    // 用 samePath（大小写/分隔符无关）去重：重命名后 tab.path 可能变成 '/'-分隔，
+    // 而树节点是 '\'-分隔（Windows），裸 === 比较会漏判而开出重复 tab。
     const exist = get().tabs.find(
-      (t) => t.workspaceId === workspaceId && t.path === path,
+      (t) => t.workspaceId === workspaceId && samePath(t.path, path),
     );
     if (exist) {
       if (!silent) set({ activeId: exist.id });
@@ -141,7 +143,7 @@ export const useTabs = create<TabsState>((set, get) => ({
       // （如 OS open 队列不 await 地 flush 多个 openPath）。这里再查一次去重，
       // 避免同一文件出现两个独立缓冲、保存其一让另一个 sig 失效误报冲突。
       const dup = s.tabs.find(
-        (t) => t.workspaceId === workspaceId && t.path === path,
+        (t) => t.workspaceId === workspaceId && samePath(t.path, path),
       );
       if (dup) {
         appended = false;

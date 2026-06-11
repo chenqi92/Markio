@@ -51,7 +51,10 @@ function moveSection(
   to: number,
   insertBefore: number,
 ): string {
-  if (insertBefore >= from && insertBefore < to) return content;
+  // insertBefore === to（把 A 拖到紧邻的下一段 B 之前）= A 本就在该插入点前，应为
+  // no-op。旧实现用 `< to` 漏掉了相等情形，导致 adj 落在错位置，把 B 的内容黏到
+  // A 的标题上损坏文档。改为 `<= to` 收口。
+  if (insertBefore >= from && insertBefore <= to) return content;
   const section = content.slice(from, to);
   const without =
     content.slice(0, from) + content.slice(to);
@@ -396,6 +399,15 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
     const current = useTabs.getState().tabs.find((t) => t.id === fileId);
     const content = current?.content ?? "";
     const spans = computeHeadingSpans(content);
+    // items 来自 Rust 解析器，spans 来自前端正则扫描，两者对 setext / 缩进 / 引用内
+    // 标题、YAML 里的 # 等的判定可能不一致。数量对不上时索引无法可靠对齐，
+    // 直接拒绝重排，避免移动到错误的 [from,to) 段落静默损坏文档。
+    if (spans.length !== items.length) {
+      useUI
+        .getState()
+        .setToast({ stage: "error", message: "该文档标题结构无法安全重排" });
+      return;
+    }
     const src = spans[sourceIdx];
     const tgt = spans[targetIdx];
     if (!src || !tgt) return;

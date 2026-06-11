@@ -6,6 +6,7 @@ import { useTabs } from "@/stores/tabs";
 import { useFileIcons } from "@/stores/fileIcons";
 import { useDialog } from "@/stores/dialog";
 import { useUI } from "@/stores/ui";
+import { pathKey, samePath } from "@/lib/utils";
 import { isIconName } from "../ui/Icon";
 import { ContextMenu } from "../popovers/ContextMenu";
 import { api } from "@/lib/api";
@@ -41,10 +42,14 @@ export function RecentSection() {
   };
 
   if (!ws) return null;
-  const recents = items
-    .filter((it) => it.workspaceId === ws.id)
-    .slice(0, 6);
+  // 当前仓库的全部最近记录（store 最多存 30 条）；显示只取前 6 条，
+  // 但「清空」必须作用于全部，否则清掉可见 6 条后后面的会立刻补上。
+  const wsRecents = items.filter((it) => it.workspaceId === ws.id);
+  const recents = wsRecents.slice(0, 6);
   if (recents.length === 0) return null;
+  const clearAll = () => {
+    for (const it of wsRecents) forget(it.path);
+  };
 
   return (
     <div className="recent-section">
@@ -85,7 +90,7 @@ export function RecentSection() {
               confirmLabel: "清空",
             });
             if (!ok) return;
-            for (const it of recents) forget(it.path);
+            clearAll();
           }}
         >
           <Icon name="x" size={10} />
@@ -93,8 +98,8 @@ export function RecentSection() {
       </div>
       {open &&
         recents.map((r) => {
-          const custom = customIcons[r.path];
-          const isActive = activePath === r.path;
+          const custom = customIcons[pathKey(r.path)];
+          const isActive = activePath ? samePath(activePath, r.path) : false;
           return (
             <div
               key={r.path}
@@ -192,7 +197,7 @@ export function RecentSection() {
                   confirmLabel: "清空",
                 });
                 if (!ok) return;
-                for (const it of recents) forget(it.path);
+                clearAll();
               },
             },
           ]}

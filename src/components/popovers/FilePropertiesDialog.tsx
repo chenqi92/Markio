@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../ui/Icon";
 import { useFileMeta, FILE_COLOR_PALETTE } from "@/stores/fileMeta";
 import { useVaultIndex } from "@/stores/vaultIndex";
+import { pathKey } from "@/lib/utils";
 import type { FileEntry } from "@/types";
 
 interface Props {
@@ -28,7 +29,7 @@ function formatTs(ms: number): string {
  *  (收藏 / 颜色 / 标记)，并提供小型编辑控件。 */
 export function FilePropertiesDialog({ node, workspacePath, onClose }: Props) {
   const { t } = useTranslation();
-  const meta = useFileMeta((s) => s.byPath[node.path]) ?? {};
+  const meta = useFileMeta((s) => s.byPath[pathKey(node.path)]) ?? {};
   const toggleBookmark = useFileMeta((s) => s.toggleBookmark);
   const setColor = useFileMeta((s) => s.setColor);
   const addMark = useFileMeta((s) => s.addMark);

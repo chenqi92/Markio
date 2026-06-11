@@ -66,6 +66,64 @@ function escapeForRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** 按顶层 `|` 拆分正则（不切 () 内或 [] 内的 |）。 */
+function splitTopLevelAlternation(re: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inClass = false;
+  let cur = "";
+  for (let i = 0; i < re.length; i++) {
+    const c = re[i]!;
+    if (c === "\\") {
+      cur += c + (re[i + 1] ?? "");
+      i++;
+      continue;
+    }
+    if (inClass) {
+      cur += c;
+      if (c === "]") inClass = false;
+      continue;
+    }
+    if (c === "[") {
+      inClass = true;
+      cur += c;
+      continue;
+    }
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === "|" && depth === 0) {
+      parts.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+const RE_META = /[\\^$.*+?()[\]{}|]/g;
+
+/** 计算发给后端 fs_grep（字面子串匹配）的候选 anchor 列表。
+ *  - 纯文本：直接用原串（含 C++ 这类含 + 的字面），不剥特殊字符；
+ *  - 正则：按顶层 | 拆分，每个分支取字面核心并分别 grep 取并集，使候选集是真超集；
+ *    任一分支无可用字面核心（如 .* / \d+）则退回旧的整串剥字符行为（尽力而为）。 */
+function buildSearchAnchors(query: string, isRegex: boolean): string[] {
+  if (!isRegex) return [query];
+  const alts = splitTopLevelAlternation(query);
+  const anchors: string[] = [];
+  for (const alt of alts) {
+    const lit = alt.replace(RE_META, "").slice(0, 80);
+    if (lit.length >= 2) {
+      anchors.push(lit);
+    } else {
+      const fallback = query.replace(RE_META, "").slice(0, 80) || query;
+      return [fallback];
+    }
+  }
+  return anchors.length ? Array.from(new Set(anchors)) : [query];
+}
+
 /** 把命中文行按搜索词高亮成 [{text, hit}] 段 */
 function highlightSegments(
   preview: string,
@@ -143,11 +201,20 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       try {
         const targetWss = scope === "all" ? workspaces : [ws];
         const all: HitWithMeta[] = [];
+        const seen = new Set<string>();
+        const anchors = buildSearchAnchors(trimmed, regex);
         for (const w of targetWss) {
-          // 拿一个最宽的 anchor 串：去掉特殊字符的 plain 部分，至少 2 字符
-          const anchor = trimmed.replace(/[\\^$.*+?()[\]{}|]/g, "").slice(0, 80) || trimmed;
-          const r = await api.grep(w.path, anchor, MAX_GLOBAL_SEARCH_RESULTS);
-          for (const h of r) all.push({ ...h, wsId: w.id, wsName: w.name });
+          for (const anchor of anchors) {
+            const a = anchor.length >= 2 ? anchor : trimmed;
+            const r = await api.grep(w.path, a, MAX_GLOBAL_SEARCH_RESULTS);
+            for (const h of r) {
+              // 多 anchor（正则分支）取并集，按 path+line 去重
+              const key = `${w.id}\0${h.path}\0${h.line}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              all.push({ ...h, wsId: w.id, wsName: w.name });
+            }
+          }
         }
         if (seq !== seqRef.current) return;
         setHits(all);
@@ -160,7 +227,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }, 220);
     return () => clearTimeout(t);
-  }, [q, ws, scope, workspaces]);
+  }, [q, ws, scope, workspaces, regex]);
 
   // 三个 toggle 共同决定的客户端筛选正则
   const filterRegex = useMemo<RegExp | null>(() => {

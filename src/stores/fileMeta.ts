@@ -44,57 +44,66 @@ export const useFileMeta = create<FileMetaState>()(
   persist(
     (set, get) => ({
       byPath: {},
+      // byPath 一律按 pathKey 归一化键（大小写/分隔符无关），否则重命名后
+      // tab 用 '/'-路径、树节点用 '\'-路径会查不到对方，导致书签/颜色/标记/图标丢失。
       toggleBookmark: (path) =>
         set((s) => {
-          const cur = s.byPath[path] ?? {};
+          const k = pathKey(path);
+          const cur = s.byPath[k] ?? {};
           const next: FileMetaEntry = { ...cur, bookmark: !cur.bookmark };
-          return { byPath: { ...s.byPath, [path]: pruneEntry(next) } };
+          return { byPath: { ...s.byPath, [k]: pruneEntry(next) } };
         }),
       setColor: (path, color) =>
         set((s) => {
-          const cur = s.byPath[path] ?? {};
+          const k = pathKey(path);
+          const cur = s.byPath[k] ?? {};
           const next: FileMetaEntry = { ...cur, color: color || undefined };
-          return { byPath: { ...s.byPath, [path]: pruneEntry(next) } };
+          return { byPath: { ...s.byPath, [k]: pruneEntry(next) } };
         }),
       addMark: (path, mark) =>
         set((s) => {
-          const cur = s.byPath[path] ?? {};
+          const k = pathKey(path);
+          const cur = s.byPath[k] ?? {};
           const marks = Array.from(new Set([...(cur.marks ?? []), mark.trim()].filter(Boolean)));
-          return { byPath: { ...s.byPath, [path]: pruneEntry({ ...cur, marks }) } };
+          return { byPath: { ...s.byPath, [k]: pruneEntry({ ...cur, marks }) } };
         }),
       removeMark: (path, mark) =>
         set((s) => {
-          const cur = s.byPath[path] ?? {};
+          const k = pathKey(path);
+          const cur = s.byPath[k] ?? {};
           const marks = (cur.marks ?? []).filter((m) => m !== mark);
-          return { byPath: { ...s.byPath, [path]: pruneEntry({ ...cur, marks }) } };
+          return { byPath: { ...s.byPath, [k]: pruneEntry({ ...cur, marks }) } };
         }),
       movePath: (from, to) =>
         set((s) => {
           if (!from || !to || from === to) return s;
           const fromKey = pathKey(from);
           let changed = false;
+          const toKey = pathKey(to);
           const next: Record<string, FileMetaEntry> = {};
           for (const [p, meta] of Object.entries(s.byPath)) {
             const k = pathKey(p);
             if (k === fromKey) {
-              next[to] = meta;
+              next[toKey] = meta;
               changed = true;
             } else if (k.startsWith(`${fromKey}/`)) {
               // 文件夹移动：子条目按相对 suffix 拼到新前缀
               const suffix = k.slice(fromKey.length);
-              next[to + suffix] = meta;
+              next[toKey + suffix] = meta;
               changed = true;
             } else {
-              next[p] = meta;
+              next[k] = meta;
             }
           }
           return changed ? { byPath: next } : s;
         }),
       prune: (livePaths) =>
         set((s) => {
+          // livePaths 可能是原始分隔符路径，按 pathKey 归一化后比较
+          const liveKeys = new Set(Array.from(livePaths, (p) => pathKey(p)));
           const next: Record<string, FileMetaEntry> = {};
           for (const [path, meta] of Object.entries(s.byPath)) {
-            if (livePaths.has(path)) next[path] = meta;
+            if (liveKeys.has(pathKey(path))) next[path] = meta;
           }
           return { byPath: next };
         }),
@@ -110,6 +119,19 @@ export const useFileMeta = create<FileMetaState>()(
       // 在 preloadTauriStorage() 之后统一 rehydrate，否则首次 mutation 会用空 byPath
       // 覆盖掉持久化数据。
       skipHydration: true,
+      version: 1,
+      // v0 的 byPath 按原始路径键，v1 改用 pathKey 归一化键，迁移时重新归键。
+      migrate: (persisted) => {
+        const p = persisted as { byPath?: Record<string, FileMetaEntry> } | undefined;
+        if (p?.byPath) {
+          const next: Record<string, FileMetaEntry> = {};
+          for (const [path, meta] of Object.entries(p.byPath)) {
+            next[pathKey(path)] = meta;
+          }
+          p.byPath = next;
+        }
+        return p as FileMetaState;
+      },
     },
   ),
 );

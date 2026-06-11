@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
@@ -42,6 +42,7 @@ function findFiles(files: VaultFile[] | undefined, q: string, limit: number): Va
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const ws = useWorkspace((s) => s.activeWorkspace());
   const ensureVaultIndex = useVaultIndex((s) => s.ensure);
   const vaultFiles = useVaultIndex((s) => (ws ? s.index[ws.path]?.files : undefined));
@@ -237,27 +238,46 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         if (ws) openFile(ws.id, h.path);
       },
     }));
-    if (q) return [...fileCmds, ...filtered];
     // 无 query 时把最近打开排前
-    const recentCmds: Cmd[] = recents
-      .filter((r) => !ws || r.workspaceId === ws.id)
-      .slice(0, 8)
-      .map((r) => ({
-        id: `recent:${r.path}`,
-        group: "最近打开",
-        l1: r.name,
-        l2: displayPath(r.path),
-        ico: "clock",
-        run: () => {
-          if (ws) openFile(ws.id, r.path);
-        },
-      }));
-    return [...recentCmds, ...filtered];
+    const recentCmds: Cmd[] = q
+      ? []
+      : recents
+          .filter((r) => !ws || r.workspaceId === ws.id)
+          .slice(0, 8)
+          .map((r) => ({
+            id: `recent:${r.path}`,
+            group: "最近打开",
+            l1: r.name,
+            l2: displayPath(r.path),
+            ico: "clock",
+            run: () => {
+              if (ws) openFile(ws.id, r.path);
+            },
+          }));
+    const list = q ? [...fileCmds, ...filtered] : [...recentCmds, ...filtered];
+    // 按分组「首次出现顺序」稳定重排，使扁平索引与分组渲染顺序一致。
+    // 否则 group 声明非连续时（如 视图 组夹在 应用 组后面），方向键的 sel
+    // 会在视觉上向上/向下乱跳。
+    const order: string[] = [];
+    const byGroup = new Map<string, Cmd[]>();
+    for (const it of list) {
+      if (!byGroup.has(it.group)) {
+        byGroup.set(it.group, []);
+        order.push(it.group);
+      }
+      byGroup.get(it.group)!.push(it);
+    }
+    return order.flatMap((g) => byGroup.get(g)!);
   }, [q, baseCommands, fileMatches, recents, ws, openFile]);
 
   useEffect(() => {
     setSel(0);
   }, [q]);
+
+  // 键盘移动高亮时把当前项滚进可见区（与 GlobalSearch 一致）
+  useEffect(() => {
+    itemRefs.current[sel]?.scrollIntoView({ block: "nearest" });
+  }, [sel]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -317,6 +337,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                   <button
                     type="button"
                     key={it.id}
+                    ref={(el) => {
+                      itemRefs.current[idx] = el;
+                    }}
                     className={"cmdk-item" + (idx === sel ? " sel" : "")}
                     onClick={() => {
                       it.run();

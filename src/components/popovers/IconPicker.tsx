@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "../ui/Icon";
 import { useFileIcons } from "@/stores/fileIcons";
+import { pathKey } from "@/lib/utils";
 
 const SYMBOLS: Array<{ name: IconName; label: string }> = [
   { name: "note", label: "笔记" },
@@ -41,7 +42,7 @@ export function IconPicker({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const current = useFileIcons((s) => s.icons[path]);
+  const current = useFileIcons((s) => s.icons[pathKey(path)]);
   const set = useFileIcons((s) => s.set);
 
   useEffect(() => {

@@ -59,7 +59,6 @@ export function TitleBar() {
   const onSyncClick = () => {
     setToast({ stage: "uploading", message: "正在同步..." });
     setTimeout(() => setToast({ stage: "done", message: "已同步" }), 1500);
-    setTimeout(() => setToast(null), 3500);
   };
 
   return (

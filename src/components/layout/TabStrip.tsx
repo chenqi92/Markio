@@ -82,8 +82,7 @@ export function TabStrip() {
     message: string,
     timeout = stage === "error" ? 2500 : 1500,
   ) => {
-    setToast({ stage, message });
-    window.setTimeout(() => setToast(null), timeout);
+    setToast({ stage, message }, timeout);
   };
 
   const copyValue = async (value: string, message: string) => {

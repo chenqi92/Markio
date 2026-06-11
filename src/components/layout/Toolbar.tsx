@@ -40,7 +40,6 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
     const outcome = await saveActive();
     if (outcome === "ok") {
       setToast({ stage: "done", message: "已保存" });
-      setTimeout(() => setToast(null), 1500);
     } else if (outcome === "conflict") {
       const force = await confirmDialog({
         title: "覆盖磁盘版本？",
@@ -52,11 +51,9 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
         const id = useTabs.getState().activeId;
         if (id) await useTabs.getState().saveTab(id, true);
         setToast({ stage: "done", message: "已强制覆盖" });
-        setTimeout(() => setToast(null), 1500);
       }
     } else {
       setToast({ stage: "error", message: "保存失败" });
-      setTimeout(() => setToast(null), 2000);
     }
   };
 
@@ -151,7 +148,6 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
             onClick={() => {
               document.dispatchEvent(new CustomEvent(LOAD_ALL_REMOTE_IMAGES_EVENT));
               setToast({ stage: "done", message: "已加载外链图片" });
-              setTimeout(() => setToast(null), 1500);
             }}
           >
             <Icon name="image" size={13} />

@@ -36,7 +36,6 @@ export function About() {
   const setToast = useUI((s) => s.setToast);
   const flashToast = (stage: "done" | "error", message: string) => {
     setToast({ stage, message });
-    window.setTimeout(() => setToast(null), 2400);
   };
 
   // 4 张底部链接卡：用户协议 / 隐私 / 开源许可 / 数据导出。

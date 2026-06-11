@@ -53,21 +53,18 @@ export function McpServerSettings() {
     if (!mcpClientSnippet) return;
     await writeText(mcpClientSnippet);
     setToast({ stage: "done", message: "MCP 客户端配置已复制" });
-    setTimeout(() => setToast(null), 1500);
   };
 
   const copyEndpoint = async () => {
     if (!status?.port) return;
     await writeText(`http://127.0.0.1:${status.port}`);
     setToast({ stage: "done", message: "端点已复制" });
-    setTimeout(() => setToast(null), 1500);
   };
 
   const copyToken = async () => {
     if (!status?.token) return;
     await writeText(status.token);
     setToast({ stage: "done", message: "Token 已复制" });
-    setTimeout(() => setToast(null), 1500);
   };
 
   const MCP_TOOLS = [

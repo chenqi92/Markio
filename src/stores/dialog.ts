@@ -45,10 +45,21 @@ interface DialogState {
   settle: (value?: string | boolean | null) => void;
 }
 
+// 同一时刻只有一个 dialog 槽位。若已有未决请求又来新请求，必须先以「取消」
+// 默认值结算旧请求的 promise，否则旧的 await 调用方会永远挂起（如删除流程停在中途）。
+function settlePending(get: () => DialogState) {
+  const req = get().request;
+  if (!req) return;
+  if (req.kind === "alert") req.resolve();
+  else if (req.kind === "confirm") req.resolve(false);
+  else req.resolve(null);
+}
+
 export const useDialog = create<DialogState>((set, get) => ({
   request: null,
   alert: (options) =>
     new Promise<void>((resolve) => {
+      settlePending(get);
       set({
         request: {
           kind: "alert",
@@ -60,6 +71,7 @@ export const useDialog = create<DialogState>((set, get) => ({
     }),
   confirm: (options) =>
     new Promise<boolean>((resolve) => {
+      settlePending(get);
       set({
         request: {
           kind: "confirm",
@@ -72,6 +84,7 @@ export const useDialog = create<DialogState>((set, get) => ({
     }),
   prompt: (options) =>
     new Promise<string | null>((resolve) => {
+      settlePending(get);
       set({
         request: {
           kind: "prompt",

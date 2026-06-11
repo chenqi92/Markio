@@ -34,7 +34,6 @@ export function PropertyExplorer() {
       setData(list);
     } catch (e) {
       setToast({ stage: "error", message: `扫描失败：${(e as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
     } finally {
       setLoading(false);
     }

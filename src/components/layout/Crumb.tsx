@@ -53,7 +53,6 @@ export function Crumb() {
 
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
-    setTimeout(() => setToast(null), 1500);
   };
 
   // 在仓库根之下还原每段对应的绝对路径：第 0 段 = ws.path，后续累加。

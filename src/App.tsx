@@ -529,8 +529,7 @@ export default function App() {
         void (async () => {
           const outcome = await saveActive();
           if (outcome === "ok") {
-            setToast({ stage: "done", message: "已保存" });
-            setTimeout(() => setToast(null), 1500);
+            setToast({ stage: "done", message: "已保存" }, 1500);
           } else if (outcome === "conflict") {
             const force = await confirmDialog({
               title: "覆盖磁盘版本？",
@@ -540,8 +539,18 @@ export default function App() {
             });
             if (force) {
               const id = useTabs.getState().activeId;
-              if (id) void useTabs.getState().saveTab(id, true);
+              if (id) {
+                const forced = await useTabs.getState().saveTab(id, true);
+                setToast(
+                  forced === "ok"
+                    ? { stage: "done", message: "已强制覆盖" }
+                    : { stage: "error", message: "覆盖保存失败" },
+                );
+              }
             }
+          } else {
+            // outcome === "error"：保存失败必须可见，否则用户以为已存盘
+            setToast({ stage: "error", message: "保存失败" });
           }
         })();
       },
@@ -549,8 +558,7 @@ export default function App() {
         (async () => {
           const ws = useWorkspace.getState().activeWorkspace();
           if (!ws) {
-            setToast({ stage: "error", message: "请先打开一个仓库" });
-            setTimeout(() => setToast(null), 2000);
+            setToast({ stage: "error", message: "请先打开一个仓库" }, 2000);
             return;
           }
           const name = await promptDialog({
@@ -581,8 +589,7 @@ export default function App() {
               setToast({
                 stage: "error",
                 message: `创建失败：${e2.message}`,
-              });
-              setTimeout(() => setToast(null), 2500);
+              }, 2500);
             }
           }
         })();

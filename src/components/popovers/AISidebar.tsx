@@ -363,13 +363,11 @@ function RagIndexCard({ ws }: { ws: Workspace }) {
     try {
       await reindex(ws.path);
       setToast({ stage: "done", message: "索引构建已开始" });
-      setTimeout(() => setToast(null), 1500);
     } catch (e) {
       setToast({
         stage: "error",
         message: `构建失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     } finally {
       setBusy(false);
     }

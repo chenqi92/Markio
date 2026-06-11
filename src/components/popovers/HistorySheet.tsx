@@ -76,7 +76,6 @@ export function HistorySheet() {
         stage: "error",
         message: `读取失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -94,13 +93,11 @@ export function HistorySheet() {
       const c = await api.historyRead(s.path);
       updateContent(tabId, c);
       setToast({ stage: "done", message: "已恢复（记得保存）" });
-      setTimeout(() => setToast(null), 2000);
     } catch (e) {
       setToast({
         stage: "error",
         message: `恢复失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

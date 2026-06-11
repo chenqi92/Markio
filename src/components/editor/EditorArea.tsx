@@ -311,7 +311,6 @@ export function EditorArea({ onMeta }: Props) {
     ) => {
       if (!tab || !workspace) {
         setToast({ stage: "error", message: "请先打开一个仓库文件" });
-        setTimeout(() => setToast(null), 2200);
         return;
       }
       const settings = useSettings.getState();
@@ -385,14 +384,12 @@ export function EditorArea({ onMeta }: Props) {
         setToast({
           stage: warnings.length > 0 ? "error" : "done",
           message: warnings[0] ?? "图片已插入",
-        });
-        setTimeout(() => setToast(null), warnings.length > 0 ? 3200 : 1800);
+        }, warnings.length > 0 ? 3200 : 1800);
       } catch (e) {
         setToast({
           stage: "error",
           message: `图片处理失败：${(e as Error).message}`,
         });
-        setTimeout(() => setToast(null), 3000);
       }
     },
     [setToast, tab, workspace],
@@ -439,7 +436,6 @@ export function EditorArea({ onMeta }: Props) {
               stage: "error",
               message: `打开 ${p.split(/[\\/]/).pop()} 失败：${(e as Error).message}`,
             });
-            setTimeout(() => setToast(null), 2400);
           }
         } else {
           remaining.push(p);
@@ -474,7 +470,6 @@ export function EditorArea({ onMeta }: Props) {
         : undefined;
       if (!t || !ws) {
         setToast({ stage: "error", message: "请先打开一个仓库文件" });
-        setTimeout(() => setToast(null), 2200);
         return;
       }
       const settings = useSettings.getState();
@@ -518,7 +513,6 @@ export function EditorArea({ onMeta }: Props) {
           stage: "error",
           message: `图片处理失败：${(e as Error).message}`,
         });
-        setTimeout(() => setToast(null), 3000);
       }
     };
     void (async () => {
@@ -618,7 +612,6 @@ export function EditorArea({ onMeta }: Props) {
             : win,
         toast: (message) => {
           setToast({ stage: "error", message });
-          window.setTimeout(() => setToast(null), 1600);
         },
       });
       setEditorMenu({ x: info.coords.x, y: info.coords.y, items });
@@ -640,7 +633,6 @@ export function EditorArea({ onMeta }: Props) {
             : win,
         toast: (message) => {
           setToast({ stage: "done", message });
-          window.setTimeout(() => setToast(null), 1200);
         },
       });
       setEditorMenu({ x: info.coords.x, y: info.coords.y, items });

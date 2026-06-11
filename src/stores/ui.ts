@@ -64,8 +64,20 @@ interface UIState {
   openExportSheet: (v: boolean) => void;
   openMultiCopy: (v: boolean) => void;
   setBlockMenuAt: (pos: { x: number; y: number } | null) => void;
-  setToast: (t: UIState["toast"]) => void;
+  /** 显示一条 toast。store 自身按 stage 默认时长（done 1.8s / error 4s，
+   *  uploading 常驻）或显式 ttl 自动消失，并用 token 保证只有"自己"那条
+   *  会被定时器清掉，避免旧 toast 的定时器误清新 toast（历史上的竞态）。
+   *  传 null 立即清除当前 toast。 */
+  setToast: (t: UIState["toast"], ttl?: number) => void;
 }
+
+let toastToken = 0;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+const TOAST_DEFAULT_TTL: Record<NonNullable<UIState["toast"]>["stage"], number | null> = {
+  uploading: null, // 进行中：常驻，等结果 toast 覆盖或显式清除
+  done: 1800,
+  error: 4000,
+};
 
 export const useUI = create<UIState>()(
   persist(
@@ -139,7 +151,22 @@ export const useUI = create<UIState>()(
       openExportSheet: (exportSheetOpen) => set({ exportSheetOpen }),
       openMultiCopy: (multiCopyOpen) => set({ multiCopyOpen }),
       setBlockMenuAt: (blockMenuAt) => set({ blockMenuAt }),
-      setToast: (toast) => set({ toast }),
+      setToast: (toast, ttl) => {
+        const myToken = ++toastToken;
+        if (toastTimer) {
+          clearTimeout(toastTimer);
+          toastTimer = null;
+        }
+        set({ toast });
+        if (!toast) return;
+        const dur = ttl ?? TOAST_DEFAULT_TTL[toast.stage];
+        if (dur && dur > 0) {
+          toastTimer = setTimeout(() => {
+            // 只有当前仍是「我」这条 toast 时才清，期间被新 toast 覆盖则放手
+            if (toastToken === myToken) set({ toast: null });
+          }, dur);
+        }
+      },
     }),
     {
       name: "markio.ui.v1",

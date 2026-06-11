@@ -139,7 +139,6 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
         stage: "error",
         message: `${providerDisplayName(provider)} 未检测到二进制`,
       });
-      setTimeout(() => setToast(null), 2500);
       return;
     }
 
@@ -216,7 +215,6 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
       await api.agentCancel(running);
     } catch (err) {
       setToast({ stage: "error", message: `取消失败：${(err as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

@@ -59,7 +59,6 @@ export function AttachmentSection() {
 
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
-    setTimeout(() => setToast(null), 1500);
   };
 
   useEffect(() => {
@@ -92,7 +91,6 @@ export function AttachmentSection() {
         stage: "error",
         message: `打开失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

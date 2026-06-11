@@ -68,7 +68,6 @@ export function MobileDevices() {
       await api.p2pSetActiveWorkspace(ws?.path ?? null);
     } catch (e) {
       setToast({ stage: "error", message: `P2P 启动失败：${(e as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -90,7 +89,6 @@ export function MobileDevices() {
       setPairCode(code);
     } catch (e) {
       setToast({ stage: "error", message: (e as Error).message });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -126,10 +124,8 @@ export function MobileDevices() {
       });
       setPreference("mobileDevices", next);
       setToast({ stage: "done", message: `已与 ${r.name || peer.name} 配对` });
-      setTimeout(() => setToast(null), 2000);
     } catch (e) {
       setToast({ stage: "error", message: `配对失败：${(e as Error).message}` });
-      setTimeout(() => setToast(null), 2800);
     } finally {
       setBusy(null);
     }
@@ -138,19 +134,16 @@ export function MobileDevices() {
   const syncWith = async (device: (typeof devices)[number]) => {
     if (!device.peerId || !device.host || !device.port || !device.token) {
       setToast({ stage: "error", message: "该设备缺少配对信息，请重新配对" });
-      setTimeout(() => setToast(null), 2500);
       return;
     }
     const ws = useWorkspace.getState().activeWorkspace();
     if (!ws) {
       setToast({ stage: "error", message: "请先打开一个仓库" });
-      setTimeout(() => setToast(null), 2500);
       return;
     }
     const sync = useSync.getState();
     if (sync.isInflight(ws.path)) {
       setToast({ stage: "error", message: "当前仓库正在同步中" });
-      setTimeout(() => setToast(null), 2500);
       return;
     }
     setBusy(device.id);
@@ -200,7 +193,6 @@ export function MobileDevices() {
     } finally {
       sync.setInflight(ws.path, false);
       setBusy(null);
-      setTimeout(() => setToast(null), 2800);
     }
   };
 

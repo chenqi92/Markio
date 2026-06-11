@@ -845,7 +845,6 @@ export function Preview({
           stage: "error",
           message: `未找到笔记：${name}`,
         });
-        window.setTimeout(() => useUI.getState().setToast(null), 1800);
         return;
       }
       const href = a.getAttribute("href");

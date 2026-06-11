@@ -106,6 +106,10 @@ export const useFileMeta = create<FileMetaState>()(
     {
       name: "markio.fileMeta.v1",
       storage: createJSONStorage(() => tauriStorage),
+      // 与其它 store 一致：跳过模块求值时的自动水合，等 main.tsx bootstrap()
+      // 在 preloadTauriStorage() 之后统一 rehydrate，否则首次 mutation 会用空 byPath
+      // 覆盖掉持久化数据。
+      skipHydration: true,
     },
   ),
 );

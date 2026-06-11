@@ -61,10 +61,8 @@ export function WeChatSheet({ onClose }: { onClose: () => void }) {
       } else {
         setToast({ stage: "done", message: "已复制 · 粘贴到公众号编辑器即可" });
       }
-      setTimeout(() => setToast(null), 3200);
     } catch {
       setToast({ stage: "error", message: "复制失败" });
-      setTimeout(() => setToast(null), 2000);
     }
   };
 

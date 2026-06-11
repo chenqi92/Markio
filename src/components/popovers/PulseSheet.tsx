@@ -85,7 +85,6 @@ export function PulseSheet() {
       setPreview({ snapshotPath: e.snapshotPath, content: c });
     } catch (err) {
       setToast({ stage: "error", message: `读取失败：${(err as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -95,7 +94,6 @@ export function PulseSheet() {
       close();
     } catch (err) {
       setToast({ stage: "error", message: `打开失败：${(err as Error).message}` });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

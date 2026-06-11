@@ -99,8 +99,7 @@ export function TagLandscape() {
   const active = activeTag ? entries.find((e) => e.tag === activeTag) ?? null : null;
 
   const flash = (stage: "done" | "error", message: string, ms = stage === "error" ? 2500 : 1500) => {
-    setToast({ stage, message });
-    window.setTimeout(() => setToast(null), ms);
+    setToast({ stage, message }, ms);
   };
 
   /** 在所有相关仓库重建 vault index（拿到新 tag 后让标签云立即更新）。 */

@@ -35,7 +35,6 @@ export function Sidebar() {
   const setToast = useUI((s) => s.setToast);
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
-    setTimeout(() => setToast(null), 1500);
   };
 
   const handleAdd = async () => {

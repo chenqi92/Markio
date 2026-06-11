@@ -78,10 +78,8 @@ export function WebClipper() {
     try {
       await writeText(text);
       setToast({ stage: "done", message: `${label}已复制` });
-      setTimeout(() => setToast(null), 1600);
     } catch {
       setToast({ stage: "error", message: "复制失败" });
-      setTimeout(() => setToast(null), 1600);
     }
   };
 

@@ -88,7 +88,6 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
         target === "today" ? dailyPath(ws.path) : inboxPath(ws.path);
       await appendToFile(path, text);
       setToast({ stage: "done", message: "已捕获到笔记" });
-      setTimeout(() => setToast(null), 1500);
       onClose();
     } catch (e) {
       setErr(parseError(e).message);

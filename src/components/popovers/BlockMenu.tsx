@@ -19,7 +19,6 @@ export function BlockMenu({ x, y, onClose }: { x: number; y: number; onClose: ()
   const setToast = useUI((s) => s.setToast);
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
-    window.setTimeout(() => setToast(null), 1200);
   };
 
   const copyBlock = async () => {

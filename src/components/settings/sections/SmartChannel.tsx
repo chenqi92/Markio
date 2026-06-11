@@ -76,10 +76,8 @@ export function SmartChannelSettings() {
     try {
       await writeText(channelId);
       setToast({ stage: "done", message: "通道 ID 已复制" });
-      setTimeout(() => setToast(null), 1800);
     } catch {
       setToast({ stage: "error", message: "复制失败" });
-      setTimeout(() => setToast(null), 1800);
     }
   };
 

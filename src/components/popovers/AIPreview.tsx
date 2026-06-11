@@ -90,7 +90,6 @@ export function AIPreview({ name, onClose }: Props) {
     const stem = name;
     insertBlock(`[[${stem}]] `);
     setToast({ stage: "done", message: "已在当前笔记插入引用" });
-    setTimeout(() => setToast(null), 1500);
   };
 
   if (!path) {

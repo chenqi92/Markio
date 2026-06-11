@@ -203,8 +203,7 @@ export function MultiCopySheet({ onClose }: { onClose: () => void }) {
     message: string,
     ms = 1800,
   ) => {
-    setToast({ stage, message });
-    setTimeout(() => setToast(null), ms);
+    setToast({ stage, message }, ms);
   };
 
   const doCopy = async () => {

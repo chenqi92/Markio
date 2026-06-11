@@ -606,11 +606,9 @@ function TreeContextMenu({
 
   const flash = (msg: string) => {
     setToast({ stage: "done", message: msg });
-    setTimeout(() => setToast(null), 1800);
   };
   const errToast = (msg: string) => {
     setToast({ stage: "error", message: msg });
-    setTimeout(() => setToast(null), 2500);
   };
 
   // 把"显示但不可用"的菜单项也放在 menu 里，让 23 项分组结构稳定；

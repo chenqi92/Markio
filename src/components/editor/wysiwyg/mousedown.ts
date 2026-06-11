@@ -75,7 +75,6 @@ export const wysiwygMousedown = EditorView.domEventHandlers({
         useUI
           .getState()
           .setToast({ stage: "error", message: `未找到笔记：${wikiHost.textContent}` });
-        window.setTimeout(() => useUI.getState().setToast(null), 1800);
       }
       return;
     }

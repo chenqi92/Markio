@@ -56,7 +56,6 @@ export function TrashSection() {
         void useRag.getState().reindexFile(ws.path, it.original);
       }
       setToast({ stage: "done", message: "已恢复" });
-      setTimeout(() => setToast(null), 1500);
       await refreshTree(ws.id);
       await reload();
     } catch (e) {
@@ -64,7 +63,6 @@ export function TrashSection() {
         stage: "error",
         message: `恢复失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -84,7 +82,6 @@ export function TrashSection() {
         stage: "error",
         message: `删除失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
@@ -104,7 +101,6 @@ export function TrashSection() {
         stage: "error",
         message: `清空失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

@@ -22,8 +22,7 @@ export function NewMenu({
   const confirmDialog = useDialog((s) => s.confirm);
 
   const toast = (stage: "done" | "error", message: string, ttl = 2000) => {
-    setToast({ stage, message });
-    setTimeout(() => setToast(null), ttl);
+    setToast({ stage, message }, ttl);
   };
 
   // 所有入口先 onClose() 再做异步交互。dialog/picker 是模态阻塞的，菜单留着会

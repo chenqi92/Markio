@@ -90,7 +90,6 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
       setStage("done");
       if (!fmtObj.isFile) {
         setToast({ stage: "done", message: "已复制到剪贴板" });
-        setTimeout(() => setToast(null), 1500);
         onClose();
       }
     } catch (e) {
@@ -155,11 +154,9 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
                             body: tab.content,
                           });
                           setToast({ stage: "done", message: "已在 Mail.app 创建新邮件" });
-                          setTimeout(() => setToast(null), 1500);
                           onClose();
                         } catch (e) {
                           setToast({ stage: "error", message: `Mail 分享失败：${String(e)}` });
-                          setTimeout(() => setToast(null), 2500);
                         }
                       }}
                     >
@@ -180,11 +177,9 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
                             body: tab.content,
                           });
                           setToast({ stage: "done", message: "已添加到 Reminders 默认列表" });
-                          setTimeout(() => setToast(null), 1500);
                           onClose();
                         } catch (e) {
                           setToast({ stage: "error", message: `Reminders 分享失败：${String(e)}` });
-                          setTimeout(() => setToast(null), 2500);
                         }
                       }}
                     >

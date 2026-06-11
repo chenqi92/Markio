@@ -185,7 +185,6 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           } catch (e) {
             setToast({ stage: "error", message: `智能通道：${(e as Error).message}` });
           }
-          setTimeout(() => useUI.getState().setToast(null), 4200);
         },
       },
       ...THEMES.map(

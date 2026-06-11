@@ -122,7 +122,6 @@ export const useTabs = create<TabsState>((set, get) => ({
         stage: "error",
         message: `无法读取文件：${(e as Error).message}`,
       });
-      setTimeout(() => useUI.getState().setToast(null), 2500);
       return;
     }
     const tab: TabInfo = {
@@ -136,13 +135,27 @@ export const useTabs = create<TabsState>((set, get) => ({
       scrollTop: 0,
       pinned: false,
     };
-    set((s) => ({
-      tabs: [...s.tabs, tab],
-      // silent = true 时不切活跃，给 session restore 用，避免每打开一个就
-      // 切一次 active 把编辑器频繁 unmount/mount。
-      activeId: silent ? s.activeId : tab.id,
-      sigs: { ...s.sigs, [tab.id]: sig },
-    }));
+    let appended = true;
+    set((s) => {
+      // await api.open 期间可能已有并发 openFile 为同一路径建了 tab
+      // （如 OS open 队列不 await 地 flush 多个 openPath）。这里再查一次去重，
+      // 避免同一文件出现两个独立缓冲、保存其一让另一个 sig 失效误报冲突。
+      const dup = s.tabs.find(
+        (t) => t.workspaceId === workspaceId && t.path === path,
+      );
+      if (dup) {
+        appended = false;
+        return silent ? {} : { activeId: dup.id };
+      }
+      return {
+        tabs: [...s.tabs, tab],
+        // silent = true 时不切活跃，给 session restore 用，避免每打开一个就
+        // 切一次 active 把编辑器频繁 unmount/mount。
+        activeId: silent ? s.activeId : tab.id,
+        sigs: { ...s.sigs, [tab.id]: sig },
+      };
+    });
+    if (!appended) return;
     useRecents.getState().push(workspaceId, path, basename(path));
     recordOp("file:open", {
       size: sizeBucket(content.length),
@@ -151,11 +164,10 @@ export const useTabs = create<TabsState>((set, get) => ({
   },
 
   openPath: async (path, opts) => {
-    const norm = path.replace(/\\/g, "/");
     const ws = useWorkspace.getState();
-    let belong = ws.workspaces.find(
-      (w) => norm === w.path || norm.startsWith(w.path.replace(/\\/g, "/") + "/"),
-    );
+    // 用 pathContains（大小写规范化 + 盘符无关）匹配归属仓库，避免仅大小写/
+    // 反斜杠不同就匹配失败而把文件父目录重复注册成嵌套新仓库。
+    let belong = ws.workspaces.find((w) => pathContains(w.path, path));
     if (!belong) {
       const parent = dirname(path);
       const id = await ws.addWorkspace(parent);
@@ -300,9 +312,12 @@ export const useTabs = create<TabsState>((set, get) => ({
         }
       }
       set((s) => ({
-        tabs: s.tabs.map((t) =>
-          t.id === id ? { ...t, baseline: content, dirty: false } : t,
-        ),
+        tabs: s.tabs.map((t) => {
+          if (t.id !== id) return t;
+          // 保存期间用户可能继续输入：以刚落盘的 content 作为新 baseline，
+          // dirty 取决于当前缓冲是否仍等于已落盘内容，避免把 in-flight 编辑误标为已保存。
+          return { ...t, baseline: content, dirty: t.content !== content };
+        }),
         sigs: { ...s.sigs, [id]: newSig },
       }));
       recordOp("file:save", {

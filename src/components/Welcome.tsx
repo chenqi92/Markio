@@ -40,8 +40,7 @@ export function Welcome() {
   useEffect(() => setLogoErr(false), [dark]);
 
   const flash = (stage: "done" | "error", msg: string, ms = stage === "error" ? 2500 : 1500) => {
-    setToast({ stage, message: msg });
-    window.setTimeout(() => setToast(null), ms);
+    setToast({ stage, message: msg }, ms);
   };
 
   // 模板入口：没仓库先拉一个；有仓库就直接在根目录 createNew + openFile。

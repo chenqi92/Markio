@@ -116,7 +116,6 @@ export function AIAssistantMessage({
     try {
       await writeText(text);
       setToast({ stage: "done", message: "已复制" });
-      setTimeout(() => setToast(null), 1500);
     } catch {
       /* ignore */
     }
@@ -125,13 +124,11 @@ export function AIAssistantMessage({
   const insertToTab = () => {
     insertBlock("\n" + text + "\n", { atLineStart: true });
     setToast({ stage: "done", message: "已插入当前笔记" });
-    setTimeout(() => setToast(null), 1500);
   };
 
   const saveAsNote = async () => {
     if (!ws) {
       setToast({ stage: "error", message: "请先打开一个仓库" });
-      setTimeout(() => setToast(null), 2000);
       return;
     }
     const ymd = new Date().toISOString().slice(0, 10);
@@ -159,7 +156,6 @@ export function AIAssistantMessage({
       } else {
         setToast({ stage: "error", message: err.message });
       }
-      setTimeout(() => setToast(null), 2500);
     }
   };
 

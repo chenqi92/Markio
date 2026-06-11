@@ -12,6 +12,7 @@ import { useStreak } from "./stores/streak";
 import { useRecents } from "./stores/recents";
 import { usePinnedPlan } from "./stores/pinnedPlan";
 import { useFileIcons } from "./stores/fileIcons";
+import { useFileMeta } from "./stores/fileMeta";
 import { useSession } from "./stores/session";
 import { injectSyntaxTheme } from "./lib/syntax-theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -107,6 +108,7 @@ async function bootstrap() {
       useRecents.persist.rehydrate(),
       usePinnedPlan.persist.rehydrate(),
       useFileIcons.persist.rehydrate(),
+      useFileMeta.persist.rehydrate(),
       useSession.persist.rehydrate(),
     ]),
   );

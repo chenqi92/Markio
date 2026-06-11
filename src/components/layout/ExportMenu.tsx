@@ -100,13 +100,11 @@ export function ExportMenu({
         stage: "done",
         message: id.startsWith("copy") ? "已复制到剪贴板" : "导出完成",
       });
-      setTimeout(() => setToast(null), 2000);
     } catch (e) {
       setToast({
         stage: "error",
         message: `导出失败：${(e as Error).message}`,
       });
-      setTimeout(() => setToast(null), 2500);
     }
     onClose();
   };

@@ -48,7 +48,6 @@ export function WxAssistant() {
       }
       setTestMsg("✓ 已发送，请在微信里查收");
       setToast({ stage: "done", message: "测试消息已发送" });
-      setTimeout(() => setToast(null), 2400);
     } catch (e) {
       setTestMsg(`✗ ${(e as Error).message}`);
     } finally {
@@ -172,7 +171,6 @@ export function WxAssistant() {
                   stage: r.ok ? "done" : "error",
                   message: r.ok ? "摘要已推送" : `推送失败：${r.message}`,
                 });
-                setTimeout(() => setToast(null), 2400);
               } finally {
                 setDigestBusy(false);
               }

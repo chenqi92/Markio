@@ -1005,15 +1005,16 @@ mod tests {
     }
 
     #[test]
-    fn render_outputs_plantuml_blocks_with_optional_server() {
+    fn render_plantuml_block_ignores_in_document_server_attr() {
+        // 安全：文档内 server="..." 不再透传到 data-plantuml-server，
+        // 否则预览不可信 .md 会自动向该地址发请求（SSRF / 隐私信标）。
         let src =
             "```plantuml server=\"https://example.test/plantuml\"\n@startuml\nA -> B\n@enduml\n```";
         let res = render(src, None, &[]);
         assert!(res.html.contains("class=\"plantuml-block\""));
         assert!(res.html.contains("data-plantuml="));
-        assert!(res
-            .html
-            .contains("data-plantuml-server=\"https://example.test/plantuml\""));
+        assert!(!res.html.contains("data-plantuml-server"));
+        assert!(!res.html.contains("example.test"));
         assert!(!res.html.contains("data-lang=\"plantuml\""));
     }
 }

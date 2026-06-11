@@ -44,9 +44,20 @@ struct Doc {
     content: String,
 }
 
-fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Vec<Doc> {
+struct CollectResult {
+    docs: Vec<Doc>,
+    /// 仓库里见到但未收进 docs 的现存 .md（超大 / 超预算 / 读失败）。
+    /// 它们仍然存在，prune 时必须保留其已有索引，不能当成"已删除"删掉。
+    skipped: Vec<String>,
+    /// 是否完整遍历（未触发文件数 / 深度上限）。不完整时不可做删除式 prune。
+    complete: bool,
+}
+
+fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> CollectResult {
     let mut out = Vec::new();
     let mut total_bytes = 0u64;
+    let mut skipped: Vec<String> = Vec::new();
+    let mut capped = false;
     let ignore = IgnoreRules::load(workspace);
     WalkCtx {
         workspace,
@@ -54,8 +65,12 @@ fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Vec<D
         max_total_bytes,
         ignore: &ignore,
     }
-    .walk(workspace, 0, &mut out, &mut total_bytes);
-    out
+    .walk(workspace, 0, &mut out, &mut total_bytes, &mut skipped, &mut capped);
+    CollectResult {
+        docs: out,
+        skipped,
+        complete: !capped,
+    }
 }
 
 struct WalkCtx<'a> {
@@ -66,13 +81,24 @@ struct WalkCtx<'a> {
 }
 
 impl WalkCtx<'_> {
-    fn walk(&self, dir: &Path, depth: usize, out: &mut Vec<Doc>, total_bytes: &mut u64) {
+    fn walk(
+        &self,
+        dir: &Path,
+        depth: usize,
+        out: &mut Vec<Doc>,
+        total_bytes: &mut u64,
+        skipped: &mut Vec<String>,
+        capped: &mut bool,
+    ) {
         if depth > 12 || out.len() >= self.max_files {
+            // 触发深度 / 文件数上限 → 遍历不完整，标记后让上层跳过删除式 prune
+            *capped = true;
             return;
         }
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             if out.len() >= self.max_files {
+                *capped = true;
                 return;
             }
             let path = e.path();
@@ -99,7 +125,7 @@ impl WalkCtx<'_> {
                 continue;
             }
             if ft.is_dir() {
-                self.walk(&path, depth + 1, out, total_bytes);
+                self.walk(&path, depth + 1, out, total_bytes, skipped, capped);
             } else if ft.is_file() {
                 if !is_md(&name_lower) {
                     continue;
@@ -109,9 +135,12 @@ impl WalkCtx<'_> {
                 if size > MAX_INDEX_FILE_SIZE
                     || total_bytes.saturating_add(size) > self.max_total_bytes
                 {
+                    // 超大 / 超预算：文件仍在，记入 skipped 以免被 prune 误删既有索引
+                    skipped.push(path.to_string_lossy().to_string());
                     continue;
                 }
                 let Ok(content) = fs::read_to_string(&path) else {
+                    skipped.push(path.to_string_lossy().to_string());
                     continue;
                 };
                 *total_bytes = total_bytes.saturating_add(size);
@@ -153,6 +182,33 @@ fn build_stem_index(docs: &[Doc]) -> HashMap<String, Vec<PathBuf>> {
     map
 }
 
+/// 从 docs 表里现有全部文档构建 stem 索引，供单文件重建解析 [[wiki]] 用。
+/// 否则 reindex_file 传空索引会把该文档的所有 wiki 边解析成 None 并删光，
+/// 直到下一次全量重建才恢复（保存后反链/图谱里该笔记的出链全消失）。
+fn build_stem_index_from_db(handle: &Arc<RagHandle>) -> HashMap<String, Vec<PathBuf>> {
+    let mut map: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    let Ok(db) = handle.db.lock() else {
+        return map;
+    };
+    let Ok(mut stmt) = db.conn.prepare("SELECT path FROM docs") else {
+        return map;
+    };
+    let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else {
+        return map;
+    };
+    for path in rows.flatten() {
+        let pb = PathBuf::from(&path);
+        if let Some(s) = pb
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .map(|s| s.to_ascii_lowercase())
+        {
+            map.entry(s).or_default().push(pb);
+        }
+    }
+    map
+}
+
 /// 全量重建索引。
 pub fn reindex_workspace<F, C>(
     handle: Arc<RagHandle>,
@@ -165,7 +221,11 @@ where
     C: Fn() -> bool,
 {
     let workspace = PathBuf::from(&handle.workspace);
-    let docs = collect_md(&workspace, 20_000, MAX_INDEX_TOTAL_BYTES);
+    let CollectResult {
+        docs,
+        skipped,
+        complete: scan_complete,
+    } = collect_md(&workspace, 20_000, MAX_INDEX_TOTAL_BYTES);
     let total = docs.len() as u32;
 
     {
@@ -183,11 +243,13 @@ where
 
     let stem_index = build_stem_index(&docs);
 
-    // 先收集仓库里现存路径，便于结束后删除已不存在的 docs
-    let live_paths: std::collections::HashSet<String> = docs
+    // 现存路径 = 收进索引的 + 因超大/超预算/读失败跳过但仍存在的。
+    // 后者必须保留，否则 prune 会把"长大超过 4MB 的笔记""预算外的笔记"从索引里永久删掉。
+    let mut live_paths: std::collections::HashSet<String> = docs
         .iter()
         .map(|d| d.path.to_string_lossy().to_string())
         .collect();
+    live_paths.extend(skipped);
 
     let mut last_err: Option<String> = None;
     let mut last_progress_emit = Instant::now()
@@ -230,10 +292,13 @@ where
         }
     }
 
-    // 清理已不存在的 docs
+    // 清理已不存在的 docs —— 仅在完整遍历时执行。遍历因文件数/深度上限被截断时，
+    // 未走到的文档不在 live_paths 里，若照删会把它们从索引误删（宁可留旧索引）。
     {
         let mut db = handle.db.lock().map_err(|e| format!("rag lock: {e}"))?;
-        prune_missing(&mut db, &live_paths)?;
+        if scan_complete {
+            prune_missing(&mut db, &live_paths)?;
+        }
         db.set_meta("embedding_provider", cfg.provider.as_str())?;
         db.set_meta("embedding_model", &cfg.model)?;
         db.set_meta(
@@ -303,8 +368,9 @@ pub fn reindex_file(handle: Arc<RagHandle>, cfg: EmbedConfig, path: &Path) -> Re
     {
         return Ok(false);
     }
-    // 单文件不重建 stem 索引；wiki 解析允许 target_path 为空（仅记 label）
-    let stem_index: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    // 用 docs 表里全部已索引文档构建 stem 索引，使单文件保存时 [[wiki]] 仍能解析到
+    // 目标路径，不再把本文档的所有 wiki 边删成空（保存后出链/图谱消失的 bug）。
+    let stem_index = build_stem_index_from_db(&handle);
     upsert_doc(&handle, &cfg, &doc, &workspace, &stem_index)?;
     Ok(true)
 }

@@ -6,10 +6,23 @@
 //!
 //! 不直接读 secret store —— 调用方在拉起前自行把 API Key 通过 secrets 拿出来。
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// 共享的 reqwest 客户端：每个文件 embed 都新建 Client 会丢失连接池，
+/// 对云端等于每个文件一次 TCP+TLS 握手。整库重建几千文件时开销巨大。
+fn embed_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap_or_default()
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -87,10 +100,7 @@ async fn call_ollama(cfg: &EmbedConfig, inputs: &[String]) -> Result<EmbedResult
         "input": inputs,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("初始化 reqwest 失败：{e}"))?;
+    let client = embed_http_client();
     let resp = client
         .post(&endpoint)
         .json(&payload)
@@ -156,10 +166,7 @@ async fn call_openai(cfg: &EmbedConfig, inputs: &[String]) -> Result<EmbedResult
         "model": cfg.model,
         "input": inputs,
     });
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("初始化 reqwest 失败：{e}"))?;
+    let client = embed_http_client();
     let resp = client
         .post(&endpoint)
         .bearer_auth(api_key)

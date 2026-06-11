@@ -11,7 +11,20 @@
 // Ollama 暂无官方 rerank endpoint；如果用户用 ollama 跑 reranker，建议在外面
 // 套一层 infinity-emb 或类似服务，再用本 provider 调过去。
 
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
+
+/// 共享 reqwest 客户端，复用连接池（避免每次 rerank 重新握手）。
+fn rerank_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_default()
+    })
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,10 +96,7 @@ pub fn rerank_blocking(
         .build()
         .map_err(|e| format!("rerank runtime: {e}"))?;
     rt.block_on(async move {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client = rerank_http_client();
         let mut builder = client.post(&url).header("content-type", "application/json");
         if let Some(k) = cfg.api_key.as_ref().filter(|s| !s.is_empty()) {
             builder = builder.bearer_auth(k);

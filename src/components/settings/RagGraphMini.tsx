@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import cytoscape from "cytoscape";
-import type { Core } from "cytoscape";
+import type { Core, ElementDefinition, LayoutOptions } from "cytoscape";
 import { useTabs } from "@/stores/tabs";
 
 interface GraphNode {
@@ -32,41 +31,46 @@ export function RagGraphMini({ nodes, edges, height = 320 }: Props) {
   const openPath = useTabs((s) => s.openPath);
 
   useEffect(() => {
-    if (!hostRef.current) return;
     if (cyRef.current) {
       cyRef.current.destroy();
       cyRef.current = null;
     }
-    if (nodes.length === 0) return;
+    if (!hostRef.current || nodes.length === 0) return;
 
-    const elements: cytoscape.ElementDefinition[] = [];
-    const validIds = new Set(nodes.map((n) => n.id));
-    for (const n of nodes) {
-      elements.push({
-        data: {
-          id: String(n.id),
-          label: basename(n.path),
-          path: n.path,
-          inDeg: n.inDegree,
-          weight: 6 + Math.sqrt(n.inDegree + n.outDegree) * 4,
-        },
-      });
-    }
-    for (const e of edges) {
-      if (!validIds.has(e.from) || !validIds.has(e.to)) continue;
-      elements.push({
-        data: {
-          id: `e-${e.from}-${e.to}`,
-          source: String(e.from),
-          target: String(e.to),
-        },
-      });
-    }
+    // cytoscape ~442KB：动态 import，避免它随 RagGraphMini → AI.tsx → Settings
+    // 进入会被开机空闲预取的 Settings chunk，冷启动平白多拉 442KB。
+    let cancelled = false;
+    void import("cytoscape").then(({ default: cytoscape }) => {
+      if (cancelled || !hostRef.current) return;
 
-    const cy = cytoscape({
-      container: hostRef.current,
-      elements,
-      style: [
+      const elements: ElementDefinition[] = [];
+      const validIds = new Set(nodes.map((n) => n.id));
+      for (const n of nodes) {
+        elements.push({
+          data: {
+            id: String(n.id),
+            label: basename(n.path),
+            path: n.path,
+            inDeg: n.inDegree,
+            weight: 6 + Math.sqrt(n.inDegree + n.outDegree) * 4,
+          },
+        });
+      }
+      for (const e of edges) {
+        if (!validIds.has(e.from) || !validIds.has(e.to)) continue;
+        elements.push({
+          data: {
+            id: `e-${e.from}-${e.to}`,
+            source: String(e.from),
+            target: String(e.to),
+          },
+        });
+      }
+
+      const cy = cytoscape({
+        container: hostRef.current,
+        elements,
+        style: [
         {
           selector: "node",
           style: {
@@ -116,21 +120,26 @@ export function RagGraphMini({ nodes, edges, height = 320 }: Props) {
         nodeRepulsion: () => 4500,
         idealEdgeLength: () => 80,
         padding: 16,
-      } as cytoscape.LayoutOptions,
-      wheelSensitivity: 0.2,
-      minZoom: 0.2,
-      maxZoom: 2.5,
+      } as LayoutOptions,
+        wheelSensitivity: 0.2,
+        minZoom: 0.2,
+        maxZoom: 2.5,
+      });
+
+      cy.on("tap", "node", (evt) => {
+        const path = evt.target.data("path") as string;
+        if (path) void openPath(path);
+      });
+
+      cyRef.current = cy;
     });
 
-    cy.on("tap", "node", (evt) => {
-      const path = evt.target.data("path") as string;
-      if (path) void openPath(path);
-    });
-
-    cyRef.current = cy;
     return () => {
-      cy.destroy();
-      cyRef.current = null;
+      cancelled = true;
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
     };
   }, [nodes, edges, openPath]);
 

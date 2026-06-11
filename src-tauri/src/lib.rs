@@ -729,6 +729,18 @@ pub(crate) fn sync_scan_workspace(ws: &Path) -> Vec<SyncFileEntry> {
                 continue;
             };
             if meta.len() > MAX_SYNC_BODY_BYTES as u64 {
+                // 超大文件不读全文哈希，但**仍要列出**（用 oversize 标记 + 元数据）。
+                // 否则它从扫描里凭空消失，diff 会把「有基线但本地没了」当成删除，
+                // 进而删掉远端副本——这是真实数据丢失（已同步的附件长大超限即被删）。
+                // 前端 diff 见到 oversize:* 哈希会跳过该文件的任何动作。
+                if let Ok(rel) = path.strip_prefix(&ws) {
+                    out.push(SyncFileEntry {
+                        rel_path: rel.to_string_lossy().replace('\\', "/"),
+                        mtime: modified_ms_for_path(&path),
+                        hash: format!("oversize:{}", meta.len()),
+                        size: meta.len(),
+                    });
+                }
                 continue;
             }
             match sync_file_entry(&ws, &path, &meta) {

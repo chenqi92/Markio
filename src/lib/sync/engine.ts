@@ -173,6 +173,14 @@ export async function runSync(
     }
 
     setStage("finalize");
+    // 清掉两边都已不存在的基线（双删）。否则将来重建同名文件时，diff 会看到
+    // 「本地有、远端无、基线在且 hash 与基线一致」而判成本地删除，把刚重建的文件
+    // 再次扔进回收站（diff.ts:210 的注释承诺这里清，但之前从未真正清）。
+    for (const relPath of Object.keys(manifest.files)) {
+      if (!localByPath.has(relPath) && !remoteByPath.has(relPath)) {
+        manifest = clearBaseline(manifest, relPath);
+      }
+    }
     manifest = { ...manifest, lastSyncAt: now() };
     await saveManifest(workspacePath, manifest, deps.manifestIo);
     setStage("idle");
@@ -330,6 +338,12 @@ async function doConflict(
         now,
       );
     case "keep_remote":
+      // 「远端删 / 本地改」冲突里，远端其实已不存在。keep_remote = 接受远端删除 =
+      // 删本地，不能去 download 一个不存在的远端文件（否则 404 每轮重试、永不收敛）。
+      if (!remoteByPath.has(action.relPath)) {
+        await deps.localFs.softDelete(workspacePath, action.relPath);
+        return placeholderOk(action.relPath, now);
+      }
       return await doDownload(workspacePath, remoteRoot, action.relPath, deps, now);
     case "fork": {
       // 远端版本另存到 forkPath 并推回远端（两边都保留该副本）；当前路径走 keep_local。

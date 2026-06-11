@@ -333,4 +333,17 @@ describe("planDiff —— 决策表覆盖", () => {
     );
     expect(plan.actions).toEqual([]);
   });
+
+  it("超大本地文件(oversize:*)不产生任何动作，且不会删远端副本", () => {
+    // 之前同步过的附件长大超限：扫描以 oversize:* 哈希列出它。
+    // 不应 upload（传不动），更绝不能因「本地哈希变了/缺失」删掉远端副本。
+    const plan = planDiff(
+      [fe("big.pdf", "oversize:99000000")],
+      [fe("big.pdf", "etag-old")],
+      manifestWith({ "big.pdf": baseline("h-old", "etag-old") }),
+      opts("newest"),
+    );
+    expect(plan.actions).toEqual([]);
+    expect(plan.summary.deleteRemote).toBe(0);
+  });
 });

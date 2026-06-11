@@ -71,6 +71,9 @@ export function planDiff(
 
   for (const [relPath, local] of localMap.entries()) {
     visited.add(relPath);
+    // 超大文件（Rust 扫描标记 oversize:*）：不读全文哈希，也无法整文件上传。
+    // 这里直接跳过任何动作——关键是它"在场"已经避免被当作本地删除而误删远端副本。
+    if (local.hash.startsWith("oversize:")) continue;
     const remote = remoteMap.get(relPath);
     const base = baseline[relPath];
 

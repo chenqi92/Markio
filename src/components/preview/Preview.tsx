@@ -170,8 +170,18 @@ export function Preview({
     setHtml(restorePreviewVisualBlocks(nextHtml, visualCacheRef.current, themeId));
   }, []);
 
+  const loadRemoteImagesRef = useRef(loadRemoteImages);
+  useEffect(() => {
+    loadRemoteImagesRef.current = loadRemoteImages;
+  }, [loadRemoteImages]);
+
   useLayoutEffect(() => {
     patchPreviewDom(contentRef.current, html);
+    // 必须在插入 DOM 的同一同步 tick（paint 前）拦截外链图片：放到后续 passive
+    // effect 里太晚，WebView 已对每张外链图发出请求，追踪像素 / IP 已泄露。
+    if (!loadRemoteImagesRef.current && contentRef.current) {
+      blockExternalImages(contentRef.current);
+    }
   }, [html]);
 
   useEffect(() => {

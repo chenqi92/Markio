@@ -56,6 +56,10 @@ export function parseFrontmatter(src: string): ParsedFrontmatter {
         if (/^[\w-]+$/.test(key)) {
           const rawVal = trimmed.slice(idx + 1).trim();
           const folded = [">-", ">", "|", "|-", "|+"].includes(rawVal);
+          // 多行块标量（| / >）的换行无法在「就地编辑」widget 里保留——commit 会
+          // 把整块拼成单行丢掉换行。标记 ok=false 让整段 frontmatter 退回原始文本
+          // 编辑，避免改其它字段时连带毁掉多行块。
+          if (folded) ok = false;
           props.push({
             key,
             kind: "scalar",

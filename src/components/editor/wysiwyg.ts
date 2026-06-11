@@ -23,7 +23,7 @@
  *   wysiwyg/util.ts     — Cleanup 类型 + eventElementTarget
  */
 
-import { wysiwygField } from "./wysiwyg/state";
+import { wysiwygField, wysiwygVaultSync } from "./wysiwyg/state";
 import { wysiwygMousedown } from "./wysiwyg/mousedown";
 
 // 兼容旧导入路径：tests / table-edit / SourceEditor 通过 './wysiwyg' 拿这些 API
@@ -36,4 +36,4 @@ export {
 export type { ParsedTable, WysiwygTableAction } from "./wysiwyg/table";
 export { parseImageMarkdown } from "@/lib/markdown-images";
 
-export const wysiwygMarkdown = [wysiwygField, wysiwygMousedown];
+export const wysiwygMarkdown = [wysiwygField, wysiwygMousedown, wysiwygVaultSync];

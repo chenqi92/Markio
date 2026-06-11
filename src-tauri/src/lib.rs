@@ -407,11 +407,29 @@ async fn md_render_stream(
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = MdStreamCancelGuard { id: id.clone() };
         let channel = format!("md-stream-{id}");
-        // 按 H1 切片：以行首 `# ` 起一段；首段（导言）可能无标题
+        // 按 H1 切片：以行首 `# ` 起一段；首段（导言）可能无标题。
+        // 必须跳过代码围栏内的 `# `（如 ```bash 里的 `# install deps`），否则会在
+        // 围栏中间切断，前段围栏不闭合、后段把注释当 H1，大文档预览整体错乱。
         let mut sections: Vec<String> = Vec::new();
         let mut current = String::new();
+        let mut in_fence = false;
+        let mut fence_marker = "";
         for line in source.split_inclusive('\n') {
-            if line.starts_with("# ") && !current.is_empty() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                let marker = if trimmed.starts_with("```") {
+                    "```"
+                } else {
+                    "~~~"
+                };
+                if !in_fence {
+                    in_fence = true;
+                    fence_marker = marker;
+                } else if trimmed.starts_with(fence_marker) {
+                    in_fence = false;
+                }
+            }
+            if !in_fence && line.starts_with("# ") && !current.is_empty() {
                 sections.push(std::mem::take(&mut current));
             }
             current.push_str(line);

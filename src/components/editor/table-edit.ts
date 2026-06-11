@@ -117,8 +117,10 @@ export function findAllTablesInText(doc: string): Array<{
         end++;
       }
       const from = offsets[i]!;
-      const to =
-        end < lines.length ? offsets[end]! : offsets[end - 1]! + lines[end - 1]!.length;
+      // 到表格最后一行内容结尾，**不含**其后的换行符。旧实现非文末时取 offsets[end]
+      // （下一行起点）会把表格后的 \n 也纳入替换范围，而 buildTable 输出无尾换行，
+      // 导致每次文本路径编辑吃掉一个换行，最终把后面的行并进表格末行损坏文档。
+      const to = offsets[end - 1]! + lines[end - 1]!.length;
       result.push({
         from,
         to,

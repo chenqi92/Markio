@@ -137,7 +137,10 @@ function frontmatterEnd(text: string): number {
     const eol = text.indexOf("\n", i);
     const line = text.slice(i, eol < 0 ? text.length : eol).trimEnd();
     if (line === "---") {
-      return eol < 0 ? text.length : eol + 1;
+      // 返回关闭 `---` 行内容结尾（不含其后换行）。之前返回 eol+1 指向下一行
+      // 行首，使 doc.lineAt(fmEnd) 落到正文首行，导致首行被误标 frontmatter 样式、
+      // 并被排除在空行压缩之外。
+      return eol < 0 ? text.length : eol;
     }
     if (eol < 0) return 0;
     i = eol + 1;

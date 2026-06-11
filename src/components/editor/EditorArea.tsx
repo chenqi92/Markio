@@ -17,7 +17,11 @@ import { useUI } from "@/stores/ui";
 import { useSettings } from "@/stores/settings";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
-import { getEditor, replaceRange } from "@/lib/editor-bridge";
+import {
+  getEditor,
+  replaceSelection,
+  selectRange,
+} from "@/lib/editor-bridge";
 import {
   applyTableAction,
   applyTableActionToText,
@@ -319,6 +323,9 @@ export function EditorArea({ onMeta }: Props) {
       const triggerLabel = trigger === "drop" ? "拖入" : "剪贴板";
       setToast({ stage: "uploading", message: `正在处理${triggerLabel}图片...` });
       const initialTabId = tab.id;
+      // 先把光标定位到粘贴/拖放点；上传是异步的，期间用户可能继续输入，
+      // 让 CodeMirror 把这个选区随后续编辑一起映射，避免用 stale 偏移插到错位置/覆盖文本。
+      selectRange(range.from, range.to);
       try {
         const markdown: string[] = [];
         const warnings: string[] =
@@ -327,6 +334,7 @@ export function EditorArea({ onMeta }: Props) {
           // 用户切走当前 tab：不再为旧 tab 继续走 Rust pasteImage / S3 上传，
           // 避免浪费 Assets/ 空间和云带宽（IPC 已发出的那一张兜底还是会跑完）
           if (useTabs.getState().activeId !== initialTabId) {
+            setToast(null);
             return;
           }
           const dataBase64 = await fileToBase64(file);
@@ -378,8 +386,12 @@ export function EditorArea({ onMeta }: Props) {
           markdown.push(finalMarkdown);
           if (r.warning) warnings.push(r.warning);
         }
-        if (useTabs.getState().activeId !== tab.id) return;
-        replaceRange(range.from, range.to, markdown.join("\n"));
+        if (useTabs.getState().activeId !== tab.id) {
+          setToast(null);
+          return;
+        }
+        // 插到当前（已映射的）选区，而非 stale 的 range 偏移
+        replaceSelection(markdown.join("\n"));
         useWorkspace.getState().refreshTree(tab.workspaceId).catch(() => undefined);
         setToast({
           stage: warnings.length > 0 ? "error" : "done",
@@ -482,6 +494,8 @@ export function EditorArea({ onMeta }: Props) {
         .filter((p) => /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(p))
         .slice(0, MAX_PASTE_IMAGES);
       if (accepted.length === 0) return;
+      // 定位到落点，让 CM 随后续编辑映射该选区，避免异步上传后用 stale 偏移插错位
+      selectRange(insertPos, insertPos);
       setToast({ stage: "uploading", message: "正在处理拖入图片..." });
       const out: string[] = [];
       const warnings: string[] = [];
@@ -500,14 +514,16 @@ export function EditorArea({ onMeta }: Props) {
           out.push(r.markdown);
           if (r.warning) warnings.push(r.warning);
         }
-        if (useTabs.getState().activeId !== t.id) return;
-        replaceRange(insertPos, insertPos, out.join("\n"));
+        if (useTabs.getState().activeId !== t.id) {
+          setToast(null);
+          return;
+        }
+        replaceSelection(out.join("\n"));
         useWorkspace.getState().refreshTree(t.workspaceId).catch(() => undefined);
         setToast({
           stage: warnings.length > 0 ? "error" : "done",
           message: warnings[0] ?? `已插入 ${out.length} 张图片`,
-        });
-        setTimeout(() => setToast(null), warnings.length > 0 ? 3200 : 1800);
+        }, warnings.length > 0 ? 3200 : 1800);
       } catch (e) {
         setToast({
           stage: "error",

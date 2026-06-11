@@ -230,6 +230,17 @@ export function replaceSelection(
   view.focus();
 }
 
+/** 把选区设到 [from,to]。异步插入（图片上传）前先定位光标，之后 CodeMirror 会
+ *  自动把该选区随用户的后续编辑一起映射，避免用 stale 偏移插入/覆盖错位置。 */
+export function selectRange(from: number, to: number) {
+  const view = active;
+  if (!view) return;
+  const docLen = view.state.doc.length;
+  const a = Math.max(0, Math.min(docLen, from));
+  const b = Math.max(a, Math.min(docLen, to));
+  view.dispatch({ selection: { anchor: a, head: b } });
+}
+
 /** 替换指定文档范围；异步插入（如图片上传完成）会用到。 */
 export function replaceRange(from: number, to: number, text: string) {
   const view = active;

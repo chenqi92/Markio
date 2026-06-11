@@ -173,6 +173,19 @@ describe("table editing", () => {
     expect(deleted).toContain("after");
   });
 
+  it("preserves the newline after the table (no line merge)", () => {
+    // 表格紧跟一行文本（无空行），编辑后末行不能与 after 黏在一起
+    const src = "| A | B |\n| --- | --- |\n| 1 | 2 |\nafter";
+    const out = applyTableActionToText(src, 0, { row: 1, col: 1 }, { type: "insertColRight" });
+    expect(out).toBeTruthy();
+    expect(out).not.toContain("|after");
+    expect(out).toMatch(/\|\s*\nafter/);
+    // 反复编辑不应持续吞换行
+    const out2 = applyTableActionToText(out!, 0, { row: 1, col: 1 }, { type: "insertColRight" });
+    expect(out2).not.toContain("|after");
+    expect(out2).toContain("\nafter");
+  });
+
   it("copies and pastes preview table cells without an editor view", () => {
     const source = ["before", table, "after"].join("\n\n");
 

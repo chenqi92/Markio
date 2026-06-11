@@ -110,6 +110,9 @@ export const SourceEditor = memo(function SourceEditor({
     onMathContextRef.current = onMathContext;
   }, [onSelectionChange, onAutocompleteUpdate, onMathContext]);
   const tableSelectionRectRef = useRef<TableSelectionRect | null>(null);
+  // selectTableRect 自己会 dispatch 一个多格选区，期间置位以免被下面的
+  // 「选区变化即清 rect」逻辑误清。
+  const settingTableRectRef = useRef(false);
   const tableDragRef = useRef<{
     tableFrom: number;
     anchor: TableCellCoord;
@@ -128,6 +131,12 @@ export const SourceEditor = memo(function SourceEditor({
       mathInputHandler,
       EditorView.updateListener.of((u) => {
         if (u.docChanged) tableSelectionRectRef.current = null;
+        // 键盘移动光标 / 点别处会改变选区，使之前点选的表格多格 rect 失效。
+        // 必须在此清掉，否则随后的 Backspace/Delete 会按 stale rect 清空最初点选的
+        // 那一格（甚至不是光标所在格）。selectTableRect 自身的 dispatch 用 ref 排除。
+        else if (u.selectionSet && !settingTableRectRef.current) {
+          tableSelectionRectRef.current = null;
+        }
         const onSel = onSelectionChangeRef.current;
         if (u.selectionSet && onSel) {
           const sel = u.state.selection.main;
@@ -141,45 +150,43 @@ export const SourceEditor = memo(function SourceEditor({
         }
         const onAc = onAutocompleteUpdateRef.current;
         if ((u.docChanged || u.selectionSet) && onAc) {
-          const sel = u.state.selection.main;
-          if (!sel.empty) {
-            onAc(null);
-            return;
-          }
-          const line = u.state.doc.lineAt(sel.head);
-          const before = line.text.slice(0, sel.head - line.from);
-          // 探测最近一次触发
-          const triggers: Array<{
-            kind: "wiki" | "mention" | "tag" | "emoji";
-            re: RegExp;
-            triggerLen: number;
-          }> = [
-            { kind: "wiki", re: /\[\[([\w一-鿿./ -]{0,40})$/, triggerLen: 2 },
-            { kind: "mention", re: /(^|\s)@([\w一-鿿-]{0,30})$/, triggerLen: 1 },
-            // 要求 # 后至少 1 个标签字符才触发，避免输入「# 标题」时一按 # 就弹出
-            // 标签补全并劫持 Enter / 方向键。
-            { kind: "tag", re: /(^|\s)#([\w一-鿿-]{1,30})$/, triggerLen: 1 },
-            { kind: "emoji", re: /(^|\s):([\w-]{0,30})$/, triggerLen: 1 },
-          ];
-          for (const t of triggers) {
-            const m = before.match(t.re);
-            if (m) {
-              const query = (m[2] ?? m[1] ?? "") as string;
-              const r = u.view.coordsAtPos(sel.head);
-              if (!r) {
-                onAc(null);
-                return;
+          // 这里之前用裸 return 提前退出，会把后面的 onMath 一并跳过，导致
+          // MathPreview 悬浮框不被更新/关闭。改为在 IIFE 里算出补全态再交回，
+          // 不影响外层 listener 继续执行 onMath。
+          const acState = (() => {
+            const sel = u.state.selection.main;
+            if (!sel.empty) return null;
+            const line = u.state.doc.lineAt(sel.head);
+            const before = line.text.slice(0, sel.head - line.from);
+            const triggers: Array<{
+              kind: "wiki" | "mention" | "tag" | "emoji";
+              re: RegExp;
+              triggerLen: number;
+            }> = [
+              { kind: "wiki", re: /\[\[([\w一-鿿./ -]{0,40})$/, triggerLen: 2 },
+              { kind: "mention", re: /(^|\s)@([\w一-鿿-]{0,30})$/, triggerLen: 1 },
+              // 要求 # 后至少 1 个标签字符才触发，避免输入「# 标题」时一按 # 就弹出
+              // 标签补全并劫持 Enter / 方向键。
+              { kind: "tag", re: /(^|\s)#([\w一-鿿-]{1,30})$/, triggerLen: 1 },
+              { kind: "emoji", re: /(^|\s):([\w-]{0,30})$/, triggerLen: 1 },
+            ];
+            for (const t of triggers) {
+              const m = before.match(t.re);
+              if (m) {
+                const query = (m[2] ?? m[1] ?? "") as string;
+                const r = u.view.coordsAtPos(sel.head);
+                if (!r) return null;
+                return {
+                  kind: t.kind,
+                  query,
+                  triggerLen: t.triggerLen,
+                  coords: { x: r.left, y: r.bottom },
+                };
               }
-              onAc({
-                kind: t.kind,
-                query,
-                triggerLen: t.triggerLen,
-                coords: { x: r.left, y: r.bottom },
-              });
-              return;
             }
-          }
-          onAc(null);
+            return null;
+          })();
+          onAc(acState);
         }
         const onMath = onMathContextRef.current;
         if ((u.docChanged || u.selectionSet) && onMath) {
@@ -510,7 +517,12 @@ export const SourceEditor = memo(function SourceEditor({
 
       const anchor = { row: hit.row, col: hit.col };
       tableDragRef.current = { tableFrom: hit.info.from, anchor };
+      settingTableRectRef.current = true;
       tableSelectionRectRef.current = selectTableRect(view, hit.info, anchor, anchor);
+      settingTableRectRef.current = false;
+      // preventDefault 拦掉了浏览器默认聚焦、stopPropagation 拦掉了 CM 自身的聚焦，
+      // 这里必须主动聚焦，否则点表格格后键盘输入仍落在之前聚焦的元素上。
+      view.focus();
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const active = tableDragRef.current;
@@ -518,10 +530,12 @@ export const SourceEditor = memo(function SourceEditor({
         const next = tableCellFromCoords(view, { x: moveEvent.clientX, y: moveEvent.clientY });
         if (!next || next.info.from !== active.tableFrom) return;
         moveEvent.preventDefault();
+        settingTableRectRef.current = true;
         tableSelectionRectRef.current = selectTableRect(view, next.info, active.anchor, {
           row: next.row,
           col: next.col,
         });
+        settingTableRectRef.current = false;
       };
 
       const handleMouseUp = () => {
@@ -691,8 +705,10 @@ const smartQuotesHandler = EditorView.inputHandler.of(
     if (isInsideCodeOrUrl(view, from)) return false;
     const doc = view.state.doc;
     const prevCh = from > 0 ? doc.sliceString(from - 1, from) : "";
-    // 「上一个字符是字母数字/中文」→ 闭合；否则开
-    const closing = /[\p{L}\p{N}\p{P}]/u.test(prevCh);
+    // 「上一个字符是字母数字/中文」→ 闭合；否则开。注意不要把 \p{P}（所有标点）
+    // 当成闭合上下文——否则在 ( / ： / ， 之后会得到错误的闭引号（这些恰恰是该用开
+    // 引号的位置，如 他说：" → 他说：“）。
+    const closing = /[\p{L}\p{N}]/u.test(prevCh);
     let insert: string;
     if (text === '"') insert = closing ? "”" : "“";
     else insert = closing ? "’" : "‘";
@@ -712,6 +728,9 @@ const smartQuotesHandler = EditorView.inputHandler.of(
 const mathInputHandler = EditorView.inputHandler.of(
   (view, from, to, text) => {
     if (text !== "$") return false;
+    // 代码围栏 / 行内代码 / 链接 URL 里不自动补 `$`，否则在 ```bash 里打 $HOME
+    // 会变成 $HOME$。
+    if (isInsideCodeOrUrl(view, from)) return false;
     const doc = view.state.doc;
     const prevCh = from > 0 ? doc.sliceString(from - 1, from) : "";
     const nextCh = to < doc.length ? doc.sliceString(to, to + 1) : "";

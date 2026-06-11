@@ -300,11 +300,39 @@ function commitTableCellEdit(view: EditorView, cell: HTMLElement): boolean {
 }
 
 function selectElementContents(el: HTMLElement) {
+  // 单元格是 <textarea>：Range.selectNodeContents 对 textarea 无效（其文本不是子节点），
+  // 必须用 textarea.select()，否则 Tab 切到单元格时根本没选中内容。
+  if (el instanceof HTMLTextAreaElement) {
+    el.select();
+    return;
+  }
   const range = el.ownerDocument.createRange();
   range.selectNodeContents(el);
   const selection = el.ownerDocument.getSelection?.() ?? window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
+}
+
+/** 在（可能刚被 dispatch 重建过的）DOM 里按文档位置找到表格 widget host。 */
+function findTableHostAtPos(view: EditorView, fromPos: number): HTMLElement | null {
+  const hosts = view.dom.querySelectorAll<HTMLElement>(".cm-md-table-widget");
+  for (const h of hosts) {
+    const r = tableRangeFromHost(view, h);
+    if (r && r.from === fromPos) return h;
+  }
+  return null;
+}
+
+/** 在指定 host 内按 row/col 聚焦单元格并选中内容。 */
+function focusTableCellByRowCol(host: HTMLElement, row: string, col: string) {
+  const next = host.querySelector<HTMLElement>(
+    `.cm-md-table-cell[data-row="${row}"][data-col="${col}"]`,
+  );
+  if (!next) return;
+  host.dataset.activeRow = row;
+  host.dataset.activeCol = col;
+  focusTableCell(next);
+  selectElementContents(next);
 }
 
 type CaretDocument = Document & {
@@ -372,19 +400,6 @@ function resizeTableCellEditor(cell: HTMLElement) {
 function resizeAllTableCells(host: HTMLElement) {
   const cells = host.querySelectorAll<HTMLTextAreaElement>("textarea.cm-md-table-cell");
   cells.forEach((cell) => resizeTableCellEditor(cell));
-}
-
-function focusAdjacentTableCell(cell: HTMLElement, direction: -1 | 1) {
-  const host = cell.closest<HTMLElement>(".cm-md-table-widget");
-  if (!host) return;
-  const cells = Array.from(host.querySelectorAll<HTMLElement>(".cm-md-table-cell"));
-  const current = cells.indexOf(cell);
-  const next = cells[current + direction];
-  if (!next) return;
-  host.dataset.activeRow = next.dataset.row ?? "1";
-  host.dataset.activeCol = next.dataset.col ?? "0";
-  focusTableCell(next);
-  selectElementContents(next);
 }
 
 function applyTableWidgetAction(
@@ -522,6 +537,27 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement): Cleanup {
     cleanups.push(() => host.removeEventListener(event, handler));
   };
 
+  // 右键菜单的全局关闭：点菜单外 / Esc / 滚动都收起，避免 position:fixed 的菜单
+  // 悬浮在无关内容上方。
+  const onDocPointerDown = (e: PointerEvent) => {
+    const menu = host.querySelector<HTMLElement>(".cm-md-table-menu");
+    if (!menu || menu.hidden) return;
+    if (e.target instanceof Node && menu.contains(e.target)) return;
+    hideTableMenu(host);
+  };
+  const onDocKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") hideTableMenu(host);
+  };
+  const onDocScroll = () => hideTableMenu(host);
+  document.addEventListener("pointerdown", onDocPointerDown, true);
+  document.addEventListener("keydown", onDocKey, true);
+  window.addEventListener("scroll", onDocScroll, true);
+  cleanups.push(() => {
+    document.removeEventListener("pointerdown", onDocPointerDown, true);
+    document.removeEventListener("keydown", onDocKey, true);
+    window.removeEventListener("scroll", onDocScroll, true);
+  });
+
   let pointerDown:
     | {
         cell: HTMLElement;
@@ -565,8 +601,28 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement): Cleanup {
     if (event.key === "Tab") {
       event.preventDefault();
       event.stopPropagation();
-      commitTableCellEdit(view, cell);
-      focusAdjacentTableCell(cell, event.shiftKey ? -1 : 1);
+      // 先在「提交前」的活动 DOM 里算出目标单元格的 row/col 与表格文档位置，
+      // 因为 commit 会 dispatch 改文档，导致整个 widget DOM 被替换、旧节点失效。
+      const cells = Array.from(
+        host.querySelectorAll<HTMLElement>(".cm-md-table-cell"),
+      );
+      const curIdx = cells.indexOf(cell);
+      const target = cells[curIdx + (event.shiftKey ? -1 : 1)];
+      const range = tableRangeFromHost(view, host);
+      const targetRow = target?.dataset.row;
+      const targetCol = target?.dataset.col;
+      const dispatched = commitTableCellEdit(view, cell);
+      if (!target || targetRow == null || targetCol == null) return;
+      if (!dispatched) {
+        // 内容未变，DOM 未重建：直接在原 host 聚焦
+        focusTableCellByRowCol(host, targetRow, targetCol);
+      } else if (range) {
+        // 已重建：下一帧按文档位置找回新 host 再聚焦目标单元格
+        requestAnimationFrame(() => {
+          const fresh = findTableHostAtPos(view, range.from);
+          if (fresh) focusTableCellByRowCol(fresh, targetRow, targetCol);
+        });
+      }
     }
   });
 

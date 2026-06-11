@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import type { Backlink, OutlineItem } from "@/types";
@@ -63,7 +63,7 @@ function moveSection(
   return without.slice(0, adj) + section + without.slice(adj);
 }
 
-export function Outline({
+function OutlineInner({
   items,
   words,
   readingMinutes,
@@ -295,10 +295,20 @@ function OutlinePanel({ items }: { items: OutlineItem[] }) {
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // 大纲 items 变更时重置折叠态——避免旧索引指向新文档的不同节点
+  // 仅在大纲「结构」真正变化时才重置折叠态（按 level+文本 取签名）。
+  // 父组件每次防抖渲染都会传入新 items 数组，若按数组身份重置，会在连续输入时
+  // 不断把用户手动折叠的章节重新展开。正文输入不改标题 → 签名不变 → 保留折叠。
+  const itemsSig = useMemo(
+    () => items.map((it) => `${it.level} ${it.text}`).join("\n"),
+    [items],
+  );
+  const prevSigRef = useRef(itemsSig);
   useEffect(() => {
-    setCollapsed(new Set());
-  }, [items]);
+    if (prevSigRef.current !== itemsSig) {
+      prevSigRef.current = itemsSig;
+      setCollapsed(new Set());
+    }
+  }, [itemsSig]);
 
   // 每个 item 的直接父节点 index（无父则 null）；用栈按 level 推断
   const parentOf = useMemo(() => {
@@ -595,3 +605,7 @@ function Metric({ v, l }: { v: string; l: string }) {
     </div>
   );
 }
+
+// memo：父组件 EditorArea 每次按键都重渲染，但 Outline 的 props(meta) 只在防抖
+// 计算大纲时才变。包一层 memo，使其只在大纲真正更新时重渲染，而非每个字符。
+export const Outline = memo(OutlineInner);

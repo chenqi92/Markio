@@ -54,36 +54,51 @@ export function AIAssistantMessage({
   const ws = useWorkspace((s) => s.activeWorkspace());
   const promptDialog = useDialog((s) => s.prompt);
 
+  const lastRenderRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
-    api
-      .renderMarkdown(text)
-      .then((r) => {
-        if (cancelled) return;
-        // 把回复里的 [[xxx]] 文本替换为可点击的 wikilink
-        const enhanced = r.html.replace(
-          /\[\[([^\]]+?)\]\]/g,
-          (_m, name: string) => {
-            const safe = name
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;");
-            return `<a class="wikilink" href="#" data-wiki="${safe}">${safe}</a>`;
-          },
-        );
-        setHtml(enhanced);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setHtml(
-          `<pre style="color: var(--text-3); font-size: 12px; padding: 8px;">${escapeHtml(text)}</pre>`,
-        );
-      });
+    const run = () => {
+      lastRenderRef.current = Date.now();
+      api
+        .renderMarkdown(text)
+        .then((r) => {
+          if (cancelled) return;
+          // 把回复里的 [[xxx]] 文本替换为可点击的 wikilink
+          const enhanced = r.html.replace(
+            /\[\[([^\]]+?)\]\]/g,
+            (_m, name: string) => {
+              const safe = name
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+              return `<a class="wikilink" href="#" data-wiki="${safe}">${safe}</a>`;
+            },
+          );
+          setHtml(enhanced);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setHtml(
+            `<pre style="color: var(--text-3); font-size: 12px; padding: 8px;">${escapeHtml(text)}</pre>`,
+          );
+        });
+    };
+    // 流式中节流：每个 chunk 都全量 IPC 渲染 markdown + 重扫 mermaid/chart 是
+    // 二次方开销，越流越卡。busy 时至多每 ~150ms 渲染一次；结束(busy=false)立即渲染。
+    if (!busy) {
+      run();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const delay = Math.max(0, 150 - (Date.now() - lastRenderRef.current));
+    const t = setTimeout(run, delay);
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
-  }, [text]);
+  }, [text, busy]);
 
   useEffect(() => {
     if (!ref.current) return;

@@ -23,7 +23,14 @@ function relativeTime(ts: number | null): string {
 }
 
 export function StatusBar() {
-  const tab = useTabs((s) => s.activeTab());
+  // 只取需要的原始值，别订阅整个 activeTab() 对象：updateContent 每次按键都会
+  // 重建该对象，会让常驻的 StatusBar 每个字符都重渲染（EditorArea 里有同样告诫）。
+  const hasTab = useTabs((s) => s.activeId !== null);
+  const tabDirty = useTabs((s) => {
+    const id = s.activeId;
+    const t = id ? s.tabs.find((x) => x.id === id) : undefined;
+    return t?.dirty ?? false;
+  });
   const ws = useWorkspace((s) => s.activeWorkspace());
   const theme = useSettings((s) => s.theme);
   const autosave = useSettings((s) => s.autosave);
@@ -129,15 +136,15 @@ export function StatusBar() {
     };
   }, [ws]);
 
-  const saveLabel = tab
-    ? tab.dirty
+  const saveLabel = hasTab
+    ? tabDirty
       ? autosave
         ? "正在保存…"
         : "未保存"
       : "已保存"
     : null;
-  const saveColor = tab
-    ? tab.dirty
+  const saveColor = hasTab
+    ? tabDirty
       ? autosave
         ? "#ff9500"
         : "#ff453a"
@@ -203,7 +210,7 @@ export function StatusBar() {
         <span className="pulse" />
         <span className="status-ellipsis">{ws ? ws.name : "未连接仓库"}</span>
       </span>
-      {tab && (
+      {hasTab && (
         <>
           <span className="item status-save" style={{ color: saveColor }}>
             <span

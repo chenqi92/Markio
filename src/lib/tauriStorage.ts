@@ -72,6 +72,29 @@ function enqueueWrite(task: () => Promise<unknown>) {
   );
 }
 
+// 同 key 写合并：每次 setItem 写的都是该 store 的完整快照，后写直接覆盖前写。
+// 不合并的话，AI 流式（每个 token 一次 set）、打字累计 streak 等会产生几十次/秒
+// 的 plugin-store IPC。这里把 150ms 窗口内对同一 key 的写合成一次 IPC。
+const pendingWrites = new Map<string, string>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const WRITE_COALESCE_MS = 150;
+
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    if (!store) {
+      pendingWrites.clear();
+      return;
+    }
+    const batch = Array.from(pendingWrites.entries());
+    pendingWrites.clear();
+    for (const [name, value] of batch) {
+      enqueueWrite(() => store!.set(name, value));
+    }
+  }, WRITE_COALESCE_MS);
+}
+
 const tauriBackedStorage: StateStorage = {
   getItem(name) {
     return cache.has(name) ? cache.get(name)! : null;
@@ -79,12 +102,14 @@ const tauriBackedStorage: StateStorage = {
   setItem(name, value) {
     cache.set(name, value);
     if (store) {
-      enqueueWrite(() => store!.set(name, value));
+      pendingWrites.set(name, value);
+      scheduleFlush();
     }
   },
   removeItem(name) {
     cache.delete(name);
     if (store) {
+      pendingWrites.delete(name);
       enqueueWrite(() => store!.delete(name));
     }
   },

@@ -204,9 +204,15 @@ export const useWorkspace = create<WorkspaceState>()(
 
       hydrate: async () => {
         const registered = get()._registered;
-        const activeId = get().activeId;
-        const active = get().workspaces.find((w) => w.id === activeId);
-        if (active) await safeRegister(active.path, registered, set);
+        // 注册全部已持久化仓库，而不只活动仓库：会话恢复会重放所有仓库的 tab，
+        // 若只注册活动仓库，其它仓库的 tab 在 api.open 会被 Rust allowlist 拒绝，
+        // 报错弹窗逐个、还误清 recents、tab 永久丢失。
+        const all = get().workspaces;
+        await Promise.all(
+          all.map((w) =>
+            safeRegister(w.path, registered, set).catch(() => undefined),
+          ),
+        );
       },
 
       addWorkspace: async (path) => {

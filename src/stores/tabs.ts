@@ -61,6 +61,12 @@ export function cancelPendingTimersForWorkspace(workspacePath: string) {
 
 registerWorkspaceCleanup(cancelPendingTimersForWorkspace);
 
+// 移除仓库时关闭其下所有 tab：否则这些 tab 仍可编辑，但保存会因路径已从 Rust
+// allowlist 注销而失败（自动保存吞掉错误），用户以为存盘了实际丢内容。
+registerWorkspaceCleanup((workspacePath) => {
+  useTabs.getState().closeTabsForPath(workspacePath);
+});
+
 function scheduleRagReindex(workspacePath: string, filePath: string) {
   const key = `${workspacePath}\0${filePath}`;
   ragReindexTimers.schedule(

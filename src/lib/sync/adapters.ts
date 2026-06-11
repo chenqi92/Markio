@@ -242,9 +242,13 @@ export function createWebDavAdapter(config: {
       const out: FileEntry[] = [];
       const cleanRoot = trimSlashes(remoteRoot);
       const walk = async (dir: string) => {
+        const dirNorm = trimRightSlashes(dir);
         const entries = await api.webdavList(config.baseUrl, auth(), dir);
         for (const entry of entries) {
           const full = trimRightSlashes(entry.relPath);
+          // PROPFIND Depth:1 会把被请求的集合自身也返回（RFC 4918）。不跳过的话，
+          // 每个子目录的自我条目都会触发 walk(自己) 形成无限递归，整个同步永不返回。
+          if (entry.isDir && full === dirNorm) continue;
           const rel = stripRoot(full, cleanRoot);
           if (rel === null) continue;
           if (entry.isDir) {

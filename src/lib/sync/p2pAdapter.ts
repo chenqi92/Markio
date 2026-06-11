@@ -26,6 +26,9 @@ interface RpcResp {
   error?: string;
 }
 
+/** 单个 RPC 的最长等待时间（含传 base64 大文件留足余量）。 */
+const RPC_TIMEOUT_MS = 30_000;
+
 /** 一条到对端的 WS 连接，串行化 RPC（一来一回）。 */
 function createConnection(peer: P2PPeer) {
   let socket: WebSocket | null = null;
@@ -97,8 +100,20 @@ function createConnection(peer: P2PPeer) {
     return open().then(
       (ws) =>
         new Promise<unknown>((resolve, reject) => {
-          const onMsg = (ev: MessageEvent) => {
+          // 每个 RPC 必须有超时 + 断线兜底，否则对端掉线/断网时 promise 永不 settle，
+          // runSync 卡死在 execute 循环里、inflight 标志永不清除，之后所有同步(含
+          // git/云/P2P)都因 isInflight 提前返回而静默失效，直到重启 app。
+          let settled = false;
+          const cleanup = () => {
             ws.removeEventListener("message", onMsg);
+            ws.removeEventListener("close", onClose);
+            ws.removeEventListener("error", onClose);
+            clearTimeout(timer);
+          };
+          const onMsg = (ev: MessageEvent) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             let r: RpcResp;
             try {
               r = JSON.parse(typeof ev.data === "string" ? ev.data : "") as RpcResp;
@@ -109,11 +124,26 @@ function createConnection(peer: P2PPeer) {
             if (r.ok) resolve(r.result);
             else reject(new TransportError(`P2P RPC 失败：${r.error ?? ""}`, { transient: false }));
           };
+          const onClose = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new TransportError("P2P 连接中断", { transient: true }));
+          };
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new TransportError("P2P RPC 超时", { transient: true }));
+          }, RPC_TIMEOUT_MS);
           ws.addEventListener("message", onMsg);
+          ws.addEventListener("close", onClose);
+          ws.addEventListener("error", onClose);
           try {
             ws.send(JSON.stringify(req));
           } catch (e) {
-            ws.removeEventListener("message", onMsg);
+            settled = true;
+            cleanup();
             reject(new TransportError(`P2P 发送失败：${(e as Error).message}`, { transient: true }));
           }
         }),

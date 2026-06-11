@@ -196,6 +196,27 @@ fn local_name(name: &[u8]) -> &[u8] {
         .unwrap_or(name)
 }
 
+/// 把 URL path 里的 %XX 还原成原字节（WebDAV href 是 percent-encoded）。
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(v) = u8::from_str_radix(hex, 16) {
+                    out.push(v);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
+}
+
 fn rel_from_href(href: &str, base_url: &str) -> String {
     let base_path = reqwest::Url::parse(base_url)
         .map(|u| u.path().trim_end_matches('/').to_string())
@@ -203,9 +224,12 @@ fn rel_from_href(href: &str, base_url: &str) -> String {
     let path = reqwest::Url::parse(href)
         .map(|u| u.path().to_string())
         .unwrap_or_else(|_| href.to_string());
-    path.trim_start_matches(&base_path)
-        .trim_start_matches('/')
-        .to_string()
+    // 在 encoded 域里剥 base 前缀，再整体 percent-decode，否则中文/空格文件名会以
+    // %E7%AC%94… 形式回到上层，post-put stat 永远匹配不上、下载又被重复编码 404。
+    let stripped = path
+        .trim_start_matches(&base_path)
+        .trim_start_matches('/');
+    percent_decode(stripped)
 }
 
 fn parse_propfind(xml: &str, base_url: &str) -> Vec<WebDavEntry> {

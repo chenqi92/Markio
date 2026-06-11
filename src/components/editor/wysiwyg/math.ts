@@ -8,14 +8,8 @@
 
 import { WidgetType } from "@codemirror/view";
 import DOMPurify from "dompurify";
-
-type KatexModule = typeof import("katex");
-
-let katexPromise: Promise<KatexModule> | null = null;
-function getKatex(): Promise<KatexModule> {
-  if (!katexPromise) katexPromise = import("katex");
-  return katexPromise;
-}
+// 复用 lib/math 的懒加载器：它同时按需拉取 katex CSS（已从 index.css 移除）
+import { getKatex } from "@/lib/math";
 
 // 渲染失败时不让 widget 退化为空白 —— 显示带 ❗ 的灰字，让用户知道写错了。
 // signal 来自 widget destroy：如果 widget 在 katex lazy chunk 拉完前就被销毁，

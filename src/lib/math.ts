@@ -7,10 +7,41 @@ import {
 
 type KatexModule = typeof import("katex");
 let katexPromise: Promise<KatexModule> | null = null;
+let katexCssLoaded = false;
 
-async function getKatex(): Promise<KatexModule> {
-  if (!katexPromise) katexPromise = import("katex");
+export async function getKatex(): Promise<KatexModule> {
+  if (!katexPromise) {
+    katexPromise = import("katex");
+    // CSS 随 JS 一起懒加载，避免 256KB JS + 24KB CSS 常驻冷启动关键路径
+    if (!katexCssLoaded) {
+      katexCssLoaded = true;
+      void import("katex/dist/katex.min.css");
+    }
+  }
   return katexPromise;
+}
+
+/** 懒加载 KaTeX 并渲染一个公式为 HTML（MathPreview 浮层用）。 */
+export async function renderMathToHtml(
+  formula: string,
+  display: boolean,
+): Promise<string> {
+  const katex = await getKatex();
+  try {
+    return DOMPurify.sanitize(
+      katex.renderToString(formula, {
+        displayMode: display,
+        throwOnError: false,
+        strict: "ignore",
+        output: "html",
+      }),
+      { USE_PROFILES: { html: true, mathMl: true, svg: true } },
+    );
+  } catch (e) {
+    return DOMPurify.sanitize(
+      `<span style="color:#e5484d;font-family:var(--font-mono);font-size:11px">${(e as Error).message}</span>`,
+    );
+  }
 }
 
 async function renderMathBlock(node: HTMLElement) {

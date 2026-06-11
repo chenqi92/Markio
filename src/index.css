@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "katex/dist/katex.min.css";
+/* katex CSS 改为懒加载（见 src/lib/math.ts getKatex）：不再常驻渲染阻塞的关键 CSS */
 @import "./styles/themes.css";
 @import "./styles/app.css";
 @import "./styles/sidebar.css";

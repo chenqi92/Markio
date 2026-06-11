@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import katex from "katex";
-import "katex/dist/katex.min.css";
-import { sanitizeHtml } from "@/lib/safeHtml";
+import { useEffect, useState } from "react";
+import { renderMathToHtml } from "@/lib/math";
 
 interface Props {
   formula: string;
@@ -12,27 +10,20 @@ interface Props {
 
 /**
  * 光标停在 $...$ / $$...$$ 内时的浮动 KaTeX 实时预览。
- * - 渲染失败显示原始报错（KaTeX 自带 throwOnError=false 时会输出红字）
+ * - KaTeX(256KB JS + 24KB CSS) 改为懒加载：静态 import 会把它压进冷启动入口包，
+ *   即便用户从不写公式。这里在首次需要时异步加载并渲染。
  * - 不接管点击；只是辅助看效果
  */
 export function MathPreview({ formula, display, x, y }: Props) {
-  const html = useMemo(() => {
-    try {
-      return sanitizeHtml(
-        katex.renderToString(formula, {
-          displayMode: display,
-          throwOnError: false,
-          strict: "ignore",
-          output: "html",
-        }),
-      );
-    } catch (e) {
-      // KaTeX 已 throwOnError:false，走到这里通常是 sanitize 异常；把消息当文本展示，
-      // 经 DOMPurify escape 后再注入。
-      return sanitizeHtml(
-        `<span style="color:#e5484d;font-family:var(--font-mono);font-size:11px">${(e as Error).message}</span>`,
-      );
-    }
+  const [html, setHtml] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    void renderMathToHtml(formula, display).then((h) => {
+      if (!cancelled) setHtml(h);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [formula, display]);
 
   const [pos, setPos] = useState({ left: x, top: y });

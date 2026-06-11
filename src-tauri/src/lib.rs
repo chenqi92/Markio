@@ -355,16 +355,21 @@ pub(crate) fn validate_remote_rel_path(path: &str, allow_empty: bool) -> Result<
 // ─── markdown ───────────────────────────────────────────────────────
 
 #[tauri::command]
-fn md_render(
+async fn md_render(
     state: tauri::State<'_, AppState>,
     source: String,
     base_path: Option<String>,
-) -> RenderResult {
+) -> Result<RenderResult, String> {
     let roots = workspace_roots(&state).unwrap_or_default();
     let base = base_path
         .as_deref()
         .and_then(|path| validate_path(&state, path).ok());
-    markdown::render(&source, base.as_deref(), &roots)
+    // 渲染含 pulldown 解析 + syntect 高亮 + 图片内联 + ammonia 清洗，是 CPU 密集活。
+    // 非 async 命令会在主线程(事件循环)上跑，整段时间窗口拖拽/托盘/其它 IPC 全冻结。
+    // 放到 spawn_blocking，与 md_render_stream 一致。
+    tokio::task::spawn_blocking(move || markdown::render(&source, base.as_deref(), &roots))
+        .await
+        .map_err(|e| format!("render join 失败：{e}"))
 }
 
 #[tauri::command]

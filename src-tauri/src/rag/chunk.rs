@@ -169,19 +169,49 @@ fn parse_heading(s: &str) -> Option<(usize, String)> {
     Some((i, title))
 }
 
-/// 按 "\n\n" 切段并保留每段相对 body 的 char 偏移 (start, end)，过滤纯空白段。
+/// 按空行切段并保留每段相对 body 的 char 偏移 (start, end)，过滤纯空白段。
+/// **代码围栏内的空行不切**，保证 ``` 块作为一个整体 chunk（模块文档承诺）。
 fn paragraph_spans(body: &str) -> Vec<(String, usize, usize)> {
-    let mut out = Vec::new();
-    let mut pos = 0usize; // 当前 char 偏移
-    for seg in body.split("\n\n") {
-        let seg_len = seg.chars().count();
-        let start = pos;
-        let end = pos + seg_len;
-        if !seg.trim().is_empty() {
-            out.push((seg.to_string(), start, end));
+    let mut out: Vec<(String, usize, usize)> = Vec::new();
+    let mut seg = String::new();
+    let mut seg_start = 0usize;
+    let mut cur = 0usize; // 当前 char 偏移
+    let mut in_fence = false;
+    let mut fence_marker: &str = "";
+
+    let flush = |out: &mut Vec<(String, usize, usize)>, seg: &mut String, start: usize, end: usize| {
+        let trimmed = seg.trim_end_matches('\n');
+        if !trimmed.trim().is_empty() {
+            out.push((trimmed.to_string(), start, end));
         }
-        pos = end + 2; // 跳过分隔符 "\n\n"（2 个 char）
+        seg.clear();
+    };
+
+    for line in body.split_inclusive('\n') {
+        let line_chars = line.chars().count();
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            let marker = if t.starts_with("```") { "```" } else { "~~~" };
+            if !in_fence {
+                in_fence = true;
+                fence_marker = marker;
+            } else if t.starts_with(fence_marker) {
+                in_fence = false;
+            }
+        }
+        if line.trim().is_empty() && !in_fence {
+            flush(&mut out, &mut seg, seg_start, cur);
+            cur += line_chars;
+            seg_start = cur;
+            continue;
+        }
+        if seg.is_empty() {
+            seg_start = cur;
+        }
+        seg.push_str(line);
+        cur += line_chars;
     }
+    flush(&mut out, &mut seg, seg_start, cur);
     out
 }
 
@@ -281,5 +311,16 @@ mod tests {
         assert_eq!(level, 2);
         assert_eq!(text, "Hello");
         assert!(parse_heading("not a heading").is_none());
+    }
+
+    #[test]
+    fn paragraph_spans_keeps_fenced_block_with_blank_lines() {
+        // 围栏内含空行不应被切成多段
+        let body = "intro\n\n```py\na = 1\n\nb = 2\n```\n\nouter";
+        let spans = paragraph_spans(body);
+        let texts: Vec<&str> = spans.iter().map(|(t, _, _)| t.as_str()).collect();
+        assert!(texts.iter().any(|t| t.contains("a = 1") && t.contains("b = 2")));
+        // intro / 代码块 / outer 三段，而不是把代码块拆开
+        assert_eq!(spans.len(), 3);
     }
 }

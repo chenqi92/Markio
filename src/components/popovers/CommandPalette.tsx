@@ -261,6 +261,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
+      // IME 组字中（中文/日文/韩文）的 Enter/方向键/Escape 是在操作候选词，
+      // 不能让它执行命令或关闭面板。
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") onClose();
       if (e.key === "ArrowDown") {
         e.preventDefault();

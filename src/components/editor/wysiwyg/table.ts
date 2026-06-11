@@ -552,6 +552,9 @@ function installTableDomHandlers(view: EditorView, host: HTMLElement): Cleanup {
     const target = eventElementTarget(event);
     const cell = target?.closest<HTMLElement>(".cm-md-table-cell");
     if (!cell || !host.contains(cell)) return;
+    // IME 组字中按 Enter/Tab 是在确认候选词，不能当作提交单元格 + 失焦，
+    // 否则中文用户每次转换确认都会被踢出单元格。
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();

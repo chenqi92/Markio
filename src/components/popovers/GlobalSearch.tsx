@@ -271,6 +271,8 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // IME 组字中的 Enter/方向键/Escape 留给候选词操作，别打开结果或关闭面板
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") onClose();
       if (e.key === "ArrowDown") {
         e.preventDefault();

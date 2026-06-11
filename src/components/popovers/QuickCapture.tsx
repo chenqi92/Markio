@@ -3,6 +3,7 @@ import { Icon } from "../ui/Icon";
 import { api, parseError } from "@/lib/api";
 import { useWorkspace } from "@/stores/workspace";
 import { useUI } from "@/stores/ui";
+import { useDialog } from "@/stores/dialog";
 import { displayPath } from "@/lib/utils";
 import { shortcutText } from "@/lib/shortcuts";
 
@@ -58,6 +59,7 @@ async function appendToFile(path: string, body: string): Promise<void> {
 export function QuickCapture({ onClose }: { onClose: () => void }) {
   const ws = useWorkspace((s) => s.activeWorkspace());
   const setToast = useUI((s) => s.setToast);
+  const confirmDialog = useDialog((s) => s.confirm);
   const [text, setText] = useState("");
   const [target, setTarget] = useState<Target>("today");
   const [saving, setSaving] = useState(false);
@@ -96,12 +98,31 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // 有未保存文本时，关闭前先确认，避免一次误触（Esc / 点遮罩）丢掉整条捕获。
+  const requestClose = () => {
+    if (text.trim().length === 0) {
+      onClose();
+      return;
+    }
+    void confirmDialog({
+      title: "放弃捕获？",
+      message: "已输入的内容尚未保存。",
+      confirmLabel: "放弃",
+      cancelLabel: "继续编辑",
+      danger: true,
+    }).then((ok) => {
+      if (ok) onClose();
+    });
+  };
+
   useEffect(() => {
     const t = window.setTimeout(() => taRef.current?.focus(), 30);
     const k = (e: KeyboardEvent) => {
+      // IME 组字中的 Escape 是取消候选词，不应关闭并丢弃已输入文本
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        requestClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         void save();
@@ -122,7 +143,7 @@ export function QuickCapture({ onClose }: { onClose: () => void }) {
   const timeLabel = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} · ${weekday}`;
 
   return (
-    <div className="qc-scrim" onClick={onClose}>
+    <div className="qc-scrim" onClick={requestClose}>
       <div
         className="qc2-window"
         onClick={(e) => e.stopPropagation()}

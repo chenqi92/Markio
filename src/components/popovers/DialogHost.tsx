@@ -26,6 +26,7 @@ export function DialogHost() {
         aria-labelledby="app-dialog-title"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "Escape") {
             e.preventDefault();
             close();
@@ -48,6 +49,7 @@ export function DialogHost() {
             placeholder={request.placeholder}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Enter") {
                 e.preventDefault();
                 submit();
@@ -63,6 +65,9 @@ export function DialogHost() {
           )}
           <button
             type="button"
+            // confirm/alert 没有输入框；自动聚焦主按钮，让 Esc/Enter 生效并
+            // 防止键盘事件穿透到模态背后的编辑器。
+            autoFocus={!isPrompt}
             className={classNames("app-dialog-btn", "primary", request.danger && "danger")}
             onClick={submit}
           >

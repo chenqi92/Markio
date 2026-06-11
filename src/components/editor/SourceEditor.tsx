@@ -156,7 +156,9 @@ export const SourceEditor = memo(function SourceEditor({
           }> = [
             { kind: "wiki", re: /\[\[([\w一-鿿./ -]{0,40})$/, triggerLen: 2 },
             { kind: "mention", re: /(^|\s)@([\w一-鿿-]{0,30})$/, triggerLen: 1 },
-            { kind: "tag", re: /(^|\s)#([\w一-鿿-]{0,30})$/, triggerLen: 1 },
+            // 要求 # 后至少 1 个标签字符才触发，避免输入「# 标题」时一按 # 就弹出
+            // 标签补全并劫持 Enter / 方向键。
+            { kind: "tag", re: /(^|\s)#([\w一-鿿-]{1,30})$/, triggerLen: 1 },
             { kind: "emoji", re: /(^|\s):([\w-]{0,30})$/, triggerLen: 1 },
           ];
           for (const t of triggers) {

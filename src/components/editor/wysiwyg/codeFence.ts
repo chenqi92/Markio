@@ -187,6 +187,7 @@ function installCodeFenceDomHandlers(
     on(input, "blur", () => commitCodeFenceLang(view, host, input.value));
     on(input, "keydown", (event) => {
       event.stopPropagation();
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Enter") {
         event.preventDefault();
         input.blur();

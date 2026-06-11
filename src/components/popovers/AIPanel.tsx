@@ -1388,6 +1388,8 @@ function AIInputBar({
                 updateAtFromTextarea(ta.value, ta.selectionStart ?? 0);
               }}
               onKeyDown={(e) => {
+                // IME 组字中的 Enter 是确认候选词，不能触发发送/选择
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 if (atTrigger && e.key === "Escape") {
                   e.preventDefault();
                   e.stopPropagation();

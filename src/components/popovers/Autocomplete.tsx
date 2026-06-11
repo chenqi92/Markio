@@ -162,6 +162,8 @@ export function Autocomplete({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // IME 组字中的方向键/Enter/Escape 留给候选词，不抢补全菜单的导航
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();

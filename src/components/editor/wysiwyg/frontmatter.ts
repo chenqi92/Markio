@@ -223,6 +223,8 @@ export class FrontmatterWidget extends WidgetType {
         ".cm-md-fm-value",
       );
       if (!cell) return;
+      // IME 组字中的 Enter/Escape 是候选词确认/取消，别当成提交/失焦
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();

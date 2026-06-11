@@ -65,6 +65,7 @@ export function openEditPopover(
     input.addEventListener("keydown", (ev) => {
       const e = ev as KeyboardEvent;
       e.stopPropagation();
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Enter" && !(input instanceof HTMLTextAreaElement)) {
         e.preventDefault();
         submit();

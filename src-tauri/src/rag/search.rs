@@ -120,9 +120,12 @@ pub fn search_with_rerank(
         }
     }
 
-    // 5. 重排（可选）：取 top-(limit*3) 给 reranker，得到精排结果
+    // 5. 重排（可选）：取 top-(limit*3) 给 reranker，得到精排结果。
+    //    注意不能用 clamp(limit, ranked.len())：候选数 < limit 时 min>max 会 panic
+    //    （小库 / 稀疏查询 / 仅 FTS 兜底 / 零命中都可能触发），整个搜索失败。
     if let Some(rcfg) = rerank_cfg.as_ref() {
-        let pool_size = (limit * 3).clamp(limit, ranked.len());
+        if !ranked.is_empty() {
+        let pool_size = (limit * 3).min(ranked.len());
         let pool: Vec<&Candidate> = ranked.iter().take(pool_size).collect();
         let docs = materialize(&handle, &pool)?;
         let texts: Vec<String> = docs.iter().map(|h| h.body.clone()).collect();
@@ -143,6 +146,7 @@ pub fn search_with_rerank(
             Err(e) => {
                 eprintln!("[rag.rerank] 失败，回退原始排序：{e}");
             }
+        }
         }
     }
 

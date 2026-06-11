@@ -499,6 +499,24 @@ async fn run_generic(
     let stdout = child.stdout.take().ok_or("拿不到 stdout")?;
     let mut reader = BufReader::new(stdout).lines();
 
+    // 并发抽干 stderr：① CLI 写超过管道缓冲(~64KB)而无人读会阻塞子进程，
+    // 让 stdout 永不 EOF 把会话挂死；② 失败诊断(未登录/报错)都在 stderr，
+    // 不读用户只能看到空会话。
+    let stderr = child.stderr.take();
+    let err_buf: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
+    let err_task = stderr.map(|se| {
+        let buf = err_buf.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(se).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Ok(mut b) = buf.lock() {
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            }
+        })
+    });
+
     emit(
         app,
         &req.session_id,
@@ -528,7 +546,26 @@ async fn run_generic(
             },
         );
     }
-    let _ = child.wait().await;
+    let status = child.wait().await;
+    if let Some(t) = err_task {
+        let _ = t.await;
+    }
+    let stderr_text = err_buf.lock().map(|b| b.clone()).unwrap_or_default();
+    // stdout 没有有效输出但 stderr 有内容（或进程失败）时，把 stderr 透出来，
+    // 避免会话显示为空让用户不知所措。
+    let failed = matches!(status, Ok(s) if !s.success());
+    if (full_text.trim().is_empty() || failed) && !stderr_text.trim().is_empty() {
+        emit(
+            app,
+            &req.session_id,
+            AgentEvent::TextDelta {
+                text: format!("\n[stderr] {}\n", stderr_text.trim()),
+            },
+        );
+        if full_text.trim().is_empty() {
+            full_text = stderr_text;
+        }
+    }
     emit(
         app,
         &req.session_id,

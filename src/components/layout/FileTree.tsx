@@ -613,9 +613,8 @@ function TreeContextMenu({
     setToast({ stage: "error", message: msg });
   };
 
-  // 把"显示但不可用"的菜单项也放在 menu 里，让 23 项分组结构稳定；
-  // 没拼通的能力（标签 / 颜色 / 收藏 / 移动至 / 公开发布 / 导出 / 属性 / 复制剪切）
-  // 暂时不进 menu，避免空跑误操作。等对应模块（P4 publish、P10 advanced 等）落地再补。
+  // 已接通并进 menu：标签 / 颜色 / 收藏 / 移动至 / 属性 等。
+  // 仍未做、暂不进 menu：公开发布（P4 publish）、导出、复制 / 剪切。
   const isFile = !node.isDir;
   const isDir = node.isDir;
   const dirOfNode = isDir ? node.path : parentPath(node.path);

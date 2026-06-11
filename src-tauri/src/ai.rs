@@ -156,7 +156,7 @@ pub async fn chat(req: ChatRequest) -> Result<ChatResponse, String> {
 // 当前实现：OpenAI 兼容协议（覆盖 openai / deepseek / groq / moonshot / xai /
 // nvidia / openrouter / together / mistral / siliconflow / zhipu / dashscope /
 // xiaomi / ollama / custom = 15 个 provider）。Anthropic 与 Google 的 tool 协议字段
-// 不一样，后续单独实现，先报明确错误避免静默 fallback。
+// 不同，已分别由 call_anthropic_with_tools / call_google_with_tools 实现并在分发处路由。
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTool {

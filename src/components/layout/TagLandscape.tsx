@@ -21,7 +21,7 @@ interface TagEntry {
 }
 
 /** 跨仓库的 #tag 全景：vault index 在 Rust 端已经为每个 .md 抽好 tags 数组，
- *  这里聚合 + 计数 + 渲染。点击 tag 展开右侧详情；rename / merge 留给后续。 */
+ *  这里聚合 + 计数 + 渲染。点击 tag 展开右侧详情；支持 rename（renameTag）。 */
 export function TagLandscape() {
   const { t } = useTranslation();
   const workspaces = useWorkspace((s) => s.workspaces);

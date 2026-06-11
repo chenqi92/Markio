@@ -221,10 +221,15 @@ pub fn watch(app: AppHandle, workspace: PathBuf) -> Result<(), String> {
                 if is_under_nested_code_project(&ws_for_cb, &path) {
                     continue;
                 }
-                if !path.is_dir() && !is_text_note_path(&path) {
+                // 删除事件里目录/附件已不存在，path.is_dir() 为 false 且无 .md 扩展名，
+                // 旧逻辑 `!is_dir && !is_text_note` 会把「删除文件夹」整个吞掉，
+                // 侧栏残留点不开的死目录。对「删除」放宽：任何已消失的路径都发
+                // "removed" 让前端刷新树；仅对存活的非笔记非目录文件才跳过。
+                let removed = !path.exists();
+                if !removed && !path.is_dir() && !is_text_note_path(&path) {
                     continue;
                 }
-                let kind = if path.exists() { "modified" } else { "removed" };
+                let kind = if removed { "removed" } else { "modified" };
                 let emit_res = app_for_cb.emit(
                     "fs-changed",
                     FsChangedPayload {

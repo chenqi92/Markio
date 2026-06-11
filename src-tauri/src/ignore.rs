@@ -69,6 +69,8 @@ struct IgnorePattern {
     directory_only: bool,
     anchored: bool,
     has_slash: bool,
+    /// `!` 前缀的反选规则：命中时把路径重新纳入（取消忽略）。
+    negated: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -102,12 +104,18 @@ impl IgnoreRules {
         }
 
         let components = rel_components_lower(rel);
-        self.patterns.iter().any(|p| {
+        // gitignore 语义：按顺序求值，最后一条命中的规则决定结果，
+        // `!` 反选可取消前面 .markioignore 规则的忽略（但不能复活默认忽略目录）。
+        let mut ignored = false;
+        for p in &self.patterns {
             if p.directory_only && !is_dir && !path_has_dir_component(&rel_norm, &components, p) {
-                return false;
+                continue;
             }
-            matches_pattern(p, &rel_norm, &components)
-        })
+            if matches_pattern(p, &rel_norm, &components) {
+                ignored = !p.negated;
+            }
+        }
+        ignored
     }
 
     fn from_content(content: &str) -> Self {
@@ -176,8 +184,12 @@ pub fn is_under_nested_code_project(workspace: &Path, path: &Path) -> bool {
 
 fn parse_line(line: &str) -> Option<IgnorePattern> {
     let mut raw = line.trim();
-    if raw.is_empty() || raw.starts_with('#') || raw.starts_with('!') {
+    if raw.is_empty() || raw.starts_with('#') {
         return None;
+    }
+    let negated = raw.starts_with('!');
+    if negated {
+        raw = raw[1..].trim();
     }
     raw = raw.trim_matches('"').trim_matches('\'').trim();
     if raw.is_empty() {
@@ -197,6 +209,7 @@ fn parse_line(line: &str) -> Option<IgnorePattern> {
         directory_only,
         anchored,
         has_slash,
+        negated,
     })
 }
 
@@ -248,34 +261,61 @@ fn path_has_dir_component(rel: &str, components: &[String], p: &IgnorePattern) -
     }
 }
 
+/// gitignore 风格 glob：单个 `*` / `?` **不跨越 `/`**（按段匹配），`**` 才跨目录。
+/// 旧实现里 `*` 会吞掉 `/`，导致 `tmp/*.md` 误伤 `tmp/sub/deep/draft.md`、`docs/*`
+/// 吞掉整棵子树，把本应可见的笔记从树/搜索/索引里静默隐藏。
+/// 递归回溯，正确处理多个 `*` 与 `**`（短模式下足够快）。
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let p = pattern.as_bytes();
-    let t = text.as_bytes();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let mut star: Option<usize> = None;
-    let mut star_ti = 0usize;
+    glob_rec(pattern.as_bytes(), text.as_bytes())
+}
 
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == b'*' {
-            star = Some(pi);
-            star_ti = ti;
-            pi += 1;
-        } else if let Some(si) = star {
-            pi = si + 1;
-            star_ti += 1;
-            ti = star_ti;
-        } else {
-            return false;
+fn glob_rec(p: &[u8], t: &[u8]) -> bool {
+    let mut pi = 0;
+    let mut ti = 0;
+    while pi < p.len() {
+        match p[pi] {
+            b'*' => {
+                let dbl = pi + 1 < p.len() && p[pi + 1] == b'*';
+                let after = if dbl { &p[pi + 2..] } else { &p[pi + 1..] };
+                // `a/**/b` 要能匹配 `a/b`（零个中间目录）：把 `**/` 整体折叠为空，
+                // 即跳过 `**` 紧跟的 '/' 再尝试。
+                if dbl && after.first() == Some(&b'/') && glob_rec(&after[1..], &t[ti..]) {
+                    return true;
+                }
+                // 零宽匹配
+                if glob_rec(after, &t[ti..]) {
+                    return true;
+                }
+                let mut k = ti;
+                while k < t.len() {
+                    // 单星不跨 '/'
+                    if !dbl && t[k] == b'/' {
+                        break;
+                    }
+                    k += 1;
+                    if glob_rec(after, &t[k..]) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            b'?' => {
+                if ti >= t.len() || t[ti] == b'/' {
+                    return false;
+                }
+                pi += 1;
+                ti += 1;
+            }
+            c => {
+                if ti >= t.len() || t[ti] != c {
+                    return false;
+                }
+                pi += 1;
+                ti += 1;
+            }
         }
     }
-
-    while pi < p.len() && p[pi] == b'*' {
-        pi += 1;
-    }
-    pi == p.len()
+    ti == t.len()
 }
 
 #[cfg(test)]
@@ -330,5 +370,31 @@ mod tests {
         assert!(rules.is_ignored(Path::new("logs/app.log"), false));
         assert!(rules.is_ignored(Path::new("archive/old.md"), false));
         assert!(!rules.is_ignored(Path::new("notes/app.md"), false));
+    }
+
+    #[test]
+    fn single_star_does_not_cross_slash() {
+        let rules = IgnoreRules::from_content("tmp/*.md\ndocs/*\n");
+        // 直接子项命中
+        assert!(rules.is_ignored(Path::new("tmp/draft.md"), false));
+        assert!(rules.is_ignored(Path::new("docs/intro.md"), false));
+        // 单星不跨 '/'：更深的嵌套不应被吞掉
+        assert!(!rules.is_ignored(Path::new("tmp/sub/deep/draft.md"), false));
+        assert!(!rules.is_ignored(Path::new("docs/sub/intro.md"), false));
+    }
+
+    #[test]
+    fn double_star_crosses_directories() {
+        let rules = IgnoreRules::from_content("tmp/**/*.md\n");
+        assert!(rules.is_ignored(Path::new("tmp/sub/deep/draft.md"), false));
+        assert!(rules.is_ignored(Path::new("tmp/draft.md"), false));
+    }
+
+    #[test]
+    fn negation_reincludes() {
+        // 用非默认忽略名（default 列表含 build/dist/target 等会短路）
+        let rules = IgnoreRules::from_content("scratch/\n!scratch/keep.md\n");
+        assert!(rules.is_ignored(Path::new("scratch/out.md"), false));
+        assert!(!rules.is_ignored(Path::new("scratch/keep.md"), false));
     }
 }

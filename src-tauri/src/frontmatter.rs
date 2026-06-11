@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::fs_ops;
+use crate::ignore::{is_under_nested_code_project, IgnoreRules};
 
 /// 一条笔记的 frontmatter 投射（已展开成 key → Vec<value>，
 /// 这样 list 字段和单值字段统一处理；空值过滤掉）。
@@ -134,11 +135,18 @@ pub fn scan(workspace: &str) -> Result<Vec<NoteFrontmatter>, String> {
         return Err("仓库路径无效".into());
     }
     let mut out: Vec<NoteFrontmatter> = Vec::new();
-    walk(&ws, &mut out, 0)?;
+    let rules = IgnoreRules::load(&ws);
+    walk(&ws, &ws, &rules, &mut out, 0)?;
     Ok(out)
 }
 
-fn walk(dir: &Path, out: &mut Vec<NoteFrontmatter>, depth: usize) -> Result<(), String> {
+fn walk(
+    root: &Path,
+    dir: &Path,
+    rules: &IgnoreRules,
+    out: &mut Vec<NoteFrontmatter>,
+    depth: usize,
+) -> Result<(), String> {
     if depth > 12 {
         return Ok(());
     }
@@ -156,8 +164,17 @@ fn walk(dir: &Path, out: &mut Vec<NoteFrontmatter>, depth: usize) -> Result<(), 
             Ok(t) => t,
             Err(_) => continue,
         };
+        // 与 walk_tree/grep/index 一致地套用 .markioignore + 默认忽略 + 嵌套代码工程，
+        // 否则会递归进 node_modules/target 读成千上万个依赖文档，污染数据库并拖慢扫描。
+        let rel = path.strip_prefix(root).unwrap_or(&path);
+        if rules.is_ignored(rel, ft.is_dir()) {
+            continue;
+        }
         if ft.is_dir() {
-            walk(&path, out, depth + 1)?;
+            if is_under_nested_code_project(root, &path) {
+                continue;
+            }
+            walk(root, &path, rules, out, depth + 1)?;
             continue;
         }
         if !ft.is_file() {

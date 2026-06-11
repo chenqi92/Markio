@@ -5,7 +5,19 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::walker_io::read_text;
+use super::walker_io::{atomic_write, read_text};
+
+/// 从快照文件名解出时间戳，但仅当 key 部分**完全等于**目标 key 时才返回。
+/// 用 rsplit_once("__") 而非前缀匹配，避免名为 `note.md__draft.md` 的文件
+/// （快照 `note.md__draft.md__{ts}.md`）被误算进 `note.md` 的历史。
+fn snapshot_ts_for_key(name: &str, key: &str) -> Option<i64> {
+    let stem = name.strip_suffix(".md")?;
+    let (k, ts_str) = stem.rsplit_once("__")?;
+    if k != key {
+        return None;
+    }
+    ts_str.parse::<i64>().ok()
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,23 +53,19 @@ pub fn save_snapshot(workspace: &str, file: &str, content: &str) -> Result<(), S
     let ts = chrono::Utc::now().timestamp_millis();
     let snap_name = format!("{key}__{ts}.md");
     let snap_path = dir.join(snap_name);
-    fs::write(&snap_path, content).map_err(|e| e.to_string())?;
+    // 原子写：快照常是旧内容唯一的留存，崩溃/断电时半截快照会让历史恢复失效。
+    atomic_write(&snap_path, content)?;
     // 同一文件最多保留 30 份
     prune_snapshots(&dir, &key, 30)?;
     Ok(())
 }
 
 fn prune_snapshots(dir: &Path, key: &str, max: usize) -> Result<(), String> {
-    let prefix = format!("{key}__");
     let mut entries: Vec<(i64, PathBuf)> = Vec::new();
     if let Ok(read) = fs::read_dir(dir) {
         for e in read.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if !name.starts_with(&prefix) || !name.ends_with(".md") {
-                continue;
-            }
-            let ts_str = name.trim_start_matches(&prefix).trim_end_matches(".md");
-            if let Ok(ts) = ts_str.parse::<i64>() {
+            if let Some(ts) = snapshot_ts_for_key(&name, key) {
                 entries.push((ts, e.path()));
             }
         }
@@ -77,15 +85,12 @@ pub fn list_snapshots(workspace: &str, file: &str) -> Result<Vec<Snapshot>, Stri
         return Ok(Vec::new());
     }
     let key = snapshot_key(&file_path, &ws_path)?;
-    let prefix = format!("{key}__");
     let mut out: Vec<Snapshot> = Vec::new();
     for e in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        if !name.starts_with(&prefix) || !name.ends_with(".md") {
+        let Some(ts) = snapshot_ts_for_key(&name, &key) else {
             continue;
-        }
-        let ts_str = name.trim_start_matches(&prefix).trim_end_matches(".md");
-        let ts: i64 = ts_str.parse().unwrap_or(0);
+        };
         let meta = e.metadata().ok();
         out.push(Snapshot {
             path: e.path().to_string_lossy().to_string(),

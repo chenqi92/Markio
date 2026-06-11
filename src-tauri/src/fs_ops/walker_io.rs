@@ -133,6 +133,9 @@ impl Walker {
 
         let mut dirs: Vec<(PathBuf, String)> = Vec::new();
         let mut files: Vec<FileEntry> = Vec::new();
+        // 单目录子项超过 MAX_DIR_CHILDREN 时截断；要标记 truncated，否则 UI
+        // 无从提示「此目录列表已截断」，靠后枚举到的 .md 会无声消失。
+        let mut dir_truncated = false;
 
         for (local_count, entry) in entries.flatten().enumerate() {
             if self.visited >= MAX_VISITED_ENTRIES {
@@ -140,6 +143,7 @@ impl Walker {
                 break;
             }
             if local_count >= MAX_DIR_CHILDREN {
+                dir_truncated = true;
                 break;
             }
             self.visited += 1;
@@ -214,7 +218,7 @@ impl Walker {
             size: 0,
             modified: modified_ms(dir),
             children: Some(children),
-            truncated: self.cap_hit,
+            truncated: self.cap_hit || dir_truncated,
         })
     }
 }
@@ -357,7 +361,21 @@ pub fn read_text_path(path: &Path) -> Result<String, String> {
     if let Ok(s) = std::str::from_utf8(&bytes) {
         return Ok(s.to_string());
     }
-    let (cow, _, _) = encoding_rs::UTF_8.decode(&bytes);
+    // 非 UTF-8（常见为 GBK/GB18030/Big5/Shift_JIS 的旧笔记）。绝不能用
+    // UTF_8.decode 强解——那会把每个非法字节替换成 U+FFFD，保存即不可逆损坏。
+    // 依次尝试这些编码，取第一个「无替换字符」的结果，使展示与回存为无损转码；
+    // 都失败再退回 windows-1252（WHATWG 映射每个字节，永不产生 U+FFFD）。
+    for enc in [
+        encoding_rs::GB18030,
+        encoding_rs::BIG5,
+        encoding_rs::SHIFT_JIS,
+    ] {
+        let (cow, _, had_errors) = enc.decode(&bytes);
+        if !had_errors {
+            return Ok(cow.into_owned());
+        }
+    }
+    let (cow, _, _) = encoding_rs::WINDOWS_1252.decode(&bytes);
     Ok(cow.into_owned())
 }
 
@@ -412,7 +430,22 @@ pub fn create_new(path: &Path, content: &str) -> Result<(), String> {
 }
 
 pub fn rename(from: &str, to: &str) -> Result<(), String> {
+    // fs::rename 在 Windows(MOVEFILE_REPLACE_EXISTING) 与 Unix 上都会静默覆盖已存在
+    // 的目标文件，导致重命名/移动到同名文件时无声销毁对方内容。这里先拒绝覆盖，
+    // 但放行仅大小写不同的同一文件改名（大小写不敏感盘上 to.exists() 会为真）。
+    let to_path = Path::new(to);
+    if to_path.exists() && !is_same_existing_file(from, to) {
+        return Err(format!("ALREADY_EXISTS:{}", to_path.display()));
+    }
     fs::rename(from, to).map_err(|e| e.to_string())
+}
+
+/// from 与 to 是否指向磁盘上同一个已存在文件（用于放行大小写改名）。
+fn is_same_existing_file(from: &str, to: &str) -> bool {
+    match (fs::canonicalize(from), fs::canonicalize(to)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 pub fn delete(path: &str) -> Result<(), String> {

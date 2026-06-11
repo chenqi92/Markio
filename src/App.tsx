@@ -99,8 +99,6 @@ export default function App() {
   const openPath = useTabs((s) => s.openPath);
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const setToast = useUI((s) => s.setToast);
-  const activeId = useTabs((s) => s.activeId);
-  const activeDirty = useTabs((s) => s.activeTab()?.dirty ?? false);
   const followSystem = useSettings((s) => s.followSystemTheme);
   const theme = useSettings((s) => s.theme);
   const setTheme = useSettings((s) => s.setTheme);
@@ -525,7 +523,7 @@ export default function App() {
       "app.globalSearch": () => useUI.getState().openGlobalSearch(true),
       "app.findInFile": () => openFind(true),
       "app.save": () => {
-        if (!activeDirty) return;
+        if (!useTabs.getState().activeTab()?.dirty) return;
         void (async () => {
           const outcome = await saveActive();
           if (outcome === "ok") {
@@ -615,6 +613,7 @@ export default function App() {
       "app.toggleHistory": () =>
         useUI.getState().openHistory(!useUI.getState().historyOpen),
       "app.closeTab": () => {
+        const activeId = useTabs.getState().activeId;
         if (!activeId) return;
         const t = useTabs.getState().tabs.find((x) => x.id === activeId);
         void (async () => {
@@ -686,8 +685,8 @@ export default function App() {
     toggleOutline,
     toggleFocus,
     closeTab,
-    activeId,
-    activeDirty,
+    // activeId / activeDirty 改为在 handler 内用 getState 读取，避免它们随每次按键
+    // 翻转(autosave 周期)而不断 teardown/重建 capture 监听 + 20+ 个闭包。
     openPath,
     addWorkspace,
     setToast,

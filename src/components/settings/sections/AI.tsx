@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings, type DriveConfig } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
@@ -46,6 +46,15 @@ export function AI() {
   const setAi = useSettings((s) => s.setAi);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  // maxTokens 输入用本地字符串态：边打字边 clamp 会让「1024」永远打不进去
+  // （首位 1 立刻被夹成 256）。失焦时再 clamp + 写入设置。
+  const [maxTokensInput, setMaxTokensInput] = useState(String(maxTokens));
+  useEffect(() => {
+    setMaxTokensInput(String(maxTokens));
+  }, [maxTokens]);
+  // 连接测试的序号：切换 provider 或重新测试时自增，旧的 in-flight 结果失效，
+  // 避免上一个 provider 的「✓ 已连接」写到当前已换的 provider 卡片上。
+  const testSeqRef = useRef(0);
   const [keyDraft, setKeyDraft] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const confirmDialog = useDialog((s) => s.confirm);
@@ -73,6 +82,7 @@ export function AI() {
       aiEndpoint: saved.endpoint ?? defaults.endpoint,
       aiModel: saved.model ?? defaults.model,
     });
+    testSeqRef.current++;
     setTestResult(null);
   };
 
@@ -161,6 +171,7 @@ export function AI() {
       setTestResult("✗ 当前地区不可使用该模型源");
       return;
     }
+    const seq = ++testSeqRef.current;
     setTesting(true);
     setTestResult(null);
     try {
@@ -172,11 +183,13 @@ export function AI() {
         temperature: 0,
         messages: [{ role: "user", content: "ping" }],
       });
+      if (seq !== testSeqRef.current) return;
       setTestResult(`✓ ${r.text.slice(0, 80) || "已连接"}`);
     } catch (e) {
+      if (seq !== testSeqRef.current) return;
       setTestResult(`✗ ${(e as Error).message}`);
     } finally {
-      setTesting(false);
+      if (seq === testSeqRef.current) setTesting(false);
     }
   };
 
@@ -439,10 +452,16 @@ export function AI() {
             type="number"
             min={256}
             max={32000}
-            value={maxTokens}
-            onChange={(e) =>
-              setAi({ aiMaxTokens: Math.max(256, Math.min(32000, Number(e.target.value) || 4096)) })
-            }
+            value={maxTokensInput}
+            onChange={(e) => setMaxTokensInput(e.target.value)}
+            onBlur={() => {
+              const clamped = Math.max(
+                256,
+                Math.min(32000, Number(maxTokensInput) || 4096),
+              );
+              setAi({ aiMaxTokens: clamped });
+              setMaxTokensInput(String(clamped));
+            }}
             style={{
               padding: "5px 10px",
               background: "var(--bg-input)",

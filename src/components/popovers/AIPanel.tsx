@@ -10,6 +10,7 @@ import { useVaultIndex } from "@/stores/vaultIndex";
 import { reportDiagnostic } from "@/stores/diagnostics";
 import { recordOp } from "@/stores/opsLog";
 import { api } from "@/lib/api";
+import { uid } from "@/lib/utils";
 import * as aiCache from "@/lib/aiCache";
 import { shortcutText } from "@/lib/shortcuts";
 import {
@@ -218,7 +219,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
       return;
     }
     if (modelList.length === 0) return;
-    if (!modelList.find((m) => m.id === model)) {
+    // 只有在完全没有选择 model 时才填默认值。不要因为「不在静态目录里」就重置——
+    // 用户可能手填了模型 id 或通过「拉取」获得了实时模型（AIModelPicker 明确支持），
+    // 旧逻辑会在打开面板时把它静默改回 modelList[0]，后续请求发往错误模型。
+    if (!model) {
       setAi({ aiModel: modelList[0]!.id });
     }
   }, [providerAllowed, modelList, model, setAi]);
@@ -241,7 +245,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
 
     const now = Date.now();
     const userMsg: AIMsgRecord = {
-      id: `m${now}`,
+      // uid() 保证唯一：原来用 `m${Date.now()}`，与下面 assistant 占位的 id 在同一
+      // 毫秒（全同步路径，如 scope=open / 关检索 / 无附件）会碰撞，流式 delta 会同时
+      // 写进用户消息和助手占位，agent 模式还会用工具轨迹覆盖用户提问。
+      id: uid(),
       role: "user",
       text,
       time: now,
@@ -453,7 +460,7 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     const msgs = updated?.messages ?? [];
 
     // 先占位一条空 assistant 消息，流式追加 delta
-    const assistantId = `m${Date.now()}`;
+    const assistantId = uid();
     appendMessage(sessionId, {
       id: assistantId,
       role: "assistant",

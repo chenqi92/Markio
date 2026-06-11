@@ -48,13 +48,25 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const [running, setRunning] = useState<string | null>(null);
   const blockRef = useRef<HTMLDivElement>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  // 镜像 running，供卸载清理读取当前会话 id（cleanup 闭包 deps 为 []，否则只能拿到初值）
+  const runningRef = useRef<string | null>(null);
   const agentAllowed = isExternalAgentAllowedInCurrentRegion();
 
-  // 组件卸载时兜底解绑事件监听（如路由切换强制卸载，避免监听泄漏）
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
+
+  // 组件卸载时兜底解绑事件监听 + 取消仍在跑的 CLI agent。AppShell 用
+  // `!settingsOpen && !aiOpen && agentOpen && <AgentPanel/>` 挂载，打开设置/AI
+  // 会强制 unmount 本组件；不取消的话，可写(poweruser)模式的进程会留在后台继续
+  // 改文件且无从停止。
   useEffect(
     () => () => {
       unlistenRef.current?.();
       unlistenRef.current = null;
+      if (runningRef.current) {
+        void api.agentCancel(runningRef.current).catch(() => undefined);
+      }
     },
     [],
   );

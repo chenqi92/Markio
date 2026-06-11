@@ -549,10 +549,13 @@ function useWorkspaceForRag() {
     void refresh();
     void (async () => {
       try {
-        unlisten = await listen<RagStatus>("rag-status", (e) => {
+        const un = await listen<RagStatus>("rag-status", (e) => {
           if (cancelled || !sameWorkspacePath(e.payload.workspace, ws.path)) return;
           setStatus(e.payload);
         });
+        // 若 effect 已在 await 期间被清理，立即解绑，否则监听永久泄漏
+        if (cancelled) un();
+        else unlisten = un;
       } catch (e) {
         console.warn("[rag.status.listen] failed", e);
       }

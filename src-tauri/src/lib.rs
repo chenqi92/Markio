@@ -1345,6 +1345,7 @@ async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
     reject_private_network_url(&parsed, "图片下载")?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .redirect(safe_redirect_policy())
         .build()
         .map_err(|e| format!("初始化 HTTP 客户端失败：{e}"))?;
     let resp = client
@@ -1371,9 +1372,14 @@ async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
 }
 
 /// 把文本写到用户通过 dialog.save 选定的绝对路径。
-/// 仅做基本字符校验，不做沙箱（路径来自用户）。
+/// 限制写入位置必须落在当前仓库或常用用户目录（Desktop/Documents/Downloads）内，
+/// 避免被 webview 滥用成任意文件覆盖原语（覆盖启动脚本 / 配置）。
 #[tauri::command]
-async fn export_write_file(path: String, content: String) -> Result<(), String> {
+async fn export_write_file(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
     if path.is_empty() {
         return Err("路径为空".to_string());
     }
@@ -1383,12 +1389,30 @@ async fn export_write_file(path: String, content: String) -> Result<(), String> 
     if content.len() > 64 * 1024 * 1024 {
         return Err("导出内容过大（>64MB）".to_string());
     }
-    if let Some(parent) = std::path::Path::new(&path).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
-        }
+    let dest = std::path::Path::new(&path);
+    if !dest.is_absolute() {
+        return Err("导出路径必须是绝对路径".to_string());
     }
-    std::fs::write(&path, content).map_err(|e| format!("写入失败：{e}"))
+    if dest.exists() && dest.is_dir() {
+        return Err("导出目标不能是文件夹".to_string());
+    }
+    let parent = dest
+        .parent()
+        .ok_or_else(|| "导出路径缺少父目录".to_string())?;
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
+    }
+    let parent_canon = parent
+        .canonicalize()
+        .map_err(|e| format!("导出目录无效：{e}"))?;
+    let allowed = common_export_roots(&state)
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .any(|root| parent_canon.starts_with(&root));
+    if !allowed {
+        return Err("导出位置不在当前仓库或常用用户目录（Desktop/Documents/Downloads）中".to_string());
+    }
+    std::fs::write(dest, content).map_err(|e| format!("写入失败：{e}"))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1487,6 +1511,7 @@ async fn webhook_post(
         .map_err(|e| format!("body 不是合法 JSON：{e}"))?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs.unwrap_or(8).clamp(1, 30)))
+        .redirect(safe_redirect_policy())
         .build()
         .map_err(|e| format!("初始化 HTTP 客户端失败：{e}"))?;
     let resp = client
@@ -2494,6 +2519,20 @@ fn reject_private_network_url(url: &reqwest::Url, label: &str) -> Result<(), Str
     Ok(())
 }
 
+/// 出站请求的重定向策略：每一跳都重新校验目标主机，阻止远端用 30x 跳转
+/// 把 SSRF 守卫绕过到 127.0.0.1 / 169.254.169.254 / 内网地址。最多跟随 5 跳。
+fn safe_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 5 {
+            return attempt.error("重定向次数过多");
+        }
+        if is_private_network_host(attempt.url().host_str()) {
+            return attempt.error("重定向指向内网/环回地址，已阻止");
+        }
+        attempt.follow()
+    })
+}
+
 pub(crate) fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
     let url = reqwest::Url::parse(endpoint).map_err(|e| format!("API endpoint 无效：{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -2931,11 +2970,27 @@ pub fn run() {
     });
 }
 
+/// 允许通过文件关联 / 深链打开的扩展名白名单。深链与 CLI 共用，
+/// 防止 `markio://open?path=C:/Users/x/.ssh/id_rsa` 这类任意文件被打开
+/// （进而被 openPath 自动注册成工作区，扩大文件读写权限）。
+fn is_openable_note_path(path: &std::path::Path) -> bool {
+    if !path.is_absolute() || !path.exists() || !path.is_file() {
+        return false;
+    }
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref(),
+        Some("md" | "markdown" | "mdown" | "mkd" | "txt")
+    )
+}
+
 /// 解析 markio://open?path=/abs/path/to/note.md
 /// 支持的形式：
 ///   markio://open?path=...
 ///   markio:///abs/path（不带 host，path 作为 URL.path）
-/// 校验：必须是绝对路径，否则丢弃（避免 markio://open?path=evil.md 这种相对 / 跨平台坑）。
+/// 校验：必须是绝对路径且为 md/markdown/txt，否则丢弃。
 fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
     if url.scheme() != "markio" {
         return None;
@@ -2945,8 +3000,7 @@ fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
         for (k, v) in url.query_pairs() {
             if k == "path" {
                 let p = v.into_owned();
-                let path = std::path::Path::new(&p);
-                if path.is_absolute() && path.exists() && path.is_file() {
+                if is_openable_note_path(std::path::Path::new(&p)) {
                     return Some(p);
                 }
             }
@@ -2954,11 +3008,8 @@ fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
     }
     // 形式 2: markio:///abs/path.md
     let path_str = url.path();
-    if !path_str.is_empty() && path_str != "/" {
-        let path = std::path::Path::new(path_str);
-        if path.is_absolute() && path.exists() && path.is_file() {
-            return Some(path_str.to_string());
-        }
+    if !path_str.is_empty() && path_str != "/" && is_openable_note_path(std::path::Path::new(path_str)) {
+        return Some(path_str.to_string());
     }
     None
 }

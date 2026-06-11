@@ -65,7 +65,13 @@ pub struct Peer {
 struct PairingSession {
     code: String,
     expires_at_ms: u128,
+    /// 已失败的配对尝试次数；超过上限即关闭窗口，防止 6 位码被暴力枚举。
+    failed_attempts: u32,
 }
+
+/// 单个配对窗口内允许的最大错误尝试次数。6 位码空间 1e6，限到 5 次后
+/// 暴力成功率约 5e-6，可忽略。
+const MAX_PAIR_ATTEMPTS: u32 = 5;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,12 +141,26 @@ impl P2pRuntime {
         g.pairing = Some(PairingSession {
             code: code.clone(),
             expires_at_ms: now_ms() + 5 * 60 * 1000,
+            failed_attempts: 0,
         });
         code
     }
 
     pub fn close_pairing(&self) {
         self.inner.write().unwrap().pairing = None;
+    }
+
+    /// 记一次配对失败；达到上限后关闭窗口。返回 true 表示窗口已因超限关闭。
+    fn register_pair_failure(&self) -> bool {
+        let mut g = self.inner.write().unwrap();
+        if let Some(p) = g.pairing.as_mut() {
+            p.failed_attempts += 1;
+            if p.failed_attempts >= MAX_PAIR_ATTEMPTS {
+                g.pairing = None;
+                return true;
+            }
+        }
+        false
     }
 
     fn snapshot(&self) -> Inner {
@@ -161,8 +181,17 @@ impl P2pRuntime {
 
 fn gen_pair_code() -> String {
     let mut buf = [0u8; 4];
-    let _ = getrandom::getrandom(&mut buf);
-    let n = u32::from_le_bytes(buf) % 1_000_000;
+    let raw = if getrandom::getrandom(&mut buf).is_ok() {
+        u32::from_le_bytes(buf)
+    } else {
+        // RNG 失败时绝不退化成确定性的 000000：混入纳秒时间戳 + pid
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u32)
+            .unwrap_or(0);
+        ts ^ std::process::id().rotate_left(13)
+    };
+    let n = raw % 1_000_000;
     format!("{n:06}")
 }
 
@@ -324,7 +353,14 @@ async fn handle_pair(mut socket: WebSocket, s: ServerState) {
         .as_ref()
         .is_some_and(|p| p.expires_at_ms > now_ms() && constant_eq(&p.code, &hello.code));
     if !valid {
-        let _ = send_json(&mut socket, &pair_err("配对码无效或已过期")).await;
+        // 记失败并在超限时关闭窗口，阻断对 6 位码的暴力枚举
+        let locked = s.runtime.register_pair_failure();
+        let msg = if locked {
+            "配对失败次数过多，窗口已关闭"
+        } else {
+            "配对码无效或已过期"
+        };
+        let _ = send_json(&mut socket, &pair_err(msg)).await;
         return;
     }
     let reply = PairReply {

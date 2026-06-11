@@ -193,6 +193,11 @@ pub(super) fn parse_legacy_dir_name(name: &str) -> Option<(String, String)> {
     if name.len() < 17 {
         return None;
     }
+    // name.len() 是字节数；含 CJK 等多字节字符的目录名按字节切片可能落在
+    // UTF-8 连续字节中间导致 panic。先确认切点都是字符边界，否则不是合法时间戳命名。
+    if !name.is_char_boundary(name.len() - 15) || !name.is_char_boundary(name.len() - 16) {
+        return None;
+    }
     let stamp_part = &name[name.len() - 15..];
     let bytes = stamp_part.as_bytes();
     if bytes[8] != b'-' {
@@ -325,7 +330,24 @@ pub(super) fn sanitize(name: &str) -> String {
     }
     let trimmed = out.trim().trim_matches('.');
     if trimmed.is_empty() {
-        "imported".to_string()
+        return "imported".to_string();
+    }
+    // Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9）即使带扩展名也无法创建文件，
+    // 否则一篇这样命名的笔记会让 fs::write 失败、用 `?` 中断整个导入丢掉后续笔记。
+    let stem_upper = trimmed
+        .split('.')
+        .next()
+        .unwrap_or(trimmed)
+        .to_ascii_uppercase();
+    let reserved = matches!(
+        stem_upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL"
+    ) || ((stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
+        && stem_upper.len() == 4
+        && stem_upper.as_bytes()[3].is_ascii_digit()
+        && stem_upper.as_bytes()[3] != b'0');
+    if reserved {
+        format!("_{trimmed}")
     } else {
         trimmed.to_string()
     }

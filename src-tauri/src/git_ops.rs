@@ -245,12 +245,28 @@ pub fn clone(url: &str, dest: &Path, pat: Option<&str>) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
     }
+    // 参数注入防护：拒绝以 '-' 开头的 URL（会被 git 当成选项，如 --upload-pack=、
+    // ext:: 传输串可致任意命令执行），并只接受 http(s)/git/ssh 传输方案。
+    let trimmed = url.trim();
+    if trimmed.starts_with('-') {
+        return Err("非法的仓库地址（不能以 - 开头）".to_string());
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let scheme_ok = lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("git://")
+        || lower.starts_with("ssh://")
+        || lower.starts_with("git@");
+    if !scheme_ok {
+        return Err("仅支持 https/http/git/ssh 仓库地址".to_string());
+    }
     let real_url = pat
         .filter(|s| !s.is_empty())
-        .map(|token| inject_askpass_user(url, token))
-        .unwrap_or_else(|| url.to_string());
+        .map(|token| inject_askpass_user(trimmed, token))
+        .unwrap_or_else(|| trimmed.to_string());
     let mut cmd = Command::new("git");
-    cmd.arg("clone").arg(real_url).arg(dest);
+    // `--` 结束选项解析，确保 URL/dest 一定被当作位置参数。
+    cmd.arg("clone").arg("--").arg(real_url).arg(dest);
     run_command_auth(cmd, pat, "clone").map(|_| ())
 }
 

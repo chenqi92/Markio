@@ -6,8 +6,10 @@
 // 走这里路由：外链交给系统浏览器，库内文件用标签页打开，锚点交回各自界面。
 
 import { openExternal } from "./opener";
-import { resolveRelativePath } from "./utils";
+import { pathContains, resolveRelativePath } from "./utils";
 import { useTabs } from "@/stores/tabs";
+import { useWorkspace } from "@/stores/workspace";
+import { useUI } from "@/stores/ui";
 
 export type LinkKind = "empty" | "anchor" | "external" | "file";
 
@@ -40,7 +42,20 @@ export async function navigateMarkdownLink(
   if (kind === "file") {
     if (!baseFilePath) return true;
     const abs = resolveRelativePath(baseFilePath, href);
-    if (abs) await useTabs.getState().openPath(abs);
+    if (abs) {
+      // 安全：链接点击只允许跳到已注册仓库内的文件。否则 [x](../../../etc/passwd)
+      // 或绝对路径会读取仓库外任意文件，并经 openPath 自动注册其父目录提权。
+      const inVault = useWorkspace
+        .getState()
+        .workspaces.some((w) => pathContains(w.path, abs));
+      if (inVault) {
+        await useTabs.getState().openPath(abs);
+      } else {
+        useUI
+          .getState()
+          .setToast({ stage: "error", message: "链接指向仓库外的文件，已阻止打开" });
+      }
+    }
     return true;
   }
   return false;

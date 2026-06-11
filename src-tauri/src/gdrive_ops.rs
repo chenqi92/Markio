@@ -303,6 +303,10 @@ pub async fn upload(
             MAX_GDRIVE_OBJECT
         ));
     }
+    // mime_type 直接写进 multipart body 的头部，含 CR/LF 会注入额外头/分段。
+    if mime_type.contains('\r') || mime_type.contains('\n') {
+        return Err("非法的 MIME 类型（含换行符）".to_string());
+    }
     let mut meta = serde_json::Map::new();
     meta.insert(
         "name".to_string(),

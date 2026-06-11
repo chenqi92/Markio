@@ -13,7 +13,6 @@ struct CodeInfo {
     lang: String,
     title: Option<String>,
     highlight_lines: Option<String>,
-    server: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,7 +135,6 @@ fn parse_code_info(info: &str) -> CodeInfo {
             .or_else(|| parse_attr_value(trimmed, "file"))
             .or_else(|| parse_attr_value(trimmed, "filename")),
         highlight_lines: parse_highlight_lines(trimmed),
-        server: parse_attr_value(trimmed, "server"),
     }
 }
 
@@ -452,6 +450,14 @@ fn sanitize(html: &str) -> String {
     // 注意 ammonia 自己控制 <a rel>，写进来会 panic
     b.add_tag_attributes("a", &["href", "title", "target", "id"]);
     b.add_tag_attributes("img", &["src", "alt", "title", "width", "height"]);
+    // data: 协议是全局放开的（供内联图片 <img src> 用）。这里额外拦截 <a href="data:...">，
+    // 移除 data:text/html 走私面（剪藏/导入的不可信 markdown 里可能塞这种链接）。
+    b.attribute_filter(|_element, attribute, value| {
+        if attribute == "href" && value.trim_start().to_ascii_lowercase().starts_with("data:") {
+            return None;
+        }
+        Some(std::borrow::Cow::Borrowed(value))
+    });
     // 防止相对 URL 被改写到任意路径
     b.url_relative(UrlRelative::PassThrough);
     b.clean(html).to_string()
@@ -664,17 +670,12 @@ pub fn render_with_line_offset(
                             escape_html(&code_buf)
                         ));
                     } else if is_plantuml_lang(&code_info.lang) {
-                        let server_attr = code_info
-                            .server
-                            .as_ref()
-                            .map(|server| {
-                                format!(" data-plantuml-server=\"{}\"", escape_attr(server))
-                            })
-                            .unwrap_or_default();
+                        // 安全：不再把文档内 `server="..."` 透传到 data-plantuml-server。
+                        // 否则打开/预览一个内嵌 plantuml 的他人 .md 就会自动向该地址发请求，
+                        // 泄露读者 IP + 图源内容（SSRF / 隐私信标）。渲染服务器只应来自本地设置。
                         html.push_str(&format!(
-                            "<div class=\"plantuml-block\" data-plantuml=\"{}\"{}{}>{}</div>",
+                            "<div class=\"plantuml-block\" data-plantuml=\"{}\"{}>{}</div>",
                             urlencode(&code_buf),
-                            server_attr,
                             ln_attr,
                             escape_html(&code_buf)
                         ));

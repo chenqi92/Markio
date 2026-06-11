@@ -197,7 +197,10 @@ async fn clip(
     let body = if cfg.html_to_md {
         crate::html2md::html_to_markdown(&req.html, cfg.readability)
     } else {
-        format!("```html\n{}\n```", req.html)
+        // 用比正文最长 ``` 串更长的围栏，防止页面 HTML 里的 ``` 提前闭合围栏，
+        // 把后续攻击者控制的内容当 markdown 解析（内容注入 / 信标走私）。
+        let fence = "`".repeat(longest_backtick_run(&req.html).max(2) + 1);
+        format!("{fence}html\n{}\n{fence}", req.html)
     };
 
     let now = chrono::Local::now();
@@ -285,6 +288,23 @@ fn resolve_workspace(
 }
 
 /// 文件名安全化：去掉路径分隔符与控制字符，截断到合理长度。
+/// 正文中最长的连续反引号串长度（用于挑选不会被提前闭合的代码围栏）。
+fn longest_backtick_run(s: &str) -> usize {
+    let mut max = 0usize;
+    let mut cur = 0usize;
+    for ch in s.chars() {
+        if ch == '`' {
+            cur += 1;
+            if cur > max {
+                max = cur;
+            }
+        } else {
+            cur = 0;
+        }
+    }
+    max
+}
+
 fn sanitize_filename(title: &str) -> String {
     let mut out = String::with_capacity(title.len());
     for ch in title.chars() {

@@ -39,7 +39,7 @@ pub async fn fetch(url: &str) -> Result<RssFetchResult, String> {
         .user_agent("markio/rss (https://github.com/chenqi92/Markio)")
         .build()
         .map_err(|e| format!("构建 HTTP 客户端失败：{e}"))?;
-    let resp = client
+    let mut resp = client
         .get(url)
         .header(
             "accept",
@@ -49,21 +49,35 @@ pub async fn fetch(url: &str) -> Result<RssFetchResult, String> {
         .await
         .map_err(|e| format!("请求失败：{e}"))?;
     let status = resp.status();
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
         return Err(format!("HTTP {}: 服务器拒绝了请求", status.as_u16()));
     }
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(format!(
-            "响应过大：{} 字节，已超过 {} MB 上限",
-            bytes.len(),
-            MAX_BODY_BYTES / 1024 / 1024
-        ));
+    // Content-Length 提前快速拒绝（可伪造但能挡掉诚实声明的大响应）
+    if let Some(len) = resp.content_length() {
+        if len > MAX_BODY_BYTES as u64 {
+            return Err(format!(
+                "响应过大：声明 {len} 字节，已超过 {} MB 上限",
+                MAX_BODY_BYTES / 1024 / 1024
+            ));
+        }
     }
-    let text = String::from_utf8_lossy(&bytes).into_owned();
+    // 流式读取并实时限幅：旧实现先 bytes() 全量缓冲再查上限，恶意/无 Content-Length
+    // 的源可返回数 GB 把进程撑爆，限幅形同虚设。
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?
+    {
+        if buf.len() + chunk.len() > MAX_BODY_BYTES {
+            return Err(format!(
+                "响应过大，已超过 {} MB 上限",
+                MAX_BODY_BYTES / 1024 / 1024
+            ));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&buf).into_owned();
     parse(&text)
 }
 

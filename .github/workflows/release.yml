@@ -105,11 +105,10 @@ jobs:
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # 直发渠道不受 App Store 合规约束，强制 global 让所有平台、所有地区都展示完整 AI 模型源
           # （App Store 包另走 scripts/build-mas.sh 的 auto/cn 策略）
           VITE_MARKIO_AI_REGION: global
+          # 更新签名暂时关闭（createUpdaterArtifacts=false），待补回 TAURI_SIGNING 密钥后再开启自动更新
         with:
           tagName: v${{ needs.detect-version.outputs.version }}
           releaseName: markio v${{ needs.detect-version.outputs.version }}

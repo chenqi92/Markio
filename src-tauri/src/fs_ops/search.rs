@@ -116,7 +116,7 @@ pub fn list_attachments(root: &str, max: usize) -> Vec<Attachment> {
     let root_path = Path::new(root);
     let ignore = IgnoreRules::load(root_path);
     visit(root_path, root_path, 0, &mut out, max, &ignore);
-    out.sort_by(|a, b| b.modified.cmp(&a.modified));
+    out.sort_by_key(|b| std::cmp::Reverse(b.modified));
     out
 }
 

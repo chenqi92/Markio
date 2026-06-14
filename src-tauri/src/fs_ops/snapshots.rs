@@ -70,7 +70,7 @@ fn prune_snapshots(dir: &Path, key: &str, max: usize) -> Result<(), String> {
             }
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.0));
     for (_, path) in entries.into_iter().skip(max) {
         let _ = fs::remove_file(path);
     }
@@ -99,7 +99,7 @@ pub fn list_snapshots(workspace: &str, file: &str) -> Result<Vec<Snapshot>, Stri
             size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
         });
     }
-    out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    out.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     Ok(out)
 }
 
@@ -153,6 +153,6 @@ pub fn list_all_snapshots(workspace: &str) -> Result<Vec<TimelineEntry>, String>
             size,
         });
     }
-    out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    out.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     Ok(out)
 }

@@ -675,14 +675,12 @@ impl Renderer {
                     t.saw_th_in_row = false;
                 }
             }
-            "th" | "td" => {
-                if !self.tables.is_empty() {
-                    self.in_table_cell = true;
-                    self.cell_buf.clear();
-                    if name == "th" {
-                        if let Some(t) = self.tables.last_mut() {
-                            t.saw_th_in_row = true;
-                        }
+            "th" | "td" if !self.tables.is_empty() => {
+                self.in_table_cell = true;
+                self.cell_buf.clear();
+                if name == "th" {
+                    if let Some(t) = self.tables.last_mut() {
+                        t.saw_th_in_row = true;
                     }
                 }
             }
@@ -773,15 +771,13 @@ impl Renderer {
                     }
                 }
             }
-            "th" | "td" => {
-                if self.in_table_cell {
-                    let cell = collapse_ws(&self.cell_buf);
-                    self.cell_buf.clear();
-                    self.in_table_cell = false;
-                    if let Some(t) = self.tables.last_mut() {
-                        if let Some(row) = t.cur_row.as_mut() {
-                            row.push(cell);
-                        }
+            "th" | "td" if self.in_table_cell => {
+                let cell = collapse_ws(&self.cell_buf);
+                self.cell_buf.clear();
+                self.in_table_cell = false;
+                if let Some(t) = self.tables.last_mut() {
+                    if let Some(row) = t.cur_row.as_mut() {
+                        row.push(cell);
                     }
                 }
             }

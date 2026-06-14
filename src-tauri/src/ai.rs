@@ -1585,10 +1585,7 @@ impl SseReader {
     /// 取出所有完整 event（以空行分隔），返回 data: 行的合并文本。
     fn drain_events(&mut self) -> Vec<String> {
         let mut out = Vec::new();
-        loop {
-            let Some((idx, sep_len)) = find_event_sep(&self.buf) else {
-                break;
-            };
+        while let Some((idx, sep_len)) = find_event_sep(&self.buf) {
             let block: Vec<u8> = self.buf.drain(..idx + sep_len).collect();
             let event_block = String::from_utf8_lossy(&block);
             let mut data = String::new();

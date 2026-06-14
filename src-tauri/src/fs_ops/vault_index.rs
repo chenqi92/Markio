@@ -204,7 +204,7 @@ pub fn build_vault_index(workspace: &str, prev: Option<&VaultIndex>) -> VaultInd
     }
     .visit(root, 0, &mut files, &mut tags, &mut mentions);
 
-    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files.sort_by_key(|a| a.name.to_lowercase());
 
     VaultIndex {
         files,

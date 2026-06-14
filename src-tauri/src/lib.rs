@@ -1957,7 +1957,7 @@ async fn macos_share(input: MacShareInput) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = input;
-        return Err("系统分享仅在 macOS 可用".into());
+        Err("系统分享仅在 macOS 可用".into())
     }
     #[cfg(target_os = "macos")]
     {

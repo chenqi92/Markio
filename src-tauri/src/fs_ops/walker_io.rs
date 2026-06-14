@@ -201,8 +201,8 @@ impl Walker {
             }
         }
 
-        child_dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        child_dirs.sort_by_key(|a| a.name.to_lowercase());
+        files.sort_by_key(|a| a.name.to_lowercase());
 
         let mut children = Vec::with_capacity(child_dirs.len() + files.len());
         children.extend(child_dirs);
@@ -328,8 +328,8 @@ pub fn read_dir_shallow(root_path: &str) -> Result<FileEntry, String> {
         }
     }
 
-    dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    dirs.sort_by_key(|a| a.name.to_lowercase());
+    files.sort_by_key(|a| a.name.to_lowercase());
 
     let mut children = Vec::with_capacity(dirs.len() + files.len());
     children.extend(dirs);

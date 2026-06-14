@@ -142,7 +142,7 @@ pub fn trash_list(workspace: &str) -> Result<Vec<TrashItem>, String> {
             is_dir,
         });
     }
-    out.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    out.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
     Ok(out)
 }
 

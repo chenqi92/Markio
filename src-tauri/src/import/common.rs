@@ -339,13 +339,11 @@ pub(super) fn sanitize(name: &str) -> String {
         .next()
         .unwrap_or(trimmed)
         .to_ascii_uppercase();
-    let reserved = matches!(
-        stem_upper.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
-    ) || ((stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
-        && stem_upper.len() == 4
-        && stem_upper.as_bytes()[3].is_ascii_digit()
-        && stem_upper.as_bytes()[3] != b'0');
+    let reserved = matches!(stem_upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
+            && stem_upper.len() == 4
+            && stem_upper.as_bytes()[3].is_ascii_digit()
+            && stem_upper.as_bytes()[3] != b'0');
     if reserved {
         format!("_{trimmed}")
     } else {

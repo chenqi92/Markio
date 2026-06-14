@@ -179,13 +179,14 @@ fn paragraph_spans(body: &str) -> Vec<(String, usize, usize)> {
     let mut in_fence = false;
     let mut fence_marker: &str = "";
 
-    let flush = |out: &mut Vec<(String, usize, usize)>, seg: &mut String, start: usize, end: usize| {
-        let trimmed = seg.trim_end_matches('\n');
-        if !trimmed.trim().is_empty() {
-            out.push((trimmed.to_string(), start, end));
-        }
-        seg.clear();
-    };
+    let flush =
+        |out: &mut Vec<(String, usize, usize)>, seg: &mut String, start: usize, end: usize| {
+            let trimmed = seg.trim_end_matches('\n');
+            if !trimmed.trim().is_empty() {
+                out.push((trimmed.to_string(), start, end));
+            }
+            seg.clear();
+        };
 
     for line in body.split_inclusive('\n') {
         let line_chars = line.chars().count();
@@ -319,7 +320,9 @@ mod tests {
         let body = "intro\n\n```py\na = 1\n\nb = 2\n```\n\nouter";
         let spans = paragraph_spans(body);
         let texts: Vec<&str> = spans.iter().map(|(t, _, _)| t.as_str()).collect();
-        assert!(texts.iter().any(|t| t.contains("a = 1") && t.contains("b = 2")));
+        assert!(texts
+            .iter()
+            .any(|t| t.contains("a = 1") && t.contains("b = 2")));
         // intro / 代码块 / outer 三段，而不是把代码块拆开
         assert_eq!(spans.len(), 3);
     }

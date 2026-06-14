@@ -1449,7 +1449,9 @@ async fn export_write_file(
         .filter_map(|root| root.canonicalize().ok())
         .any(|root| parent_canon.starts_with(&root));
     if !allowed {
-        return Err("导出位置不在当前仓库或常用用户目录（Desktop/Documents/Downloads）中".to_string());
+        return Err(
+            "导出位置不在当前仓库或常用用户目录（Desktop/Documents/Downloads）中".to_string(),
+        );
     }
     std::fs::write(dest, content).map_err(|e| format!("写入失败：{e}"))
 }
@@ -2514,11 +2516,9 @@ async fn ai_retrieve(
     let ws = validate_path(&state, &workspace)?;
     // 全库 grep（最多读 3000 个 .md 各 2MB）；主线程跑会冻结整个事件循环。
     let ws_str = ws.to_string_lossy().to_string();
-    tokio::task::spawn_blocking(move || {
-        fs_ops::retrieve_context(&ws_str, &query, k.unwrap_or(5))
-    })
-    .await
-    .map_err(|e| format!("ai_retrieve join 失败：{e}"))
+    tokio::task::spawn_blocking(move || fs_ops::retrieve_context(&ws_str, &query, k.unwrap_or(5)))
+        .await
+        .map_err(|e| format!("ai_retrieve join 失败：{e}"))
 }
 
 pub(crate) fn is_loopback_host(host: Option<&str>) -> bool {
@@ -3053,7 +3053,10 @@ fn extract_path_from_deep_link(url: &url::Url) -> Option<String> {
     }
     // 形式 2: markio:///abs/path.md
     let path_str = url.path();
-    if !path_str.is_empty() && path_str != "/" && is_openable_note_path(std::path::Path::new(path_str)) {
+    if !path_str.is_empty()
+        && path_str != "/"
+        && is_openable_note_path(std::path::Path::new(path_str))
+    {
         return Some(path_str.to_string());
     }
     None

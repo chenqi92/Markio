@@ -226,9 +226,7 @@ fn rel_from_href(href: &str, base_url: &str) -> String {
         .unwrap_or_else(|_| href.to_string());
     // 在 encoded 域里剥 base 前缀，再整体 percent-decode，否则中文/空格文件名会以
     // %E7%AC%94… 形式回到上层，post-put stat 永远匹配不上、下载又被重复编码 404。
-    let stripped = path
-        .trim_start_matches(&base_path)
-        .trim_start_matches('/');
+    let stripped = path.trim_start_matches(&base_path).trim_start_matches('/');
     percent_decode(stripped)
 }
 

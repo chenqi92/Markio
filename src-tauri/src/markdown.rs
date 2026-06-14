@@ -1001,7 +1001,8 @@ mod tests {
 
     #[test]
     fn render_outputs_server_blocks() {
-        let src = "```server\nname: db\nhost: 192.168.1.10\nport: 3306\nuser: root\npassword: pass\n```";
+        let src =
+            "```server\nname: db\nhost: 192.168.1.10\nport: 3306\nuser: root\npassword: pass\n```";
         let res = render(src, None, &[]);
         assert!(res.html.contains("class=\"server-block\""));
         assert!(res.html.contains("data-server="));

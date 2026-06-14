@@ -125,28 +125,28 @@ pub fn search_with_rerank(
     //    （小库 / 稀疏查询 / 仅 FTS 兜底 / 零命中都可能触发），整个搜索失败。
     if let Some(rcfg) = rerank_cfg.as_ref() {
         if !ranked.is_empty() {
-        let pool_size = (limit * 3).min(ranked.len());
-        let pool: Vec<&Candidate> = ranked.iter().take(pool_size).collect();
-        let docs = materialize(&handle, &pool)?;
-        let texts: Vec<String> = docs.iter().map(|h| h.body.clone()).collect();
-        match rerank::rerank_blocking(rcfg, query, &texts, limit) {
-            Ok(order) => {
-                let mut reordered: Vec<SearchHit> = Vec::with_capacity(order.len());
-                for (idx, score) in order.into_iter().take(limit) {
-                    if let Some(mut h) = docs.get(idx).cloned() {
-                        h.score = score as f64;
-                        h.source = "rerank".to_string();
-                        reordered.push(h);
+            let pool_size = (limit * 3).min(ranked.len());
+            let pool: Vec<&Candidate> = ranked.iter().take(pool_size).collect();
+            let docs = materialize(&handle, &pool)?;
+            let texts: Vec<String> = docs.iter().map(|h| h.body.clone()).collect();
+            match rerank::rerank_blocking(rcfg, query, &texts, limit) {
+                Ok(order) => {
+                    let mut reordered: Vec<SearchHit> = Vec::with_capacity(order.len());
+                    for (idx, score) in order.into_iter().take(limit) {
+                        if let Some(mut h) = docs.get(idx).cloned() {
+                            h.score = score as f64;
+                            h.source = "rerank".to_string();
+                            reordered.push(h);
+                        }
+                    }
+                    if !reordered.is_empty() {
+                        return Ok(reordered);
                     }
                 }
-                if !reordered.is_empty() {
-                    return Ok(reordered);
+                Err(e) => {
+                    eprintln!("[rag.rerank] 失败，回退原始排序：{e}");
                 }
             }
-            Err(e) => {
-                eprintln!("[rag.rerank] 失败，回退原始排序：{e}");
-            }
-        }
         }
     }
 

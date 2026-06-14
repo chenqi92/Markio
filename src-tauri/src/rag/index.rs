@@ -65,7 +65,14 @@ fn collect_md(workspace: &Path, max_files: usize, max_total_bytes: u64) -> Colle
         max_total_bytes,
         ignore: &ignore,
     }
-    .walk(workspace, 0, &mut out, &mut total_bytes, &mut skipped, &mut capped);
+    .walk(
+        workspace,
+        0,
+        &mut out,
+        &mut total_bytes,
+        &mut skipped,
+        &mut capped,
+    );
     CollectResult {
         docs: out,
         skipped,

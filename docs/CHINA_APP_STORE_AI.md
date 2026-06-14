@@ -27,8 +27,8 @@ VITE_MARKIO_AI_REGION=cn
 可选值：
 
 - `cn`：强制中国大陆策略，适合中国大陆 App Store 包。
-- `global`：强制全球策略，展示完整模型源。
-- `auto` 或留空：单包发布模式，优先按 StoreKit storefront 判断，取不到再用 locale / 时区兜底。
+- `global`：强制全球策略，展示完整模型源。**直发渠道（GitHub Releases / Developer ID 直发 dmg）应使用 `global`** —— 直发包不受 App Store 合规约束，且没有 StoreKit storefront 可读，若用 `auto` 会在中国大陆环境下按 locale / 时区误判成 `cn` 并隐藏境外模型源。`.github/workflows/release.yml` 已固定注入 `VITE_MARKIO_AI_REGION=global`。
+- `auto` 或留空：单包发布模式，优先按 StoreKit storefront 判断，取不到再用 locale / 时区兜底。**仅适合 App Store 包**（有 storefront 可读）。
 
 ## 策略内容
 

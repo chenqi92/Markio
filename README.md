@@ -1,9 +1,16 @@
 # markio
 
 > 一款本地优先的 Markdown 阅读 & 写作器。
-> macOS + Windows 桌面端，基于 Tauri 2 + React 19 + CodeMirror 6 + Rust。
+> macOS · Windows · Linux 桌面端，基于 Tauri 2 + React 19 + CodeMirror 6 + Rust。
 
 ![icon](public/brand/icon-light-256.png)
+
+## 下载
+
+- **Mac App Store**：<https://apps.apple.com/cn/app/markio/id6768647792>（macOS 沙盒版，已上架）
+- **直发版（全平台）**：[GitHub Releases](https://github.com/chenqi92/Markio/releases) — macOS（Apple Silicon / Intel）· Windows MSI/NSIS · Linux AppImage/deb，由 GitHub Actions 自动出包
+
+> **两个渠道的 AI 策略不同**：App Store 版本受商店合规约束，在中国大陆 storefront 下只展示本地模型与国内模型源（`auto` 策略）；**直发版完全开放，展示全部 AI 模型源**（`global` 策略，与地区无关）。机制详见 [docs/CHINA_APP_STORE_AI.md](docs/CHINA_APP_STORE_AI.md)。
 
 ## 看点
 
@@ -60,9 +67,9 @@
 | | WebDAV / S3 / Dropbox / Google Drive 连接、列表、上传、删除 | 🧪 |
 | **导入** | Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 |
 | | Roam Markdown ZIP / Logseq graph 目录 | 🟡 |
-| **平台** | macOS（含 Mac App Store 打包脚本） | ✅ |
-| | Windows MSI / NSIS | ✅（脚本就绪，需要 Windows 机器跑） |
-| | Linux AppImage / deb | ✅ |
+| **平台** | macOS（已上架 Mac App Store，另有直发 dmg） | ✅ |
+| | Windows MSI / NSIS | ✅（GitHub Actions 自动出包） |
+| | Linux AppImage / deb | ✅（GitHub Actions 自动出包） |
 | | iOS / Android | 未做，Tauri 2 支持 |
 
 ## 快捷键
@@ -126,9 +133,11 @@ python3 scripts/make-icons.py
 
 详细流程见 [docs/PACKAGING.md](docs/PACKAGING.md)：
 
-- Mac App Store：`scripts/build-mas.sh`（沙盒签名 → productbuild → Transporter 上传）
-- 直发渠道：`scripts/notarize.sh`（Developer ID 签名 → notarytool → stapler）
-- Windows / Linux：`pnpm tauri build --bundles msi,nsis` / `--bundles deb,appimage`
+- **Mac App Store**：`scripts/build-mas.sh`（沙盒签名 → productbuild → Transporter 上传）。走默认 `auto` AI 策略，中国大陆 storefront 自动收敛模型源，满足商店合规。
+- **直发渠道（GitHub Releases）**：`.github/workflows/release.yml` 在 `package.json` 版本号变化时自动构建 macOS / Windows / Linux 四个产物并发版。该 workflow 注入 `VITE_MARKIO_AI_REGION=global`，**所有平台、所有地区都展示完整 AI 模型源**；本地手动直发签名用 `scripts/notarize.sh`（Developer ID → notarytool → stapler）。
+- 本地手动出包：`pnpm tauri build`（默认 `auto`）、`pnpm tauri:build:cn`（中国大陆专用包）；直发包想完全开放可加 `VITE_MARKIO_AI_REGION=global`。
+
+AI 地区策略（`auto` / `cn` / `global`）的完整说明见 [docs/CHINA_APP_STORE_AI.md](docs/CHINA_APP_STORE_AI.md)。
 
 ## 项目结构
 

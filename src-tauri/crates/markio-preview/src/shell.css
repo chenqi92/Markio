@@ -1,0 +1,146 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --fg-muted: #59636e;
+  --border: #d1d9e0;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --bar-bg: #f6f8faee;
+  --sel-bg: #ddf4ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --fg-muted: #9198a1;
+    --border: #2a313c;
+    --accent: #4493f8;
+    --code-bg: #151b23;
+    --bar-bg: #0d1117ee;
+    --sel-bg: #15334f;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.65 -apple-system, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 顶部：当前目录下的 md 文件条，可点击切换 */
+#bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 6px 10px;
+  background: var(--bar-bg);
+  backdrop-filter: saturate(1.6) blur(8px);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+#bar::-webkit-scrollbar { height: 6px; }
+#bar .tab {
+  flex: 0 0 auto;
+  max-width: 220px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#bar .tab:hover { background: var(--code-bg); color: var(--fg); }
+#bar .tab.active {
+  color: var(--fg);
+  background: var(--sel-bg);
+  border-color: var(--border);
+  font-weight: 600;
+}
+#bar .count { flex: 0 0 auto; margin-left: auto; padding: 0 6px; font-size: 11.5px; color: var(--fg-muted); }
+
+#content {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 40px 80px;
+}
+
+/* markdown 基础排版 */
+#content h1, #content h2, #content h3, #content h4 { line-height: 1.3; margin: 1.4em 0 .6em; font-weight: 600; }
+#content h1 { font-size: 1.9em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+#content h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+#content h3 { font-size: 1.22em; }
+#content h4 { font-size: 1em; }
+#content p { margin: 0 0 1em; }
+#content a { color: var(--accent); text-decoration: none; }
+#content a:hover { text-decoration: underline; }
+#content ul, #content ol { padding-left: 1.6em; margin: 0 0 1em; }
+#content li { margin: .2em 0; }
+#content blockquote {
+  margin: 0 0 1em;
+  padding: 0 1em;
+  color: var(--fg-muted);
+  border-left: 3px solid var(--border);
+}
+#content img { max-width: 100%; height: auto; border-radius: 6px; }
+#content hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+#content table { border-collapse: collapse; margin: 0 0 1em; display: block; overflow-x: auto; }
+#content th, #content td { border: 1px solid var(--border); padding: 6px 12px; }
+#content th { background: var(--code-bg); }
+
+/* 行内 / 块级代码 */
+#content code {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: .88em;
+}
+#content :not(pre) > code {
+  background: var(--code-bg);
+  padding: .15em .4em;
+  border-radius: 4px;
+}
+#content pre {
+  background: var(--code-bg);
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0 0 1em;
+  border: 1px solid var(--border);
+}
+#content pre code { background: none; padding: 0; }
+#content pre[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  margin: -4px 0 8px;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* mermaid / chart / graphviz / 数学公式等需要 JS 的块，v1 先以源码兜底展示 */
+#content .mermaid-block,
+#content .chart-block,
+#content .graphviz-block,
+#content .server-block {
+  background: var(--code-bg);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 0 0 1em;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: .82em;
+  white-space: pre-wrap;
+  color: var(--fg-muted);
+}
+
+#empty { padding: 60px 40px; text-align: center; color: var(--fg-muted); }

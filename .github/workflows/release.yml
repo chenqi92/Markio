@@ -40,9 +40,27 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # 先建好 release，让各平台 job 并行上传时不竞态创建（macOS 走 gh upload 需 release 已存在）
+  create-release:
+    name: create release
+    needs: detect-version
+    if: needs.detect-version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: create release if absent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="v${{ needs.detect-version.outputs.version }}"
+          gh release view "$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$V" --repo "$GITHUB_REPOSITORY" \
+              --title "markio $V" \
+              --notes "Automated release for markio $V. See assets below for installers per platform."
+
   build:
     name: build ${{ matrix.platform.label }}
-    needs: detect-version
+    needs: [detect-version, create-release]
     if: needs.detect-version.outputs.changed == 'true'
     strategy:
       fail-fast: false
@@ -102,7 +120,15 @@ jobs:
       - name: install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: build & publish via tauri-action
+      # 按当前平台 target 预先编译 markio-preview 轻量预览器，
+      # 供 externalBin 把它打进安装产物（Windows 进安装目录、macOS 进 .app/Contents/MacOS）。
+      - name: build markio-preview sidecar
+        run: node scripts/prep-preview-sidecar.mjs ${{ matrix.platform.target }}
+
+      # 非 macOS（Windows / Linux）：tauri-action 直接构建并上传到已建 release。
+      # externalBin 已把 markio-preview 打进安装产物；Windows NSIS 钩子注册右键"用 Markio 预览"。
+      - name: build & publish (windows / linux)
+        if: ${{ !startsWith(matrix.platform.os, 'macos') }}
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,10 +139,19 @@ jobs:
         with:
           tagName: v${{ needs.detect-version.outputs.version }}
           releaseName: markio v${{ needs.detect-version.outputs.version }}
-          releaseBody: |
-            Automated release for markio v${{ needs.detect-version.outputs.version }}.
-
-            See assets below for installers per platform.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.platform.args }}
+
+      # macOS：直发脚本（构建主 app → 嵌入独立 "Markio Preview.app" 实现右键"打开方式"/双击预览 → 打 DMG）再上传。
+      # ⚠️ 本步骤尚未在 CI 实跑验证（嵌套/交叉编译/DMG 在本机已验证，CI 环境首次发版前建议手动触发一次确认）。
+      - name: package & upload (macOS)
+        if: ${{ startsWith(matrix.platform.os, 'macos') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_MARKIO_AI_REGION: global
+        run: |
+          bash scripts/package-macos-direct.sh ${{ matrix.platform.target }} | tee /tmp/pkg.log
+          DMG="$(grep '^DMG=' /tmp/pkg.log | tail -1)"; DMG="${DMG#DMG=}"
+          gh release upload "v${{ needs.detect-version.outputs.version }}" "$DMG" \
+            --repo "$GITHUB_REPOSITORY" --clobber

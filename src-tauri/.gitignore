@@ -1,0 +1,4 @@
+# markio-preview sidecar 产物（由 prep-preview-sidecar 在打包前生成）
+/binaries/
+# single-instance 误落到 CWD 的锁文件兜底
+/markio-preview-singleton

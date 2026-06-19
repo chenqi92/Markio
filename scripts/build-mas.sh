@@ -63,8 +63,10 @@ cd "$ROOT_DIR"
 pnpm install --frozen-lockfile
 # 让前端编译期裁掉沙盒下无法合规的 macOS 系统集成功能（Apple Notes 导入 / 系统分享）
 export VITE_MARKIO_MAS=1
+# externalBin 置空：预览器 markio-preview 是独立无沙盒设计，不能进 MAS 沙盒包
+# （否则会被签上 inherit 沙盒；且 universal 包还需 universal sidecar）。仅直发包带它。
 pnpm tauri build --target universal-apple-darwin --bundles app \
-  --config '{"bundle":{"createUpdaterArtifacts":false}}'
+  --config '{"bundle":{"createUpdaterArtifacts":false,"externalBin":[]}}'
 
 APP_PATH="$ROOT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app"
 if [[ ! -d "$APP_PATH" ]]; then

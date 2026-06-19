@@ -1,0 +1,19 @@
+Windows Registry Editor Version 5.00
+
+; 手动测试 / 便携版用：把 <INSTALL_DIR> 换成 markio-preview.exe 实际所在目录，
+; 双击导入即可在 .md 右键菜单出现"用 Markio 预览"。正式分发由 NSIS 钩子自动写入。
+; 路径里的反斜杠需写成双反斜杠。
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.md\shell\MarkioPreview]
+@="用 Markio 预览"
+"Icon"="<INSTALL_DIR>\\markio-preview.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.md\shell\MarkioPreview\command]
+@="\"<INSTALL_DIR>\\markio-preview.exe\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.markdown\shell\MarkioPreview]
+@="用 Markio 预览"
+"Icon"="<INSTALL_DIR>\\markio-preview.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.markdown\shell\MarkioPreview\command]
+@="\"<INSTALL_DIR>\\markio-preview.exe\" \"%1\""

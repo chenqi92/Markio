@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Markio Preview</string>
+  <key>CFBundleDisplayName</key>
+  <string>Markio Preview</string>
+  <key>CFBundleExecutable</key>
+  <string>markio-preview</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.welape.mdview.preview</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.1.3</string>
+  <key>CFBundleVersion</key>
+  <string>1.1.3</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>CFBundleIconFile</key>
+  <string>icon.icns</string>
+
+  <!-- 声明可作为 .md 的 Viewer：右键"打开方式"会列出 Markio Preview；
+       LSHandlerRank=Alternate 表示不抢占用户默认编辑器。文件经
+       application:openURLs: 抵达，由 tao 的 Event::Opened 处理。 -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Markdown Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>net.daringfireball.markdown</string>
+      </array>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>md</string>
+        <string>markdown</string>
+        <string>mdown</string>
+        <string>mkd</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Plain Text Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.plain-text</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

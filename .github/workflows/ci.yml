@@ -70,6 +70,15 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # externalBin（markio-preview）要求 binaries/ 下有对应 triple 的 sidecar，
+      # 否则编译主 app 的 tauri-build 会以 "resource path ... doesn't exist" 失败。
+      - name: build preview sidecar
+        run: node scripts/prep-preview-sidecar.mjs
+
       - name: cargo fmt --check
         working-directory: src-tauri
         run: cargo fmt --all -- --check

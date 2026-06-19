@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: [package.json]
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -18,26 +19,25 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0   # 需要全部 tags 来判断 v<version> 是否已发布过
 
       - id: check
-        name: compare package.json version with previous commit
+        name: 按 v<version> tag 是否存在判断该版本是否需要发布
         shell: bash
         run: |
           set -euo pipefail
           CURRENT=$(jq -r .version package.json)
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREVIOUS=$(git show HEAD^:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "")
-          else
-            PREVIOUS=""
-          fi
           echo "current=$CURRENT"
-          echo "previous=$PREVIOUS"
-          if [ -n "$CURRENT" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
+          # 用 tag 存在性判断（幂等、不依赖 commit 顺序）：已有 v<version> tag → 已发过，跳过。
+          # 发布成功后由 create-release 的 gh release create 建出该 tag。
+          if [ -z "$CURRENT" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif git rev-parse "v$CURRENT" >/dev/null 2>&1; then
+            echo "tag v$CURRENT 已存在，跳过发布"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
   # 先建好 release，让各平台 job 并行上传时不竞态创建（macOS 走 gh upload 需 release 已存在）

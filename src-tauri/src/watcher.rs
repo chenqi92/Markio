@@ -293,6 +293,10 @@ pub fn unwatch(workspace: &Path) {
     if let Ok(mut guard) = map().lock() {
         guard.remove(workspace);
     }
+    // 同步清掉该工作区的统计，避免反复 watch/unwatch 时 STATS map 只增不减。
+    if let Ok(mut s) = stats().lock() {
+        s.remove(workspace);
+    }
 }
 
 #[cfg(test)]

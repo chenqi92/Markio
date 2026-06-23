@@ -442,18 +442,7 @@ pub async fn download(tokens: &GDriveTokens, file_id: &str) -> Result<Vec<u8>, S
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Drive download HTTP {status}: {text}"));
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Drive download 读 body 失败：{e}"))?;
-    if bytes.len() > MAX_GDRIVE_OBJECT {
-        return Err(format!(
-            "Google Drive 单对象下载超过上限：{} > {}",
-            bytes.len(),
-            MAX_GDRIVE_OBJECT
-        ));
-    }
-    Ok(bytes.to_vec())
+    crate::read_capped(resp, MAX_GDRIVE_OBJECT, "Google Drive").await
 }
 
 pub async fn delete(tokens: &GDriveTokens, file_id: &str) -> Result<(), String> {

@@ -26,7 +26,10 @@ const BLOCK_CLASS = "blocked-remote-img";
 const ORIGINAL_ATTR = "data-original-src";
 
 function isExternalHttp(src: string): boolean {
-  return /^https?:\/\//i.test(src);
+  const s = src.trim();
+  // http(s) 显式协议，或协议相对 URL（//host/pixel.png 会按页面协议补全后外联，
+  // 同样能当追踪信标）。data:/blob:/ 单斜杠相对路径不受影响。
+  return /^https?:\/\//i.test(s) || /^\/\//.test(s);
 }
 
 function blockOne(img: HTMLImageElement) {

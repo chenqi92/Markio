@@ -412,18 +412,7 @@ pub async fn download(tokens: &DropboxTokens, path: &str) -> Result<Vec<u8>, Str
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Dropbox download HTTP {status}: {text}"));
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Dropbox download 读 body 失败：{e}"))?;
-    if bytes.len() > MAX_DROPBOX_OBJECT {
-        return Err(format!(
-            "Dropbox 单对象下载超过上限：{} > {}",
-            bytes.len(),
-            MAX_DROPBOX_OBJECT
-        ));
-    }
-    Ok(bytes.to_vec())
+    crate::read_capped(resp, MAX_DROPBOX_OBJECT, "Dropbox").await
 }
 
 pub async fn delete(tokens: &DropboxTokens, path: &str) -> Result<(), String> {

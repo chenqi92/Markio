@@ -43,7 +43,14 @@ export async function renderMermaidBlock(block: HTMLElement) {
   const mermaid = await getMermaid(themeId);
 
   const encoded = block.getAttribute("data-mermaid") ?? "";
-  const source = decodeURIComponent(encoded);
+  // 畸形百分号编码会让 decodeURIComponent 抛错；此处兜底用原文，避免异常逃出
+  // 整个函数、绕过下方 catch 而让该块静默空白（与 charts/diagrams 的处理一致）。
+  let source: string;
+  try {
+    source = decodeURIComponent(encoded);
+  } catch {
+    source = encoded;
+  }
   const id = `mmd-${counter++}`;
   try {
     const { svg } = await mermaid.render(id, source);

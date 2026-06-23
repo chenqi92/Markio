@@ -2593,6 +2593,31 @@ pub(crate) fn safe_redirect_policy() -> reqwest::redirect::Policy {
     })
 }
 
+/// 流式读取响应体并实时限幅。避免恶意 / 不报或谎报 Content-Length 的服务器先把
+/// 数 GB 整体缓冲进内存、再走事后大小检查（那时内存已被撑爆）。超限立即中止。
+pub(crate) async fn read_capped(
+    resp: reqwest::Response,
+    max: usize,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let mut resp = resp;
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("{label} 读取响应失败：{e}"))?
+    {
+        if buf.len() + chunk.len() > max {
+            return Err(format!(
+                "{label} 下载内容超过上限：最大 {} MB",
+                max / 1024 / 1024
+            ));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
 pub(crate) fn endpoint_host(endpoint: &str) -> Result<Option<String>, String> {
     let url = reqwest::Url::parse(endpoint).map_err(|e| format!("API endpoint 无效：{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {

@@ -404,18 +404,7 @@ pub async fn get_object(cfg: &S3Config, key: &str) -> Result<Vec<u8>, String> {
             truncate_chars(&text, 400)
         ));
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("S3 GET 读 body 失败：{e}"))?;
-    if bytes.len() > MAX_S3_DOWNLOAD {
-        return Err(format!(
-            "S3 单对象下载超过上限：{} bytes > {} bytes",
-            bytes.len(),
-            MAX_S3_DOWNLOAD
-        ));
-    }
-    Ok(bytes.to_vec())
+    crate::read_capped(resp, MAX_S3_DOWNLOAD, "S3").await
 }
 
 pub async fn delete_object(cfg: &S3Config, key: &str) -> Result<(), String> {

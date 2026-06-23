@@ -43,6 +43,27 @@ describe("blockExternalImages", () => {
     root.remove();
   });
 
+  it("blocks protocol-relative URLs (//host/pixel.png)", () => {
+    const root = makeRoot(`
+      <img src="//tracker.example.com/pixel.png" />
+      <img src="/local/abs.png" />
+    `);
+    const cleanup = blockExternalImages(root);
+
+    const imgs = root.querySelectorAll("img");
+    // 协议相对：拦截
+    expect(imgs[0]!.getAttribute("data-original-src")).toBe(
+      "//tracker.example.com/pixel.png",
+    );
+    expect(imgs[0]!.classList.contains(_internal.BLOCK_CLASS)).toBe(true);
+    // 单斜杠绝对路径（本地资源）：不动
+    expect(imgs[1]!.getAttribute("src")).toBe("/local/abs.png");
+    expect(imgs[1]!.classList.contains(_internal.BLOCK_CLASS)).toBe(false);
+
+    cleanup();
+    root.remove();
+  });
+
   it("restores src on click", () => {
     const root = makeRoot(`<img src="https://example.com/a.png" />`);
     const cleanup = blockExternalImages(root);

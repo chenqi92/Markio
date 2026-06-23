@@ -59,6 +59,9 @@ pub struct Peer {
     pub host: String,
     pub port: u16,
     pub version: String,
+    /// mDNS 服务实例全名，仅用于下线时按 fullname 删除该对端，不下发前端。
+    #[serde(skip)]
+    pub fullname: String,
 }
 
 #[derive(Clone)]
@@ -174,8 +177,11 @@ impl P2pRuntime {
         }
     }
 
-    fn remove_peer_by_fullname(&self, _fullname: &str) {
-        // mdns 下线事件给的是 fullname；当前以重新浏览覆盖为主，这里留空兜底。
+    fn remove_peer_by_fullname(&self, fullname: &str) {
+        // mDNS 下线事件给的是服务实例 fullname；删掉对应对端，避免离线设备滞留在
+        // peers 表里害得自动同步反复对其做 10s WS 超时。
+        let mut g = self.inner.write().unwrap();
+        g.peers.retain(|_, p| p.fullname != fullname);
     }
 }
 
@@ -292,6 +298,7 @@ fn start_mdns(runtime: Arc<P2pRuntime>, port: u16) -> Result<(), String> {
                         host,
                         port: info.get_port(),
                         version,
+                        fullname: info.get_fullname().to_string(),
                     });
                 }
                 ServiceEvent::ServiceRemoved(_, fullname) => {

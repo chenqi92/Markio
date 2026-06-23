@@ -374,14 +374,7 @@ pub async fn get(base_url: &str, auth: &WebDavAuth, rel_path: &str) -> Result<Ve
             MAX_DOWNLOAD_BYTES / 1024 / 1024
         ));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_DOWNLOAD_BYTES {
-        return Err(format!(
-            "WebDAV 下载内容超过大小限制：最大 {} MB",
-            MAX_DOWNLOAD_BYTES / 1024 / 1024
-        ));
-    }
-    Ok(bytes.to_vec())
+    crate::read_capped(resp, MAX_DOWNLOAD_BYTES as usize, "WebDAV").await
 }
 
 pub async fn delete(base_url: &str, auth: &WebDavAuth, rel_path: &str) -> Result<(), String> {

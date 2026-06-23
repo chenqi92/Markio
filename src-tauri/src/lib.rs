@@ -50,6 +50,7 @@ use commands::{
     mcp::{mcp_set_active_workspace, mcp_status},
     p2p::{
         p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
+        p2p_token_delete, p2p_token_get, p2p_token_set,
     },
     rag::{
         rag_cancel, rag_clear, rag_embed_test, rag_reindex, rag_reindex_file, rag_remove_file,
@@ -2947,6 +2948,9 @@ pub fn run() {
             p2p_set_active_workspace,
             p2p_open_pairing,
             p2p_close_pairing,
+            p2p_token_set,
+            p2p_token_get,
+            p2p_token_delete,
         ])
         .setup(|app| {
             if let Err(e) = install_tray(app.handle()) {

@@ -517,6 +517,13 @@ export const api = {
     invoke<void>("p2p_set_active_workspace", { workspace }),
   p2pOpenPairing: () => invoke<string>("p2p_open_pairing"),
   p2pClosePairing: () => invoke<void>("p2p_close_pairing"),
+  /** 已配对对端的金库 token 走 OS 钥匙串（不再明文落 store.bin）。 */
+  p2pTokenSet: (peerId: string, token: string) =>
+    invoke<void>("p2p_token_set", { peerId, token }),
+  p2pTokenGet: (peerId: string) =>
+    invoke<string | null>("p2p_token_get", { peerId }),
+  p2pTokenDelete: (peerId: string) =>
+    invoke<void>("p2p_token_delete", { peerId }),
 
   agentListProviders: () => invoke<AgentProviderInfo[]>("agent_list_providers"),
   agentRun: (req: AgentRunRequest) => invoke<void>("agent_run", { req }),

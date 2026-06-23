@@ -5,7 +5,7 @@ import { reportDiagnostic } from "@/stores/diagnostics";
 import { createCloudSyncTargets, type CloudSyncSettings, type CloudSyncTarget } from "@/lib/sync/adapters";
 import { createLocalFs, createManifestIO } from "@/lib/sync/local";
 import { runSync } from "@/lib/sync/engine";
-import { runP2PSync } from "@/lib/sync/p2pAdapter";
+import { resolvePeerToken, runP2PSync } from "@/lib/sync/p2pAdapter";
 import type { SyncReport, SyncStage as CloudSyncStage } from "@/lib/sync/types";
 
 const FREQ_MS: Record<string, number> = {
@@ -410,7 +410,7 @@ async function runP2PAutoSync(workspace: string): Promise<void> {
   const s = useSettings.getState();
   if (!s.mobileP2pEnabled || !s.mobileP2pAutoSync) return;
   const paired = s.mobileDevices.filter(
-    (d) => d.peerId && d.host && d.port && d.token,
+    (d) => d.peerId && d.host && d.port,
   );
   if (paired.length === 0) return;
 
@@ -432,6 +432,8 @@ async function runP2PAutoSync(workspace: string): Promise<void> {
   try {
     for (const d of targets) {
       const peer = liveById.get(d.peerId!)!;
+      const token = await resolvePeerToken(d);
+      if (!token) continue;
       sync.setStage("preflight", `P2P · ${d.name} 准备同步`);
       try {
         const report = await runP2PSync(
@@ -441,7 +443,7 @@ async function runP2PAutoSync(workspace: string): Promise<void> {
             // 用 mDNS 当前解析到的 host/port（IP 可能变）
             host: peer.host || d.host!,
             port: peer.port || d.port!,
-            token: d.token!,
+            token,
           },
           workspace,
           s.syncConflictStrategy,

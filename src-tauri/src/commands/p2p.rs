@@ -86,3 +86,39 @@ pub fn p2p_open_pairing(runtime: tauri::State<'_, Arc<p2p::P2pRuntime>>) -> Stri
 pub fn p2p_close_pairing(runtime: tauri::State<'_, Arc<p2p::P2pRuntime>>) {
     runtime.close_pairing();
 }
+
+/// 已配对对端的金库 token 钥匙串账户名。每个 peer 一条，避免与本机身份账户冲突。
+fn peer_token_account(peer_id: &str) -> Result<String, String> {
+    // 约束 peer_id 形态，避免拼出意外的钥匙串账户名。
+    let ok = !peer_id.is_empty()
+        && peer_id.len() <= 128
+        && peer_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if !ok {
+        return Err("非法 peerId".to_string());
+    }
+    Ok(format!("p2p_peer:{peer_id}"))
+}
+
+/// 存对端金库 token（配对成功后调用），落 OS 钥匙串而非明文 store.bin。
+#[tauri::command]
+pub fn p2p_token_set(peer_id: String, token: String) -> Result<(), String> {
+    secrets::set(&peer_token_account(&peer_id)?, &token)
+}
+
+/// 读对端金库 token（同步握手前调用）。
+///
+/// 这是对「前端不读取 secret 明文」原则的受控例外：P2P 同步的 WS auth 帧在前端
+/// 构造，该 token 本就必须被前端持有；改走钥匙串只是把「静态明文落盘」换成
+/// 「用时临时读入内存」，运行时暴露面与现状一致，而静态安全性更高。
+#[tauri::command]
+pub fn p2p_token_get(peer_id: String) -> Result<Option<String>, String> {
+    secrets::get(&peer_token_account(&peer_id)?)
+}
+
+/// 删除对端金库 token（解除配对时调用）。
+#[tauri::command]
+pub fn p2p_token_delete(peer_id: String) -> Result<(), String> {
+    secrets::delete(&peer_token_account(&peer_id)?)
+}

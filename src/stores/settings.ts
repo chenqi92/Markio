@@ -536,6 +536,17 @@ function stripLegacySecretFields(state: unknown): unknown {
   if (!state || typeof state !== "object") return state;
   const next = { ...(state as Record<string, unknown>) };
   delete next.rerankApiKey;
+  // P2P 对端金库 token 一律走 OS 钥匙串，绝不随 settings 落盘到 store.bin。
+  if (Array.isArray(next.mobileDevices)) {
+    next.mobileDevices = (next.mobileDevices as Array<Record<string, unknown>>).map((d) => {
+      if (d && typeof d === "object" && "token" in d) {
+        const rest = { ...d };
+        delete rest.token;
+        return rest;
+      }
+      return d;
+    });
+  }
   return next;
 }
 

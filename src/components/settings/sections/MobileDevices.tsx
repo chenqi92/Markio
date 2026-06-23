@@ -6,7 +6,7 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { useSync } from "@/stores/sync";
 import { api } from "@/lib/api";
-import { pairWithPeer, runP2PSync } from "@/lib/sync/p2pAdapter";
+import { pairWithPeer, resolvePeerToken, runP2PSync } from "@/lib/sync/p2pAdapter";
 import { cloudStageLabel, cloudStoreStage } from "@/lib/syncScheduler";
 import type { SyncStage as EngineSyncStage } from "@/lib/sync/types";
 import { SectionHeader } from "../_shared";
@@ -109,6 +109,8 @@ export function MobileDevices() {
     setBusy(peer.deviceId);
     try {
       const r = await pairWithPeer(peer.host, peer.port, code.trim());
+      // 对端金库 token 存进 OS 钥匙串，settings 里只留连接元信息（不再明文落 store.bin）。
+      await api.p2pTokenSet(r.peerId, r.token);
       const cur = useSettings.getState().mobileDevices;
       const id = `dev_${Date.now().toString(36)}`;
       const next = cur.filter((d) => d.peerId !== r.peerId);
@@ -120,7 +122,6 @@ export function MobileDevices() {
         peerId: r.peerId,
         host: peer.host,
         port: peer.port,
-        token: r.token,
       });
       setPreference("mobileDevices", next);
       setToast({ stage: "done", message: `已与 ${r.name || peer.name} 配对` });
@@ -132,7 +133,7 @@ export function MobileDevices() {
   };
 
   const syncWith = async (device: (typeof devices)[number]) => {
-    if (!device.peerId || !device.host || !device.port || !device.token) {
+    if (!device.peerId || !device.host || !device.port) {
       setToast({ stage: "error", message: "该设备缺少配对信息，请重新配对" });
       return;
     }
@@ -146,6 +147,11 @@ export function MobileDevices() {
       setToast({ stage: "error", message: "当前仓库正在同步中" });
       return;
     }
+    const token = await resolvePeerToken(device);
+    if (!token) {
+      setToast({ stage: "error", message: "该设备缺少配对凭证，请重新配对" });
+      return;
+    }
     setBusy(device.id);
     // 复用全局 sync 状态栏（与云同步同一处展示阶段/进度）
     sync.setInflight(ws.path, true);
@@ -157,7 +163,7 @@ export function MobileDevices() {
           name: device.name,
           host: device.host,
           port: device.port,
-          token: device.token,
+          token,
         },
         ws.path,
         conflictStrategy,
@@ -204,6 +210,9 @@ export function MobileDevices() {
       danger: true,
     });
     if (!ok) return;
+    // 一并删除钥匙串里该对端的金库 token，避免残留。
+    const dev = useSettings.getState().mobileDevices.find((d) => d.id === id);
+    if (dev?.peerId) await api.p2pTokenDelete(dev.peerId).catch(() => undefined);
     setPreference(
       "mobileDevices",
       devices.filter((d) => d.id !== id),

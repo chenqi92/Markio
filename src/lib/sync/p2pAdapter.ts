@@ -6,6 +6,7 @@
 //
 // content 全程 base64：与 localFs（Tauri 实现）一致，避免二进制资源损坏。
 
+import { api } from "@/lib/api";
 import { runSync } from "./engine";
 import { createLocalFs, createManifestIO } from "./local";
 import { TransportError } from "./transport";
@@ -18,6 +19,34 @@ export interface P2PPeer {
   host: string;
   port: number;
   token: string;
+}
+
+/**
+ * 取某个已配对对端的金库 token：优先 OS 钥匙串；找不到则回退到历史明文（旧版本
+ * 存在 settings 里的 device.token），并顺手迁移进钥匙串。两处都没有则返回 null。
+ * 这样既不破坏老配对（legacy 回退），又让 token 不再依赖明文落盘。
+ */
+export async function resolvePeerToken(device: {
+  peerId?: string;
+  token?: string;
+}): Promise<string | null> {
+  if (!device.peerId) return null;
+  try {
+    const stored = await api.p2pTokenGet(device.peerId);
+    if (stored) return stored;
+  } catch {
+    /* 钥匙串不可用时落到 legacy 回退 */
+  }
+  const legacy = device.token?.trim();
+  if (legacy) {
+    try {
+      await api.p2pTokenSet(device.peerId, legacy);
+    } catch {
+      /* 迁移失败也先用 legacy 完成本次同步 */
+    }
+    return legacy;
+  }
+  return null;
 }
 
 interface RpcResp {

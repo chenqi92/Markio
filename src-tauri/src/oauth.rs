@@ -118,11 +118,24 @@ impl LoopbackListener {
                     .map(|(_, v)| v.to_string())
             });
 
+            // 只要本次授权带了 expected_state（CSRF token），回调就必须带上且完全匹配的
+            // state；缺失或不匹配一律拒绝。先把这个判定算出来，再决定回浏览器哪种页面，
+            // 避免"后端拒绝、浏览器却显示授权完成"的误导。
+            let state_ok = match (code.is_some(), expected_state) {
+                (true, Some(expected)) => state.as_deref() == Some(expected),
+                _ => true,
+            };
+
             // 回浏览器一个友好页面
             let (status, html) = if let Some(err) = &error {
                 (
                     "400 Bad Request",
                     format!("<html><body><h2>授权失败</h2><p>{}</p><p>可以关闭此窗口。</p></body></html>", html_escape(err)),
+                )
+            } else if code.is_some() && !state_ok {
+                (
+                    "400 Bad Request",
+                    "<html><body><h2>授权校验失败</h2><p>state 不匹配（可能被篡改），请回到 markio 重试。可以关闭此窗口。</p></body></html>".to_string(),
                 )
             } else if code.is_some() {
                 (
@@ -148,16 +161,9 @@ impl LoopbackListener {
                 return Err(format!("OAuth 授权被拒绝：{err}"));
             }
             if let Some(code) = code {
-                // 只要本次授权带了 expected_state（CSRF token），回调就必须带上且完全匹配的 state；
-                // 缺失或不匹配一律拒绝，杜绝"回调不带 state 即可绕过校验"。
-                if let Some(expected) = expected_state {
-                    match state.as_deref() {
-                        Some(got) if got == expected => {}
-                        _ => {
-                            return Err("OAuth state 校验失败（缺失或不匹配，可能被中间人篡改）"
-                                .to_string())
-                        }
-                    }
+                if !state_ok {
+                    return Err("OAuth state 校验失败（缺失或不匹配，可能被中间人篡改）"
+                        .to_string());
                 }
                 return Ok(code);
             }

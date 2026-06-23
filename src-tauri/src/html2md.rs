@@ -313,6 +313,35 @@ fn get_attr<'a>(attrs: &'a [(String, String)], key: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
+/// 把 URL 安全地放进 markdown 链接/图片目标。含空格、括号或尖括号时用 `<...>` 包裹
+/// （CommonMark 允许），并转义内部 `<` `>` `\`、去掉换行，避免 URL 里的 `)` 提前闭合
+/// 链接造成内容/链接注入（如 `[x](http://a) javascript:...`）。
+fn md_link_destination(url: &str) -> String {
+    let url: String = url.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    if url.is_empty() {
+        return String::new();
+    }
+    let needs_wrap = url
+        .chars()
+        .any(|c| matches!(c, ' ' | '\t' | '(' | ')' | '<' | '>'));
+    if needs_wrap {
+        let esc = url
+            .replace('\\', "\\\\")
+            .replace('<', "\\<")
+            .replace('>', "\\>");
+        format!("<{esc}>")
+    } else {
+        url
+    }
+}
+
+/// 转义会破坏 markdown 链接/图片文字的字符（`[` `]` 与反斜杠）。
+fn md_bracket_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
 // ===========================================================================
 // Renderer
 // ===========================================================================
@@ -645,7 +674,11 @@ impl Renderer {
                 let alt = get_attr(attrs, "alt").unwrap_or("");
                 let src = get_attr(attrs, "src").unwrap_or("");
                 if !src.is_empty() {
-                    let piece = format!("![{}]({})", decode_entities(alt), decode_entities(src));
+                    let piece = format!(
+                        "![{}]({})",
+                        md_bracket_escape(&decode_entities(alt)),
+                        md_link_destination(&decode_entities(src))
+                    );
                     self.append_inline(&piece);
                 }
             }
@@ -743,7 +776,7 @@ impl Renderer {
             "a" => {
                 // Close 标签没有属性，href 在 on_open 时压入 a_href_stack，这里弹出拼成 [text](href)
                 if let Some(href) = self.a_href_stack_pop() {
-                    let piece = format!("]({})", href);
+                    let piece = format!("]({})", md_link_destination(&href));
                     self.append_inline(&piece);
                 } else {
                     self.append_inline("]");
@@ -1064,6 +1097,19 @@ mod tests {
     }
 
     #[test]
+    fn test_link_destination_injection_guarded() {
+        // href 含 ) / 空格：用 <...> 包裹，避免 ) 提前闭合链接造成内容/链接注入。
+        assert_eq!(
+            md(r#"<a href="https://e.com/a)b c">x</a>"#),
+            "[x](<https://e.com/a)b c>)"
+        );
+        // 目标包裹时内部尖括号会被转义（直接验证 helper，避开 tokenizer 对裸 < 的处理）。
+        assert_eq!(md_link_destination("http://e.com/a)>b"), "<http://e.com/a)\\>b>");
+        // 普通 URL 不受影响，保持裸输出。
+        assert_eq!(md_link_destination("https://e.com/x"), "https://e.com/x");
+    }
+
+    #[test]
     fn test_image() {
         assert_eq!(
             md(r#"<img src="a.png" alt="An image">"#),
@@ -1071,6 +1117,11 @@ mod tests {
         );
         // 无 alt
         assert_eq!(md(r#"<img src="b.jpg">"#), "![](b.jpg)");
+        // alt 含 [] 转义、src 含空格用 <...> 包裹
+        assert_eq!(
+            md(r#"<img src="a b.png" alt="x[y]">"#),
+            "![x\\[y\\]](<a b.png>)"
+        );
     }
 
     #[test]

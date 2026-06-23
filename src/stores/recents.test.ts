@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useRecents } from "./recents";
+import { sanitizeRecentItems, useRecents } from "./recents";
 
 function reset() {
   useRecents.setState({ items: [] });
@@ -57,5 +57,27 @@ describe("recents store path maintenance", () => {
     push("ws", "C:/repo/dir/b.md", "b.md");
     forgetUnder("C:\\repo\\dir");
     expect(useRecents.getState().items).toHaveLength(0);
+  });
+});
+
+describe("sanitizeRecentItems (corrupt store guard)", () => {
+  it("returns empty for non-array input", () => {
+    expect(sanitizeRecentItems(undefined)).toEqual([]);
+    expect(sanitizeRecentItems(null)).toEqual([]);
+    expect(sanitizeRecentItems("nope")).toEqual([]);
+    expect(sanitizeRecentItems({ items: [] })).toEqual([]);
+  });
+
+  it("drops entries with missing or wrong-typed fields", () => {
+    const good = { workspaceId: "ws", path: "/a.md", name: "a.md", at: 1 };
+    const items = sanitizeRecentItems([
+      good,
+      null,
+      { path: "/b.md", name: "b.md", at: 2 }, // 缺 workspaceId
+      { workspaceId: "ws", path: 123, name: "c", at: 3 }, // path 非字符串
+      { workspaceId: "ws", path: "/d.md", name: "d.md", at: "x" }, // at 非数字
+      "string-entry",
+    ]);
+    expect(items).toEqual([good]);
   });
 });

@@ -38,6 +38,23 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+/** 从持久化里清洗出合法的最近条目：丢弃非数组 / 缺字段 / 类型不符的脏数据，
+ *  避免损坏或被篡改的 store.bin 在启动期把消费方的 .filter/.map 打崩。 */
+export function sanitizeRecentItems(raw: unknown): RecentItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (it): it is RecentItem =>
+        !!it &&
+        typeof it === "object" &&
+        typeof (it as RecentItem).workspaceId === "string" &&
+        typeof (it as RecentItem).path === "string" &&
+        typeof (it as RecentItem).name === "string" &&
+        typeof (it as RecentItem).at === "number",
+    )
+    .slice(0, MAX);
+}
+
 export const useRecents = create<RecentsState>()(
   persist(
     (set) => ({
@@ -68,6 +85,12 @@ export const useRecents = create<RecentsState>()(
       name: "markio.recents.v1",
       storage: createJSONStorage(() => tauriStorage),
       skipHydration: true,
+      // 损坏 / 被篡改的 store.bin（items 非数组或条目缺字段）不应在启动期把消费方
+      // 的 .filter/.map 打崩——这里做结构校验，丢弃不合法条目。
+      merge: (persisted, current) => {
+        const p = persisted as Partial<RecentsState> | undefined;
+        return { ...current, items: sanitizeRecentItems(p?.items) };
+      },
     },
   ),
 );

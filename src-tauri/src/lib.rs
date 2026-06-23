@@ -2018,12 +2018,25 @@ async fn macos_share(input: MacShareInput) -> Result<(), String> {
 fn set_global_shortcut(app: tauri::AppHandle, binding: String) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let gs = app.global_shortcut();
-    let _ = gs.unregister_all();
-    if binding.trim().is_empty() {
+    let trimmed = binding.trim();
+    if trimmed.is_empty() {
+        let _ = gs.unregister_all();
         return Ok(());
     }
+    // 先做基本形态校验再动注册表：否则一个畸形字符串会先把已有快捷键 unregister_all
+    // 清掉、随后 register 失败，导致用户彻底失去全局快捷键。
+    if trimmed.len() > 100 {
+        return Err("快捷键过长".to_string());
+    }
     // 把 "Mod+" 翻成 plugin 接受的 "CommandOrControl+"
-    let normalized = binding.replace("Mod+", "CommandOrControl+");
+    let normalized = trimmed.replace("Mod+", "CommandOrControl+");
+    let shape_ok = normalized
+        .split('+')
+        .all(|tok| !tok.is_empty() && tok.chars().all(|c| c.is_ascii_alphanumeric()));
+    if !shape_ok {
+        return Err("快捷键格式无效".to_string());
+    }
+    let _ = gs.unregister_all();
     gs.register(normalized.as_str())
         .map_err(|e| format!("注册全局快捷键失败：{e}"))
 }

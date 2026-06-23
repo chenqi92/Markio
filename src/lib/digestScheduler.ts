@@ -66,14 +66,23 @@ export interface DigestSendResult {
 // 进行中的发送：调度器 tick 与"立即发送"按钮、或两次 tick 重叠时复用同一次请求，
 // 避免并发向 webhook 重复推送 / 竞态写 lastSentDate。
 let inflight: Promise<DigestSendResult> | null = null;
+// 进行中的这次发送是否应写入 lastSentDate。多个调用复用同一 inflight 时，只要
+// 任一调用要求记日期（默认即要求），就升级为记日期——否则"立即发送(markSent:false)"
+// 抢先发起、调度器复用它却不落 lastSentDate，会导致每日摘要在后续 tick 反复推送。
+let inflightMarkSent = false;
 
 /** 立即发送一次摘要（设置面板的"立即发送"按钮 + 调度器都用） */
 export async function sendDigestNow(opts?: {
   /** 默认 true：发送成功后写入 lastSentDate */
   markSent?: boolean;
 }): Promise<DigestSendResult> {
-  if (inflight) return inflight;
-  inflight = doSendDigest(opts);
+  const wantMark = opts?.markSent !== false;
+  if (inflight) {
+    if (wantMark) inflightMarkSent = true;
+    return inflight;
+  }
+  inflightMarkSent = wantMark;
+  inflight = doSendDigest(() => inflightMarkSent);
   try {
     return await inflight;
   } finally {
@@ -81,7 +90,7 @@ export async function sendDigestNow(opts?: {
   }
 }
 
-async function doSendDigest(opts?: { markSent?: boolean }): Promise<DigestSendResult> {
+async function doSendDigest(shouldMarkSent: () => boolean): Promise<DigestSendResult> {
   const settings = useSettings.getState();
   if (!settings.wxAssistantEnabled) {
     return { ok: false, message: "微信助手未启用" };
@@ -106,7 +115,7 @@ async function doSendDigest(opts?: { markSent?: boolean }): Promise<DigestSendRe
         message: `HTTP ${r.status}${r.bodyExcerpt ? ` · ${r.bodyExcerpt.slice(0, 120)}` : ""}`,
       };
     }
-    if (opts?.markSent !== false) {
+    if (shouldMarkSent()) {
       settings.setPreference("wxAssistantLastDigestSentDate", ymd());
     }
     return { ok: true, message: "已推送" };

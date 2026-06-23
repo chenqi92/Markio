@@ -45,6 +45,9 @@ fn auth_header(auth: &WebDavAuth) -> String {
 fn build_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        // 防止恶意/被劫持的 WebDAV 服务器用 30x 跳转把请求引到内网/环回（SSRF）。
+        // 不拒绝初始 host（用户可能自建本机 WebDAV），仅拦截重定向到私网的目标。
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| format!("初始化 WebDAV 客户端失败：{e}"))
 }

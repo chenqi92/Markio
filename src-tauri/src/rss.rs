@@ -34,9 +34,13 @@ pub async fn fetch(url: &str) -> Result<RssFetchResult, String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("仅支持 http / https 的 RSS 源".to_string());
     }
+    // SSRF 守卫：拒绝指向 localhost/内网/链路本地的 feed，且每跳重定向都重新校验，
+    // 与图片下载 / Webhook 出站路径保持一致。
+    crate::reject_private_network_url(&parsed, "RSS 源")?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .user_agent("markio/rss (https://github.com/chenqi92/Markio)")
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| format!("构建 HTTP 客户端失败：{e}"))?;
     let mut resp = client

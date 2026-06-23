@@ -291,6 +291,7 @@ pub async fn list_objects(
     let full_url = format!("{url_base}{canonical_uri}?{canonical_query}");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
@@ -382,6 +383,7 @@ pub async fn get_object(cfg: &S3Config, key: &str) -> Result<Vec<u8>, String> {
     let full_url = format!("{url_base}{canonical_uri}");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
@@ -434,6 +436,7 @@ pub async fn delete_object(cfg: &S3Config, key: &str) -> Result<(), String> {
     let full_url = format!("{url_base}{canonical_uri}");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
@@ -501,6 +504,7 @@ pub async fn put_object(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
+        .redirect(crate::safe_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client

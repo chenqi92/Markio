@@ -185,16 +185,24 @@ const MAX_CRASH_LOG_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_CRASH_READ_BYTES: u64 = 512 * 1024;
 
 /// 生成 32 字节随机 token（hex）。loopback HTTP / WS server 鉴权共用（mcp/clipper/smart_channel/p2p）。
+/// CSPRNG 不可用时 fail-closed（panic）而非退化成可预测的时间戳——宁可拒绝启动也不签发弱 token。
 pub(crate) fn random_loopback_token() -> String {
     let mut buf = [0u8; 32];
-    if getrandom::getrandom(&mut buf).is_err() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        return format!("{now:032x}");
-    }
+    getrandom::getrandom(&mut buf).expect("系统 CSPRNG 不可用，无法安全生成 loopback token");
     hex::encode(buf)
+}
+
+/// 常量时间字符串比较，避免 token 校验产生计时侧信道。loopback server 鉴权共用。
+pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    diff == 0
 }
 
 pub(crate) fn validate_path(state: &AppState, p: &str) -> Result<PathBuf, String> {
@@ -2032,12 +2040,18 @@ async fn crash_flush_to_webhook(url: String) -> Result<bool, String> {
         return Ok(false);
     }
     let body = std::fs::read_to_string(&path).map_err(|e| format!("读取 pending 失败：{e}"))?;
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Webhook URL 无效：{e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Webhook 仅支持 http/https".to_string());
+    }
+    reject_private_network_url(&parsed, "崩溃上报")?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(safe_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
-        .post(url)
+        .post(parsed)
         .header("content-type", "application/json")
         .body(body)
         .send()
@@ -2525,7 +2539,7 @@ pub(crate) fn is_loopback_host(host: Option<&str>) -> bool {
     matches!(host, Some("localhost" | "127.0.0.1" | "::1" | "[::1]"))
 }
 
-fn is_private_network_host(host: Option<&str>) -> bool {
+pub(crate) fn is_private_network_host(host: Option<&str>) -> bool {
     let Some(host) = host else {
         return true;
     };
@@ -2557,7 +2571,7 @@ fn is_private_network_host(host: Option<&str>) -> bool {
     }
 }
 
-fn reject_private_network_url(url: &reqwest::Url, label: &str) -> Result<(), String> {
+pub(crate) fn reject_private_network_url(url: &reqwest::Url, label: &str) -> Result<(), String> {
     if is_private_network_host(url.host_str()) {
         return Err(format!("{label} 不允许访问 localhost、内网或链路本地地址"));
     }
@@ -2566,7 +2580,7 @@ fn reject_private_network_url(url: &reqwest::Url, label: &str) -> Result<(), Str
 
 /// 出站请求的重定向策略：每一跳都重新校验目标主机，阻止远端用 30x 跳转
 /// 把 SSRF 守卫绕过到 127.0.0.1 / 169.254.169.254 / 内网地址。最多跟随 5 跳。
-fn safe_redirect_policy() -> reqwest::redirect::Policy {
+pub(crate) fn safe_redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
         if attempt.previous().len() >= 5 {
             return attempt.error("重定向次数过多");

@@ -63,17 +63,8 @@ struct ServerState {
 }
 
 fn random_token() -> String {
-    // 32 字节随机 → hex。getrandom 已经是 markio 依赖。
-    let mut buf = [0u8; 32];
-    if getrandom::getrandom(&mut buf).is_err() {
-        // 极少出现；fallback 用时间戳，仅为了不 panic
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        return format!("{now:032x}");
-    }
-    hex::encode(buf)
+    // 复用统一的 loopback token 生成（CSPRNG 不可用时 fail-closed，绝不退化成可预测的时间戳）。
+    crate::random_loopback_token()
 }
 
 /// 在后台启动 MCP server。失败不会让 app crash，但会打日志。
@@ -124,7 +115,7 @@ fn check_token(headers: &HeaderMap, expected: &Option<String>) -> Result<(), (St
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .unwrap_or("");
-    if got != want {
+    if !crate::constant_time_eq(got, want) {
         return Err((StatusCode::UNAUTHORIZED, "无效 token".into()));
     }
     Ok(())

@@ -309,6 +309,9 @@ pub async fn rag_status(
 /// 服务不可达就直接报错给用户，不要白白起一个会失败一整轮的后台任务。
 #[tauri::command]
 pub async fn rag_embed_test(config: rag::embed::EmbedConfig) -> Result<usize, String> {
+    // 与 build_embed_config 一致地校验 endpoint host，避免该测试命令成为绕过白名单的
+    // 本地 SSRF 探测原语（前端反序列化出的 base_url 可指向 127.0.0.1 / 169.254.169.254）。
+    validate_rag_endpoint(config.provider.as_str(), config.base_url.as_deref())?;
     let result = rag::embed::embed(&config, &["ping".to_string()]).await?;
     Ok(result.dim)
 }

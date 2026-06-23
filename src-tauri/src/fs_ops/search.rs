@@ -221,26 +221,25 @@ pub fn grep(root: &str, query: &str, max_results: usize) -> Vec<GrepHit> {
                         }
                     }
                     if let Ok(content) = fs::read_to_string(&path) {
-                        let lower = content.to_lowercase();
-                        if let Some(idx) = lower.find(self.needle) {
-                            let line_no = content[..idx].matches('\n').count() as u32 + 1;
-                            let line_start = content[..idx].rfind('\n').map(|x| x + 1).unwrap_or(0);
-                            let line_end = content[idx..]
-                                .find('\n')
-                                .map(|x| idx + x)
-                                .unwrap_or(content.len());
-                            let mut preview = content[line_start..line_end].trim().to_string();
-                            if preview.chars().count() > 160 {
-                                preview = preview.chars().take(160).collect::<String>() + "…";
-                            }
-                            hits.push(GrepHit {
-                                path: path.to_string_lossy().to_string(),
-                                name: name.clone(),
-                                line: line_no,
-                                preview,
-                            });
-                            if hits.len() >= self.max_results {
-                                return;
+                        // 逐行小写比对：不能用 content.to_lowercase() 的字节偏移去切原始
+                        // content——Unicode 大小写折叠不保长（İ→i̇、ẞ→ß 等），偏移会落到
+                        // UTF-8 码点中间触发 panic（release 下 panic=abort 直接崩进程）。
+                        for (i, line) in content.lines().enumerate() {
+                            if line.to_lowercase().contains(self.needle) {
+                                let mut preview = line.trim().to_string();
+                                if preview.chars().count() > 160 {
+                                    preview = preview.chars().take(160).collect::<String>() + "…";
+                                }
+                                hits.push(GrepHit {
+                                    path: path.to_string_lossy().to_string(),
+                                    name: name.clone(),
+                                    line: i as u32 + 1,
+                                    preview,
+                                });
+                                if hits.len() >= self.max_results {
+                                    return;
+                                }
+                                break;
                             }
                         }
                     }
@@ -299,6 +298,19 @@ mod tests {
         assert!(line_has_unlinked("see roadmap below", needle));
         assert!(!line_has_unlinked("see roadmaps below", needle));
         assert!(!line_has_unlinked("link [[roadmap]] here", needle));
+    }
+
+    #[test]
+    fn grep_handles_case_folding_length_change() {
+        // 回归：İ(U+0130)→i̇ 小写后字节变多、ẞ(U+1E9E)→ß 变少，旧实现用小写串的字节
+        // 偏移去切原始内容会落到 UTF-8 码点中间触发 panic（release 下 panic=abort 崩进程）。
+        let ws = make_test_workspace("grep-casefold");
+        fs::write(ws.join("a.md"), "İ你好世界\n第二行 ẞ你好\n").unwrap();
+        fs::write(ws.join("b.md"), "ẞ你好\n").unwrap();
+        // 不应 panic；应能命中含「你」的内容行。
+        let hits = grep(ws.to_str().unwrap(), "你", 50);
+        assert!(hits.iter().any(|h| h.preview.contains('你')));
+        fs::remove_dir_all(&ws).ok();
     }
 
     #[test]

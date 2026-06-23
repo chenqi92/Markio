@@ -144,7 +144,7 @@ fn check_token(headers: &HeaderMap, expected: &Option<String>) -> Result<(), (St
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .unwrap_or("");
-    if got != want {
+    if !crate::constant_time_eq(got, want) {
         return Err((StatusCode::UNAUTHORIZED, "无效 token".into()));
     }
     Ok(())

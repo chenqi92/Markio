@@ -21,6 +21,7 @@ fn rerank_http_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(crate::safe_redirect_policy())
             .build()
             .unwrap_or_default()
     })

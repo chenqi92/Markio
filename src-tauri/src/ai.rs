@@ -78,6 +78,7 @@ fn http_chat_client() -> &'static reqwest::Client {
     CELL.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
+            .redirect(crate::safe_redirect_policy())
             .build()
             .expect("build chat http client")
     })
@@ -89,6 +90,7 @@ fn http_stream_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(STREAM_TOTAL_TIMEOUT_SECS))
             .read_timeout(Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
+            .redirect(crate::safe_redirect_policy())
             .build()
             .expect("build stream http client")
     })

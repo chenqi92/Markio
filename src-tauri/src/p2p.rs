@@ -180,17 +180,11 @@ impl P2pRuntime {
 }
 
 fn gen_pair_code() -> String {
+    // CSPRNG 不可用时 fail-closed（panic）而非退化成低熵的时间戳^pid——配对码是
+    // 防止冒充配对的唯一一道随机性，弱熵会让其可预测。宁可拒绝配对也不发弱码。
     let mut buf = [0u8; 4];
-    let raw = if getrandom::getrandom(&mut buf).is_ok() {
-        u32::from_le_bytes(buf)
-    } else {
-        // RNG 失败时绝不退化成确定性的 000000：混入纳秒时间戳 + pid
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u32)
-            .unwrap_or(0);
-        ts ^ std::process::id().rotate_left(13)
-    };
+    getrandom::getrandom(&mut buf).expect("系统 CSPRNG 不可用，无法安全生成配对码");
+    let raw = u32::from_le_bytes(buf);
     let n = raw % 1_000_000;
     format!("{n:06}")
 }

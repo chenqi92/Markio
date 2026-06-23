@@ -19,6 +19,7 @@ fn embed_http_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
+            .redirect(crate::safe_redirect_policy())
             .build()
             .unwrap_or_default()
     })

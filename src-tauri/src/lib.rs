@@ -1,5 +1,6 @@
 mod agent_cli;
 mod ai;
+mod builtin_credentials;
 mod clipper;
 mod commands;
 mod custom_themes;
@@ -3101,6 +3102,7 @@ pub fn run() {
             p2p_token_set,
             p2p_token_get,
             p2p_token_delete,
+            builtin_credentials::builtin_oauth_providers,
         ])
         .setup(|app| {
             if let Err(e) = install_tray(app.handle()) {

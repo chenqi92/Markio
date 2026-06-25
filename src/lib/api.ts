@@ -1036,6 +1036,9 @@ export const api = {
     invoke<string>("gdrive_download", { fileId }),
   gdriveDelete: (fileId: string) => invoke<void>("gdrive_delete", { fileId }),
 
+  /** 哪些网盘内置了官方 client_id（用户可一键登录，无需自填 key） */
+  builtinOauthProviders: () => invoke<string[]>("builtin_oauth_providers"),
+
   // 第三方笔记导入
   importRun: (
     provider: "notion" | "obsidian" | "bear" | "evernote" | "roam" | "logseq",

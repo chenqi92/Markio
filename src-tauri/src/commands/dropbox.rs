@@ -53,10 +53,8 @@ pub async fn dropbox_authorize(
     client_id: String,
 ) -> Result<dropbox_ops::DropboxStatus, String> {
     use tauri_plugin_opener::OpenerExt as _;
-    let client_id = client_id.trim().to_string();
-    if client_id.is_empty() {
-        return Err("Dropbox client_id 为空".to_string());
-    }
+    // 传入非空 → 用用户自带 App key；传入空 → 回退到编译期内置 client_id。
+    let client_id = crate::builtin_credentials::resolve_client_id("dropbox", &client_id)?;
     let pkce = oauth::PkcePair::new()?;
     let state = oauth::random_state()?;
     let listener = oauth::LoopbackListener::bind().await?;

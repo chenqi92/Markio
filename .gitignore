@@ -17,6 +17,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
+# 内置网盘 OAuth 凭据（真实 key 绝不入库；example 模板可提交）
+src-tauri/credentials.env
+
 .DS_Store
 .idea/
 .vscode/*

@@ -39,6 +39,18 @@ function contentTypeFromPath(path: string): string {
   return ext ? map[ext] ?? "application/octet-stream" : "application/octet-stream";
 }
 
+/** 拉取「已内置官方 client_id」的网盘集合，用于决定显示一键登录还是要求填 client_id */
+function useBuiltinOauth(): Set<string> {
+  const [set, setSet] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    api
+      .builtinOauthProviders()
+      .then((list) => setSet(new Set(list)))
+      .catch(() => setSet(new Set()));
+  }, []);
+  return set;
+}
+
 const DRIVES = [
   { id: "icloud", name: "iCloud Drive", logo: "/brand/sync/icloud.svg", color: "#0a84ff", status: "未连接" },
   { id: "s3", name: "AWS S3 / 兼容", icon: "database" as IconName, color: "#ff9900", status: "未连接" },
@@ -844,6 +856,7 @@ function S3DriveDrawer() {
 
 function DropboxDriveDrawer() {
   const clientId = useSettings((s) => s.dropboxClientId);
+  const hasBuiltin = useBuiltinOauth().has("dropbox");
   const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
   const syncCfg: DriveConfig = driveConfigs.drop ?? { folder: "/markio", enabled: false };
@@ -885,7 +898,7 @@ function DropboxDriveDrawer() {
   }, []);
 
   const authorize = async () => {
-    if (!clientId.trim()) {
+    if (!clientId.trim() && !hasBuiltin) {
       setMsg({ kind: "err", text: "请先填写 Dropbox App key (Client ID)" });
       return;
     }
@@ -993,31 +1006,39 @@ function DropboxDriveDrawer() {
       }}
     >
       <div className="settings-help">
-        在{" "}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            void openExternal("https://www.dropbox.com/developers/apps");
-          }}
-        >
-          Dropbox 开发者后台
-        </a>{" "}
-        注册一个 App（Scoped access, App folder 或 Full Dropbox），勾选
-        files.content.write / files.content.read 权限，把 App key 填到下方。
+        {hasBuiltin ? (
+          "已内置官方 App key，直接点「授权」用你自己的 Dropbox 账号登录即可；如需用自己注册的 App，可在下方填入 App key。"
+        ) : (
+          <>
+            在{" "}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal("https://www.dropbox.com/developers/apps");
+              }}
+            >
+              Dropbox 开发者后台
+            </a>{" "}
+            注册一个 App（Scoped access, App folder 或 Full Dropbox），勾选
+            files.content.write / files.content.read 权限，把 App key 填到下方。
+          </>
+        )}
       </div>
-      <div className="settings-row">
-        <div className="settings-row-l">
-          <div className="settings-label">App key (Client ID)</div>
+      {!hasBuiltin && (
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">App key (Client ID)</div>
+          </div>
+          <input
+            type="text"
+            value={clientId}
+            onChange={(e) => setPreference("dropboxClientId", e.target.value)}
+            placeholder="abc123xyz456"
+            style={{ flex: 1, minWidth: 280 }}
+          />
         </div>
-        <input
-          type="text"
-          value={clientId}
-          onChange={(e) => setPreference("dropboxClientId", e.target.value)}
-          placeholder="abc123xyz456"
-          style={{ flex: 1, minWidth: 280 }}
-        />
-      </div>
+      )}
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">连接状态</div>
@@ -1040,7 +1061,7 @@ function DropboxDriveDrawer() {
           <button
             className="settings-btn primary"
             type="button"
-            disabled={busy !== null || !clientId.trim()}
+            disabled={busy !== null || (!clientId.trim() && !hasBuiltin)}
             onClick={authorize}
           >
             {busy === "auth" ? "授权中…浏览器已打开" : "授权"}
@@ -1181,6 +1202,7 @@ function DropboxDriveDrawer() {
 
 function GDriveDriveDrawer() {
   const clientId = useSettings((s) => s.gdriveClientId);
+  const hasBuiltin = useBuiltinOauth().has("gdrive");
   const driveConfigs = useSettings((s) => s.driveConfigs);
   const setPreference = useSettings((s) => s.setPreference);
   const syncCfg: DriveConfig = driveConfigs.drive ?? { folder: "root", enabled: false };
@@ -1226,7 +1248,7 @@ function GDriveDriveDrawer() {
   }, []);
 
   const authorize = async () => {
-    if (!clientId.trim()) {
+    if (!clientId.trim() && !hasBuiltin) {
       setMsg({ kind: "err", text: "请先填写 Google OAuth Client ID" });
       return;
     }
@@ -1337,32 +1359,40 @@ function GDriveDriveDrawer() {
       }}
     >
       <div className="settings-help">
-        在{" "}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            void openExternal("https://console.cloud.google.com/apis/credentials");
-          }}
-        >
-          Google Cloud Console
-        </a>{" "}
-        创建一个 OAuth Client ID（Application type: Desktop app），并开启
-        Google Drive API。把 Client ID 填到下方；首次授权会要求你同意
-        drive.file scope（markio 只能访问自己创建/打开的文件）。
+        {hasBuiltin ? (
+          "已内置官方 OAuth client，直接点「授权」用你自己的 Google 账号登录即可（markio 仅申请 drive.file，只能访问自己创建/打开的文件）；如需用自己的 client，可在下方填入。"
+        ) : (
+          <>
+            在{" "}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal("https://console.cloud.google.com/apis/credentials");
+              }}
+            >
+              Google Cloud Console
+            </a>{" "}
+            创建一个 OAuth Client ID（Application type: Desktop app），并开启
+            Google Drive API。把 Client ID 填到下方；首次授权会要求你同意
+            drive.file scope（markio 只能访问自己创建/打开的文件）。
+          </>
+        )}
       </div>
-      <div className="settings-row">
-        <div className="settings-row-l">
-          <div className="settings-label">OAuth Client ID</div>
+      {!hasBuiltin && (
+        <div className="settings-row">
+          <div className="settings-row-l">
+            <div className="settings-label">OAuth Client ID</div>
+          </div>
+          <input
+            type="text"
+            value={clientId}
+            onChange={(e) => setPreference("gdriveClientId", e.target.value)}
+            placeholder="123-abc.apps.googleusercontent.com"
+            style={{ flex: 1, minWidth: 320 }}
+          />
         </div>
-        <input
-          type="text"
-          value={clientId}
-          onChange={(e) => setPreference("gdriveClientId", e.target.value)}
-          placeholder="123-abc.apps.googleusercontent.com"
-          style={{ flex: 1, minWidth: 320 }}
-        />
-      </div>
+      )}
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">连接状态</div>
@@ -1385,7 +1415,7 @@ function GDriveDriveDrawer() {
           <button
             className="settings-btn primary"
             type="button"
-            disabled={busy !== null || !clientId.trim()}
+            disabled={busy !== null || (!clientId.trim() && !hasBuiltin)}
             onClick={authorize}
           >
             {busy === "auth" ? "授权中…浏览器已打开" : "授权"}

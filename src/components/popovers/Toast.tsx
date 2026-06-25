@@ -3,8 +3,41 @@ import { useUI } from "@/stores/ui";
 export function ToastHost() {
   const toast = useUI((s) => s.toast);
   if (!toast) return null;
+  const isError = toast.stage === "error";
   return (
-    <div className="upload-toast">
+    <div
+      className="upload-toast"
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
+      style={
+        isError
+          ? {
+              borderColor: "var(--danger, #c1432f)",
+              color: "var(--danger, #c1432f)",
+            }
+          : undefined
+      }
+    >
+      {isError && (
+        <span
+          style={{
+            display: "inline-flex",
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: "var(--danger, #c1432f)",
+            color: "white",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+          aria-hidden
+        >
+          !
+        </span>
+      )}
       {toast.stage === "uploading" && (
         <span
           style={{

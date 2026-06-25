@@ -13,6 +13,8 @@ import { useTabs } from "@/stores/tabs";
 import { useWorkspace } from "@/stores/workspace";
 import { useDialog } from "@/stores/dialog";
 import { useVaultIndex } from "@/stores/vaultIndex";
+import { useSettings } from "@/stores/settings";
+import { useRag } from "@/stores/rag";
 import { api, type VaultFile } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 import type { GrepHit } from "@/types";
@@ -261,6 +263,9 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [regex, setRegex] = useState(false);
+  // 语义检索：路由到 RAG 混合检索（向量 + FTS RRF + rerank + 图扩展）。
+  const ragEnabled = useSettings((s) => s.ragEnabled);
+  const [semantic, setSemantic] = useState(false);
   const [scope, setScope] = useState<ScopeFilter>("current");
   const [ext, setExt] = useState<FileExtFilter>("all");
   const [tagSel, setTagSel] = useState<Set<string>>(() => new Set());
@@ -275,8 +280,14 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const seqRef = useRef(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  // 实际发给 Rust 的查询：Aa/W/.* 都用客户端正则过滤实现，发给 Rust 的串保持简单
-  // (因为 fs_grep 没暴露这些开关)。先用宽松的 plain 子串拉回候选，再前端过滤。
+  // RAG 关掉时不应停留在语义模式。
+  useEffect(() => {
+    if (!ragEnabled) setSemantic(false);
+  }, [ragEnabled]);
+
+  // 字面模式：Aa/W/.* 都用客户端正则过滤实现，发给 Rust 的串保持简单（fs_grep 没暴露
+  // 这些开关）。先用宽松的 plain 子串拉回候选，再前端过滤。
+  // 语义模式：直接路由到 RAG 混合检索，结果按 chunk 给出（line 取 0，仅打开文件）。
   useEffect(() => {
     const trimmed = q.trim();
     if (!ws || trimmed.length < 2) {
@@ -290,6 +301,39 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     const t = setTimeout(async () => {
       try {
         const targetWss = scope === "all" ? workspaces : [ws];
+        if (semantic) {
+          const ragHits: HitWithMeta[] = [];
+          let anyOk = false;
+          let lastErr: string | null = null;
+          for (const w of targetWss) {
+            try {
+              const rs = await useRag.getState().search(w.path, trimmed);
+              anyOk = true;
+              for (const h of rs) {
+                const name = h.path.split(/[\\/]/).pop() || h.path;
+                const snippet = h.body.replace(/\s+/g, " ").trim().slice(0, 200);
+                ragHits.push({
+                  path: h.path,
+                  name,
+                  line: 0,
+                  preview: h.heading ? `${h.heading} — ${snippet}` : snippet,
+                  wsId: w.id,
+                  wsName: w.name,
+                });
+              }
+            } catch (e) {
+              lastErr = (e as Error).message;
+            }
+          }
+          if (seq !== seqRef.current) return;
+          if (!anyOk && lastErr) {
+            setErr(`语义检索失败：${lastErr}（请确认已在设置里建好 RAG 索引）`);
+            setHits([]);
+          } else {
+            setHits(ragHits);
+          }
+          return;
+        }
         const all: HitWithMeta[] = [];
         const seen = new Set<string>();
         const anchors = buildSearchAnchors(trimmed, regex);
@@ -317,7 +361,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }, 220);
     return () => clearTimeout(t);
-  }, [q, ws, scope, workspaces, regex]);
+  }, [q, ws, scope, workspaces, regex, semantic]);
 
   // 三个 toggle 共同决定的客户端筛选正则
   const filterRegex = useMemo<RegExp | null>(() => {
@@ -375,9 +419,9 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     return Date.now() - opt.days * 86_400_000;
   }, [timeSel]);
 
-  // 应用 facets + 客户端正则
+  // 应用 facets + 客户端正则（语义模式跳过字面正则过滤——否则把语义命中又按字面筛掉了）
   const filtered = useMemo<HitWithMeta[]>(() => {
-    if (!filterRegex) return [];
+    if (!semantic && !filterRegex) return [];
     const tags = tagSel;
     return hits.filter((h) => {
       // 扩展名
@@ -400,11 +444,14 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
         // 没在 index 里 = 文件刚加 / index 还没刷，宽松通过
         if (vf && vf.mtime > 0 && vf.mtime * 1000 < mtimeFloor) return false;
       }
-      // 文本正则
-      filterRegex.lastIndex = 0;
-      return filterRegex.test(h.preview);
+      // 文本正则：仅字面模式生效
+      if (!semantic && filterRegex) {
+        filterRegex.lastIndex = 0;
+        if (!filterRegex.test(h.preview)) return false;
+      }
+      return true;
     });
-  }, [hits, filterRegex, ext, tagSel, mtimeFloor, pathToVaultFile]);
+  }, [hits, filterRegex, ext, tagSel, mtimeFloor, pathToVaultFile, semantic]);
 
   const toggleTag = (tag: string) => {
     setTagSel((cur) => {
@@ -546,9 +593,20 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
               className={"gs-tog-btn" + (regex ? " on" : "")}
               onClick={() => setRegex((v) => !v)}
               title="正则"
+              disabled={semantic}
             >
               .*
             </button>
+            {ragEnabled && (
+              <button
+                type="button"
+                className={"gs-tog-btn" + (semantic ? " on" : "")}
+                onClick={() => setSemantic((v) => !v)}
+                title="语义检索（RAG：向量 + 关键词 RRF 融合 + 图扩展）"
+              >
+                语义
+              </button>
+            )}
           </div>
           <span className="esc">{shortcutText("⌘⇧F")}</span>
         </div>
@@ -675,7 +733,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
             ) : q.trim().length < 2 ? (
               <div className="cmdk-empty">输入 ≥ 2 个字符开始搜索…</div>
             ) : loading ? (
-              <div className="cmdk-empty">扫描中…</div>
+              <div className="cmdk-empty">{semantic ? "语义检索中…" : "扫描中…"}</div>
             ) : err ? (
               <div className="cmdk-empty" style={{ color: "#ff453a" }}>
                 {err}

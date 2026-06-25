@@ -254,6 +254,12 @@ export class CodeFenceWidget extends WidgetType {
   ) {
     super();
   }
+  /** 给 CM6 一个接近真实的块高估计：标题栏 + 每行代码约 21px + 体内边距。
+   *  off-screen widget 用它建高度图，减少快速滚动时的错位空白；上屏后改用实测高。 */
+  get estimatedHeight(): number {
+    const lines = Math.max(1, this.source.split("\n").length);
+    return 34 + lines * 21 + 24;
+  }
   eq(other: WidgetType): boolean {
     return (
       other instanceof CodeFenceWidget &&

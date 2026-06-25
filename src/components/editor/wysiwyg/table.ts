@@ -207,6 +207,12 @@ export class TableWidget extends WidgetType {
   constructor(private readonly source: string) {
     super();
   }
+  /** 块高估计：每个表行约 36px + 边距。让 off-screen 表格在高度图里占对位置，
+   *  减少快速滚动错位空白；上屏后用实测高。 */
+  get estimatedHeight(): number {
+    const rows = this.source.split("\n").filter((l) => l.trim().length > 0).length;
+    return Math.max(2, rows) * 36 + 16;
+  }
   eq(other: WidgetType): boolean {
     return other instanceof TableWidget && other.source === this.source;
   }

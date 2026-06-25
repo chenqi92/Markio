@@ -168,8 +168,8 @@
 .tree { padding: 6px 6px 40px; flex: 1; min-height: 0; overflow-anchor: none; }
 .tree-section {
   display: flex; align-items: center; gap: 6px;
-  padding: 10px 8px 6px;
-  font-size: 12px; font-weight: 600; color: var(--text-2);
+  padding: 11px 8px 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-2);
   letter-spacing: 0;
 }
 .tree-section .count { font-weight: 500; opacity: 0.7; }
@@ -183,9 +183,9 @@
 }
 .tree-section .sec-act:hover { background: var(--bg-hover); color: var(--text); }
 .tree-row {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 5.5px 9px;
+  font-size: 13px;
   color: var(--text-2);
   border-radius: 6px;
   cursor: pointer;
@@ -201,7 +201,7 @@
   background: var(--accent); border-radius: 0 2px 2px 0;
 }
 .tree-row .chev {
-  width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-3); transition: transform var(--tr);
   flex-shrink: 0;
 }
@@ -209,8 +209,8 @@
 .tree-row .ico {
   opacity: .9;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -231,7 +231,7 @@
   opacity: 0;
 }
 .tree-row.unsaved .dot { opacity: 1; }
-.tree-children { padding-left: 16px; }
+.tree-children { padding-left: 18px; }
 
 .tree-limit-alert {
   margin: 4px 10px 8px;

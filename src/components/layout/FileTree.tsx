@@ -524,15 +524,15 @@ const TreeRow = memo(function TreeRow({
         className="chev"
         style={{ visibility: node.isDir ? "visible" : "hidden" }}
       >
-        <Icon name="chevron" size={11} />
+        <Icon name="chevron" size={12} />
       </span>
       <span className="ico">
         {isIconName(customIcon) ? (
-          <Icon name={customIcon} size={13} />
+          <Icon name={customIcon} size={15} />
         ) : node.isDir ? (
-          <Icon name="folder" size={13} />
+          <Icon name="folder" size={15} />
         ) : (
-          <Icon name="file" size={13} />
+          <Icon name="file" size={15} />
         )}
       </span>
       <span

@@ -164,6 +164,11 @@ export class FrontmatterWidget extends WidgetType {
   constructor(private readonly source: string) {
     super();
   }
+  /** 属性表块高估计：约每行 30px + 边距。 */
+  get estimatedHeight(): number {
+    const lines = Math.max(2, this.source.split("\n").length);
+    return lines * 30 + 16;
+  }
   eq(other: WidgetType): boolean {
     return other instanceof FrontmatterWidget && other.source === this.source;
   }

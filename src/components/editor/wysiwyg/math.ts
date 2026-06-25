@@ -55,6 +55,10 @@ export class MathWidget extends WidgetType {
   ) {
     super();
   }
+  /** display 公式是块级，给约 58px 估高；行内公式走默认行高（-1）。 */
+  get estimatedHeight(): number {
+    return this.display ? 58 : -1;
+  }
   eq(other: WidgetType): boolean {
     return (
       other instanceof MathWidget &&

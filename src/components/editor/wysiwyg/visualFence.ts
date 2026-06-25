@@ -89,6 +89,10 @@ export class VisualFenceWidget extends WidgetType {
   ) {
     super();
   }
+  /** 图表 / mermaid 等高度不定，给个偏大的默认估高（~260px），上屏后用实测高。 */
+  get estimatedHeight(): number {
+    return 260;
+  }
   eq(other: WidgetType): boolean {
     return (
       other instanceof VisualFenceWidget &&

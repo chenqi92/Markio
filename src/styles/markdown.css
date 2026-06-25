@@ -91,6 +91,63 @@
   color: currentColor;
   opacity: 0.5;
 }
+
+/* 笔记嵌入 ![[note]] —— 未填充时是行内占位，填充后变成带左侧强调条的卡片 */
+.preview .wiki-embed {
+  color: var(--text-3);
+  font-size: 0.92em;
+}
+.preview .wiki-embed.missing {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, #ff453a 8%, transparent);
+  color: #d92d20;
+  border-bottom: 1px dashed currentColor;
+}
+.preview .wiki-embed.filled {
+  display: block;
+  margin: 12px 0;
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-pane-2, transparent));
+  overflow: hidden;
+  color: inherit;
+  font-size: inherit;
+}
+.preview a.wikilink.wiki-embed-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 0.82em;
+  color: var(--text-2);
+}
+.preview a.wikilink.wiki-embed-head::before {
+  content: "📄";
+  margin: 0;
+  font-weight: 400;
+}
+.preview a.wikilink.wiki-embed-head::after {
+  content: none;
+}
+.preview a.wikilink.wiki-embed-head:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.preview .wiki-embed-body {
+  padding: 4px 14px 8px;
+}
+.preview .wiki-embed-body > :first-child {
+  margin-top: 4px;
+}
+.preview .wiki-embed-body > :last-child {
+  margin-bottom: 0;
+}
 .preview strong { font-weight: 700; }
 .preview em { font-style: italic; }
 .preview mark { background: var(--hl-mark); color: var(--text); padding: 0 3px; border-radius: 2px; }

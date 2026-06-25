@@ -164,8 +164,31 @@ function enhanceSubtree(subtree: HTMLElement, index: VaultIndex) {
       const body = match[1]!;
       const parts = parseWikiLinkBody(body);
       if (!parts) continue;
-      if (match.index > last) {
-        fragment.append(doc.createTextNode(text.slice(last, match.index)));
+      // `![[...]]` 是嵌入语法：把紧邻的 `!` 从前导文本里摘掉，产出一个占位 span，
+      // 由 Preview 的异步 fill 步骤填充。普通 `[[...]]` 路径完全不变。
+      const isEmbed = match.index > 0 && text[match.index - 1] === "!";
+      const precedingEnd = isEmbed ? match.index - 1 : match.index;
+      if (precedingEnd > last) {
+        fragment.append(doc.createTextNode(text.slice(last, precedingEnd)));
+      }
+
+      if (isEmbed) {
+        const embed = doc.createElement("span");
+        embed.className = "wiki-embed";
+        embed.dataset.embedTarget = parts.target;
+        embed.dataset.embedRaw = body;
+        if (parts.heading) embed.dataset.embedHeading = parts.heading;
+        const resolved = resolveFromIndex(index, parts.target);
+        if (resolved) {
+          embed.dataset.path = resolved.path;
+        } else {
+          embed.classList.add("missing");
+        }
+        // 填充前先显示原始语法（优雅降级）
+        embed.textContent = `![[${body}]]`;
+        fragment.append(embed);
+        last = match.index + match[0].length;
+        continue;
       }
 
       const link = doc.createElement("a");

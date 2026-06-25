@@ -10,6 +10,7 @@ import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
 import { openDailyNote, openDailyRelative } from "@/lib/daily";
+import { exportVaultSite } from "@/lib/siteExport";
 import { effectiveBinding, formatBinding } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
 import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
@@ -155,6 +156,56 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         run: async () => {
           const dir = await pickDirectory();
           if (dir) await addWorkspace(dir);
+        },
+      },
+      {
+        id: "export-site",
+        group: "仓库",
+        l1: "导出为静态站点…",
+        l2: "整库渲染成相互链接的 HTML（可发布到 Cloudflare Pages / 自托管）",
+        ico: "upload",
+        run: async () => {
+          const { setToast } = useUI.getState();
+          const cur = useWorkspace.getState().activeWorkspace();
+          if (!cur) {
+            setToast({ stage: "error", message: "请先打开一个仓库" }, 2000);
+            return;
+          }
+          const dir = await pickDirectory();
+          if (!dir) return;
+          await useVaultIndex.getState().ensure(cur.path);
+          const all = useVaultIndex.getState().index[cur.path]?.files ?? [];
+          if (all.length === 0) {
+            setToast({ stage: "error", message: "仓库里没有可导出的文件" }, 2500);
+            return;
+          }
+          setToast({ stage: "uploading", message: "导出静态站点…" });
+          try {
+            const res = await exportVaultSite(
+              cur.path,
+              cur.name,
+              all,
+              dir,
+              (done, total) =>
+                useUI
+                  .getState()
+                  .setToast({ stage: "uploading", message: `导出 ${done}/${total}…` }),
+            );
+            useUI.getState().setToast(
+              {
+                stage: res.failed ? "error" : "done",
+                message:
+                  `已导出 ${res.written}/${res.total} 页` +
+                  (res.failed ? `，${res.failed} 失败` : "") +
+                  ` → ${dir}`,
+              },
+              3500,
+            );
+          } catch (e) {
+            useUI
+              .getState()
+              .setToast({ stage: "error", message: `导出失败：${(e as Error).message}` }, 3000);
+          }
         },
       },
       {

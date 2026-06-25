@@ -5,6 +5,12 @@ import { useSettings } from "@/stores/settings";
 /** 拼一个独立 HTML 字符串：标题 + 主题 token + 渲染后的 markdown */
 async function buildStandaloneHtml(title: string, source: string): Promise<string> {
   const r = await api.renderMarkdown(source);
+  return wrapStandaloneHtml(title, r.html);
+}
+
+/** 把一段已渲染好的 body HTML 包成自洽的独立页面（主题 token 内联）。
+ *  供单文档导出与整库静态站点导出共用。 */
+export function wrapStandaloneHtml(title: string, bodyHtml: string): string {
   // 用渲染主题对应的关键 token 内联到导出文件里，保证打开后样式自洽
   const tokens = readThemeTokens();
   const css = `
@@ -92,7 +98,7 @@ img { max-width: 100%; }
 </head>
 <body>
 <main class="wrap">
-${r.html}
+${bodyHtml}
 </main>
 </body>
 </html>`;

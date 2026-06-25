@@ -389,6 +389,9 @@ export const api = {
   /** 把文本（HTML / Markdown）写到 dialog.save 选定的绝对路径 */
   exportWriteFile: (path: string, content: string) =>
     invoke<void>("export_write_file", { path, content }),
+  /** 静态站点导出：把 content 写到 outDir/relPath（outDir 须在常用导出根内）。 */
+  exportSiteWrite: (outDir: string, relPath: string, content: string) =>
+    invoke<void>("export_site_write", { outDir, relPath, content }),
   /** 拉远端图片为 data URL（离线 HTML 导出用） */
   fetchImageAsDataUrl: (url: string) =>
     invoke<string>("fetch_image_as_data_url", { url }),

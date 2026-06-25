@@ -1487,6 +1487,57 @@ async fn export_write_file(
     std::fs::write(dest, content).map_err(|e| format!("写入失败：{e}"))
 }
 
+/// 整库静态站点导出：把 content 写到 out_dir/rel_path。out_dir 必须落在常用导出根内，
+/// rel_path 只允许普通相对路径（拒绝绝对 / 盘符 / `..` 穿越）。
+#[tauri::command]
+async fn export_site_write(
+    state: tauri::State<'_, AppState>,
+    out_dir: String,
+    rel_path: String,
+    content: String,
+) -> Result<(), String> {
+    use std::path::{Component, Path, PathBuf};
+    if out_dir.is_empty() || rel_path.is_empty() {
+        return Err("路径为空".to_string());
+    }
+    if out_dir.contains('\0') || rel_path.contains('\0') {
+        return Err("路径含非法字符".to_string());
+    }
+    if content.len() > 64 * 1024 * 1024 {
+        return Err("导出内容过大（>64MB）".to_string());
+    }
+    let base = Path::new(&out_dir);
+    if !base.is_absolute() {
+        return Err("导出目录必须是绝对路径".to_string());
+    }
+    let rel = Path::new(&rel_path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
+    {
+        return Err("非法的导出相对路径".to_string());
+    }
+    std::fs::create_dir_all(base).map_err(|e| format!("创建导出目录失败：{e}"))?;
+    let base_canon = base
+        .canonicalize()
+        .map_err(|e| format!("导出目录无效：{e}"))?;
+    let allowed = common_export_roots(&state)
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .any(|root| base_canon.starts_with(&root));
+    if !allowed {
+        return Err(
+            "导出位置不在当前仓库或常用用户目录（Desktop/Documents/Downloads）中".to_string(),
+        );
+    }
+    let dest: PathBuf = base_canon.join(rel);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
+    }
+    std::fs::write(&dest, content).map_err(|e| format!("写入失败：{e}"))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImagePasteFromDiskRequest {
@@ -2928,6 +2979,7 @@ pub fn run() {
             webhook_post,
             export_pandoc,
             export_write_file,
+            export_site_write,
             fetch_image_as_data_url,
             text_find_ranges,
             text_find_count,

@@ -181,6 +181,19 @@ export function isExternalAgentAllowedInCurrentRegion(): boolean {
   return !isMainlandAIRegion();
 }
 
+/**
+ * 本地 CLI Agent（spawn 用户 PATH 里的 claude / codex / cursor-agent 等）是否启用。
+ *
+ * 关键约束：macOS App Sandbox（Mac App Store 上架版，构建期 `__MARKIO_MAS__=true`）
+ * 禁止 app spawn 包外、未签 `inherit` entitlement 的可执行文件——沙盒会直接 kill
+ * 子进程，且带此能力提交有被审核拒绝的风险。因此上架版整功能隐藏，只在直发渠道
+ * （DMG / Windows / Linux）保留。叠加既有的区域门控（大陆区不暴露外部 agent）。
+ */
+export function isLocalAgentEnabled(): boolean {
+  if (__MARKIO_MAS__) return false;
+  return isExternalAgentAllowedInCurrentRegion();
+}
+
 export function isSmartChannelModelSourceAllowed(source: string): boolean {
   if (!isMainlandAIRegion()) return true;
   return source === "aiDefault" || source === "localOllama";

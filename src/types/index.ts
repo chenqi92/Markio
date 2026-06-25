@@ -74,7 +74,16 @@ export interface NoteFrontmatter {
   fields: Record<string, string[]>;
 }
 
-export type AgentProvider = "claude" | "codex" | "gemini";
+export type AgentProvider =
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "cursor"
+  | "opencode"
+  | "qwen"
+  | "copilot"
+  | "aider"
+  | "goose";
 export type AgentPermission = "safe" | "poweruser";
 
 export interface AgentProviderInfo {

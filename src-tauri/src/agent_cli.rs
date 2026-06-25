@@ -1,8 +1,13 @@
 //! 本地 AI CLI agent 接入层。
 //!
-//! 设计参考 tolaria：把 claude / codex / gemini 这些命令行 agent 统一封装成
-//! 同一组事件流（Init / TextDelta / ThinkingDelta / ToolStart / ToolDone /
-//! Result / Error / Done），前端只需要处理一种事件流，不用关心是哪个 CLI。
+//! 把 claude / codex / gemini / cursor-agent / opencode / qwen / copilot /
+//! aider / goose 这些命令行 agent 统一封装成同一组事件流（Init / TextDelta /
+//! ThinkingDelta / ToolStart / ToolDone / Result / Error / Done），前端只需要
+//! 处理一种事件流，不用关心是哪个 CLI。
+//!
+//! 注意：本模块会 spawn 用户 PATH 里的外部可执行文件，macOS App Sandbox（Mac
+//! App Store 上架版）禁止此行为，因此前端用 `__MARKIO_MAS__` 把整个功能裁掉，
+//! 只在直发渠道（DMG / Windows / Linux）暴露。
 
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -16,12 +21,18 @@ use tokio::process::{Child, Command};
 
 // ────────────────────────────── provider ──────────────────────────────
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentProvider {
     Claude,
     Codex,
     Gemini,
+    Cursor,
+    Opencode,
+    Qwen,
+    Copilot,
+    Aider,
+    Goose,
 }
 
 impl AgentProvider {
@@ -30,6 +41,12 @@ impl AgentProvider {
             AgentProvider::Claude => "claude",
             AgentProvider::Codex => "codex",
             AgentProvider::Gemini => "gemini",
+            AgentProvider::Cursor => "cursor-agent",
+            AgentProvider::Opencode => "opencode",
+            AgentProvider::Qwen => "qwen",
+            AgentProvider::Copilot => "copilot",
+            AgentProvider::Aider => "aider",
+            AgentProvider::Goose => "goose",
         }
     }
 }
@@ -60,6 +77,12 @@ pub fn detect_providers() -> Vec<ProviderInfo> {
         (AgentProvider::Claude, "Claude Code"),
         (AgentProvider::Codex, "Codex CLI"),
         (AgentProvider::Gemini, "Gemini CLI"),
+        (AgentProvider::Cursor, "Cursor Agent"),
+        (AgentProvider::Opencode, "OpenCode"),
+        (AgentProvider::Qwen, "Qwen Code"),
+        (AgentProvider::Copilot, "Copilot CLI"),
+        (AgentProvider::Aider, "Aider"),
+        (AgentProvider::Goose, "Goose"),
     ]
     .into_iter()
     .map(|(id, label)| {
@@ -93,6 +116,93 @@ fn which_binary(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// 构造一个 tokio Command。Windows 下 `.cmd` / `.bat`（npm 全局包常见的 shim）
+/// 不是 PE，CreateProcess 没法直接拉起，必须经 `cmd /c` 转一层；其余情况直接执行。
+fn make_command(program: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let lower = program.to_ascii_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(program);
+            return c;
+        }
+    }
+    Command::new(program)
+}
+
+/// 各家 CLI 的非交互调用参数（含 prompt 的摆放位置）。
+///
+/// `power=true` 对应前端的"可写"模式：尽量带上各家的自动批准开关，让 agent 能直接
+/// 改文件 / 执行命令；`power=false`（只读）则不带这些开关，多数 CLI 在 stdin 关闭、
+/// 无自动批准时只会读取 / 给建议，不落盘。各 CLI 参数随版本可能变化，新增后建议在
+/// 目标机器上 smoke-test 一次。
+fn generic_args(provider: AgentProvider, prompt: &str, power: bool) -> Vec<String> {
+    let p = prompt.to_string();
+    match provider {
+        // codex exec "<prompt>"；可写模式放开沙箱与审批。
+        AgentProvider::Codex => {
+            let mut a = vec!["exec".to_string()];
+            if power {
+                a.push("--full-auto".to_string());
+            }
+            a.push(p);
+            a
+        }
+        // gemini --prompt "<prompt>" [--yolo]
+        AgentProvider::Gemini => {
+            let mut a = vec!["--prompt".to_string(), p];
+            if power {
+                a.push("--yolo".to_string());
+            }
+            a
+        }
+        // qwen 是 gemini-cli 的分支，参数同构。
+        AgentProvider::Qwen => {
+            let mut a = vec!["--prompt".to_string(), p];
+            if power {
+                a.push("--yolo".to_string());
+            }
+            a
+        }
+        // cursor-agent -p --output-format text [--force] "<prompt>"
+        AgentProvider::Cursor => {
+            let mut a = vec![
+                "-p".to_string(),
+                "--output-format".to_string(),
+                "text".to_string(),
+            ];
+            if power {
+                a.push("--force".to_string());
+            }
+            a.push(p);
+            a
+        }
+        // opencode run "<prompt>"（headless 用 run 子命令，不是 -p）
+        AgentProvider::Opencode => vec!["run".to_string(), p],
+        // copilot -p "<prompt>" [--allow-all-tools]
+        AgentProvider::Copilot => {
+            let mut a = vec!["-p".to_string(), p];
+            if power {
+                a.push("--allow-all-tools".to_string());
+            }
+            a
+        }
+        // aider 总是要改文件，只在可写模式自动确认；只读模式 stdin 关闭基本只读不落盘。
+        AgentProvider::Aider => {
+            let mut a = vec!["--no-stream".to_string(), "--message".to_string(), p];
+            if power {
+                a.push("--yes-always".to_string());
+            }
+            a
+        }
+        // goose run -t "<prompt>"
+        AgentProvider::Goose => vec!["run".to_string(), "-t".to_string(), p],
+        // claude 走 run_claude，不会落到这里。
+        AgentProvider::Claude => vec![p],
+    }
 }
 
 // ────────────────────────────── event 协议 ──────────────────────────────
@@ -204,9 +314,11 @@ fn kill_pid(pid: u32) -> std::io::Result<()> {
 #[cfg(windows)]
 fn kill_pid(pid: u32) -> std::io::Result<()> {
     use std::process::Command as StdCommand;
+    // /T 连带杀子树：.cmd shim 经 `cmd /C` 转一层时，真正的 agent 是 cmd 的子进程。
     StdCommand::new("taskkill")
         .arg("/PID")
         .arg(pid.to_string())
+        .arg("/T")
         .arg("/F")
         .status()?;
     Ok(())
@@ -233,10 +345,11 @@ pub async fn run(app: AppHandle, req: AgentRunRequest) {
     let cancel = Arc::new(AtomicBool::new(false));
     register_session(&req.session_id, cancel.clone());
 
+    // Claude Code 有稳定的 stream-json 协议，能解析出 thinking / 工具调用等细粒度
+    // 事件；其余 CLI 走通用纯文本路径（按各家非交互参数调用，逐行回传 stdout）。
     let result = match req.provider {
         AgentProvider::Claude => run_claude(&app, &req, cancel.clone()).await,
-        AgentProvider::Codex => run_generic(&app, &req, cancel.clone()).await,
-        AgentProvider::Gemini => run_generic(&app, &req, cancel.clone()).await,
+        _ => run_generic(&app, &req, cancel.clone()).await,
     };
 
     if let Err(msg) = result {
@@ -318,7 +431,7 @@ async fn run_claude(
 ) -> Result<(), String> {
     let binary = which_binary("claude")
         .ok_or_else(|| "claude CLI 未找到，请确认已安装并在 PATH 里".to_string())?;
-    let mut cmd = Command::new(&binary);
+    let mut cmd = make_command(&binary);
     cmd.arg("--print")
         .arg("--output-format")
         .arg("stream-json")
@@ -478,21 +591,17 @@ async fn run_generic(
     let binary = which_binary(bin_name)
         .ok_or_else(|| format!("{bin_name} CLI 未找到，请确认已安装并在 PATH 里"))?;
 
-    let mut cmd = Command::new(&binary);
+    let mut cmd = make_command(&binary);
     if let Some(ws) = req.workspace.as_deref() {
         cmd.current_dir(ws);
     }
 
-    // codex: codex exec "<prompt>"
-    // gemini: gemini --prompt "<prompt>"
-    match req.provider {
-        AgentProvider::Codex => {
-            cmd.arg("exec").arg(&req.prompt);
-        }
-        AgentProvider::Gemini => {
-            cmd.arg("--prompt").arg(&req.prompt);
-        }
-        AgentProvider::Claude => unreachable!("claude 走 run_claude"),
+    let power = matches!(
+        req.permission.unwrap_or_default(),
+        PermissionMode::PowerUser
+    );
+    for arg in generic_args(req.provider, &req.prompt, power) {
+        cmd.arg(arg);
     }
 
     let mut child = spawn_child(cmd, &req.session_id).await?;

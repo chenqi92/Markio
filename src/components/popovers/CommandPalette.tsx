@@ -13,7 +13,7 @@ import { openDailyNote, openDailyRelative } from "@/lib/daily";
 import { exportVaultSite } from "@/lib/siteExport";
 import { effectiveBinding, formatBinding } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
-import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
+import { isLocalAgentEnabled } from "@/lib/ai-region-policy";
 import type { ViewMode } from "@/types";
 import { THEMES } from "@/themes";
 
@@ -225,7 +225,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         ico: "clock",
         run: () => openPulse(true),
       },
-      ...(isExternalAgentAllowedInCurrentRegion()
+      ...(isLocalAgentEnabled()
         ? [
             {
               id: "agent",

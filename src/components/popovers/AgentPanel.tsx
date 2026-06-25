@@ -4,9 +4,7 @@ import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
-import {
-  isExternalAgentAllowedInCurrentRegion,
-} from "@/lib/ai-region-policy";
+import { isLocalAgentEnabled } from "@/lib/ai-region-policy";
 import type {
   AgentEvent,
   AgentPermission,
@@ -26,6 +24,12 @@ const NEUTRAL_PROVIDER_LABEL: Record<AgentProvider, string> = {
   claude: "本地 Agent A",
   codex: "本地 Agent B",
   gemini: "本地 Agent C",
+  cursor: "本地 Agent D",
+  opencode: "本地 Agent E",
+  qwen: "本地 Agent F",
+  copilot: "本地 Agent G",
+  aider: "本地 Agent H",
+  goose: "本地 Agent I",
 };
 
 function providerDisplayName(id: AgentProvider): string {
@@ -50,7 +54,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const unlistenRef = useRef<UnlistenFn | null>(null);
   // 镜像 running，供卸载清理读取当前会话 id（cleanup 闭包 deps 为 []，否则只能拿到初值）
   const runningRef = useRef<string | null>(null);
-  const agentAllowed = isExternalAgentAllowedInCurrentRegion();
+  const agentAllowed = isLocalAgentEnabled();
 
   useEffect(() => {
     runningRef.current = running;

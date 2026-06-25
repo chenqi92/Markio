@@ -4,9 +4,10 @@ import { NewMenu } from "./NewMenu";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
 import { useDialog } from "@/stores/dialog";
+import { useSettings } from "@/stores/settings";
 import { classNames } from "@/lib/utils";
 import { markdownCommands, CHART_TYPES } from "@/lib/markdown-commands";
-import { shortcutText } from "@/lib/shortcuts";
+import { shortcutText, bindingLabel } from "@/lib/shortcuts";
 import { LOAD_ALL_REMOTE_IMAGES_EVENT } from "@/lib/remoteImageGuard";
 import type { ViewMode } from "@/types";
 
@@ -26,6 +27,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
   const toggleOutline = useUI((s) => s.toggleOutline);
   const toggleFocus = useUI((s) => s.toggleFocus);
   const openCommand = useUI((s) => s.openCommand);
+  const overrides = useSettings((s) => s.shortcutOverrides);
   const openFind = useUI((s) => s.openFind);
   const openHistory = useUI((s) => s.openHistory);
   const saveActive = useTabs((s) => s.saveActive);
@@ -158,7 +160,7 @@ export function Toolbar({ onCopyAs }: { onCopyAs: () => void }) {
 
         <div className="tb-pill" onClick={() => openCommand(true)}>
           <Icon name="cmd" size={11} />
-          <span>{shortcutText("⌘K")}</span>
+          <span>{bindingLabel("app.commandPalette", overrides) || shortcutText("⌘K")}</span>
         </div>
 
         <button

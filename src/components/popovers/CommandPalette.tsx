@@ -10,7 +10,7 @@ import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
 import { openDailyNote } from "@/lib/daily";
-import { shortcutText } from "@/lib/shortcuts";
+import { effectiveBinding, formatBinding } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
 import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
 import type { ViewMode } from "@/types";
@@ -59,6 +59,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const openPulse = useUI((s) => s.openPulse);
   const openAgent = useUI((s) => s.openAgent);
   const setTheme = useSettings((s) => s.setTheme);
+  const overrides = useSettings((s) => s.shortcutOverrides);
   const addWorkspace = useWorkspace((s) => s.addWorkspace);
   const openFile = useTabs((s) => s.openFile);
   const saveActive = useTabs((s) => s.saveActive);
@@ -71,7 +72,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到源码模式",
         l2: "纯 markdown 源码",
-        kbd: [shortcutText("⌘"), "1"],
+        kbd: formatBinding(effectiveBinding("app.viewSource", overrides)),
         ico: "code",
         run: () => setMode("source" as ViewMode),
       },
@@ -80,7 +81,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到分屏模式",
         l2: "左源码 · 右预览",
-        kbd: [shortcutText("⌘"), "2"],
+        kbd: formatBinding(effectiveBinding("app.viewSplit", overrides)),
         ico: "split",
         run: () => setMode("split" as ViewMode),
       },
@@ -89,7 +90,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换到所见即所得",
         l2: "BlockNote rich editor（Notion 风格）",
-        kbd: [shortcutText("⌘"), "3"],
+        kbd: formatBinding(effectiveBinding("app.viewWysiwyg", overrides)),
         ico: "sparkle",
         run: () => setMode("wysiwyg" as ViewMode),
       },
@@ -98,7 +99,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "视图",
         l1: "切换专注模式",
         l2: "隐藏工具栏与面包屑",
-        kbd: [shortcutText("⌘"), "."],
+        kbd: formatBinding(effectiveBinding("app.toggleFocus", overrides)),
         ico: "focus",
         run: () => toggleFocus(),
       },
@@ -107,7 +108,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "文档",
         l1: "在当前文档中查找…",
         l2: "高亮匹配项",
-        kbd: [shortcutText("⌘"), "F"],
+        kbd: formatBinding(effectiveBinding("app.findInFile", overrides)),
         ico: "search",
         run: () => openFind(true),
       },
@@ -116,7 +117,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "文档",
         l1: "保存当前文档",
         l2: "写入磁盘",
-        kbd: [shortcutText("⌘"), "S"],
+        kbd: formatBinding(effectiveBinding("app.save", overrides)),
         ico: "save",
         run: () => saveActive(),
       },
@@ -125,7 +126,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "文档",
         l1: "打开今日日记",
         l2: "Daily/YYYY-MM-DD.md（无则按模板新建）",
-        kbd: [shortcutText("⌘⇧"), "D"],
+        kbd: formatBinding(effectiveBinding("app.openDaily", overrides)),
         ico: "sun",
         run: () => void openDailyNote(),
       },
@@ -145,7 +146,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         group: "应用",
         l1: "打开设置",
         l2: "主题、字号、快捷键…",
-        kbd: [shortcutText("⌘"), ","],
+        kbd: formatBinding(effectiveBinding("app.openSettings", overrides)),
         ico: "settings",
         run: () => openSettings(true),
       },
@@ -220,6 +221,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       openAgent,
       promptDialog,
       setTheme,
+      overrides,
     ],
   );
 

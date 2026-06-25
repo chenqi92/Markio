@@ -226,6 +226,25 @@ export function shortcutText(s: string): string {
   );
 }
 
+/** 命令当前生效的绑定：用户覆盖优先，否则默认绑定。 */
+export function effectiveBinding(
+  id: CommandId,
+  overrides: Partial<Record<CommandId, string>>,
+): string {
+  const o = overrides[id];
+  return o !== undefined ? o : COMMANDS_BY_ID[id].defaultBinding;
+}
+
+/** 命令当前绑定的展示串（mac 用符号直拼，其它平台用 + 连接）；空绑定返回 ""。 */
+export function bindingLabel(
+  id: CommandId,
+  overrides: Partial<Record<CommandId, string>>,
+): string {
+  const chips = formatBinding(effectiveBinding(id, overrides));
+  if (chips.length === 0) return "";
+  return IS_MAC ? chips.join("") : chips.join("+");
+}
+
 /** 把 binding 字符串渲染成给用户看的按键 chip 数组。 */
 export function formatBinding(binding: string): string[] {
   const p = parseBinding(binding);

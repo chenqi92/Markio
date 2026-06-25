@@ -98,10 +98,19 @@ pub fn detect_providers() -> Vec<ProviderInfo> {
     .collect()
 }
 
-/// 在 PATH 里找二进制。比起拉 `which` crate，自己拼一下 $PATH 更省依赖。
+/// 找二进制：先扫 $PATH，再扫常见安装目录。
+///
+/// 为什么还要扫额外目录：GUI 进程（从 Finder / 开始菜单 / Tauri dev 拉起）常常拿不到
+/// 用户 shell 里完整的 PATH，导致明明装了 claude / codex 却检测不到。这里补扫 npm 全局、
+/// ~/.local/bin、cargo / bun、Antigravity 等已知位置兜底。
 fn which_binary(name: &str) -> Option<String> {
-    let path = std::env::var_os("PATH")?;
-    for entry in std::env::split_paths(&path) {
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    dirs.extend(extra_bin_dirs());
+
+    for entry in dirs {
         let candidate = entry.join(name);
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
@@ -117,6 +126,44 @@ fn which_binary(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// PATH 之外的常见 CLI 安装目录（按平台）。
+fn extra_bin_dirs() -> Vec<std::path::PathBuf> {
+    use std::path::Path;
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            dirs.push(Path::new(&appdata).join("npm")); // npm 全局 shim
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let l = Path::new(&local);
+            dirs.push(l.join("Programs"));
+            dirs.push(l.join("Antigravity")); // agy
+        }
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            let h = Path::new(&home);
+            dirs.push(h.join(".local").join("bin"));
+            dirs.push(h.join(".bun").join("bin"));
+            dirs.push(h.join(".cargo").join("bin"));
+            dirs.push(h.join(".deno").join("bin"));
+        }
+    }
+    #[cfg(unix)]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let h = Path::new(&home);
+            dirs.push(h.join(".local").join("bin"));
+            dirs.push(h.join(".npm-global").join("bin"));
+            dirs.push(h.join(".bun").join("bin"));
+            dirs.push(h.join(".cargo").join("bin"));
+            dirs.push(h.join(".deno").join("bin"));
+        }
+        dirs.push(Path::new("/usr/local/bin").to_path_buf());
+        dirs.push(Path::new("/opt/homebrew/bin").to_path_buf());
+    }
+    dirs
 }
 
 /// 构造一个 tokio Command。Windows 下 `.cmd` / `.bat`（npm 全局包常见的 shim）

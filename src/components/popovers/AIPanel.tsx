@@ -1658,26 +1658,37 @@ function AIInputBar({
                     className="ai-model-menu ai-model-menu-up"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {availableLocalAgents.length > 0 && (
+                    {localAgents.length > 0 && (
                       <>
-                        <div className="ai-model-group-h">本地 CLI · 免 Key</div>
-                        {availableLocalAgents.map((a) => (
-                          <button
-                            type="button"
-                            key={`local-${a.id}`}
-                            className={
-                              "ai-model-item" +
-                              (localAgent === a.id ? " active" : "")
-                            }
-                            onClick={() => {
-                              setLocalAgent(a.id);
-                              setModelMenuOpen(false);
-                            }}
-                          >
-                            <div className="t">{localAgentLabel(a.id)}</div>
-                            <div className="s">本地 CLI · 用本机已登录凭据</div>
-                          </button>
-                        ))}
+                        <div className="ai-model-group-h">
+                          本地 CLI · 免 Key
+                        </div>
+                        {availableLocalAgents.length > 0 ? (
+                          availableLocalAgents.map((a) => (
+                            <button
+                              type="button"
+                              key={`local-${a.id}`}
+                              className={
+                                "ai-model-item" +
+                                (localAgent === a.id ? " active" : "")
+                              }
+                              onClick={() => {
+                                setLocalAgent(a.id);
+                                setModelMenuOpen(false);
+                              }}
+                            >
+                              <div className="t">{localAgentLabel(a.id)}</div>
+                              <div className="s">
+                                本地 CLI · 用本机已登录凭据
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="ai-model-empty">
+                            未检测到本地 CLI。装好 claude / codex 等并确保在 PATH
+                            中，重启应用后出现。
+                          </div>
+                        )}
                         <div className="ai-model-group-h">云端模型</div>
                       </>
                     )}

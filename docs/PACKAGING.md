@@ -138,3 +138,38 @@ CI 自动化建议放到独立 workflow（与 `release.yml` 解耦），因为 P
 ## 七、自动化（GitHub Actions 草稿）
 
 参考 `.github/workflows/release.yml`（可后续补）：使用 `tauri-apps/tauri-action` 的官方 Action 绑定证书与公证凭据。
+
+## 八、本地调试三种 AI 视图（AI region / MAS 裁剪）
+
+AI 功能可见性由两个**编译期** flag 决定，分别映射到前端常量：
+
+| 环境变量 | 前端常量 | 作用 |
+| --- | --- | --- |
+| `VITE_MARKIO_AI_REGION` | `__MARKIO_AI_REGION__` | `cn` / `global` / 不设（auto）。控制 HTTP provider 列表与外部 Agent 是否暴露。 |
+| `VITE_MARKIO_MAS` | `__MARKIO_MAS__` | 置 `1` 表示 Mac App Store 沙盒包，裁掉无法过审的能力。 |
+
+区域解析顺序：`VITE_MARKIO_AI_REGION` 显式指定 > storefront/runtime 覆盖 > **`vite dev` 默认 global** > 运行时按时区 / 语言自动判定。
+因此**本地 `pnpm tauri:dev` 默认就能看到全部 AI 功能**，不会因为开发机在国内被收敛成国区视图（生产构建 `import.meta.env.DEV=false`，不受影响）。
+
+三种调试视图：
+
+```powershell
+# 1) 全部 AI 功能（默认）：9 家本地 Agent + 全部 HTTP provider（含 Anthropic / OpenAI / Google …）
+pnpm tauri:dev
+
+# 2) 国区受限视图：无外部 Agent，HTTP 只剩 DeepSeek / 硅基 / 智谱 / 通义 / Kimi / 小米 / Ollama
+$env:VITE_MARKIO_AI_REGION='cn'; pnpm tauri:dev
+
+# 3) Mac App Store 裁剪版预览：本地 Agent 整功能消失（验证苹果审核版的样子）
+$env:VITE_MARKIO_MAS='1'; pnpm tauri:dev
+```
+
+> bash / zsh 下对应写法是 `VITE_MARKIO_AI_REGION=cn pnpm tauri:dev`；改 flag 后需**重启 dev server** 生效。
+> `$env:` 设过的变量会留在当前 PowerShell 会话，测完用 `Remove-Item Env:VITE_MARKIO_AI_REGION` 清掉，或新开一个终端。
+
+### 为什么本地 CLI Agent 必须随 MAS 裁掉
+
+「本地 Agent」面板会 spawn 用户 PATH 里的外部可执行文件（`claude` / `codex` / `agy` / `cursor-agent` / `opencode` / `qwen` / `copilot` / `aider` / `goose`）。
+macOS App Sandbox 禁止沙盒进程拉起包外、未签 `inherit` entitlement 的二进制——子进程会被直接 kill，带此能力提交还有被审核拒绝的风险。
+所以前端用 `isLocalAgentEnabled()`（`src/lib/ai-region-policy.ts`）在 `__MARKIO_MAS__` 为真时整功能隐藏；`scripts/build-mas.sh` 已置 `VITE_MARKIO_MAS=1`，上架链路自动生效。
+直发渠道（DMG / Windows / Linux）不沙盒，功能照常。同理 `markio-preview` 外部二进制、Apple Notes 导入也都是 MAS 版裁掉的。

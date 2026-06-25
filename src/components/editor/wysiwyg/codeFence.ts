@@ -12,7 +12,7 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import DOMPurify from "dompurify";
 
-import { escapeCodeHtml, highlightCode } from "./highlight";
+import { highlightCode } from "./highlight";
 
 type Cleanup = () => void;
 
@@ -316,18 +316,24 @@ export class CodeFenceWidget extends WidgetType {
     pre.className = "cm-md-code-pre";
     const code = document.createElement("code");
     code.className = `hljs${safeLang ? ` language-${safeLang}` : ""}`;
-    // 先用 escape 后的明文渲染，避免 toDOM 同步阻塞等待 hljs lazy chunk；
-    // grammar 拉完后回填到同一个 <code>（CodeFenceWidget.eq 比对 source/lang，
-    // 只要内容没变，DOM 会被 CodeMirror 复用，回填后高亮一直保留）。
+    // 初始直接用 textContent 铺明文：比 escape + DOMPurify 便宜得多，且天然安全。
+    // 语法高亮推到空闲帧再回填——否则快速滚动进入代码密集区时，多块代码在同一渲染
+    // 周期里同步高亮会抢占主线程，拖住 CM6 的视口绘制，表现为"滚动后大片空白要过
+    // 一会才渲染出来"。grammar 拉完后回填到同一个 <code>（eq 比对 source/lang，
+    // 内容没变 DOM 被 CodeMirror 复用，回填后高亮保留）。
     const sourceForHighlight = this.source;
-    code.innerHTML = DOMPurify.sanitize(escapeCodeHtml(sourceForHighlight), {
-      USE_PROFILES: { html: true },
-    });
-    void highlightCode(sourceForHighlight, lang).then((html) => {
-      code.innerHTML = DOMPurify.sanitize(html, {
-        USE_PROFILES: { html: true },
+    code.textContent = sourceForHighlight;
+    const runHighlight = () => {
+      void highlightCode(sourceForHighlight, lang).then((html) => {
+        if (!code.isConnected) return;
+        code.innerHTML = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
       });
-    });
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(runHighlight, { timeout: 1200 });
+    } else {
+      setTimeout(runHighlight, 48);
+    }
     pre.append(code);
     body.append(gutter, pre);
 

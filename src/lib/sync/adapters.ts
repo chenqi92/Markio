@@ -17,6 +17,9 @@ export interface CloudSyncSettings {
   s3AccessKeyId?: string;
   s3PublicBaseUrl?: string;
   s3PathStyle?: boolean;
+  synologyBaseUrl?: string;
+  synologyUsername?: string;
+  synologyInsecureTls?: boolean;
 }
 
 export interface CloudSyncTarget {
@@ -218,6 +221,22 @@ export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTa
       remoteRoot,
       manifestId: "cloud-onedrive",
       adapter: createOneDriveAdapter(),
+    });
+  }
+
+  if (isEnabled(configs.synology) && settings.synologyBaseUrl?.trim() && settings.synologyUsername?.trim()) {
+    const remoteRoot = trimRightSlashes(rootFromConfig(configs.synology, "/markio")) || "/markio";
+    targets.push({
+      id: "synology",
+      settingsId: "synology",
+      label: "Synology",
+      remoteRoot: remoteRoot.startsWith("/") ? remoteRoot : `/${remoteRoot}`,
+      manifestId: "cloud-synology",
+      adapter: createSynologyAdapter({
+        baseUrl: settings.synologyBaseUrl.trim(),
+        insecureTls: !!settings.synologyInsecureTls,
+        username: settings.synologyUsername.trim(),
+      }),
     });
   }
 
@@ -452,6 +471,115 @@ export function createDropboxAdapter(): DriveAdapter {
       for (const dir of dirs) {
         await api.dropboxCreateFolder(dir);
       }
+    },
+  };
+}
+
+export interface SynologyAdapterConfig {
+  baseUrl: string;
+  insecureTls: boolean;
+  username: string;
+}
+
+export function createSynologyAdapter(cfg: SynologyAdapterConfig): DriveAdapter {
+  let sid: string | null = null;
+  const login = async (): Promise<string> => {
+    const r = await api.synologyLogin(cfg.baseUrl, cfg.insecureTls, cfg.username);
+    sid = r.sid;
+    return sid;
+  };
+  // sid 失效（错误码 119）时重登一次再重试
+  const withSid = async <T>(fn: (sid: string) => Promise<T>): Promise<T> => {
+    const s = sid ?? (await login());
+    try {
+      return await fn(s);
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("119") || msg.includes("sid")) {
+        return await fn(await login());
+      }
+      throw e;
+    }
+  };
+
+  // Synology 用 NAS 绝对路径；remoteRoot 形如 /markio
+  const absJoin = (remoteRoot: string, relPath: string): string => {
+    const root = trimRightSlashes(remoteRoot) || "";
+    const base = root.startsWith("/") ? root : `/${trimSlashes(root)}`;
+    const tail = trimSlashes(relPath);
+    return tail ? `${base}/${tail}` : base;
+  };
+
+  const stat = async (remoteRoot: string, relPath: string): Promise<FileEntry> => {
+    const full = absJoin(remoteRoot, relPath);
+    const parent = full.slice(0, full.lastIndexOf("/")) || "/";
+    const { entries } = await withSid((s) =>
+      api.synologyList(cfg.baseUrl, cfg.insecureTls, s, parent),
+    );
+    const found = entries.find((e) => !e.isDir && e.path === full);
+    if (!found) throw new Error(`Synology 未找到刚写入的文件：${relPath}`);
+    return {
+      relPath,
+      mtime: found.mtime * 1000,
+      hash: remoteHash("synology", found.size, found.mtime),
+      size: found.size,
+    };
+  };
+
+  return {
+    id: "synology",
+    async list(remoteRoot) {
+      const out: FileEntry[] = [];
+      const root = absJoin(remoteRoot, "");
+      const walk = async (dir: string) => {
+        const { entries } = await withSid((s) =>
+          api.synologyList(cfg.baseUrl, cfg.insecureTls, s, dir),
+        );
+        for (const e of entries) {
+          if (e.isDir) {
+            await walk(e.path);
+            continue;
+          }
+          const rel = stripRoot(e.path, root);
+          if (rel === null) continue;
+          out.push({
+            relPath: rel,
+            mtime: e.mtime * 1000,
+            hash: remoteHash("synology", e.size, e.mtime),
+            size: e.size,
+          });
+        }
+      };
+      await walk(root);
+      out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+      return out;
+    },
+    async get(remoteRoot, relPath) {
+      const full = absJoin(remoteRoot, relPath);
+      const [content, meta] = await Promise.all([
+        withSid((s) => api.synologyDownload(cfg.baseUrl, cfg.insecureTls, s, full)),
+        stat(remoteRoot, relPath),
+      ]);
+      return { content, etag: meta.hash, mtime: meta.mtime };
+    },
+    async put(remoteRoot, relPath, content) {
+      const full = absJoin(remoteRoot, relPath);
+      const idx = full.lastIndexOf("/");
+      const destFolder = full.slice(0, idx) || "/";
+      const name = full.slice(idx + 1);
+      await withSid((s) =>
+        api.synologyUpload(cfg.baseUrl, cfg.insecureTls, s, destFolder, name, content),
+      );
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
+      return { etag: meta.hash, mtime: meta.mtime };
+    },
+    delete(remoteRoot, relPath) {
+      return withSid((s) =>
+        api.synologyDelete(cfg.baseUrl, cfg.insecureTls, s, absJoin(remoteRoot, relPath)),
+      );
+    },
+    async ensureParentDir() {
+      // Synology Upload create_parents=true 已自动建父目录
     },
   };
 }

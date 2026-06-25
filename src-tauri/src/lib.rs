@@ -24,6 +24,7 @@ mod s3_ops;
 mod secrets;
 mod smart_channel;
 mod state;
+mod synology_ops;
 mod storefront;
 mod watcher;
 mod webdav_ops;
@@ -69,6 +70,10 @@ use commands::{
     },
     secret::{secret_copy, secret_delete, secret_get, secret_has, secret_set},
     smart_channel::{smart_channel_respond, smart_channel_set_config, smart_channel_status},
+    synology::{
+        synology_create_folder, synology_delete, synology_download, synology_has_password,
+        synology_list, synology_login, synology_set_password, synology_upload,
+    },
     theme::{theme_delete, theme_dir_path, theme_import, theme_list, theme_read},
     webdav::{
         webdav_delete, webdav_get, webdav_has_password, webdav_list, webdav_mkcol, webdav_put,
@@ -3086,6 +3091,14 @@ pub fn run() {
             onedrive_create_folder,
             onedrive_download,
             onedrive_delete,
+            synology_set_password,
+            synology_has_password,
+            synology_login,
+            synology_list,
+            synology_download,
+            synology_upload,
+            synology_create_folder,
+            synology_delete,
             import_run,
             import_apple_notes,
             import_list_legacy_dirs,

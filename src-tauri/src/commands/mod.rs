@@ -23,5 +23,6 @@ pub mod rss;
 pub mod s3;
 pub mod secret;
 pub mod smart_channel;
+pub mod synology;
 pub mod theme;
 pub mod webdav;

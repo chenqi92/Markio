@@ -1066,6 +1066,55 @@ export const api = {
     invoke<string>("onedrive_download", { path }),
   onedriveDelete: (path: string) => invoke<void>("onedrive_delete", { path }),
 
+  // Synology FileStation
+  synologySetPassword: (baseUrl: string, password: string) =>
+    invoke<void>("synology_set_password", { baseUrl, password }),
+  synologyHasPassword: (baseUrl: string) =>
+    invoke<boolean>("synology_has_password", { baseUrl }),
+  synologyLogin: (
+    baseUrl: string,
+    insecureTls: boolean,
+    account: string,
+    otpCode?: string,
+  ) => invoke<{ sid: string }>("synology_login", { baseUrl, insecureTls, account, otpCode }),
+  synologyList: (baseUrl: string, insecureTls: boolean, sid: string, folderPath: string) =>
+    invoke<{
+      entries: Array<{
+        name: string;
+        path: string;
+        isDir: boolean;
+        size: number;
+        mtime: number;
+      }>;
+    }>("synology_list", { baseUrl, insecureTls, sid, folderPath }),
+  synologyDownload: (baseUrl: string, insecureTls: boolean, sid: string, path: string) =>
+    invoke<string>("synology_download", { baseUrl, insecureTls, sid, path }),
+  synologyUpload: (
+    baseUrl: string,
+    insecureTls: boolean,
+    sid: string,
+    destFolder: string,
+    name: string,
+    bodyBase64: string,
+  ) =>
+    invoke<void>("synology_upload", {
+      baseUrl,
+      insecureTls,
+      sid,
+      destFolder,
+      name,
+      bodyBase64,
+    }),
+  synologyCreateFolder: (
+    baseUrl: string,
+    insecureTls: boolean,
+    sid: string,
+    parentPath: string,
+    name: string,
+  ) => invoke<void>("synology_create_folder", { baseUrl, insecureTls, sid, parentPath, name }),
+  synologyDelete: (baseUrl: string, insecureTls: boolean, sid: string, path: string) =>
+    invoke<void>("synology_delete", { baseUrl, insecureTls, sid, path }),
+
   /** 哪些网盘内置了官方 client_id（用户可一键登录，无需自填 key） */
   builtinOauthProviders: () => invoke<string[]>("builtin_oauth_providers"),
 

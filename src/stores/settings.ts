@@ -101,6 +101,9 @@ type PreferenceKey =
   | "driveConfigs"
   | "dropboxClientId"
   | "gdriveClientId"
+  | "synologyBaseUrl"
+  | "synologyUsername"
+  | "synologyInsecureTls"
   | "customThemeId"
   | "bubbleTrigger"
   | "aiProviderConfigs"
@@ -117,7 +120,15 @@ type PreferenceKey =
   | "mobileDeviceName"
   | "mobileDevices";
 
-export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive" | "onedrive";
+export type DriveId =
+  | "icloud"
+  | "github"
+  | "webdav"
+  | "s3"
+  | "drop"
+  | "drive"
+  | "onedrive"
+  | "synology";
 
 export interface DriveConfig {
   /** 存储目标路径：iCloud 为本地目录；WebDAV/S3/Dropbox/GDrive 为远端根。空串表示未配置 */
@@ -324,6 +335,12 @@ interface SettingsState {
   dropboxClientId: string;
   /** Google Cloud OAuth Client ID（Desktop application 类型） */
   gdriveClientId: string;
+  /** Synology NAS 地址，如 https://nas.example.com:5001 或 http://192.168.1.50:5000 */
+  synologyBaseUrl: string;
+  /** Synology 登录账号（密码进系统钥匙串） */
+  synologyUsername: string;
+  /** 忽略 Synology 的 TLS 证书校验（自签证书场景） */
+  synologyInsecureTls: boolean;
   /** 已应用的自定义 CSS 主题 id（null 表示未应用） */
   customThemeId: string | null;
   /** 全局快捷键的用户覆盖：commandId → binding 字符串。空串表示用户显式取消绑定。 */
@@ -466,6 +483,9 @@ export const useSettings = create<SettingsState>()(
       driveConfigs: {},
       dropboxClientId: "",
       gdriveClientId: "",
+      synologyBaseUrl: "",
+      synologyUsername: "",
+      synologyInsecureTls: false,
       customThemeId: null,
       shortcutOverrides: {},
       setShortcut: (id, binding) =>

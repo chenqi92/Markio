@@ -57,6 +57,7 @@ const DRIVES = [
   { id: "drop", name: "Dropbox", logo: "/brand/sync/dropbox.svg", color: "#0061ff", status: "未连接" },
   { id: "drive", name: "Google Drive", logo: "/brand/sync/googledrive.svg", color: "#34c759", status: "未连接" },
   { id: "onedrive", name: "OneDrive", icon: "cloud" as IconName, color: "#0364b8", status: "未连接" },
+  { id: "synology", name: "Synology NAS", icon: "archive" as IconName, color: "#0066cc", status: "未连接" },
 ];
 
 export function Sync() {
@@ -100,7 +101,9 @@ export function Sync() {
   };
 
   const webdavSyncEnabled = !!(driveConfigs.webdav?.enabled && webdavBaseUrl);
-  const totalDriveCount = (["icloud", "s3", "drop", "drive", "onedrive"] as DriveId[]).filter((id) => {
+  const totalDriveCount = (
+    ["icloud", "s3", "drop", "drive", "onedrive", "synology"] as DriveId[]
+  ).filter((id) => {
     const cfg = driveConfigs[id];
     if (!cfg?.enabled) return false;
     if (id === "s3") return !!(s3Bucket && s3AccessKeyId);
@@ -140,8 +143,8 @@ export function Sync() {
       label: "网盘 / 对象存储",
       sub:
         totalDriveCount > 0
-          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive / OneDrive`
-          : "未启用 · iCloud / S3 / Dropbox / GDrive / OneDrive",
+          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology`
+          : "未启用 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology",
       dot: totalDriveCount > 0 ? "ok" : "off",
       anchor: "mk-sync-card-drives",
     },
@@ -335,6 +338,7 @@ function DrivesCard() {
             {isExpanded && id === "drop" && <DropboxDriveDrawer />}
             {isExpanded && id === "drive" && <GDriveDriveDrawer />}
             {isExpanded && id === "onedrive" && <OneDriveDriveDrawer />}
+            {isExpanded && id === "synology" && <SynologyDriveDrawer />}
             {isExpanded && id === "icloud" && (
               <FolderDriveDrawer driveId={id} />
             )}
@@ -1842,6 +1846,221 @@ function OneDriveDriveDrawer() {
           </div>
         </>
       )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SynologyDriveDrawer() {
+  const baseUrl = useSettings((s) => s.synologyBaseUrl);
+  const username = useSettings((s) => s.synologyUsername);
+  const insecureTls = useSettings((s) => s.synologyInsecureTls);
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const syncCfg: DriveConfig = driveConfigs.synology ?? { folder: "/markio", enabled: false };
+  const [password, setPassword] = useState("");
+  const [hasStoredPassword, setHasStoredPassword] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState<"save" | "test" | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      synology: { ...syncCfg, folder: syncCfg.folder || "/markio", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && (!baseUrl.trim() || !username.trim() || !hasStoredPassword)) {
+      setMsg({ kind: "err", text: "启用同步前请先填写地址 / 账号并保存密码" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
+
+  useEffect(() => {
+    if (!baseUrl.trim()) {
+      setHasStoredPassword(false);
+      return;
+    }
+    api
+      .synologyHasPassword(baseUrl.trim())
+      .then(setHasStoredPassword)
+      .catch(() => setHasStoredPassword(false));
+  }, [baseUrl]);
+
+  const savePassword = async () => {
+    if (!baseUrl.trim()) {
+      setMsg({ kind: "err", text: "请先填写 NAS 地址" });
+      return;
+    }
+    if (!password) {
+      setMsg({ kind: "err", text: "密码为空" });
+      return;
+    }
+    setBusy("save");
+    setMsg(null);
+    try {
+      await api.synologySetPassword(baseUrl.trim(), password);
+      setPassword("");
+      setHasStoredPassword(true);
+      setMsg({ kind: "ok", text: "密码已存入系统钥匙串" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async () => {
+    if (!baseUrl.trim() || !username.trim()) {
+      setMsg({ kind: "err", text: "请填写 NAS 地址和账号" });
+      return;
+    }
+    setBusy("test");
+    setMsg(null);
+    try {
+      const r = await api.synologyLogin(
+        baseUrl.trim(),
+        insecureTls,
+        username.trim(),
+        otp.trim() || undefined,
+      );
+      setConnected(!!r.sid);
+      setMsg({ kind: "ok", text: "登录成功，FileStation 可用" });
+    } catch (e) {
+      setConnected(false);
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        填入群晖 NAS 的访问地址和账号即可（无需在开发者平台申请任何 key）。地址形如
+        <code> https://nas.example.com:5001 </code>或局域网
+        <code> http://192.168.1.50:5000 </code>。同步走 FileStation API；密码仅存系统钥匙串。
+        若 NAS 是自签证书 https，请打开下方「忽略 TLS 证书」。
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">NAS 地址</div>
+        </div>
+        <input
+          type="text"
+          value={baseUrl}
+          onChange={(e) => setPreference("synologyBaseUrl", e.target.value)}
+          placeholder="https://nas.example.com:5001"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">账号</div>
+        </div>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setPreference("synologyUsername", e.target.value)}
+          placeholder="admin"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">密码</div>
+          <div className="settings-help">{hasStoredPassword ? "已存入系统钥匙串" : "尚未保存"}</div>
+        </div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={hasStoredPassword ? "•••••• (留空保持现有)" : "密码"}
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <button className="settings-btn" type="button" disabled={busy !== null} onClick={savePassword}>
+          {busy === "save" ? "…" : "保存密码"}
+        </button>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">二步验证 OTP</div>
+          <div className="settings-help">仅开启 2FA 的账号需要；自动同步建议用免 2FA 账号</div>
+        </div>
+        <input
+          type="text"
+          value={otp}
+          onChange={(e) => setOtp(e.target.value)}
+          placeholder="6 位数字（可留空）"
+          style={{ width: 160 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">忽略 TLS 证书</div>
+          <div className="settings-help">NAS 自签证书 https 时打开</div>
+        </div>
+        <Toggle on={insecureTls} onChange={(v) => setPreference("synologyInsecureTls", v)} />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">同步根目录</div>
+          <div className="settings-help">NAS 绝对路径，例如 /markio 或 /home/markio</div>
+        </div>
+        <input
+          type="text"
+          value={syncCfg.folder || "/markio"}
+          onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+          placeholder="/markio"
+          style={{ flex: 1, minWidth: 280 }}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">启用 Synology 同步</div>
+          <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+        </div>
+        <Toggle
+          on={syncCfg.enabled && !!baseUrl.trim() && !!username.trim() && hasStoredPassword}
+          onChange={setSyncEnabled}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">{connected ? "已验证登录" : "未验证"}</div>
+        </div>
+        <button
+          className="settings-btn primary"
+          type="button"
+          disabled={busy !== null}
+          onClick={test}
+        >
+          {busy === "test" ? "登录中…" : "测试连接"}
+        </button>
+      </div>
       {msg && (
         <div
           className="settings-message"

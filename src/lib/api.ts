@@ -363,6 +363,12 @@ export const api = {
 
   rename: (from: string, to: string) =>
     invoke<void>("fs_rename", { from, to }),
+  /**
+   * 改名 / 移动 markdown 文件后，改写仓库内其它笔记里指向旧名的 `[[wikilink]]`。
+   * 在 rename 成功后调用；返回被改写文件的绝对路径列表（尽力而为，可空）。
+   */
+  updateWikilinks: (workspace: string, from: string, to: string) =>
+    invoke<string[]>("fs_update_wikilinks", { workspace, from, to }),
   remove: (path: string) => invoke<void>("fs_delete", { path }),
   mkdir: (path: string) => invoke<void>("fs_mkdir", { path }),
   grep: (root: string, query: string, max = 80) =>

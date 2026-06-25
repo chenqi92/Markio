@@ -19,6 +19,7 @@
 //! - 错误统一用 `Result<T, String>`，便于直接抛回 Tauri command
 
 pub mod backlinks;
+pub mod links;
 pub mod search;
 pub mod snapshots;
 pub mod tokens;
@@ -27,6 +28,7 @@ pub mod vault_index;
 pub mod walker_io;
 
 pub use backlinks::*;
+pub use links::*;
 pub use search::*;
 pub use snapshots::*;
 pub use tokens::*;

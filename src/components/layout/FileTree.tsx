@@ -723,6 +723,15 @@ function TreeContextMenu({
         useRecents.getState().relocate(node.path, to);
         flash("已重命名");
         if (ws) {
+          // 改名 markdown 文件后，改写仓库内其它笔记里指向旧名的 [[wikilink]]
+          if (isFile && /\.(md|markdown|mdown|mkd)$/i.test(node.name)) {
+            try {
+              const changed = await api.updateWikilinks(ws.path, node.path, to);
+              if (changed.length > 0) flash(`已更新 ${changed.length} 处链接`);
+            } catch {
+              /* 改链失败不影响改名本身 */
+            }
+          }
           void ragUpdateAfterPathRemoval(ws.path, node.path, node.isDir);
           await loadDir(ws.id, parent);
         }
@@ -794,6 +803,15 @@ function TreeContextMenu({
         useFileIcons.getState().relocate(node.path, dest);
         useRecents.getState().relocate(node.path, dest);
         flash("已移动");
+        // 移动 markdown 文件后，改写其它笔记里的路径式 [[wikilink]]
+        if (!node.isDir && /\.(md|markdown|mdown|mkd)$/i.test(node.name)) {
+          try {
+            const changed = await api.updateWikilinks(ws.path, node.path, dest);
+            if (changed.length > 0) flash(`已更新 ${changed.length} 处链接`);
+          } catch {
+            /* 改链失败不影响移动本身 */
+          }
+        }
         await loadDir(ws.id, curParent);
         await loadDir(ws.id, norm);
       } catch (e) {

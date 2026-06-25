@@ -1037,6 +1037,28 @@ fn fs_rename(state: tauri::State<'_, AppState>, from: String, to: String) -> Res
     Ok(())
 }
 
+/// 改名 / 移动 markdown 文件后，改写仓库内其它笔记里指向旧名的 `[[wikilink]]`。
+/// 应在 `fs_rename` 成功之后调用（此时 to 已存在、from 已不存在）。
+/// 每个被改写的文件先存历史快照再原子写；返回被改写文件的绝对路径列表。尽力而为：
+/// 单个文件失败不影响其它文件，改名本身不依赖它。
+#[tauri::command]
+async fn fs_update_wikilinks(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    from: String,
+    to: String,
+) -> Result<Vec<String>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let to_p = validate_path(&state, &to)?;
+    let ws_s = ws.to_string_lossy().to_string();
+    let to_s = to_p.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        fs_ops::update_wikilinks_on_rename(&ws_s, &from, &to_s)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn fs_delete(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     let canon = validate_path(&state, &path)?;
@@ -2859,6 +2881,7 @@ pub fn run() {
             fs_save,
             fs_create_new,
             fs_rename,
+            fs_update_wikilinks,
             fs_delete,
             fs_mkdir,
             fs_grep,

@@ -8,6 +8,8 @@
 //! 看到的符号名跟原来一致，对外行为不变。
 
 pub mod agent;
+pub mod aliyun;
+pub mod baidu;
 pub mod clipper;
 pub mod dropbox;
 pub mod gdrive;

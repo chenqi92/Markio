@@ -59,6 +59,8 @@ url = "2"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# 百度网盘 xpan 分片上传要按 4MB 块算 MD5（precreate / create 的 block_list）
+md-5 = "0.10"
 
 # 文件系统监听（外部编辑器改动 → 自动重索引 + 刷文件树）
 notify = "6"

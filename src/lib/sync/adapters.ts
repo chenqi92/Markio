@@ -271,6 +271,35 @@ export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTa
     });
   }
 
+  if (isEnabled(configs.baidu)) {
+    const root = trimRightSlashes(rootFromConfig(configs.baidu, "/apps/markio")) || "/apps/markio";
+    const remoteRoot = root.startsWith("/") ? root : `/${root}`;
+    const sub = localSubOf(configs.baidu);
+    targets.push({
+      id: "baidu",
+      settingsId: "baidu",
+      label: "百度网盘",
+      remoteRoot,
+      manifestId: manifestIdWithSub("cloud-baidu", sub),
+      localSubpath: sub,
+      adapter: createBaiduAdapter(),
+    });
+  }
+
+  if (isEnabled(configs.aliyun)) {
+    const remoteRoot = trimSlashes(rootFromConfig(configs.aliyun, "markio"));
+    const sub = localSubOf(configs.aliyun);
+    targets.push({
+      id: "aliyun",
+      settingsId: "aliyun",
+      label: "阿里云盘",
+      remoteRoot,
+      manifestId: manifestIdWithSub("cloud-aliyun", sub),
+      localSubpath: sub,
+      adapter: createAliyunAdapter(),
+    });
+  }
+
   return targets;
 }
 
@@ -611,6 +640,220 @@ export function createSynologyAdapter(cfg: SynologyAdapterConfig): DriveAdapter 
     },
     async ensureParentDir() {
       // Synology Upload create_parents=true 已自动建父目录
+    },
+  };
+}
+
+export function createBaiduAdapter(): DriveAdapter {
+  const fsIds = new Map<string, string>();
+  const absJoin = (remoteRoot: string, relPath: string): string => {
+    const base = `/${trimSlashes(remoteRoot)}`;
+    const tail = trimSlashes(relPath);
+    return tail ? `${base}/${tail}` : base;
+  };
+  const entryHash = (md5: string, size: number, mtime: number) =>
+    remoteHash("baidu", md5 || String(size), size, mtime);
+
+  const findFsId = async (remoteRoot: string, relPath: string): Promise<string | null> => {
+    const cached = fsIds.get(relPath);
+    if (cached) return cached;
+    const full = absJoin(remoteRoot, relPath);
+    const parent = full.slice(0, full.lastIndexOf("/")) || "/";
+    const { entries } = await api.baiduList(parent);
+    const found = entries.find((e) => !e.isDir && e.path === full);
+    if (!found) return null;
+    fsIds.set(relPath, found.fsId);
+    return found.fsId;
+  };
+
+  const stat = async (remoteRoot: string, relPath: string): Promise<FileEntry> => {
+    const full = absJoin(remoteRoot, relPath);
+    const parent = full.slice(0, full.lastIndexOf("/")) || "/";
+    const { entries } = await api.baiduList(parent);
+    const found = entries.find((e) => !e.isDir && e.path === full);
+    if (!found) throw new Error(`百度网盘未找到刚写入的文件：${relPath}`);
+    fsIds.set(relPath, found.fsId);
+    return {
+      relPath,
+      mtime: found.mtime * 1000,
+      hash: entryHash(found.md5, found.size, found.mtime),
+      size: found.size,
+    };
+  };
+
+  return {
+    id: "baidu",
+    async list(remoteRoot) {
+      fsIds.clear();
+      const out: FileEntry[] = [];
+      const root = `/${trimSlashes(remoteRoot)}`;
+      const walk = async (dir: string) => {
+        const { entries } = await api.baiduList(dir);
+        for (const e of entries) {
+          if (e.isDir) {
+            await walk(e.path);
+            continue;
+          }
+          const rel = stripRoot(e.path, root);
+          if (rel === null) continue;
+          fsIds.set(rel, e.fsId);
+          out.push({
+            relPath: rel,
+            mtime: e.mtime * 1000,
+            hash: entryHash(e.md5, e.size, e.mtime),
+            size: e.size,
+          });
+        }
+      };
+      await walk(root);
+      out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+      return out;
+    },
+    async get(remoteRoot, relPath) {
+      const fsId = await findFsId(remoteRoot, relPath);
+      if (!fsId) throw new Error(`百度网盘文件不存在：${relPath}`);
+      const [content, meta] = await Promise.all([
+        api.baiduDownload(fsId),
+        stat(remoteRoot, relPath),
+      ]);
+      return { content, etag: meta.hash, mtime: meta.mtime };
+    },
+    async put(remoteRoot, relPath, content) {
+      await api.baiduUpload(absJoin(remoteRoot, relPath), content);
+      fsIds.delete(relPath);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
+      return { etag: meta.hash, mtime: meta.mtime };
+    },
+    async delete(remoteRoot, relPath) {
+      await api.baiduDelete(absJoin(remoteRoot, relPath));
+      fsIds.delete(relPath);
+    },
+    async ensureParentDir() {
+      // 百度 create/precreate 会自动建父目录
+    },
+  };
+}
+
+export function createAliyunAdapter(): DriveAdapter {
+  const fileIds = new Map<string, string>();
+  const folderIds = new Map<string, string>();
+
+  const entryHash = (contentHash: string, size: number, mtime: string) =>
+    remoteHash("aliyun", contentHash || String(size), size, mtime);
+
+  const ensureFolder = async (remoteRoot: string, relDir: string): Promise<string> => {
+    folderIds.set("", "root");
+    let parentId = "root";
+    let currentPath = "";
+    const segments = trimSlashes(joinRel(remoteRoot, relDir)).split("/").filter(Boolean);
+    for (const segment of segments) {
+      currentPath = joinRel(currentPath, segment);
+      const cached = folderIds.get(currentPath);
+      if (cached) {
+        parentId = cached;
+        continue;
+      }
+      const { entries } = await api.aliyunList(parentId);
+      const existing = entries.find((e) => e.isDir && e.name === segment);
+      if (existing) {
+        folderIds.set(currentPath, existing.fileId);
+        parentId = existing.fileId;
+        continue;
+      }
+      const created = await api.aliyunCreateFolder(parentId, segment);
+      folderIds.set(currentPath, created);
+      parentId = created;
+    }
+    return parentId;
+  };
+
+  const findFile = async (remoteRoot: string, relPath: string): Promise<string | null> => {
+    const cached = fileIds.get(relPath);
+    if (cached) return cached;
+    const parentRel = trimSlashes(relPath).split("/").slice(0, -1).join("/");
+    const name = trimSlashes(relPath).split("/").pop() || relPath;
+    const parentId = await ensureFolder(remoteRoot, parentRel);
+    const { entries } = await api.aliyunList(parentId);
+    const existing = entries.find((e) => !e.isDir && e.name === name);
+    if (!existing) return null;
+    fileIds.set(relPath, existing.fileId);
+    return existing.fileId;
+  };
+
+  const stat = async (remoteRoot: string, relPath: string): Promise<FileEntry> => {
+    const parentRel = trimSlashes(relPath).split("/").slice(0, -1).join("/");
+    const name = trimSlashes(relPath).split("/").pop() || relPath;
+    const parentId = await ensureFolder(remoteRoot, parentRel);
+    const { entries } = await api.aliyunList(parentId);
+    const found = entries.find((e) => !e.isDir && e.name === name);
+    if (!found) throw new Error(`阿里云盘未找到刚写入的文件：${relPath}`);
+    fileIds.set(relPath, found.fileId);
+    return {
+      relPath,
+      mtime: parseTime(found.mtime),
+      hash: entryHash(found.contentHash, found.size, found.mtime),
+      size: found.size,
+    };
+  };
+
+  return {
+    id: "aliyun",
+    async list(remoteRoot) {
+      fileIds.clear();
+      folderIds.clear();
+      const out: FileEntry[] = [];
+      const rootId = await ensureFolder(remoteRoot, "");
+      const walk = async (parentId: string, prefix: string) => {
+        const { entries } = await api.aliyunList(parentId);
+        for (const e of entries) {
+          const rel = joinRel(prefix, e.name);
+          if (e.isDir) {
+            folderIds.set(joinRel(trimSlashes(remoteRoot), rel), e.fileId);
+            await walk(e.fileId, rel);
+            continue;
+          }
+          fileIds.set(rel, e.fileId);
+          out.push({
+            relPath: rel,
+            mtime: parseTime(e.mtime),
+            hash: entryHash(e.contentHash, e.size, e.mtime),
+            size: e.size,
+          });
+        }
+      };
+      await walk(rootId, "");
+      out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+      return out;
+    },
+    async get(remoteRoot, relPath) {
+      const id = await findFile(remoteRoot, relPath);
+      if (!id) throw new Error(`阿里云盘文件不存在：${relPath}`);
+      const [content, meta] = await Promise.all([
+        api.aliyunDownload(id),
+        stat(remoteRoot, relPath),
+      ]);
+      return { content, etag: meta.hash, mtime: meta.mtime };
+    },
+    async put(remoteRoot, relPath, content) {
+      const parentRel = trimSlashes(relPath).split("/").slice(0, -1).join("/");
+      const name = trimSlashes(relPath).split("/").pop() || relPath;
+      const parentId = await ensureFolder(remoteRoot, parentRel);
+      const existingId = await findFile(remoteRoot, relPath);
+      const id = await api.aliyunUpload(parentId, name, existingId, content);
+      if (id) fileIds.set(relPath, id);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
+      return { etag: meta.hash, mtime: meta.mtime };
+    },
+    async delete(remoteRoot, relPath) {
+      const id = await findFile(remoteRoot, relPath);
+      if (id) {
+        await api.aliyunDelete(id);
+        fileIds.delete(relPath);
+      }
+    },
+    async ensureParentDir(remoteRoot, relPath) {
+      const parentRel = trimSlashes(relPath).split("/").slice(0, -1).join("/");
+      await ensureFolder(remoteRoot, parentRel);
     },
   };
 }

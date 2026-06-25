@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings, type DriveId, type DriveConfig } from "@/stores/settings";
 import { useDialog } from "@/stores/dialog";
@@ -87,6 +87,8 @@ const DRIVES = [
   { id: "drive", name: "Google Drive", logo: "/brand/sync/googledrive.svg", color: "#34c759", status: "未连接" },
   { id: "onedrive", name: "OneDrive", icon: "cloud" as IconName, color: "#0364b8", status: "未连接" },
   { id: "synology", name: "Synology NAS", icon: "archive" as IconName, color: "#0066cc", status: "未连接" },
+  { id: "baidu", name: "百度网盘", icon: "cloud" as IconName, color: "#06a7ff", status: "未连接" },
+  { id: "aliyun", name: "阿里云盘", icon: "cloud" as IconName, color: "#ff6a00", status: "未连接" },
 ];
 
 export function Sync() {
@@ -131,7 +133,7 @@ export function Sync() {
 
   const webdavSyncEnabled = !!(driveConfigs.webdav?.enabled && webdavBaseUrl);
   const totalDriveCount = (
-    ["icloud", "s3", "drop", "drive", "onedrive", "synology"] as DriveId[]
+    ["icloud", "s3", "drop", "drive", "onedrive", "synology", "baidu", "aliyun"] as DriveId[]
   ).filter((id) => {
     const cfg = driveConfigs[id];
     if (!cfg?.enabled) return false;
@@ -172,8 +174,8 @@ export function Sync() {
       label: "网盘 / 对象存储",
       sub:
         totalDriveCount > 0
-          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology`
-          : "未启用 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology",
+          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology / 百度 / 阿里`
+          : "未启用 · iCloud / S3 / Dropbox / GDrive / OneDrive / Synology / 百度 / 阿里",
       dot: totalDriveCount > 0 ? "ok" : "off",
       anchor: "mk-sync-card-drives",
     },
@@ -368,6 +370,8 @@ function DrivesCard() {
             {isExpanded && id === "drive" && <GDriveDriveDrawer />}
             {isExpanded && id === "onedrive" && <OneDriveDriveDrawer />}
             {isExpanded && id === "synology" && <SynologyDriveDrawer />}
+            {isExpanded && id === "baidu" && <BaiduDriveDrawer />}
+            {isExpanded && id === "aliyun" && <AliyunDriveDrawer />}
             {isExpanded && id === "icloud" && (
               <FolderDriveDrawer driveId={id} />
             )}
@@ -2095,6 +2099,361 @@ function SynologyDriveDrawer() {
           {busy === "test" ? "登录中…" : "测试连接"}
         </button>
       </div>
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function BaiduDriveDrawer() {
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const hasBuiltin = useBuiltinOauth().has("baidu");
+  const syncCfg: DriveConfig = driveConfigs.baidu ?? { folder: "/apps/markio", enabled: false };
+  const [status, setStatus] = useState<{ connected: boolean; display: string } | null>(null);
+  const [busy, setBusy] = useState<"auth" | "signout" | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [userCode, setUserCode] = useState("");
+  const polling = useRef(false);
+  const confirmDialog = useDialog((s) => s.confirm);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      baidu: { ...syncCfg, folder: syncCfg.folder || "/apps/markio", ...patch },
+    });
+  };
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !status?.connected) {
+      setMsg({ kind: "err", text: "启用同步前请先完成百度网盘授权" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
+
+  useEffect(() => {
+    api.baiduStatus().then(setStatus).catch(() => setStatus(null));
+    return () => {
+      polling.current = false;
+    };
+  }, []);
+
+  const authorize = async () => {
+    if (!hasBuiltin) {
+      setMsg({ kind: "err", text: "本版本未内置百度网盘 AppKey/SecretKey" });
+      return;
+    }
+    setBusy("auth");
+    setMsg(null);
+    setUserCode("");
+    try {
+      const dc = await api.baiduDeviceStart();
+      setUserCode(dc.userCode);
+      void openExternal(dc.verificationUrl);
+      setMsg({
+        kind: "ok",
+        text: `请在打开的页面输入授权码 ${dc.userCode} 完成授权（等待中…）`,
+      });
+      polling.current = true;
+      const deadline = Date.now() + dc.expiresIn * 1000;
+      while (polling.current && Date.now() < deadline) {
+        await sleep(Math.max(2, dc.interval) * 1000);
+        if (!polling.current) break;
+        const r = await api.baiduDevicePoll(dc.deviceCode).catch(() => null);
+        if (r && r.connected) {
+          setStatus({ connected: true, display: r.display });
+          setUserCode("");
+          setMsg({ kind: "ok", text: `授权成功：${r.display}` });
+          break;
+        }
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      polling.current = false;
+      setBusy(null);
+    }
+  };
+
+  const signout = async () => {
+    const ok = await confirmDialog({
+      title: "注销百度网盘授权？",
+      message: "token 将从系统钥匙串中清除。",
+      confirmLabel: "注销",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy("signout");
+    try {
+      await api.baiduSignout();
+      setStatus({ connected: false, display: "" });
+      setMsg({ kind: "ok", text: "已注销" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connected = status?.connected;
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        {hasBuiltin
+          ? "点「授权」后会打开百度授权页，输入页面提示的授权码用你自己的账号登录。未过审应用通常只能写入应用目录，同步根目录建议放在 /apps/markio 下。"
+          : "本版本未内置百度网盘凭据（需在 pan.baidu.com/union 注册并编译期注入 AppKey/SecretKey）。"}
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">
+            {connected ? `已连接 · ${status?.display}` : userCode ? `授权码：${userCode}` : "未连接"}
+          </div>
+        </div>
+        {connected ? (
+          <button className="settings-btn" type="button" disabled={busy !== null} onClick={signout}>
+            注销
+          </button>
+        ) : (
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null || !hasBuiltin}
+            onClick={authorize}
+          >
+            {busy === "auth" ? "等待授权…" : "授权"}
+          </button>
+        )}
+      </div>
+      {connected && (
+        <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">同步根目录</div>
+              <div className="settings-help">网盘绝对路径，建议 /apps/markio</div>
+            </div>
+            <input
+              type="text"
+              value={syncCfg.folder || "/apps/markio"}
+              onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+              placeholder="/apps/markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+          </div>
+          <LocalSubpathRow driveId="baidu" />
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">启用百度网盘同步</div>
+              <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+            </div>
+            <Toggle on={syncCfg.enabled && !!connected} onChange={setSyncEnabled} />
+          </div>
+        </>
+      )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AliyunDriveDrawer() {
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const hasBuiltin = useBuiltinOauth().has("aliyun");
+  const syncCfg: DriveConfig = driveConfigs.aliyun ?? { folder: "markio", enabled: false };
+  const [status, setStatus] = useState<{ connected: boolean; display: string } | null>(null);
+  const [busy, setBusy] = useState<"auth" | "signout" | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [qrUrl, setQrUrl] = useState("");
+  const polling = useRef(false);
+  const confirmDialog = useDialog((s) => s.confirm);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      aliyun: { ...syncCfg, folder: syncCfg.folder || "markio", ...patch },
+    });
+  };
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !status?.connected) {
+      setMsg({ kind: "err", text: "启用同步前请先完成阿里云盘授权" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
+
+  useEffect(() => {
+    api.aliyunStatus().then(setStatus).catch(() => setStatus(null));
+    return () => {
+      polling.current = false;
+    };
+  }, []);
+
+  const authorize = async () => {
+    if (!hasBuiltin) {
+      setMsg({ kind: "err", text: "本版本未内置阿里云盘 appId/appSecret" });
+      return;
+    }
+    setBusy("auth");
+    setMsg(null);
+    setQrUrl("");
+    try {
+      const qr = await api.aliyunQrStart();
+      setQrUrl(qr.qrCodeUrl);
+      setMsg({ kind: "ok", text: "请用阿里云盘 App 扫描二维码授权（等待中…）" });
+      polling.current = true;
+      const deadline = Date.now() + 180 * 1000;
+      while (polling.current && Date.now() < deadline) {
+        await sleep(3000);
+        if (!polling.current) break;
+        const r = await api.aliyunQrPoll(qr.sid).catch(() => null);
+        if (r && r.connected) {
+          setStatus({ connected: true, display: r.display });
+          setQrUrl("");
+          setMsg({ kind: "ok", text: `授权成功：${r.display}` });
+          break;
+        }
+        if (r && r.status === "QRCodeExpired") {
+          setMsg({ kind: "err", text: "二维码已过期，请重新授权" });
+          break;
+        }
+      }
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      polling.current = false;
+      setBusy(null);
+    }
+  };
+
+  const signout = async () => {
+    const ok = await confirmDialog({
+      title: "注销阿里云盘授权？",
+      message: "token 将从系统钥匙串中清除。",
+      confirmLabel: "注销",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy("signout");
+    try {
+      await api.aliyunSignout();
+      setStatus({ connected: false, display: "" });
+      setMsg({ kind: "ok", text: "已注销" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connected = status?.connected;
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        {hasBuiltin
+          ? "点「授权」后用阿里云盘 App 扫码登录你自己的账号。文件存放在云盘根目录下的同步文件夹（默认 markio）。"
+          : "本版本未内置阿里云盘凭据（需在 alipan.com/developer 注册并编译期注入 appId/appSecret）。"}
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">{connected ? `已连接 · ${status?.display}` : "未连接"}</div>
+        </div>
+        {connected ? (
+          <button className="settings-btn" type="button" disabled={busy !== null} onClick={signout}>
+            注销
+          </button>
+        ) : (
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null || !hasBuiltin}
+            onClick={authorize}
+          >
+            {busy === "auth" ? "等待扫码…" : "授权"}
+          </button>
+        )}
+      </div>
+      {qrUrl && !connected && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <img
+            src={qrUrl}
+            alt="阿里云盘授权二维码"
+            style={{ width: 180, height: 180, border: "1px solid var(--border)", borderRadius: 8 }}
+          />
+          <a
+            href="#"
+            className="settings-help"
+            onClick={(e) => {
+              e.preventDefault();
+              void openExternal(qrUrl);
+            }}
+          >
+            二维码无法显示？点此打开
+          </a>
+        </div>
+      )}
+      {connected && (
+        <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">同步根目录</div>
+              <div className="settings-help">云盘根下的文件夹名（自动创建）</div>
+            </div>
+            <input
+              type="text"
+              value={syncCfg.folder || "markio"}
+              onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+              placeholder="markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+          </div>
+          <LocalSubpathRow driveId="aliyun" />
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">启用阿里云盘同步</div>
+              <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+            </div>
+            <Toggle on={syncCfg.enabled && !!connected} onChange={setSyncEnabled} />
+          </div>
+        </>
+      )}
       {msg && (
         <div
           className="settings-message"

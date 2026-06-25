@@ -128,7 +128,9 @@ export type DriveId =
   | "drop"
   | "drive"
   | "onedrive"
-  | "synology";
+  | "synology"
+  | "baidu"
+  | "aliyun";
 
 export interface DriveConfig {
   /** 存储目标路径：iCloud 为本地目录；WebDAV/S3/Dropbox/GDrive 为远端根。空串表示未配置 */

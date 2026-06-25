@@ -7,7 +7,7 @@
 // 文档：Synology File Station Official API（SYNO.API.Auth / SYNO.FileStation.List/Download/
 // Upload/CreateFolder/Delete）。
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::Duration;
 
 pub const MAX_SYNOLOGY_OBJECT: usize = 50 * 1024 * 1024;

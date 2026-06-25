@@ -1,5 +1,7 @@
 mod agent_cli;
 mod ai;
+mod aliyun_ops;
+mod baidu_ops;
 mod builtin_credentials;
 mod clipper;
 mod commands;
@@ -32,6 +34,14 @@ mod window_state;
 
 use commands::{
     agent::{agent_cancel, agent_list_providers, agent_run},
+    aliyun::{
+        aliyun_create_folder, aliyun_delete, aliyun_download, aliyun_list, aliyun_qr_poll,
+        aliyun_qr_start, aliyun_signout, aliyun_status, aliyun_upload,
+    },
+    baidu::{
+        baidu_create_folder, baidu_delete, baidu_device_poll, baidu_device_start, baidu_download,
+        baidu_list, baidu_signout, baidu_status, baidu_upload,
+    },
     clipper::{
         clipper_set_active_workspace, clipper_set_config, clipper_set_summary, clipper_status,
     },
@@ -3099,6 +3109,24 @@ pub fn run() {
             synology_upload,
             synology_create_folder,
             synology_delete,
+            baidu_device_start,
+            baidu_device_poll,
+            baidu_status,
+            baidu_signout,
+            baidu_list,
+            baidu_download,
+            baidu_upload,
+            baidu_create_folder,
+            baidu_delete,
+            aliyun_qr_start,
+            aliyun_qr_poll,
+            aliyun_status,
+            aliyun_signout,
+            aliyun_list,
+            aliyun_download,
+            aliyun_upload,
+            aliyun_create_folder,
+            aliyun_delete,
             import_run,
             import_apple_notes,
             import_list_legacy_dirs,

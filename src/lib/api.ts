@@ -1115,6 +1115,73 @@ export const api = {
   synologyDelete: (baseUrl: string, insecureTls: boolean, sid: string, path: string) =>
     invoke<void>("synology_delete", { baseUrl, insecureTls, sid, path }),
 
+  // 百度网盘（设备码授权 + xpan）
+  baiduDeviceStart: () =>
+    invoke<{
+      deviceCode: string;
+      userCode: string;
+      verificationUrl: string;
+      qrcodeUrl: string;
+      interval: number;
+      expiresIn: number;
+    }>("baidu_device_start"),
+  /** 轮询一次：null = 仍在等待授权 */
+  baiduDevicePoll: (deviceCode: string) =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number } | null>(
+      "baidu_device_poll",
+      { deviceCode },
+    ),
+  baiduStatus: () =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>("baidu_status"),
+  baiduSignout: () => invoke<void>("baidu_signout"),
+  baiduList: (dir: string) =>
+    invoke<{
+      entries: Array<{
+        fsId: string;
+        name: string;
+        path: string;
+        isDir: boolean;
+        size: number;
+        mtime: number;
+        md5: string;
+      }>;
+    }>("baidu_list", { dir }),
+  baiduDownload: (fsId: string) => invoke<string>("baidu_download", { fsId }),
+  baiduUpload: (path: string, bodyBase64: string) =>
+    invoke<void>("baidu_upload", { path, bodyBase64 }),
+  baiduCreateFolder: (path: string) => invoke<void>("baidu_create_folder", { path }),
+  baiduDelete: (path: string) => invoke<void>("baidu_delete", { path }),
+
+  // 阿里云盘（扫码授权 + openFile，file_id 寻址）
+  aliyunQrStart: () => invoke<{ qrCodeUrl: string; sid: string }>("aliyun_qr_start"),
+  aliyunQrPoll: (sid: string) =>
+    invoke<{ status: string; connected: boolean; display: string }>("aliyun_qr_poll", { sid }),
+  aliyunStatus: () =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>("aliyun_status"),
+  aliyunSignout: () => invoke<void>("aliyun_signout"),
+  aliyunList: (parentFileId: string) =>
+    invoke<{
+      entries: Array<{
+        fileId: string;
+        name: string;
+        isDir: boolean;
+        size: number;
+        mtime: string;
+        contentHash: string;
+      }>;
+    }>("aliyun_list", { parentFileId }),
+  aliyunDownload: (fileId: string) => invoke<string>("aliyun_download", { fileId }),
+  aliyunCreateFolder: (parentFileId: string, name: string) =>
+    invoke<string>("aliyun_create_folder", { parentFileId, name }),
+  aliyunUpload: (
+    parentFileId: string,
+    name: string,
+    existingFileId: string | null,
+    bodyBase64: string,
+  ) =>
+    invoke<string>("aliyun_upload", { parentFileId, name, existingFileId, bodyBase64 }),
+  aliyunDelete: (fileId: string) => invoke<void>("aliyun_delete", { fileId }),
+
   /** 哪些网盘内置了官方 client_id（用户可一键登录，无需自填 key） */
   builtinOauthProviders: () => invoke<string[]>("builtin_oauth_providers"),
 

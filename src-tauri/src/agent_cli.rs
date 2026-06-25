@@ -167,19 +167,6 @@ fn generic_args(provider: AgentProvider, prompt: &str, power: bool) -> Vec<Strin
             }
             a
         }
-        // cursor-agent -p --output-format text [--force] "<prompt>"
-        AgentProvider::Cursor => {
-            let mut a = vec![
-                "-p".to_string(),
-                "--output-format".to_string(),
-                "text".to_string(),
-            ];
-            if power {
-                a.push("--force".to_string());
-            }
-            a.push(p);
-            a
-        }
         // opencode run "<prompt>"（headless 用 run 子命令，不是 -p）
         AgentProvider::Opencode => vec!["run".to_string(), p],
         // copilot -p "<prompt>" [--allow-all-tools]
@@ -200,8 +187,8 @@ fn generic_args(provider: AgentProvider, prompt: &str, power: bool) -> Vec<Strin
         }
         // goose run -t "<prompt>"
         AgentProvider::Goose => vec!["run".to_string(), "-t".to_string(), p],
-        // claude 走 run_claude，不会落到这里。
-        AgentProvider::Claude => vec![p],
+        // claude / cursor 有各自专属 runner（run_claude / run_cursor），不会落到这里。
+        AgentProvider::Claude | AgentProvider::Cursor => vec![p],
     }
 }
 
@@ -349,6 +336,7 @@ pub async fn run(app: AppHandle, req: AgentRunRequest) {
     // 事件；其余 CLI 走通用纯文本路径（按各家非交互参数调用，逐行回传 stdout）。
     let result = match req.provider {
         AgentProvider::Claude => run_claude(&app, &req, cancel.clone()).await,
+        AgentProvider::Cursor => run_cursor(&app, &req, cancel.clone()).await,
         _ => run_generic(&app, &req, cancel.clone()).await,
     };
 
@@ -576,6 +564,234 @@ fn handle_claude_line(app: &AppHandle, sid: &str, line: ClaudeLine) {
         }
         _ => {}
     }
+}
+
+// ────────────────────────────── Cursor Agent 适配 ──────────────────────────────
+//
+// cursor-agent 的 stream-json 与 Claude 同源但有差异：工具事件是
+// `{"type":"tool_call","subtype":"started|completed","call_id":..,"tool_call":{"<x>ToolCall":{args,result}}}`，
+// 工具名藏在 tool_call 对象里那个唯一的 key（readToolCall / editToolCall / shellToolCall…）。
+// 默认（不带 --stream-partial-output）每个 assistant 事件给的是整段文本而非累积增量，
+// 因此按 turn 追加是安全的。
+
+#[derive(Debug, Deserialize)]
+struct CursorLine {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    subtype: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    message: Option<CursorMessage>,
+    #[serde(default)]
+    result: Option<String>,
+    #[serde(default)]
+    is_error: Option<bool>,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    tool_call: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CursorMessage {
+    #[serde(default)]
+    content: Vec<CursorContent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum CursorContent {
+    Text {
+        #[serde(default)]
+        text: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
+/// 从 `tool_call` 对象里抽出 (工具名, 入参, 结果)。结构是单键对象，
+/// 键名形如 `readToolCall`，去掉 `ToolCall` 后缀作为工具名。
+fn parse_cursor_tool(
+    tool_call: Option<&serde_json::Value>,
+) -> (String, serde_json::Value, serde_json::Value) {
+    let null = serde_json::Value::Null;
+    if let Some(obj) = tool_call.and_then(|v| v.as_object()) {
+        if let Some((key, val)) = obj.iter().next() {
+            let name = key
+                .strip_suffix("ToolCall")
+                .unwrap_or(key.as_str())
+                .to_string();
+            let args = val.get("args").cloned().unwrap_or_else(|| null.clone());
+            let result = val.get("result").cloned().unwrap_or(null);
+            return (name, args, result);
+        }
+    }
+    (String::new(), null.clone(), null)
+}
+
+fn handle_cursor_line(app: &AppHandle, sid: &str, line: CursorLine) {
+    match line.kind.as_str() {
+        "system" if line.subtype.as_deref() == Some("init") => {
+            emit(
+                app,
+                sid,
+                AgentEvent::Init {
+                    session_id: line.session_id.clone(),
+                    provider: AgentProvider::Cursor,
+                    binary: "cursor-agent".to_string(),
+                },
+            );
+        }
+        "assistant" => {
+            if let Some(msg) = line.message {
+                for c in msg.content {
+                    if let CursorContent::Text { text } = c {
+                        if !text.is_empty() {
+                            emit(app, sid, AgentEvent::TextDelta { text });
+                        }
+                    }
+                }
+            }
+        }
+        "tool_call" => {
+            let (tool, args, result) = parse_cursor_tool(line.tool_call.as_ref());
+            match line.subtype.as_deref() {
+                Some("started") => emit(
+                    app,
+                    sid,
+                    AgentEvent::ToolStart {
+                        id: line.call_id.unwrap_or_default(),
+                        tool,
+                        input: args,
+                    },
+                ),
+                Some("completed") => emit(
+                    app,
+                    sid,
+                    AgentEvent::ToolDone {
+                        id: line.call_id.unwrap_or_default(),
+                        tool,
+                        output: result,
+                        is_error: line.is_error.unwrap_or(false),
+                    },
+                ),
+                _ => {}
+            }
+        }
+        "result" => {
+            emit(
+                app,
+                sid,
+                AgentEvent::Result {
+                    text: line.result.unwrap_or_default(),
+                    input_tokens: None,
+                    output_tokens: None,
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
+async fn run_cursor(
+    app: &AppHandle,
+    req: &AgentRunRequest,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let binary = which_binary("cursor-agent")
+        .ok_or_else(|| "cursor-agent CLI 未找到，请确认已安装并在 PATH 里".to_string())?;
+    let mut cmd = make_command(&binary);
+    cmd.arg("-p").arg("--output-format").arg("stream-json");
+
+    if let Some(ws) = req.workspace.as_deref() {
+        cmd.current_dir(ws);
+    }
+    // 可写模式：--force 自动批准编辑 / 执行命令。
+    if matches!(
+        req.permission.unwrap_or_default(),
+        PermissionMode::PowerUser
+    ) {
+        cmd.arg("--force");
+    }
+    cmd.arg(&req.prompt);
+
+    let mut child = spawn_child(cmd, &req.session_id).await?;
+    let stdout = child.stdout.take().ok_or("拿不到 stdout")?;
+    let mut reader = BufReader::new(stdout).lines();
+
+    // 抽干 stderr：未登录 / 报错都在这里，不读会显示空会话（理由同 run_generic）。
+    let stderr = child.stderr.take();
+    let err_buf: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
+    let err_task = stderr.map(|se| {
+        let buf = err_buf.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(se).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Ok(mut b) = buf.lock() {
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            }
+        })
+    });
+
+    emit(
+        app,
+        &req.session_id,
+        AgentEvent::Init {
+            session_id: None,
+            provider: AgentProvider::Cursor,
+            binary,
+        },
+    );
+
+    let mut saw_output = false;
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|e| format!("读 stdout 失败：{e}"))?
+    {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<CursorLine>(&line) {
+            Ok(l) => {
+                saw_output = true;
+                handle_cursor_line(app, &req.session_id, l);
+            }
+            // 非 JSON 行：当原始文本回传，方便调试。
+            Err(_) => {
+                saw_output = true;
+                emit(
+                    app,
+                    &req.session_id,
+                    AgentEvent::TextDelta { text: line.clone() },
+                );
+            }
+        }
+    }
+
+    let status = child.wait().await;
+    if let Some(t) = err_task {
+        let _ = t.await;
+    }
+    let stderr_text = err_buf.lock().map(|b| b.clone()).unwrap_or_default();
+    let failed = matches!(status, Ok(s) if !s.success());
+    if (!saw_output || failed) && !stderr_text.trim().is_empty() {
+        emit(
+            app,
+            &req.session_id,
+            AgentEvent::TextDelta {
+                text: format!("\n[stderr] {}\n", stderr_text.trim()),
+            },
+        );
+    }
+    Ok(())
 }
 
 // ────────────────────────────── 通用 fallback ──────────────────────────────

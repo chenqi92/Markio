@@ -9,7 +9,7 @@ import { useVaultIndex } from "@/stores/vaultIndex";
 import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
-import { openDailyNote } from "@/lib/daily";
+import { openDailyNote, openDailyRelative } from "@/lib/daily";
 import { effectiveBinding, formatBinding } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
 import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
@@ -129,6 +129,22 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         kbd: formatBinding(effectiveBinding("app.openDaily", overrides)),
         ico: "sun",
         run: () => void openDailyNote(),
+      },
+      {
+        id: "daily-prev",
+        group: "文档",
+        l1: "前一天日记",
+        l2: "相对当前日记（或今天）往前一天",
+        ico: "calendar",
+        run: () => void openDailyRelative(-1),
+      },
+      {
+        id: "daily-next",
+        group: "文档",
+        l1: "后一天日记",
+        l2: "相对当前日记（或今天）往后一天",
+        ico: "calendar",
+        run: () => void openDailyRelative(1),
       },
       {
         id: "open-folder",

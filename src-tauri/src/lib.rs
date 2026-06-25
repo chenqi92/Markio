@@ -2470,6 +2470,19 @@ async fn fs_index_tokens(
         .map_err(|e| e.to_string())?
 }
 
+/// 列出仓库 `.markio/templates/*.md` 下的自定义模板。
+#[tauri::command]
+async fn fs_list_user_templates(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<fs_ops::UserTemplate>, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let ws = ws.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || Ok(fs_ops::list_user_templates(&ws)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn fs_vault_index_load(
     state: tauri::State<'_, AppState>,
@@ -2938,6 +2951,7 @@ pub fn run() {
             fs_backlinks,
             fs_mentions,
             fs_link_mention,
+            fs_list_user_templates,
             fs_index_tokens,
             fs_vault_index_load,
             fs_vault_index_build,

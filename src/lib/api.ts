@@ -185,6 +185,14 @@ export interface RagHit {
   charEnd: number;
 }
 
+export interface UserTemplate {
+  id: string;
+  title: string;
+  icon: string;
+  name: string;
+  body: string;
+}
+
 export interface GitFileStatus {
   path: string;
   kind: string;
@@ -542,6 +550,9 @@ export const api = {
   /** 把 file 第 line 行第一个裸出现的 needle 包成 [[needle]]；返回是否改写了。 */
   linkMention: (workspace: string, file: string, line: number, needle: string) =>
     invoke<boolean>("fs_link_mention", { workspace, file, line, needle }),
+  /** 列出仓库 .markio/templates/*.md 下的自定义模板。 */
+  listUserTemplates: (workspace: string) =>
+    invoke<UserTemplate[]>("fs_list_user_templates", { workspace }),
   indexTokens: (workspace: string) =>
     invoke<{ tags: string[]; mentions: string[]; files: string[] }>(
       "fs_index_tokens",

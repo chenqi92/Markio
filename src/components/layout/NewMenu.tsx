@@ -1,13 +1,33 @@
-import type { RefObject } from "react";
-import { Icon } from "../ui/Icon";
+import { useEffect, useState, type RefObject } from "react";
+import { Icon, type IconName } from "../ui/Icon";
 import { ToolbarMenuPortal } from "./ToolbarMenuPortal";
 import { useWorkspace } from "@/stores/workspace";
 import { useTabs } from "@/stores/tabs";
 import { useUI } from "@/stores/ui";
 import { useDialog } from "@/stores/dialog";
-import { api, parseError, pickDirectory, pickFile } from "@/lib/api";
+import { api, parseError, pickDirectory, pickFile, type UserTemplate } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
 import { NOTE_TEMPLATES, type NoteTemplate } from "@/lib/note-templates";
+
+/** 把 {{date}} / {{time}} 占位符替换掉（{{title}} 留到创建时按文件名替换）。 */
+function fillDateTime(s: string, now: Date): string {
+  const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return s.replace(/\{\{date\}\}/g, ymd).replace(/\{\{time\}\}/g, hm);
+}
+
+/** 把后端的 UserTemplate 转成统一的 NoteTemplate（与内置模板同构）。 */
+function toNoteTemplate(ut: UserTemplate): NoteTemplate {
+  return {
+    id: `user:${ut.id}`,
+    icon: (ut.icon || "file") as IconName,
+    title: ut.title,
+    sub: "自定义模板",
+    defaultName: (now) =>
+      fillDateTime(ut.name, now).replace(/\{\{title\}\}/g, "").trim() || ut.title,
+    build: (now) => fillDateTime(ut.body, now),
+  };
+}
 
 export function NewMenu({
   anchorRef,
@@ -20,6 +40,26 @@ export function NewMenu({
   const setToast = useUI((s) => s.setToast);
   const promptDialog = useDialog((s) => s.prompt);
   const confirmDialog = useDialog((s) => s.confirm);
+  const [userTemplates, setUserTemplates] = useState<NoteTemplate[]>([]);
+
+  useEffect(() => {
+    if (!ws) {
+      setUserTemplates([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .listUserTemplates(ws.path)
+      .then((uts) => {
+        if (!cancelled) setUserTemplates(uts.map(toNoteTemplate));
+      })
+      .catch(() => {
+        if (!cancelled) setUserTemplates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ws]);
 
   const toast = (stage: "done" | "error", message: string, ttl = 2000) => {
     setToast({ stage, message }, ttl);
@@ -59,7 +99,9 @@ export function NewMenu({
 
     const fname = userName.endsWith(".md") ? userName : `${userName}.md`;
     const path = `${ws.path}/${fname}`;
-    const content = t.build(now);
+    // {{title}} 用最终文件名（去扩展名）替换；内置模板不含该占位符，无副作用。
+    const titleStem = fname.replace(/\.md$/i, "");
+    const content = t.build(now).replace(/\{\{title\}\}/g, titleStem);
     try {
       await api.createNew(path, content);
       await useWorkspace.getState().refreshTree(ws.id);
@@ -143,7 +185,7 @@ export function NewMenu({
     >
       <div className="new-menu-h">从模板新建</div>
       <div className="new-menu-grid">
-        {NOTE_TEMPLATES.map((t) => (
+        {[...NOTE_TEMPLATES, ...userTemplates].map((t) => (
           <button
             type="button"
             key={t.id}

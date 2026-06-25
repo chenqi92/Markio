@@ -28,7 +28,7 @@
 | 本地知识库 RAG | 🟡 可用但需加固 | sqlite-vec + FTS5 + 引用图谱 + RRF 已可用；重建取消已接入，暂停、失败恢复和重试还需补 |
 | 文件监听 / 增量索引 | 🟡 可用但需加固 | watcher 已有；需要更细事件类型、错误恢复和外部批量变更后的重建策略 |
 | Git 同步 | 🟡 可用但需加固 | git init/clone/status/fetch/commit/pull/push 等命令已接；自动同步已拆为 preflight/snapshot/fetch/pull/push，冲突恢复和回滚仍需加固 |
-| WebDAV / S3 / Dropbox / Google Drive | 🧪 实验 / 工具 | 有连接、列表、上传、下载、删除等基础能力；不是统一双向同步引擎 |
+| WebDAV / S3 / Dropbox / Google Drive | 🟡 可用但需加固 | 已是统一双向同步引擎（三方 diff + manifest 基线 + 重试 + 自动调度）；剩 newest 跨钟冲突、长同步 TOCTOU、tombstone 落盘待补 |
 | iCloud | 🧪 实验 / 工具 | 主要依赖系统文件夹同步；应用内未掌握云端冲突、同步进度和错误 |
 | 导入 Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 可用但需加固 | 已有导入命令；格式转换、资源路径、进度报告和丢失项报告需要产品化 |
 | Roam / Logseq 导入 | 🟡 可用但需加固 | Roam 仅支持 Markdown ZIP，Logseq 复制 pages / journals / assets；JSON / org 转换和完整报告还需补 |
@@ -48,7 +48,7 @@
    - 落地标准：Tauri command、显式权限、配置持久化、错误可见。
 
 2. **半闭环同步能力**
-   - 现状：Git 有命令和自动同步雏形；云盘服务是工具集，不是同步系统。
+   - 现状：Git 有命令和自动同步；云盘已有统一 sync engine（三方 diff + 冲突策略 + 重试 + 自动调度），剩 newest 跨钟冲突、长同步 TOCTOU、tombstone 落盘待补。
    - 落地标准：统一 sync engine、双向 diff、删除语义、冲突策略、重试、审计日志。
 
 3. **后台错误静默降级**

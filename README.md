@@ -64,9 +64,16 @@
 | | 混合检索：向量 + FTS5 关键词 + 引用图谱 → RRF 融合 | ✅ |
 | | 保存笔记后自动增量更新；删除 / 移入回收站自动清理 | 🟡 |
 | **同步 / 云存储** | Git init / clone / status / fetch / commit / pull / push | 🟡 |
-| | WebDAV / S3 / Dropbox / Google Drive 连接、列表、上传、删除 | 🧪 |
+| | WebDAV / S3 / Dropbox / Google Drive 双向同步（三方 diff + manifest 基线 + 自动调度） | 🟡 |
+| | P2P 局域网 / 移动端配对同步（mDNS 发现 + WebSocket /sync） | 🟡 |
 | **导入** | Notion / Obsidian / Bear / Evernote / Apple Notes | 🟡 |
 | | Roam Markdown ZIP / Logseq graph 目录 | 🟡 |
+| **扩展 / 集成** | RSS 订阅阅读器 | 🟡 |
+| | 网页剪藏（Web Clipper） | 🟡 |
+| | PicGo 图床上传 | 🟡 |
+| | MCP server（把仓库检索暴露给外部 AI 客户端） | 🟡 |
+| | 自定义 CSS 主题导入 | 🟡 |
+| | 微信公众号助手 / 智能通道 | 🟡 |
 | **平台** | macOS（已上架 Mac App Store，另有直发 dmg） | ✅ |
 | | Windows MSI / NSIS | ✅（GitHub Actions 自动出包） |
 | | Linux AppImage / deb | ✅（GitHub Actions 自动出包） |
@@ -82,6 +89,7 @@
 | ⌘F | 当前文档查找 + 高亮（支持大小写 / 整词 / 正则） |
 | ⌘S | 保存（带外部修改检测） |
 | ⌘N | 新建笔记（不覆盖已有） |
+| ⌘⇧D | 打开今日日记（无则按模板新建） |
 | ⌘O | 打开单个 .md |
 | ⌘⇧O | 打开文件夹（注册为新仓库） |
 | ⌘W | 关闭标签（脏 tab 会确认） |
@@ -150,7 +158,7 @@ md-view/
 │   │   ├── editor/       # SourceEditor (CM6) + WYSIWYG decoration + EditorArea
 │   │   ├── preview/      # Preview (Rust 渲染结果挂载 + Find 高亮 + Mermaid)
 │   │   ├── popovers/     # CommandPalette / FindBar / GlobalSearch / BubbleMenu / SlashMenu / Autocomplete / IconPicker / HistorySheet / AIPanel / WeChatSheet / Toast / ContextMenu
-│   │   ├── settings/     # 11 个设置区
+│   │   ├── settings/     # 16 个设置区（外观 / 通用 / 编辑 / 快捷键 / AI / 导出 / 同步 / PicGo / 剪藏 / RSS / 移动端 / 微信 / 公众号助手 / 智能通道 / MCP / 关于）
 │   │   └── ui/           # Icon / Toggle / Slider / SelectBtn
 │   ├── stores/           # zustand
 │   │   ├── workspace.ts  # 多仓库 + 树缓存 + Rust 注册
@@ -163,7 +171,7 @@ md-view/
 │   ├── lib/
 │   │   ├── api.ts        # Rust 命令 typed wrapper
 │   │   ├── editor-bridge.ts  # 跨组件操作 CodeMirror
-│   │   ├── markdown.ts   # 暂未使用（保留为日后纯前端渲染开关）
+│   │   ├── wikilinks.ts  # [[link]] / ![[embed]] 预览增强
 │   │   ├── mermaid.ts    # 懒加载 mermaid + 主题切换重绘
 │   │   ├── export.ts     # PDF / HTML / 剪贴板导出
 │   │   └── utils.ts      # debounce / classNames / formatBytes / ...
@@ -242,7 +250,7 @@ OS Keychain（com.welape.mdview）  # 真正的密钥
 - **小仓库的文件名搜索**仍在前端走（命令面板内嵌缓存树）。> 1 万节点的仓库建议改 Rust grep
 - **WYSIWYG 边界情况**：嵌套列表、表格内的行内标记现在不会精细装饰，光标在该行时全部显形
 - **iOS / Android** 还没接 Tauri 2 mobile entry point；桌面优先
-- **同步能力分层**：Git 命令和自动同步雏形已接入，但冲突状态机还需加固；WebDAV / S3 / Dropbox / Google Drive 目前是云存储工具集，不是完整双向同步引擎
+- **同步能力分层**：WebDAV / S3 / Dropbox / Google Drive 已是双向同步引擎（三方 diff + manifest 基线 + 重试 + 自动调度），但仍有已知缺口——跨机器时钟下的 `newest` 冲突判定、长同步期间的 TOCTOU、tombstone 落盘尚未补齐，建议重要数据另留 Git 备份
 
 ## License
 

@@ -187,7 +187,7 @@ async function runCloudSyncTarget(
     {
       adapter: target.adapter,
       manifestIo: createManifestIO(target.manifestId),
-      localFs: createLocalFs(),
+      localFs: createLocalFs(target.localSubpath),
       onStage: callbacks.onStage,
       onProgress: callbacks.onProgress,
     },

@@ -135,6 +135,8 @@ export interface DriveConfig {
   folder: string;
   /** 是否启用 */
   enabled: boolean;
+  /** 只同步仓库内这个子目录（不相交挂载）；空 = 整个仓库 */
+  localSubpath?: string;
   /** ISO 时间戳，最近一次成功同步 */
   lastSyncAt?: string;
 }

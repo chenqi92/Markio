@@ -28,6 +28,8 @@ export interface CloudSyncTarget {
   label: string;
   remoteRoot: string;
   manifestId: string;
+  /** 只同步仓库内这个子目录（不相交挂载）；空 = 整个仓库 */
+  localSubpath?: string;
   adapter: DriveAdapter;
 }
 
@@ -144,18 +146,37 @@ function rootFromConfig(cfg: DriveConfig | undefined, fallback: string): string 
   return cfg?.folder?.trim() || fallback;
 }
 
+function localSubOf(cfg: DriveConfig | undefined): string {
+  return (cfg?.localSubpath ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").trim();
+}
+
+/**
+ * 把 localSubpath 折进 manifestId：换了子目录就用一份新 manifest（冷启动重新 diff），
+ * 否则旧基线里相对老子目录的路径会被当成「本地已删」从而误删远端。
+ */
+function manifestIdWithSub(base: string, sub: string): string {
+  if (!sub) return base;
+  let h = 0;
+  for (let i = 0; i < sub.length; i += 1) {
+    h = (h * 31 + sub.charCodeAt(i)) >>> 0;
+  }
+  return `${base}-${h.toString(16)}`;
+}
+
 export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTarget[] {
   const configs = settings.driveConfigs ?? {};
   const targets: CloudSyncTarget[] = [];
 
   if (isEnabled(configs.webdav) && settings.webdavBaseUrl?.trim()) {
     const remoteRoot = trimSlashes(rootFromConfig(configs.webdav, settings.webdavRemoteDir || "markio"));
+    const sub = localSubOf(configs.webdav);
     targets.push({
       id: "webdav",
       settingsId: "webdav",
       label: "WebDAV",
       remoteRoot,
-      manifestId: "cloud-webdav",
+      manifestId: manifestIdWithSub("cloud-webdav", sub),
+      localSubpath: sub,
       adapter: createWebDavAdapter({
         baseUrl: settings.webdavBaseUrl.trim(),
         username: settings.webdavUsername ?? "",
@@ -170,12 +191,14 @@ export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTa
     settings.s3AccessKeyId?.trim()
   ) {
     const remoteRoot = trimSlashes(rootFromConfig(configs.s3, "markio"));
+    const sub = localSubOf(configs.s3);
     targets.push({
       id: "s3",
       settingsId: "s3",
       label: "S3",
       remoteRoot,
-      manifestId: "cloud-s3",
+      manifestId: manifestIdWithSub("cloud-s3", sub),
+      localSubpath: sub,
       adapter: createS3Adapter({
         endpoint: settings.s3Endpoint.trim(),
         region: settings.s3Region || "us-east-1",
@@ -190,48 +213,56 @@ export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTa
 
   if (isEnabled(configs.drop)) {
     const remoteRoot = joinDropbox(rootFromConfig(configs.drop, "/markio"));
+    const sub = localSubOf(configs.drop);
     targets.push({
       id: "dropbox",
       settingsId: "drop",
       label: "Dropbox",
       remoteRoot,
-      manifestId: "cloud-dropbox",
+      manifestId: manifestIdWithSub("cloud-dropbox", sub),
+      localSubpath: sub,
       adapter: createDropboxAdapter(),
     });
   }
 
   if (isEnabled(configs.drive)) {
     const remoteRoot = rootFromConfig(configs.drive, "root").trim() || "root";
+    const sub = localSubOf(configs.drive);
     targets.push({
       id: "gdrive",
       settingsId: "drive",
       label: "Google Drive",
       remoteRoot,
-      manifestId: "cloud-gdrive",
+      manifestId: manifestIdWithSub("cloud-gdrive", sub),
+      localSubpath: sub,
       adapter: createGDriveAdapter(),
     });
   }
 
   if (isEnabled(configs.onedrive)) {
     const remoteRoot = trimSlashes(rootFromConfig(configs.onedrive, "markio"));
+    const sub = localSubOf(configs.onedrive);
     targets.push({
       id: "onedrive",
       settingsId: "onedrive",
       label: "OneDrive",
       remoteRoot,
-      manifestId: "cloud-onedrive",
+      manifestId: manifestIdWithSub("cloud-onedrive", sub),
+      localSubpath: sub,
       adapter: createOneDriveAdapter(),
     });
   }
 
   if (isEnabled(configs.synology) && settings.synologyBaseUrl?.trim() && settings.synologyUsername?.trim()) {
     const remoteRoot = trimRightSlashes(rootFromConfig(configs.synology, "/markio")) || "/markio";
+    const sub = localSubOf(configs.synology);
     targets.push({
       id: "synology",
       settingsId: "synology",
       label: "Synology",
       remoteRoot: remoteRoot.startsWith("/") ? remoteRoot : `/${remoteRoot}`,
-      manifestId: "cloud-synology",
+      manifestId: manifestIdWithSub("cloud-synology", sub),
+      localSubpath: sub,
       adapter: createSynologyAdapter({
         baseUrl: settings.synologyBaseUrl.trim(),
         insecureTls: !!settings.synologyInsecureTls,

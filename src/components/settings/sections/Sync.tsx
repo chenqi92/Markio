@@ -51,6 +51,35 @@ function useBuiltinOauth(): Set<string> {
   return set;
 }
 
+/** 每个网盘可指定只同步仓库内某个子目录（不相交挂载）；留空=整个仓库 */
+function LocalSubpathRow({ driveId }: { driveId: DriveId }) {
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const cfg: DriveConfig = driveConfigs[driveId] ?? { folder: "", enabled: false };
+  return (
+    <div className="settings-row">
+      <div className="settings-row-l">
+        <div className="settings-label">本地子目录</div>
+        <div className="settings-help">
+          留空 = 同步整个仓库；填子目录（如 work）则只同步该目录，可让不同网盘各管一个目录、互不相交
+        </div>
+      </div>
+      <input
+        type="text"
+        value={cfg.localSubpath ?? ""}
+        onChange={(e) =>
+          setPreference("driveConfigs", {
+            ...driveConfigs,
+            [driveId]: { ...cfg, localSubpath: e.target.value },
+          })
+        }
+        placeholder="留空 = 整个仓库"
+        style={{ flex: 1, minWidth: 280 }}
+      />
+    </div>
+  );
+}
+
 const DRIVES = [
   { id: "icloud", name: "iCloud Drive", logo: "/brand/sync/icloud.svg", color: "#0a84ff", status: "未连接" },
   { id: "s3", name: "AWS S3 / 兼容", icon: "database" as IconName, color: "#ff9900", status: "未连接" },
@@ -749,6 +778,7 @@ function S3DriveDrawer() {
           style={{ flex: 1, minWidth: 280 }}
         />
       </div>
+      <LocalSubpathRow driveId="s3" />
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">启用 S3 同步</div>
@@ -1089,6 +1119,7 @@ function DropboxDriveDrawer() {
               style={{ flex: 1, minWidth: 280 }}
             />
           </div>
+          <LocalSubpathRow driveId="drop" />
           <div className="settings-row">
             <div className="settings-row-l">
               <div className="settings-label">启用 Dropbox 同步</div>
@@ -1445,6 +1476,7 @@ function GDriveDriveDrawer() {
               style={{ flex: 1, minWidth: 280 }}
             />
           </div>
+          <LocalSubpathRow driveId="drive" />
           <div className="settings-row">
             <div className="settings-row-l">
               <div className="settings-label">启用 Google Drive 同步</div>
@@ -1750,6 +1782,7 @@ function OneDriveDriveDrawer() {
               style={{ flex: 1, minWidth: 280 }}
             />
           </div>
+          <LocalSubpathRow driveId="onedrive" />
           <div className="settings-row">
             <div className="settings-row-l">
               <div className="settings-label">启用 OneDrive 同步</div>
@@ -2037,6 +2070,7 @@ function SynologyDriveDrawer() {
           style={{ flex: 1, minWidth: 280 }}
         />
       </div>
+      <LocalSubpathRow driveId="synology" />
       <div className="settings-row">
         <div className="settings-row-l">
           <div className="settings-label">启用 Synology 同步</div>

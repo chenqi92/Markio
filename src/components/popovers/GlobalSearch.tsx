@@ -257,6 +257,8 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const openFind = useUI((s) => s.openFind);
   const jumpToLine = useUI((s) => s.jumpToLine);
   const promptDialog = useDialog((s) => s.prompt);
+  const confirmDialog = useDialog((s) => s.confirm);
+  const setToast = useUI((s) => s.setToast);
 
   // 从查找栏「整个仓库」切换过来时带着当前关键词；否则空。
   const [q, setQ] = useState(() => useUI.getState().findQuery || "");
@@ -277,6 +279,11 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState(0);
   const [saved, setSaved] = useState<SavedSearch[]>(() => loadSaved());
+  // 跨文件替换
+  const [showReplace, setShowReplace] = useState(false);
+  const [replaceText, setReplaceText] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const seqRef = useRef(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -361,7 +368,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }, 220);
     return () => clearTimeout(t);
-  }, [q, ws, scope, workspaces, regex, semantic]);
+  }, [q, ws, scope, workspaces, regex, semantic, reloadNonce]);
 
   // 三个 toggle 共同决定的客户端筛选正则
   const filterRegex = useMemo<RegExp | null>(() => {
@@ -509,6 +516,57 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
     return map;
   }, [filtered]);
 
+  /** 跨文件全部替换：对命中文件逐个 open → 全局正则替换 → 保存（先存历史快照）。
+   *  字面模式下替换串里的 `$` 转义为字面；正则模式保留 $1 等回引用。 */
+  const replaceAll = async () => {
+    if (semantic || !filterRegex) return;
+    const files = Array.from(grouped.keys());
+    if (files.length === 0) return;
+    const ok = await confirmDialog({
+      title: "全部替换？",
+      message: `将在 ${files.length} 个文件中把匹配项替换为「${replaceText}」。每个文件会先存历史快照，可在历史面板撤销。`,
+      confirmLabel: "替换",
+      danger: true,
+    });
+    if (!ok) return;
+    setReplacing(true);
+    // 字面模式：$ → $$（避免被当成 $&/$1 等替换占位符）
+    const repl = regex ? replaceText : replaceText.replace(/\$/g, "$$$$");
+    const flags = filterRegex.flags.includes("g")
+      ? filterRegex.flags
+      : filterRegex.flags + "g";
+    let changedFiles = 0;
+    let totalHits = 0;
+    let failed = 0;
+    try {
+      for (const path of files) {
+        try {
+          const opened = await api.open(path);
+          const re = new RegExp(filterRegex.source, flags);
+          const matches = opened.content.match(re);
+          if (!matches || matches.length === 0) continue;
+          const next = opened.content.replace(re, repl);
+          if (next === opened.content) continue;
+          await api.save(path, next, opened.sig.mtime, opened.sig.hash);
+          changedFiles++;
+          totalHits += matches.length;
+        } catch {
+          failed++;
+        }
+      }
+      setToast({
+        stage: failed > 0 ? "error" : "done",
+        message:
+          `已替换 ${totalHits} 处 · ${changedFiles} 个文件` +
+          (failed > 0 ? `，${failed} 个失败` : ""),
+      });
+      // 重新检索，让已替换的命中从列表里消失
+      setReloadNonce((n) => n + 1);
+    } finally {
+      setReplacing(false);
+    }
+  };
+
   const saveCurrent = async () => {
     const trimmed = q.trim();
     if (!trimmed) return;
@@ -607,9 +665,42 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
                 语义
               </button>
             )}
+            {!semantic && (
+              <button
+                type="button"
+                className={"gs-tog-btn" + (showReplace ? " on" : "")}
+                onClick={() => setShowReplace((v) => !v)}
+                title="跨文件替换"
+              >
+                替换
+              </button>
+            )}
           </div>
           <span className="esc">{shortcutText("⌘⇧F")}</span>
         </div>
+
+        {showReplace && !semantic && (
+          <div
+            className="cmdk-search"
+            style={{ borderTop: "0.5px solid var(--border)" }}
+          >
+            <Icon name="edit" size={16} />
+            <input
+              placeholder={regex ? "替换为…（支持 $1 回引用）" : "替换为…"}
+              value={replaceText}
+              onChange={(e) => setReplaceText(e.target.value)}
+            />
+            <button
+              type="button"
+              className="gs-save"
+              onClick={() => void replaceAll()}
+              disabled={replacing || filtered.length === 0 || !filterRegex}
+              title="把命中文件里的所有匹配替换掉（每个文件先存历史快照，可在历史面板撤销）"
+            >
+              {replacing ? "替换中…" : `全部替换 (${grouped.size})`}
+            </button>
+          </div>
+        )}
 
         <div className="gs-body">
           {/* 左侧 facets */}

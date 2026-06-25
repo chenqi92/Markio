@@ -97,7 +97,17 @@ function OutlineInner({
   const [links, setLinks] = useState<Backlink[]>([]);
   const [mentions, setMentions] = useState<Backlink[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
+  const [linkRefresh, setLinkRefresh] = useState(0);
+  const [linkingAll, setLinkingAll] = useState(false);
+  const setToast = useUI((s) => s.setToast);
   const linksSeqRef = useRef(0);
+
+  // 当前笔记的标题 stem，"未链接提及 → [[标题]]" 时包成它
+  const noteStem = useMemo(() => {
+    if (!filePath) return "";
+    const base = filePath.split(/[\\/]/).pop() ?? "";
+    return base.replace(/\.(md|markdown|mdown|mkd|txt)$/i, "");
+  }, [filePath]);
 
   useEffect(() => {
     const seq = ++linksSeqRef.current;
@@ -122,9 +132,45 @@ function OutlineInner({
       .finally(() => {
         if (seq === linksSeqRef.current) setLoadingLinks(false);
       });
-  }, [tab, filePath, ws]);
+  }, [tab, filePath, ws, linkRefresh]);
 
   const openPath = useTabs((s) => s.openPath);
+
+  // 把单条未链接提及包成 [[当前笔记]]；成功后刷新链接/提及列表。
+  const convertMention = async (b: Backlink) => {
+    if (!ws || !noteStem) return;
+    try {
+      const changed = await api.linkMention(ws.path, b.path, b.line, noteStem);
+      if (changed) {
+        setToast({ stage: "done", message: "已链接" }, 1500);
+        setLinkRefresh((n) => n + 1);
+      } else {
+        setToast({ stage: "error", message: "未找到可链接的裸标题" }, 2000);
+      }
+    } catch (e) {
+      setToast({ stage: "error", message: `链接失败：${(e as Error).message}` }, 2500);
+    }
+  };
+
+  // 把当前列出的全部未链接提及逐个包成 [[当前笔记]]。
+  const convertAllMentions = async () => {
+    if (!ws || !noteStem || mentions.length === 0) return;
+    setLinkingAll(true);
+    let done = 0;
+    try {
+      for (const b of mentions) {
+        try {
+          if (await api.linkMention(ws.path, b.path, b.line, noteStem)) done++;
+        } catch {
+          /* 单条失败继续 */
+        }
+      }
+      setToast({ stage: "done", message: `已链接 ${done} 处` }, 2000);
+      setLinkRefresh((n) => n + 1);
+    } finally {
+      setLinkingAll(false);
+    }
+  };
 
   return (
     <>
@@ -230,26 +276,62 @@ function OutlineInner({
 
             {!loadingLinks && mentions.length > 0 && (
               <>
-                <div className="outline-h" style={{ marginTop: 8 }}>
-                  未链接的提及 · {mentions.length} 处
+                <div
+                  className="outline-h"
+                  style={{
+                    marginTop: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>未链接的提及 · {mentions.length} 处</span>
+                  {noteStem && (
+                    <button
+                      type="button"
+                      className="settings-btn"
+                      style={{ padding: "2px 8px", fontSize: 10 }}
+                      onClick={() => void convertAllMentions()}
+                      disabled={linkingAll}
+                      title="把下面每处裸标题都包成 [[当前笔记]]（各自先存历史快照）"
+                    >
+                      {linkingAll ? "链接中…" : "全部链接"}
+                    </button>
+                  )}
                 </div>
                 <div style={{ padding: "0 8px 14px" }}>
                   {mentions.map((b, i) => (
-                    <button
-                      type="button"
+                    <div
                       key={`m-${i}`}
-                      className="backlink"
-                      onClick={() => openPath(b.path)}
-                      title="点击打开 · 这些文件正文裸出现了当前笔记的标题"
+                      style={{ display: "flex", alignItems: "stretch", gap: 4 }}
                     >
-                      <span className="ico" style={{ opacity: 0.5 }}>
-                        <Icon name="note" size={13} />
-                      </span>
-                      <div className="body">
-                        <div className="ttl">{b.name}</div>
-                        <div className="snip">第 {b.line} 行 · {b.preview}</div>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        className="backlink"
+                        style={{ flex: 1, minWidth: 0 }}
+                        onClick={() => openPath(b.path)}
+                        title="点击打开 · 这些文件正文裸出现了当前笔记的标题"
+                      >
+                        <span className="ico" style={{ opacity: 0.5 }}>
+                          <Icon name="note" size={13} />
+                        </span>
+                        <div className="body">
+                          <div className="ttl">{b.name}</div>
+                          <div className="snip">第 {b.line} 行 · {b.preview}</div>
+                        </div>
+                      </button>
+                      {noteStem && (
+                        <button
+                          type="button"
+                          className="settings-btn"
+                          style={{ padding: "0 8px", fontSize: 10, flexShrink: 0 }}
+                          onClick={() => void convertMention(b)}
+                          title="把这处裸标题包成 [[当前笔记]]"
+                        >
+                          链接
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </>

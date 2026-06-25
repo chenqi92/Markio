@@ -539,6 +539,9 @@ export const api = {
     invoke<Backlink[]>("fs_backlinks", { workspace, file, max }),
   mentions: (workspace: string, file: string, max = 50) =>
     invoke<Backlink[]>("fs_mentions", { workspace, file, max }),
+  /** 把 file 第 line 行第一个裸出现的 needle 包成 [[needle]]；返回是否改写了。 */
+  linkMention: (workspace: string, file: string, line: number, needle: string) =>
+    invoke<boolean>("fs_link_mention", { workspace, file, line, needle }),
   indexTokens: (workspace: string) =>
     invoke<{ tags: string[]; mentions: string[]; files: string[] }>(
       "fs_index_tokens",

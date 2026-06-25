@@ -2436,6 +2436,28 @@ async fn fs_mentions(
     Ok(mentions)
 }
 
+/// 把 file 第 line 行第一个裸出现的 needle（被链接笔记的标题）包成 `[[needle]]`。
+/// 先存历史快照再原子写；返回是否真改写了。供"未链接提及 → 链接"按钮使用。
+#[tauri::command]
+async fn fs_link_mention(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+    file: String,
+    line: u32,
+    needle: String,
+) -> Result<bool, String> {
+    let ws = validate_path(&state, &workspace)?;
+    let f = validate_path(&state, &file)?;
+    ensure_user_file_path(&state, &f, "改写引用")?;
+    let ws = ws.to_string_lossy().to_string();
+    let f = f.to_string_lossy().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        fs_ops::link_mention_in_file(&ws, &f, line, &needle)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn fs_index_tokens(
     state: tauri::State<'_, AppState>,
@@ -2915,6 +2937,7 @@ pub fn run() {
             agent_cancel,
             fs_backlinks,
             fs_mentions,
+            fs_link_mention,
             fs_index_tokens,
             fs_vault_index_load,
             fs_vault_index_build,

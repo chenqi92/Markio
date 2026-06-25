@@ -6,7 +6,8 @@ use std::fs;
 use std::path::Path;
 
 use super::search::MAX_GREP_FILE_SIZE;
-use super::walker_io::{ignored_by_rules, is_hidden, is_markdown, MAX_DEPTH};
+use super::snapshots::save_snapshot;
+use super::walker_io::{atomic_write, ignored_by_rules, is_hidden, is_markdown, MAX_DEPTH};
 use crate::ignore::IgnoreRules;
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,10 +126,10 @@ pub(super) fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// 在 line 中找 needle 的"未链接"出现：
+/// 在 line 中找 needle 第一个"未链接"出现的起始字节偏移：
 /// 排除已经被 `[[...]]` 包围的位置。
 /// 对 ASCII needle 强制词边界；CJK needle 不强制（中文无分词空格）。
-pub(super) fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
+pub(super) fn first_unlinked_offset(line_lower: &str, needle: &str) -> Option<usize> {
     let ascii_needle = needle.is_ascii();
     let bytes = line_lower.as_bytes();
     let nlen = needle.len();
@@ -155,14 +156,81 @@ pub(super) fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
             false
         };
         if !inside_wiki && !blocked {
-            return true;
+            return Some(abs);
         }
         start = abs + nlen.max(1);
         if start >= line_lower.len() {
             break;
         }
     }
-    false
+    None
+}
+
+pub(super) fn line_has_unlinked(line_lower: &str, needle: &str) -> bool {
+    first_unlinked_offset(line_lower, needle).is_some()
+}
+
+/// 把 file 第 `line` 行（1-based）里第一个"未链接"的 needle 出现包成 `[[needle]]`。
+/// 先存历史快照再原子写；返回是否真的改写了（行号越界 / 无未链接出现 → false）。
+/// needle 是被链接到的笔记标题（按 stem 匹配，大小写不敏感）。
+pub fn link_mention_in_file(
+    workspace: &str,
+    file: &str,
+    line: u32,
+    needle: &str,
+) -> Result<bool, String> {
+    let needle_lower = needle.to_lowercase();
+    if needle_lower.is_empty() || line == 0 {
+        return Ok(false);
+    }
+    let content = fs::read_to_string(file).map_err(|e| e.to_string())?;
+    let bytes = content.as_bytes();
+
+    // 定位第 line 行起点
+    let mut idx = 0usize;
+    let mut ln = 1u32;
+    while idx < bytes.len() && ln < line {
+        if bytes[idx] == b'\n' {
+            ln += 1;
+        }
+        idx += 1;
+    }
+    if ln < line {
+        return Ok(false);
+    }
+    let line_start = idx;
+    let mut line_end = line_start;
+    while line_end < bytes.len() && bytes[line_end] != b'\n' {
+        line_end += 1;
+    }
+    let line_str = &content[line_start..line_end];
+
+    let line_lower = line_str.to_lowercase();
+    // 仅在 lowercasing 保持字节长度时映射偏移（ASCII / CJK 都满足）；否则放弃，避免错位
+    if line_lower.len() != line_str.len() {
+        return Ok(false);
+    }
+    let Some(rel_start) = first_unlinked_offset(&line_lower, &needle_lower) else {
+        return Ok(false);
+    };
+    let abs_start = line_start + rel_start;
+    let abs_end = abs_start + needle_lower.len();
+    if abs_end > content.len()
+        || !content.is_char_boundary(abs_start)
+        || !content.is_char_boundary(abs_end)
+    {
+        return Ok(false);
+    }
+    let new_content = format!(
+        "{}[[{}]]{}",
+        &content[..abs_start],
+        &content[abs_start..abs_end],
+        &content[abs_end..]
+    );
+
+    let _ = save_snapshot(workspace, file, &content);
+    atomic_write(Path::new(file), &new_content)?;
+    Ok(true)
 }
 
 /// 扫描整个 workspace 找正文中"裸出现笔记标题"的未链接提及。
@@ -263,4 +331,75 @@ pub fn find_mentions(workspace: &str, file: &str, max: usize) -> Vec<Backlink> {
     }
     .visit(root, 0, &mut out);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn temp_ws(name: &str) -> PathBuf {
+        let unique = format!(
+            "markio-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let ws = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&ws).unwrap();
+        ws
+    }
+
+    #[test]
+    fn first_unlinked_offset_basics() {
+        assert_eq!(first_unlinked_offset("see roadmap here", "roadmap"), Some(4));
+        // 词内不算（roadmaps 不是 roadmap 的边界出现）
+        assert_eq!(first_unlinked_offset("see roadmaps", "roadmap"), None);
+        // 已链接的不算
+        assert_eq!(first_unlinked_offset("link [[roadmap]]", "roadmap"), None);
+    }
+
+    #[test]
+    fn link_mention_wraps_first_occurrence() {
+        let ws = temp_ws("linkmention");
+        let file = ws.join("note.md");
+        fs::write(&file, "前言\n这里提到 Roadmap 很重要\n结尾\n").unwrap();
+        let changed = link_mention_in_file(
+            &ws.to_string_lossy(),
+            &file.to_string_lossy(),
+            2,
+            "roadmap",
+        )
+        .unwrap();
+        assert!(changed);
+        let out = fs::read_to_string(&file).unwrap();
+        assert_eq!(out, "前言\n这里提到 [[Roadmap]] 很重要\n结尾\n");
+        let _ = fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn link_mention_skips_already_linked() {
+        let ws = temp_ws("linkmention2");
+        let file = ws.join("n.md");
+        fs::write(&file, "已链接 [[Roadmap]] 在此\n").unwrap();
+        let changed =
+            link_mention_in_file(&ws.to_string_lossy(), &file.to_string_lossy(), 1, "roadmap")
+                .unwrap();
+        assert!(!changed);
+        let _ = fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn link_mention_out_of_range_line() {
+        let ws = temp_ws("linkmention3");
+        let file = ws.join("n.md");
+        fs::write(&file, "只有一行 Roadmap\n").unwrap();
+        let changed =
+            link_mention_in_file(&ws.to_string_lossy(), &file.to_string_lossy(), 9, "roadmap")
+                .unwrap();
+        assert!(!changed);
+        let _ = fs::remove_dir_all(&ws);
+    }
 }

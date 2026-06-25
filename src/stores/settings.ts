@@ -117,7 +117,7 @@ type PreferenceKey =
   | "mobileDeviceName"
   | "mobileDevices";
 
-export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive";
+export type DriveId = "icloud" | "github" | "webdav" | "s3" | "drop" | "drive" | "onedrive";
 
 export interface DriveConfig {
   /** 存储目标路径：iCloud 为本地目录；WebDAV/S3/Dropbox/GDrive 为远端根。空串表示未配置 */

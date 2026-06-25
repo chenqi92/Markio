@@ -209,6 +209,18 @@ export function createCloudSyncTargets(settings: CloudSyncSettings): CloudSyncTa
     });
   }
 
+  if (isEnabled(configs.onedrive)) {
+    const remoteRoot = trimSlashes(rootFromConfig(configs.onedrive, "markio"));
+    targets.push({
+      id: "onedrive",
+      settingsId: "onedrive",
+      label: "OneDrive",
+      remoteRoot,
+      manifestId: "cloud-onedrive",
+      adapter: createOneDriveAdapter(),
+    });
+  }
+
   return targets;
 }
 
@@ -439,6 +451,75 @@ export function createDropboxAdapter(): DriveAdapter {
         .filter(Boolean);
       for (const dir of dirs) {
         await api.dropboxCreateFolder(dir);
+      }
+    },
+  };
+}
+
+export function createOneDriveAdapter(): DriveAdapter {
+  const stat = async (remoteRoot: string, relPath: string): Promise<FileEntry> => {
+    const full = joinRel(remoteRoot, relPath);
+    const parent = full.split("/").slice(0, -1).join("/");
+    const { entries } = await api.onedriveList(parent);
+    const found = entries.find(
+      (e) => e.tag === "file" && trimSlashes(e.path) === trimSlashes(full),
+    );
+    if (!found) throw new Error(`OneDrive 未找到刚写入的文件：${relPath}`);
+    return {
+      relPath,
+      mtime: parseTime(found.lastModified),
+      hash: remoteHash("onedrive", found.etag, found.size, found.lastModified),
+      size: found.size,
+    };
+  };
+
+  return {
+    id: "onedrive",
+    async list(remoteRoot) {
+      const out: FileEntry[] = [];
+      const cleanRoot = trimSlashes(remoteRoot);
+      const walk = async (dir: string) => {
+        const { entries } = await api.onedriveList(dir);
+        for (const e of entries) {
+          if (e.tag === "folder") {
+            await walk(trimSlashes(e.path));
+            continue;
+          }
+          const rel = stripRoot(e.path, cleanRoot);
+          if (rel === null) continue;
+          out.push({
+            relPath: rel,
+            mtime: parseTime(e.lastModified),
+            hash: remoteHash("onedrive", e.etag, e.size, e.lastModified),
+            size: e.size,
+          });
+        }
+      };
+      await walk(cleanRoot);
+      out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+      return out;
+    },
+    async get(remoteRoot, relPath) {
+      const full = joinRel(remoteRoot, relPath);
+      const [content, meta] = await Promise.all([
+        api.onedriveDownload(full),
+        stat(remoteRoot, relPath),
+      ]);
+      return { content, etag: meta.hash, mtime: meta.mtime };
+    },
+    async put(remoteRoot, relPath, content) {
+      await api.onedriveUpload(joinRel(remoteRoot, relPath), content);
+      const meta = await statWithRetry(() => stat(remoteRoot, relPath));
+      return { etag: meta.hash, mtime: meta.mtime };
+    },
+    delete(remoteRoot, relPath) {
+      return api.onedriveDelete(joinRel(remoteRoot, relPath));
+    },
+    async ensureParentDir(remoteRoot, relPath) {
+      const dirs = [trimSlashes(remoteRoot), ...parentDirs(relPath).map((dir) => joinRel(remoteRoot, dir))]
+        .filter(Boolean);
+      for (const dir of dirs) {
+        await api.onedriveCreateFolder(dir);
       }
     },
   };

@@ -16,6 +16,7 @@ mod import;
 mod markdown;
 mod mcp;
 mod oauth;
+mod onedrive_ops;
 mod p2p;
 pub mod rag;
 mod rss;
@@ -49,6 +50,10 @@ use commands::{
     icloud::icloud_default_path,
     import::{import_apple_notes, import_list_legacy_dirs, import_run, import_trash_legacy_dir},
     mcp::{mcp_set_active_workspace, mcp_status},
+    onedrive::{
+        onedrive_authorize, onedrive_create_folder, onedrive_delete, onedrive_download,
+        onedrive_list, onedrive_signout, onedrive_status, onedrive_upload,
+    },
     p2p::{
         p2p_close_pairing, p2p_open_pairing, p2p_set_active_workspace, p2p_set_config, p2p_status,
         p2p_token_delete, p2p_token_get, p2p_token_set,
@@ -3073,6 +3078,14 @@ pub fn run() {
             gdrive_upload,
             gdrive_download,
             gdrive_delete,
+            onedrive_authorize,
+            onedrive_status,
+            onedrive_signout,
+            onedrive_list,
+            onedrive_upload,
+            onedrive_create_folder,
+            onedrive_download,
+            onedrive_delete,
             import_run,
             import_apple_notes,
             import_list_legacy_dirs,

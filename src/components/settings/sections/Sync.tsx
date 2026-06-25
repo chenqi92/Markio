@@ -56,6 +56,7 @@ const DRIVES = [
   { id: "s3", name: "AWS S3 / 兼容", icon: "database" as IconName, color: "#ff9900", status: "未连接" },
   { id: "drop", name: "Dropbox", logo: "/brand/sync/dropbox.svg", color: "#0061ff", status: "未连接" },
   { id: "drive", name: "Google Drive", logo: "/brand/sync/googledrive.svg", color: "#34c759", status: "未连接" },
+  { id: "onedrive", name: "OneDrive", icon: "cloud" as IconName, color: "#0364b8", status: "未连接" },
 ];
 
 export function Sync() {
@@ -99,7 +100,7 @@ export function Sync() {
   };
 
   const webdavSyncEnabled = !!(driveConfigs.webdav?.enabled && webdavBaseUrl);
-  const totalDriveCount = (["icloud", "s3", "drop", "drive"] as DriveId[]).filter((id) => {
+  const totalDriveCount = (["icloud", "s3", "drop", "drive", "onedrive"] as DriveId[]).filter((id) => {
     const cfg = driveConfigs[id];
     if (!cfg?.enabled) return false;
     if (id === "s3") return !!(s3Bucket && s3AccessKeyId);
@@ -139,8 +140,8 @@ export function Sync() {
       label: "网盘 / 对象存储",
       sub:
         totalDriveCount > 0
-          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive`
-          : "未启用 · iCloud / S3 / Dropbox / GDrive",
+          ? `${totalDriveCount} 个已配置 · iCloud / S3 / Dropbox / GDrive / OneDrive`
+          : "未启用 · iCloud / S3 / Dropbox / GDrive / OneDrive",
       dot: totalDriveCount > 0 ? "ok" : "off",
       anchor: "mk-sync-card-drives",
     },
@@ -333,6 +334,7 @@ function DrivesCard() {
             {isExpanded && id === "s3" && <S3DriveDrawer />}
             {isExpanded && id === "drop" && <DropboxDriveDrawer />}
             {isExpanded && id === "drive" && <GDriveDriveDrawer />}
+            {isExpanded && id === "onedrive" && <OneDriveDriveDrawer />}
             {isExpanded && id === "icloud" && (
               <FolderDriveDrawer driveId={id} />
             )}
@@ -1523,6 +1525,312 @@ function GDriveDriveDrawer() {
               <div className="settings-label">上传文本文件</div>
               <div className="settings-help">选一个本地文件，新建到 Drive 根目录</div>
             </div>
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={upload}
+            >
+              {busy === "upload" ? "…" : "选文件上传"}
+            </button>
+          </div>
+        </>
+      )}
+      {msg && (
+        <div
+          className="settings-message"
+          style={{ color: msg.kind === "err" ? "#dc2626" : "var(--accent)" }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OneDriveDriveDrawer() {
+  const driveConfigs = useSettings((s) => s.driveConfigs);
+  const setPreference = useSettings((s) => s.setPreference);
+  const hasBuiltin = useBuiltinOauth().has("onedrive");
+  const syncCfg: DriveConfig = driveConfigs.onedrive ?? { folder: "markio", enabled: false };
+  const [status, setStatus] = useState<{
+    connected: boolean;
+    display: string;
+    expiresInSecs: number;
+  } | null>(null);
+  const [busy, setBusy] = useState<
+    "auth" | "list" | "delete" | "upload" | "signout" | null
+  >(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [listPath, setListPath] = useState("");
+  const [entries, setEntries] = useState<
+    Array<{ tag: string; name: string; path: string; size: number; lastModified: string }>
+    | null
+  >(null);
+  const [uploadPath, setUploadPath] = useState("");
+  const confirmDialog = useDialog((s) => s.confirm);
+
+  const updateSyncCfg = (patch: Partial<DriveConfig>) => {
+    setPreference("driveConfigs", {
+      ...driveConfigs,
+      onedrive: { ...syncCfg, folder: syncCfg.folder || "markio", ...patch },
+    });
+  };
+
+  const setSyncEnabled = (enabled: boolean) => {
+    if (enabled && !status?.connected) {
+      setMsg({ kind: "err", text: "启用同步前请先完成 OneDrive 授权" });
+      return;
+    }
+    updateSyncCfg({ enabled });
+  };
+
+  useEffect(() => {
+    api.onedriveStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
+  const authorize = async () => {
+    if (!hasBuiltin) {
+      setMsg({ kind: "err", text: "本版本未内置 OneDrive client_id，请改用 WebDAV 或其它已配置网盘" });
+      return;
+    }
+    setBusy("auth");
+    setMsg(null);
+    try {
+      const s = await api.onedriveAuthorize("");
+      setStatus(s);
+      setMsg({ kind: "ok", text: `授权成功：${s.display}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const signout = async () => {
+    const ok = await confirmDialog({
+      title: "注销 OneDrive 授权？",
+      message: "token 将从系统钥匙串中清除。",
+      confirmLabel: "注销",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy("signout");
+    try {
+      await api.onedriveSignout();
+      setStatus({ connected: false, display: "", expiresInSecs: 0 });
+      setEntries(null);
+      setMsg({ kind: "ok", text: "已注销" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const list = async () => {
+    setBusy("list");
+    setMsg(null);
+    try {
+      const r = await api.onedriveList(listPath.trim());
+      setEntries(r.entries);
+      if (r.entries.length === 0) setMsg({ kind: "ok", text: "目录为空" });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+      setEntries(null);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const del = async (path: string) => {
+    const ok = await confirmDialog({
+      title: "从 OneDrive 删除？",
+      message: `${path} 将被删除，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy("delete");
+    try {
+      await api.onedriveDelete(path);
+      setEntries((cur) => cur?.filter((e) => e.path !== path) ?? null);
+      setMsg({ kind: "ok", text: `已删除 ${path}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const upload = async () => {
+    if (!uploadPath.trim()) {
+      setMsg({ kind: "err", text: "上传路径不能为空，例如 markio/test.md" });
+      return;
+    }
+    const picked = await api.pickFileBase64();
+    if (!picked) return;
+    setBusy("upload");
+    setMsg(null);
+    try {
+      await api.onedriveUpload(uploadPath.trim(), picked.bodyBase64);
+      setMsg({ kind: "ok", text: `已上传 ${picked.path} → ${uploadPath}` });
+    } catch (e) {
+      setMsg({ kind: "err", text: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connected = status?.connected;
+
+  return (
+    <div
+      className="settings-drawer"
+      style={{
+        margin: "8px 0 12px",
+        padding: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-2)",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div className="settings-help">
+        {hasBuiltin
+          ? "已内置官方 OneDrive client，直接点「授权」用你自己的微软账号登录即可（支持个人 / 工作学校账号，markio 仅申请 Files.ReadWrite）。"
+          : "本版本未内置 OneDrive client_id。OneDrive 需要在编译期注入官方 client_id 才能一键登录；当前请改用 WebDAV / S3 等已配置的网盘。"}
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-l">
+          <div className="settings-label">连接状态</div>
+          <div className="settings-help">
+            {connected
+              ? `已连接 · ${status?.display} · 还有 ${Math.max(0, status?.expiresInSecs ?? 0)} 秒过期`
+              : "未连接"}
+          </div>
+        </div>
+        {connected ? (
+          <button
+            className="settings-btn"
+            type="button"
+            disabled={busy !== null}
+            onClick={signout}
+          >
+            注销
+          </button>
+        ) : (
+          <button
+            className="settings-btn primary"
+            type="button"
+            disabled={busy !== null || !hasBuiltin}
+            onClick={authorize}
+          >
+            {busy === "auth" ? "授权中…浏览器已打开" : "授权"}
+          </button>
+        )}
+      </div>
+      {connected && (
+        <>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">同步根目录</div>
+              <div className="settings-help">drive 根下的相对路径，自动同步会读写这个目录</div>
+            </div>
+            <input
+              type="text"
+              value={syncCfg.folder || "markio"}
+              onChange={(e) => updateSyncCfg({ folder: e.target.value })}
+              placeholder="markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">启用 OneDrive 同步</div>
+              <div className="settings-help">状态栏“立刻同步”和自动同步会使用此目标</div>
+            </div>
+            <Toggle on={syncCfg.enabled && !!connected} onChange={setSyncEnabled} />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">浏览路径</div>
+              <div className="settings-help">空=drive 根目录</div>
+            </div>
+            <input
+              type="text"
+              value={listPath}
+              onChange={(e) => setListPath(e.target.value)}
+              placeholder="markio"
+              style={{ flex: 1, minWidth: 280 }}
+            />
+            <button
+              className="settings-btn"
+              type="button"
+              disabled={busy !== null}
+              onClick={list}
+            >
+              {busy === "list" ? "…" : "列目录"}
+            </button>
+          </div>
+          {entries && entries.length > 0 && (
+            <div
+              className="settings-help"
+              style={{
+                padding: 8,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "var(--bg-pane)",
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+                {entries.map((e) => (
+                  <li
+                    key={e.path || e.name}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      padding: "2px 0",
+                      borderBottom: "1px dashed var(--border)",
+                    }}
+                  >
+                    <span style={{ color: "var(--text-3)", fontSize: 11 }}>[{e.tag}]</span>
+                    <span style={{ flex: 1, wordBreak: "break-all" }}>{e.path || e.name}</span>
+                    {e.tag === "file" && (
+                      <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+                        {formatBytes(e.size)}
+                      </span>
+                    )}
+                    <button
+                      className="settings-btn"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => del(e.path)}
+                      style={{ padding: "2px 8px" }}
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="settings-row">
+            <div className="settings-row-l">
+              <div className="settings-label">上传文本文件</div>
+              <div className="settings-help">选一个本地文件，按下方路径上传到 OneDrive</div>
+            </div>
+            <input
+              type="text"
+              value={uploadPath}
+              onChange={(e) => setUploadPath(e.target.value)}
+              placeholder="markio/test.md"
+              style={{ flex: 1, minWidth: 240 }}
+            />
             <button
               className="settings-btn"
               type="button"

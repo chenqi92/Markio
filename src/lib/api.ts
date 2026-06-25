@@ -1036,6 +1036,36 @@ export const api = {
     invoke<string>("gdrive_download", { fileId }),
   gdriveDelete: (fileId: string) => invoke<void>("gdrive_delete", { fileId }),
 
+  // OneDrive OAuth + Microsoft Graph drive API
+  onedriveAuthorize: (clientId: string) =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>(
+      "onedrive_authorize",
+      { clientId },
+    ),
+  onedriveStatus: () =>
+    invoke<{ connected: boolean; display: string; expiresInSecs: number }>(
+      "onedrive_status",
+    ),
+  onedriveSignout: () => invoke<void>("onedrive_signout"),
+  onedriveList: (path: string) =>
+    invoke<{
+      entries: Array<{
+        tag: string;
+        name: string;
+        path: string;
+        size: number;
+        lastModified: string;
+        etag: string;
+      }>;
+    }>("onedrive_list", { path }),
+  onedriveUpload: (path: string, bodyBase64: string) =>
+    invoke<void>("onedrive_upload", { path, bodyBase64 }),
+  onedriveCreateFolder: (path: string) =>
+    invoke<void>("onedrive_create_folder", { path }),
+  onedriveDownload: (path: string) =>
+    invoke<string>("onedrive_download", { path }),
+  onedriveDelete: (path: string) => invoke<void>("onedrive_delete", { path }),
+
   /** 哪些网盘内置了官方 client_id（用户可一键登录，无需自填 key） */
   builtinOauthProviders: () => invoke<string[]>("builtin_oauth_providers"),
 

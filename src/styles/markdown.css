@@ -148,6 +148,52 @@
 .preview .wiki-embed-body > :last-child {
   margin-bottom: 0;
 }
+
+/* wikilink 悬浮预览卡片（挂在 body 上，position: fixed） */
+.wiki-hover-card {
+  position: fixed;
+  z-index: 9999;
+  display: none;
+  max-width: min(420px, 90vw);
+  max-height: 50vh;
+  overflow: hidden auto;
+  background: var(--bg-elev, var(--bg-pane, #fff));
+  border: 0.5px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text, #1d1d1f);
+}
+.wiki-hover-head {
+  padding: 6px 12px;
+  border-bottom: 0.5px solid var(--border, rgba(0, 0, 0, 0.1));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2, #444);
+}
+.wiki-hover-body {
+  padding: 8px 12px 10px;
+}
+.wiki-hover-body > :first-child {
+  margin-top: 0;
+}
+.wiki-hover-body h1 {
+  font-size: 16px;
+}
+.wiki-hover-body h2 {
+  font-size: 14px;
+}
+.wiki-hover-body h3,
+.wiki-hover-body h4 {
+  font-size: 13px;
+}
+.wiki-hover-loading {
+  color: var(--text-3, #888);
+  font-size: 12px;
+}
 .preview strong { font-weight: 700; }
 .preview em { font-style: italic; }
 .preview mark { background: var(--hl-mark); color: var(--text); padding: 0 3px; border-radius: 2px; }

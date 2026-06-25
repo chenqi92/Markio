@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn import_roam_copies_markdown_zip_and_warns_for_json() {
+    fn import_roam_copies_markdown_and_converts_json() {
         let root = temp_root("roam");
         let archive_path = root.join("roam.zip");
         let workspace = root.join("workspace");
@@ -217,25 +217,25 @@ mod tests {
         zip.start_file("nested/Page.md", options).unwrap();
         zip.write_all(b"# Duplicate").unwrap();
         zip.start_file("roam.json", options).unwrap();
-        zip.write_all(br#"[]"#).unwrap();
+        zip.write_all(br#"[{"title":"FromJson","children":[{"string":"hi"}]}]"#)
+            .unwrap();
         zip.finish().unwrap();
 
         let report = import_roam(&archive_path, &workspace).unwrap();
         let dest = PathBuf::from(&report.dest);
 
         assert_eq!(report.provider, "roam");
-        assert_eq!(report.files, 2);
+        // 2 个 markdown + 1 个由 JSON 转换
+        assert_eq!(report.files, 3);
         assert!(dest.join("Page.md").exists());
         assert!(dest.join("Page-2.md").exists());
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("JSON")));
+        let from_json = dest.join("FromJson.md");
+        assert!(from_json.exists());
+        let body = std::fs::read_to_string(&from_json).unwrap();
+        assert!(body.contains("# FromJson"));
+        assert!(body.contains("- hi"));
         let report_path = report.report_path.as_ref().expect("report path");
         assert!(Path::new(report_path).exists());
-        assert!(std::fs::read_to_string(report_path)
-            .unwrap()
-            .contains("JSON"));
 
         let _ = std::fs::remove_dir_all(root);
     }

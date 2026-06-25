@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { useUI } from "@/stores/ui";
 import { useTabs } from "@/stores/tabs";
@@ -6,6 +6,7 @@ import { useWorkspace } from "@/stores/workspace";
 import { useDialog } from "@/stores/dialog";
 import { api } from "@/lib/api";
 import { shortcutText } from "@/lib/shortcuts";
+import { diffLines, diffStat } from "@/lib/lineDiff";
 import type { Snapshot } from "@/types";
 
 function formatTs(ts: number) {
@@ -46,10 +47,21 @@ export function HistorySheet() {
   const setToast = useUI((s) => s.setToast);
   const confirmDialog = useDialog((s) => s.confirm);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [preview, setPreview] = useState<{ ts: number; content: string } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    ts: number;
+    content: string;
+    current: string;
+  } | null>(null);
+  // "diff" = 与当前文档对比；"raw" = 看快照原文。
+  const [viewMode, setViewMode] = useState<"diff" | "raw">("diff");
   const [loading, setLoading] = useState(false);
+
+  // 对比行（old = 快照内容，new = 预览时捕获的当前文档内容）。
+  const diffRows = useMemo(
+    () => (preview ? diffLines(preview.content, preview.current) : []),
+    [preview],
+  );
+  const stat = useMemo(() => diffStat(diffRows), [diffRows]);
 
   useEffect(() => {
     if (!open || !tabPath || !ws) {
@@ -70,7 +82,11 @@ export function HistorySheet() {
   const onPreview = async (s: Snapshot) => {
     try {
       const c = await api.historyRead(s.path);
-      setPreview({ ts: s.timestamp, content: c });
+      // 捕获预览时刻的当前文档内容，diff 不订阅 content（避免逐键重渲染）。
+      const current = tabId
+        ? (useTabs.getState().tabs.find((t) => t.id === tabId)?.content ?? "")
+        : "";
+      setPreview({ ts: s.timestamp, content: c, current });
     } catch (e) {
       setToast({
         stage: "error",
@@ -195,27 +211,160 @@ export function HistorySheet() {
                   </button>
                 </div>
                 {isPreview && (
-                  <pre
-                    style={{
-                      marginTop: 8,
-                      padding: 10,
-                      background: "var(--bg-pane-2)",
-                      border: "0.5px solid var(--border)",
-                      borderRadius: 8,
-                      fontSize: 11,
-                      maxHeight: 180,
-                      overflow: "auto",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      lineHeight: 1.5,
-                      color: "var(--text-2)",
-                      cursor: "text",
-                      userSelect: "text",
-                    }}
-                  >
-                    {preview!.content.slice(0, 1500)}
-                    {preview!.content.length > 1500 ? "\n…" : ""}
-                  </pre>
+                  <div style={{ marginTop: 8 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 6,
+                        fontSize: 11,
+                        color: "var(--text-3)",
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: 2 }}>
+                        <button
+                          type="button"
+                          className="settings-btn"
+                          style={{
+                            padding: "2px 8px",
+                            fontSize: 10,
+                            ...(viewMode === "diff"
+                              ? { background: "var(--accent)", color: "#fff" }
+                              : {}),
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewMode("diff");
+                          }}
+                        >
+                          对比当前
+                        </button>
+                        <button
+                          type="button"
+                          className="settings-btn"
+                          style={{
+                            padding: "2px 8px",
+                            fontSize: 10,
+                            ...(viewMode === "raw"
+                              ? { background: "var(--accent)", color: "#fff" }
+                              : {}),
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewMode("raw");
+                          }}
+                        >
+                          原文
+                        </button>
+                      </div>
+                      {viewMode === "diff" &&
+                        (stat.added === 0 && stat.removed === 0 ? (
+                          <span>与当前文档一致</span>
+                        ) : (
+                          <span>
+                            <span style={{ color: "var(--green, #3fb950)" }}>
+                              +{stat.added}
+                            </span>{" "}
+                            <span style={{ color: "var(--red, #f85149)" }}>
+                              −{stat.removed}
+                            </span>{" "}
+                            <span style={{ color: "var(--text-4)" }}>
+                              （红=此版本有、现已删；绿=当前新增）
+                            </span>
+                          </span>
+                        ))}
+                    </div>
+                    {viewMode === "raw" ? (
+                      <pre
+                        style={{
+                          padding: 10,
+                          background: "var(--bg-pane-2)",
+                          border: "0.5px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 11,
+                          maxHeight: 220,
+                          overflow: "auto",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          lineHeight: 1.5,
+                          color: "var(--text-2)",
+                          cursor: "text",
+                          userSelect: "text",
+                        }}
+                      >
+                        {preview!.content.slice(0, 2000)}
+                        {preview!.content.length > 2000 ? "\n…" : ""}
+                      </pre>
+                    ) : (
+                      <div
+                        style={{
+                          background: "var(--bg-pane-2)",
+                          border: "0.5px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 11,
+                          maxHeight: 240,
+                          overflow: "auto",
+                          lineHeight: 1.5,
+                          fontFamily: "var(--font-mono, ui-monospace, monospace)",
+                          cursor: "text",
+                          userSelect: "text",
+                        }}
+                      >
+                        {diffRows.slice(0, 600).map((row, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              padding: "0 8px",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              background:
+                                row.type === "add"
+                                  ? "color-mix(in srgb, var(--green, #3fb950) 16%, transparent)"
+                                  : row.type === "del"
+                                    ? "color-mix(in srgb, var(--red, #f85149) 16%, transparent)"
+                                    : "transparent",
+                              color:
+                                row.type === "eq"
+                                  ? "var(--text-3)"
+                                  : "var(--text-2)",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 10,
+                                flexShrink: 0,
+                                textAlign: "center",
+                                color:
+                                  row.type === "add"
+                                    ? "var(--green, #3fb950)"
+                                    : row.type === "del"
+                                      ? "var(--red, #f85149)"
+                                      : "var(--text-4)",
+                              }}
+                            >
+                              {row.type === "add" ? "+" : row.type === "del" ? "−" : ""}
+                            </span>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              {row.text || " "}
+                            </span>
+                          </div>
+                        ))}
+                        {diffRows.length > 600 && (
+                          <div
+                            style={{
+                              padding: "4px 8px",
+                              color: "var(--text-4)",
+                            }}
+                          >
+                            … 仅显示前 600 行
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );

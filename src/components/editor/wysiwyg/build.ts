@@ -10,7 +10,7 @@
  * 几万行的大文档主要瓶颈在 syntaxTree iterate + WidgetType 实例化次数。
  */
 
-import { syntaxTree } from "@codemirror/language";
+import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 
@@ -57,6 +57,12 @@ export interface BuildResult {
    *  rebuild 时，先按这些范围在新旧选区下的命中变化判断；任何一个翻转才 rebuild，
    *  否则直接复用上次结果，避免大文档每次方向键 / 鼠标选中都跑全文 syntaxTree。 */
   sensitive: SensitiveRange[];
+  /** 本次 build 时 lezer 是否已把整篇文档解析完。大文档首帧 syntaxTree 只解析了
+   *  视口附近一段（预算内），靠后的块在树里还没有节点 → 没有装饰、渲染成原始
+   *  markdown。后台解析推进时 CM 派发的是无 docChanged 的事务，StateField 不会
+   *  重建，于是「滚到下面好几秒后才忽然变成富文本」。state.ts 据此在解析完成的
+   *  那一刻补一次 rebuild。 */
+  fullyParsed: boolean;
 }
 
 export interface SensitiveRange {
@@ -654,5 +660,6 @@ export function build(state: EditorState): BuildResult {
       true,
     ),
     sensitive,
+    fullyParsed: syntaxTreeAvailable(state, state.doc.length),
   };
 }

@@ -12,6 +12,7 @@
  *     才 rebuild，否则复用 prev（大文档每次方向键 / 鼠标拖选不再 syntax iterate）
  */
 
+import { syntaxTreeAvailable } from "@codemirror/language";
 import { StateField, StateEffect } from "@codemirror/state";
 import { EditorView, ViewPlugin } from "@codemirror/view";
 
@@ -33,6 +34,14 @@ export const wysiwygField = StateField.define<BuildResult>({
       tr.docChanged ||
       tr.effects.some((e) => e.is(rebuildWysiwygEffect))
     ) {
+      return build(tr.state);
+    }
+    // 上次 build 时 lezer 还没解析到文档尾（大文档首帧只解析视口预算内的一段），
+    // 后台解析推进时 CM 派发的 Language.setState 事务既没 docChanged 也没 selection，
+    // 上面两条都不命中。这里在「解析刚好整篇完成」的那一刻补一次 rebuild，让此前
+    // 渲染成原始 markdown 的靠后区块即时变成富文本，而不是等用户编辑 / vault 索引
+    // 加载完才偶然刷新。fullyParsed 一旦为真，下面的判断短路，不再有额外开销。
+    if (!prev.fullyParsed && syntaxTreeAvailable(tr.state, tr.state.doc.length)) {
       return build(tr.state);
     }
     // 选区变了 → 只在某个"现形/隐藏"边界被跨过时才 rebuild；

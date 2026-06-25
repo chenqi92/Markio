@@ -23,7 +23,7 @@ type Block =
 const NEUTRAL_PROVIDER_LABEL: Record<AgentProvider, string> = {
   claude: "本地 Agent A",
   codex: "本地 Agent B",
-  gemini: "本地 Agent C",
+  antigravity: "本地 Agent C",
   cursor: "本地 Agent D",
   opencode: "本地 Agent E",
   qwen: "本地 Agent F",
@@ -47,6 +47,7 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [provider, setProvider] = useState<AgentProvider>("claude");
   const [permission, setPermission] = useState<AgentPermission>("safe");
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [running, setRunning] = useState<string | null>(null);
@@ -110,6 +111,18 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
     () => providers.find((p) => p.id === provider),
     [providers, provider],
   );
+
+  // 默认只露出"已安装"的 Agent；未安装的折叠到"其他 N"后面，减少噪音。
+  // 一个都没装时直接把全部列出来，方便用户知道有哪些可装。
+  const availableProviders = useMemo(
+    () => providers.filter((p) => p.available),
+    [providers],
+  );
+  const unavailableCount = providers.length - availableProviders.length;
+  const visibleProviders =
+    showAllProviders || availableProviders.length === 0
+      ? providers
+      : availableProviders;
 
   const appendBlock = (b: Block) => setBlocks((cur) => [...cur, b]);
 
@@ -277,8 +290,8 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
             fontSize: 12,
           }}
         >
-          <div style={{ display: "flex", gap: 4 }}>
-            {providers.map((p) => (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {visibleProviders.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -295,6 +308,18 @@ export function AgentPanel({ onClose }: { onClose: () => void }) {
                 {providerDisplayName(p.id)}
               </button>
             ))}
+            {availableProviders.length > 0 && unavailableCount > 0 && (
+              <button
+                type="button"
+                className="settings-btn"
+                onClick={() => setShowAllProviders((v) => !v)}
+                disabled={!!running}
+                title="显示 / 隐藏未安装的 Agent"
+                style={{ padding: "3px 10px", fontSize: 11, color: "var(--text-3)" }}
+              >
+                {showAllProviders ? "收起" : `其他 ${unavailableCount}`}
+              </button>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 4 }}>

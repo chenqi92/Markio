@@ -77,7 +77,7 @@ export interface NoteFrontmatter {
 export type AgentProvider =
   | "claude"
   | "codex"
-  | "gemini"
+  | "antigravity"
   | "cursor"
   | "opencode"
   | "qwen"

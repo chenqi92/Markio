@@ -1,6 +1,6 @@
 //! 本地 AI CLI agent 接入层。
 //!
-//! 把 claude / codex / gemini / cursor-agent / opencode / qwen / copilot /
+//! 把 claude / codex / antigravity / cursor-agent / opencode / qwen / copilot /
 //! aider / goose 这些命令行 agent 统一封装成同一组事件流（Init / TextDelta /
 //! ThinkingDelta / ToolStart / ToolDone / Result / Error / Done），前端只需要
 //! 处理一种事件流，不用关心是哪个 CLI。
@@ -26,7 +26,7 @@ use tokio::process::{Child, Command};
 pub enum AgentProvider {
     Claude,
     Codex,
-    Gemini,
+    Antigravity,
     Cursor,
     Opencode,
     Qwen,
@@ -40,7 +40,8 @@ impl AgentProvider {
         match self {
             AgentProvider::Claude => "claude",
             AgentProvider::Codex => "codex",
-            AgentProvider::Gemini => "gemini",
+            // Antigravity CLI 的二进制名是 `agy`（不是 antigravity）。
+            AgentProvider::Antigravity => "agy",
             AgentProvider::Cursor => "cursor-agent",
             AgentProvider::Opencode => "opencode",
             AgentProvider::Qwen => "qwen",
@@ -76,7 +77,7 @@ pub fn detect_providers() -> Vec<ProviderInfo> {
     [
         (AgentProvider::Claude, "Claude Code"),
         (AgentProvider::Codex, "Codex CLI"),
-        (AgentProvider::Gemini, "Gemini CLI"),
+        (AgentProvider::Antigravity, "Antigravity CLI"),
         (AgentProvider::Cursor, "Cursor Agent"),
         (AgentProvider::Opencode, "OpenCode"),
         (AgentProvider::Qwen, "Qwen Code"),
@@ -151,12 +152,14 @@ fn generic_args(provider: AgentProvider, prompt: &str, power: bool) -> Vec<Strin
             a.push(p);
             a
         }
-        // gemini --prompt "<prompt>" [--yolo]
-        AgentProvider::Gemini => {
-            let mut a = vec!["--prompt".to_string(), p];
+        // Antigravity（agy，Gemini CLI 继任者）：--print 单次非交互；可写模式 --yes 自动批准。
+        // 注：该 CLI 较新，不同版本 flag 可能有差异，新增后建议 smoke-test 一次。
+        AgentProvider::Antigravity => {
+            let mut a = vec!["--print".to_string()];
             if power {
-                a.push("--yolo".to_string());
+                a.push("--yes".to_string());
             }
+            a.push(p);
             a
         }
         // qwen 是 gemini-cli 的分支，参数同构。
@@ -796,8 +799,9 @@ async fn run_cursor(
 
 // ────────────────────────────── 通用 fallback ──────────────────────────────
 
-/// codex / gemini 暂时走通用路径：spawn → 逐行 stdout 当成 TextDelta。
-/// 后续可以为每家加专属 JSON parser，框架已经在了。
+/// codex / antigravity / opencode / qwen / copilot / aider / goose 走通用纯文本路径：
+/// spawn → 逐行 stdout 当成 TextDelta。后续可按需为某家加专属 JSON parser（参考
+/// run_claude / run_cursor），框架已经在了。
 async fn run_generic(
     app: &AppHandle,
     req: &AgentRunRequest,

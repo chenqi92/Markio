@@ -30,6 +30,28 @@
 .editor-split.split .preview h2 { font-size: 20px; margin-top: 28px; }
 .editor-split.split .preview h3 { font-size: 16px; margin-top: 22px; }
 .preview.wide { max-width: none; }
+
+/* 长文档滚动：让 WebView 跳过视口外顶层块的布局 / 绘制（content-visibility 自带
+ * size+layout+paint containment），快速滚动时不再为整篇 DOM 反复 layout/paint，
+ * buildPreviewAnchors 对离屏块取 rect 也更便宜。contain-intrinsic-size 的 auto
+ * 关键字让块渲染过一次后记住真实高度，滚回去时不抖；未渲染过的用 50px 占位。
+ *
+ * 仅排除「在自身 box 外作画」的块——否则 paint containment 会把溢出裁掉：
+ *   - 标题：h2::before 强调竖条在 left:-16px、.header-anchor 锚点也在左外侧；
+ *   - 表格：.md-table-add-* 悬浮加行/列按钮在 right:-56px / 底部外侧。
+ * 这两类同时也是滚动同步的主锚点（syncAnchors 优先用标题/表格行），保持它们
+ * 不被 size containment 估高，getBoundingClientRect 始终是真实位置。
+ * 不支持 content-visibility 的旧 WebView 会忽略此声明，退化为现状。 */
+.preview > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 50px;
+}
+.preview > :is(h1, h2, h3, h4, h5, h6),
+.preview > table,
+.preview > .md-table-host {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+}
 .preview h1, .preview h2, .preview h3, .preview h4 {
   font-family: var(--font-sans);
   letter-spacing: -0.015em;

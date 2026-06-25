@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Icon, type IconName } from "../ui/Icon";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
@@ -19,14 +20,17 @@ import {
   getProviderModels,
 } from "@/lib/ai-providers";
 import {
+  isLocalAgentEnabled,
   isProviderAllowedInCurrentRegion,
   MAINLAND_AI_COMPLIANCE_NOTICE,
 } from "@/lib/ai-region-policy";
+import { localAgentLabel } from "@/lib/localAgents";
 import {
   runAgent,
   type AgentMsg,
   type AgentScopeRestriction,
 } from "@/lib/ai-agent";
+import type { AgentEvent, AgentProvider, AgentProviderInfo } from "@/types";
 import { AISidebar } from "./AISidebar";
 import { AIAssistantMessage } from "./AIAssistantMessage";
 import { AIPreview } from "./AIPreview";
@@ -149,6 +153,10 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   // 所有支持工具的 provider 都可用（OpenAI 兼容 / Anthropic Messages / Google Gemini）。
   const [agentMode, setAgentMode] = useState(false);
   const agentCancelRef = useRef(false);
+  // 本地 CLI Agent：可在模型选择器里像选模型一样直接选 claude/codex/cursor…，免 API
+  // Key（CLI 用本机已登录的凭据，在 vault 工作目录里自己读文件）。null = 用云端模型。
+  const [localAgents, setLocalAgents] = useState<AgentProviderInfo[]>([]);
+  const [localAgent, setLocalAgent] = useState<AgentProvider | null>(null);
   const [attachedItems, setAttachedItems] = useState<AIAttachedItem[]>([]);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [ctxDrawerOpen, setCtxDrawerOpen] = useState(false);
@@ -182,11 +190,12 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   const configured = providerAllowed && (provider === "ollama" || keyConfigured);
 
   const subtitle = useMemo(() => {
+    if (localAgent) return `本地 CLI · ${localAgentLabel(localAgent)} · 免 Key`;
     if (!providerAllowed) return "当前地区不可用";
     if (!configured) return "未配置 · 设置 → AI 助手 接入";
     const m = MODES.find((x) => x.id === aiMode);
     return `${m?.sub ?? ""} · ${providerName} · ${model}`;
-  }, [configured, aiMode, providerAllowed, providerName, model]);
+  }, [localAgent, configured, aiMode, providerAllowed, providerName, model]);
 
   const modelList = getProviderModels(provider);
 
@@ -206,6 +215,15 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (ws?.path) void ensureVaultIndex(ws.path);
   }, [ws?.path, ensureVaultIndex]);
+
+  // 探测本机可用的本地 CLI Agent（仅在该功能启用的渠道：非 MAS、非大陆区）。
+  useEffect(() => {
+    if (!isLocalAgentEnabled()) return;
+    void api
+      .agentListProviders()
+      .then(setLocalAgents)
+      .catch(() => undefined);
+  }, []);
 
   // 切 provider 时如果当前 model 不在列表里，回到第一个
   useEffect(() => {
@@ -256,6 +274,112 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
     appendMessage(sessionId, userMsg);
     setDraft("");
     setBusy(true);
+
+    // ─── 本地 CLI Agent 分支 ─────────────────────────────────────────────
+    // 选了本地 CLI（claude/codex/cursor…）时：不需要 API Key / RAG，CLI 直接在 vault
+    // 工作目录里自己读文件。只读（safe）模式跑，重度写操作请用独立「本地 Agent」面板。
+    if (localAgent) {
+      const assistantId = uid();
+      appendMessage(sessionId, {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        time: Date.now(),
+      });
+      const myToken = ++streamTokenRef.current;
+      const isStale = () => streamTokenRef.current !== myToken;
+      const runId = `airun_${uid()}`;
+      const trace: string[] = [];
+      let acc = "";
+      const render = () => {
+        const head =
+          trace.length > 0
+            ? `<details><summary>本地 Agent 调用了 ${trace.length} 次工具</summary>\n\n\`\`\`\n${trace.join("\n")}\n\`\`\`\n\n</details>\n\n`
+            : "";
+        return head + acc;
+      };
+      let unlisten: UnlistenFn | null = null;
+      const cleanup = () => {
+        unlisten?.();
+        unlisten = null;
+      };
+      streamCancelRef.current = async () => {
+        await api.agentCancel(runId).catch(() => undefined);
+        cleanup();
+      };
+      try {
+        unlisten = await listen<AgentEvent>(`agent-event-${runId}`, (e) => {
+          if (isStale()) return;
+          const evt = e.payload;
+          switch (evt.type) {
+            case "text_delta":
+              acc += evt.text;
+              patchMessage(sessionId, assistantId, { text: render() });
+              break;
+            case "tool_start":
+              trace.push(
+                `▸ ${evt.tool} ${JSON.stringify(evt.input).slice(0, 80)}`,
+              );
+              patchMessage(sessionId, assistantId, { text: render() });
+              break;
+            case "tool_done": {
+              const out =
+                typeof evt.output === "string"
+                  ? evt.output
+                  : JSON.stringify(evt.output);
+              const summary = out.length > 160 ? `${out.slice(0, 160)}…` : out;
+              if (trace.length > 0) {
+                trace[trace.length - 1] +=
+                  `\n  ${summary.split("\n").join("\n  ")}`;
+              }
+              patchMessage(sessionId, assistantId, { text: render() });
+              break;
+            }
+            case "result":
+              // 多数 CLI 只在结尾给完整结论；流式没拿到正文时用它兜底。
+              if (evt.text && !acc.trim()) {
+                acc = evt.text;
+                patchMessage(sessionId, assistantId, { text: render() });
+              }
+              break;
+            case "error":
+              acc += `${acc ? "\n\n" : ""}请求失败：${evt.message}`;
+              patchMessage(sessionId, assistantId, { text: render() });
+              break;
+            case "done":
+              cleanup();
+              if (!acc.trim() && trace.length === 0) {
+                patchMessage(sessionId, assistantId, { text: "（空响应）" });
+              }
+              if (!isStale()) {
+                streamCancelRef.current = null;
+                setBusy(false);
+              }
+              break;
+            // init / thinking_delta：不灌进正文，避免噪音（独立面板里才展开思考）。
+            default:
+              break;
+          }
+        });
+        await api.agentRun({
+          sessionId: runId,
+          provider: localAgent,
+          prompt: text,
+          workspace: ws?.path,
+          permission: "safe",
+        });
+      } catch (e) {
+        cleanup();
+        patchMessage(sessionId, assistantId, {
+          text: `本地 Agent 启动失败：${(e as Error).message}`,
+        });
+        if (!isStale()) {
+          streamCancelRef.current = null;
+          setBusy(false);
+        }
+      }
+      return;
+    }
 
     if (!providerAllowed) {
       appendMessage(sessionId, {
@@ -861,12 +985,15 @@ export function AIPanel({ onClose }: { onClose: () => void }) {
                 return useTabs.getState().tabs.length;
               })()
             }
-            configured={configured}
+            configured={configured || localAgent != null}
             attachedItems={attachedItems}
             setAttachedItems={setAttachedItems}
             modelList={modelList}
             agentMode={agentMode}
             setAgentMode={setAgentMode}
+            localAgents={localAgents}
+            localAgent={localAgent}
+            setLocalAgent={setLocalAgent}
           />
         </div>
       </div>
@@ -917,6 +1044,9 @@ interface InputBarPropsExt extends InputBarProps {
   setAIMode?: (mode: AIMode) => void;
   agentMode: boolean;
   setAgentMode: (next: boolean | ((v: boolean) => boolean)) => void;
+  localAgents: AgentProviderInfo[];
+  localAgent: AgentProvider | null;
+  setLocalAgent: (next: AgentProvider | null) => void;
 }
 
 function AIInputBar({
@@ -936,6 +1066,9 @@ function AIInputBar({
   modelList,
   agentMode,
   setAgentMode,
+  localAgents,
+  localAgent,
+  setLocalAgent,
 }: InputBarPropsExt) {
   const useCurrentFile = useSettings((s) => s.aiUseCurrentFile);
   const useWsCtx = useSettings((s) => s.aiUseWorkspace);
@@ -957,6 +1090,13 @@ function AIInputBar({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelWrapRef = useRef<HTMLDivElement>(null);
+  const availableLocalAgents = useMemo(
+    () => localAgents.filter((a) => a.available),
+    [localAgents],
+  );
+  const modelBtnLabel = localAgent
+    ? localAgentLabel(localAgent)
+    : (modelList.find((m) => m.id === model)?.name ?? (model || "未选模型"));
 
   useEffect(() => {
     if (!styleMenuOpen) return;
@@ -1510,10 +1650,7 @@ function AIInputBar({
                   onClick={() => setModelMenuOpen((v) => !v)}
                 >
                   <Icon name="sparkle" size={11} />
-                  <span>
-                    {modelList.find((m) => m.id === model)?.name ??
-                      (model || "未选模型")}
-                  </span>
+                  <span>{modelBtnLabel}</span>
                   <span style={{ opacity: 0.5, marginLeft: 2 }}>▾</span>
                 </button>
                 {modelMenuOpen && (
@@ -1521,6 +1658,29 @@ function AIInputBar({
                     className="ai-model-menu ai-model-menu-up"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    {availableLocalAgents.length > 0 && (
+                      <>
+                        <div className="ai-model-group-h">本地 CLI · 免 Key</div>
+                        {availableLocalAgents.map((a) => (
+                          <button
+                            type="button"
+                            key={`local-${a.id}`}
+                            className={
+                              "ai-model-item" +
+                              (localAgent === a.id ? " active" : "")
+                            }
+                            onClick={() => {
+                              setLocalAgent(a.id);
+                              setModelMenuOpen(false);
+                            }}
+                          >
+                            <div className="t">{localAgentLabel(a.id)}</div>
+                            <div className="s">本地 CLI · 用本机已登录凭据</div>
+                          </button>
+                        ))}
+                        <div className="ai-model-group-h">云端模型</div>
+                      </>
+                    )}
                     {modelList.length === 0 ? (
                       <div
                         style={{
@@ -1537,9 +1697,11 @@ function AIInputBar({
                           type="button"
                           key={m.id}
                           className={
-                            "ai-model-item" + (m.id === model ? " active" : "")
+                            "ai-model-item" +
+                            (!localAgent && m.id === model ? " active" : "")
                           }
                           onClick={() => {
+                            setLocalAgent(null);
                             setAi({ aiModel: m.id });
                             setModelMenuOpen(false);
                           }}

@@ -5,6 +5,7 @@ import { useUI } from "@/stores/ui";
 import { useWorkspace } from "@/stores/workspace";
 import { api } from "@/lib/api";
 import { isLocalAgentEnabled } from "@/lib/ai-region-policy";
+import { localAgentLabel } from "@/lib/localAgents";
 import type {
   AgentEvent,
   AgentPermission,
@@ -20,20 +21,8 @@ type Block =
   | { kind: "result"; text: string; tokens?: { input: number | null; output: number | null } }
   | { kind: "error"; message: string };
 
-const NEUTRAL_PROVIDER_LABEL: Record<AgentProvider, string> = {
-  claude: "本地 Agent A",
-  codex: "本地 Agent B",
-  antigravity: "本地 Agent C",
-  cursor: "本地 Agent D",
-  opencode: "本地 Agent E",
-  qwen: "本地 Agent F",
-  copilot: "本地 Agent G",
-  aider: "本地 Agent H",
-  goose: "本地 Agent I",
-};
-
 function providerDisplayName(id: AgentProvider): string {
-  return NEUTRAL_PROVIDER_LABEL[id];
+  return localAgentLabel(id);
 }
 
 function newSessionId() {

@@ -11,12 +11,13 @@
   z-index: 70;
   animation: aiIn 280ms cubic-bezier(.2, .8, .2, 1);
 }
-/* 用主题同色系（--bg-deep）的低饱和辐射做对角 wash，柔化侧边栏 / 主区 /
- * 输入栏三段拼接的硬色差，自动跟随主题（暖主题暖渐变、暗主题暗渐变）。 */
+/* 用主题同色系（--bg-deep）的低饱和辐射做左上角 wash，柔化侧边栏 / 主区接缝，
+ * 自动跟随主题（暖主题暖渐变、暗主题暗渐变）。
+ * 去掉了右下角那束：它会让底部输入 / 状态栏比聊天区偏色（--bg-deep 比 --bg-window
+ * 更深），输入区改为与聊天区同背景。 */
 .ai-workspace::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(circle at 25% 0%, color-mix(in srgb, var(--bg-deep) 45%, transparent), transparent 60%),
-              radial-gradient(circle at 75% 100%, color-mix(in srgb, var(--bg-deep) 35%, transparent), transparent 60%);
+  background: radial-gradient(circle at 25% 0%, color-mix(in srgb, var(--bg-deep) 45%, transparent), transparent 60%);
   z-index: 0;
 }
 .ai-workspace-body {
@@ -378,6 +379,19 @@
   box-shadow: var(--shadow-deep);
   z-index: 110;
   padding: 5px;
+}
+.ai-model-group-h {
+  padding: 6px 10px 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-4, var(--text-3));
+}
+.ai-model-group-h:not(:first-child) {
+  margin-top: 2px;
+  border-top: 0.5px solid var(--border);
+  padding-top: 7px;
 }
 .ai-model-item {
   padding: 7px 10px;

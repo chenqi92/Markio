@@ -16,6 +16,14 @@ pub const MAX_SYNOLOGY_OBJECT: usize = 50 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct SynologyLogin {
     pub sid: String,
+    /// 是否已记住此设备（拿到/已有设备令牌）→ 之后自动同步重登无需再输 OTP
+    pub device_remembered: bool,
+}
+
+/// 登录原始结果：sid + 本次返回的设备令牌（仅 2FA + enable_device_token 时有）
+pub struct SynologyLoginRaw {
+    pub sid: String,
+    pub did: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -115,14 +123,24 @@ fn take_data(text: &str) -> Result<serde_json::Value, String> {
     }
 }
 
-/// 用账号密码登录 FileStation，返回 sid。otp_code 可选（二步验证）。
+/// 用账号密码登录 FileStation。
+///
+/// - `otp_code`：二步验证一次性码（仅首次/令牌失效时需要）。
+/// - `device_id`：之前记住的设备令牌；带上它且令牌有效时**跳过 OTP**，让自动同步无人值守。
+///
+/// 始终带 `enable_device_token=yes` + `device_name`，所以 2FA 首次用 OTP 登录成功后，
+/// 群晖会返回设备令牌 `did`，调用方应存起来下次当 `device_id` 传回。
+///
+/// 账号开了 2FA 但既没给 OTP 也没给有效设备令牌时，群晖返回错误码 403，本函数会把它
+/// 翻成含「需要二步验证」的错误，前端据此提示补 OTP。
 pub async fn login(
     base: &str,
     insecure_tls: bool,
     account: &str,
     password: &str,
     otp_code: Option<&str>,
-) -> Result<String, String> {
+    device_id: Option<&str>,
+) -> Result<SynologyLoginRaw, String> {
     let client = client(insecure_tls)?;
     let mut form: Vec<(&str, &str)> = vec![
         ("api", "SYNO.API.Auth"),
@@ -132,10 +150,17 @@ pub async fn login(
         ("format", "sid"),
         ("account", account),
         ("passwd", password),
+        ("enable_device_token", "yes"),
+        ("device_name", "Markio"),
     ];
     if let Some(otp) = otp_code {
         if !otp.is_empty() {
             form.push(("otp_code", otp));
+        }
+    }
+    if let Some(did) = device_id {
+        if !did.is_empty() {
+            form.push(("device_id", did));
         }
     }
     let resp = client
@@ -146,10 +171,19 @@ pub async fn login(
         .map_err(|e| format!("Synology 登录请求失败：{e}"))?;
     let text = resp.text().await.unwrap_or_default();
     let data = take_data(&text)?;
-    data.get("sid")
+    let sid = data
+        .get("sid")
         .and_then(|s| s.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "Synology 登录未返回 sid".to_string())
+        .ok_or_else(|| "Synology 登录未返回 sid".to_string())?;
+    // 不同 DSM 版本设备令牌字段可能是 did 或 device_id
+    let did = data
+        .get("did")
+        .or_else(|| data.get("device_id"))
+        .and_then(|d| d.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    Ok(SynologyLoginRaw { sid, did })
 }
 
 /// 列出某 NAS 绝对路径目录下的直接子项（自动翻页）。

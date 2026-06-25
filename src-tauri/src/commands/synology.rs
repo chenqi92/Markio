@@ -22,6 +22,11 @@ fn account_key(base: &str) -> Result<String, String> {
     Ok(format!("synology:{authority}"))
 }
 
+/// 设备令牌（2FA 记住设备）在钥匙串里的 key
+fn device_key(base: &str) -> Result<String, String> {
+    Ok(format!("{}:did", account_key(base)?))
+}
+
 /// NAS 绝对路径校验：必须以 / 开头，无控制字符 / .. 段。
 fn validate_abs_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') {
@@ -62,15 +67,27 @@ pub async fn synology_login(
     }
     let key = account_key(&base_url)?;
     let password = secrets::get(&key)?.ok_or_else(|| "尚未保存 Synology 密码".to_string())?;
-    let sid = synology_ops::login(
+    // 自动复用上次记住的设备令牌 → 2FA 账号自动同步重登无需再输 OTP
+    let did_key = device_key(&base_url)?;
+    let stored_did = secrets::get(&did_key)?;
+    let raw = synology_ops::login(
         &base,
         insecure_tls,
         account,
         &password,
         otp_code.as_deref().filter(|s| !s.is_empty()),
+        stored_did.as_deref().filter(|s| !s.is_empty()),
     )
     .await?;
-    Ok(synology_ops::SynologyLogin { sid })
+    // 本次拿到新设备令牌就存起来（2FA + OTP 首次登录会返回）
+    if let Some(did) = &raw.did {
+        secrets::set(&did_key, did)?;
+    }
+    let device_remembered = raw.did.is_some() || stored_did.is_some();
+    Ok(synology_ops::SynologyLogin {
+        sid: raw.sid,
+        device_remembered,
+    })
 }
 
 #[tauri::command]

@@ -1905,6 +1905,7 @@ function SynologyDriveDrawer() {
   const [password, setPassword] = useState("");
   const [hasStoredPassword, setHasStoredPassword] = useState(false);
   const [otp, setOtp] = useState("");
+  const [needsOtp, setNeedsOtp] = useState(false);
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [connected, setConnected] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -1973,10 +1974,27 @@ function SynologyDriveDrawer() {
         otp.trim() || undefined,
       );
       setConnected(!!r.sid);
-      setMsg({ kind: "ok", text: "登录成功，FileStation 可用" });
+      setNeedsOtp(false);
+      setOtp("");
+      setMsg({
+        kind: "ok",
+        text: r.deviceRemembered
+          ? "登录成功，已记住此设备 · 之后自动同步无需再输 OTP"
+          : "登录成功，FileStation 可用",
+      });
     } catch (e) {
       setConnected(false);
-      setMsg({ kind: "err", text: String(e) });
+      const text = String(e);
+      // 群晖账号开了二步验证，但没给 OTP / 设备令牌失效 → 引导补 OTP
+      if (/二步验证|OTP|\b403\b/.test(text)) {
+        setNeedsOtp(true);
+        setMsg({
+          kind: "err",
+          text: "该账号开启了二步验证：请在下方填写一次性 OTP 码后再点「测试连接」。成功后会记住此设备，自动同步无需再输。",
+        });
+      } else {
+        setMsg({ kind: "err", text });
+      }
     } finally {
       setBusy(null);
     }
@@ -2043,15 +2061,24 @@ function SynologyDriveDrawer() {
       </div>
       <div className="settings-row">
         <div className="settings-row-l">
-          <div className="settings-label">二步验证 OTP</div>
-          <div className="settings-help">仅开启 2FA 的账号需要；自动同步建议用免 2FA 账号</div>
+          <div className="settings-label">
+            二步验证 OTP
+            {needsOtp && <span style={{ color: "#dc2626" }}> · 需要</span>}
+          </div>
+          <div className="settings-help">
+            开启 2FA 的账号首次授权填一次 OTP；成功后会记住此设备，自动同步无需再输。未开 2FA 留空即可。
+          </div>
         </div>
         <input
           type="text"
           value={otp}
           onChange={(e) => setOtp(e.target.value)}
           placeholder="6 位数字（可留空）"
-          style={{ width: 160 }}
+          autoComplete="one-time-code"
+          style={{
+            width: 160,
+            borderColor: needsOtp ? "#dc2626" : undefined,
+          }}
         />
       </div>
       <div className="settings-row">

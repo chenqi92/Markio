@@ -1076,7 +1076,13 @@ export const api = {
     insecureTls: boolean,
     account: string,
     otpCode?: string,
-  ) => invoke<{ sid: string }>("synology_login", { baseUrl, insecureTls, account, otpCode }),
+  ) =>
+    invoke<{ sid: string; deviceRemembered: boolean }>("synology_login", {
+      baseUrl,
+      insecureTls,
+      account,
+      otpCode,
+    }),
   synologyList: (baseUrl: string, insecureTls: boolean, sid: string, folderPath: string) =>
     invoke<{
       entries: Array<{

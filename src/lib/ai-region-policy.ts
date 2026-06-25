@@ -145,6 +145,14 @@ export function getAIRegionPolicy(): {
       countryCode: runtimeAIRegionOverride.countryCode,
     };
   }
+  // 本地开发（vite dev）且未显式指定区域、未被 storefront/runtime 覆盖时，默认按 global
+  // 解析，方便把全部 AI 功能（外部 Agent + 所有 HTTP provider）都露出来做测试。
+  //   - 想测国区受限视图：`VITE_MARKIO_AI_REGION=cn pnpm tauri:dev`
+  //   - 想测 MAS 上架裁剪：`VITE_MARKIO_MAS=1 pnpm tauri:dev`（仍会隐藏本地 Agent）
+  // 生产构建 import.meta.env.DEV 为 false，不受影响。
+  if (!forced && import.meta.env.DEV) {
+    return { mode, region: "global", forced, source: "runtime" };
+  }
   return {
     mode,
     region: resolveAIRegion(mode, runtimeRegion),

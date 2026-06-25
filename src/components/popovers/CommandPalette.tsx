@@ -9,6 +9,7 @@ import { useVaultIndex } from "@/stores/vaultIndex";
 import { useDialog } from "@/stores/dialog";
 import { pickDirectory, type VaultFile } from "@/lib/api";
 import { smartChannelQuery } from "@/lib/smartChannel";
+import { openDailyNote } from "@/lib/daily";
 import { shortcutText } from "@/lib/shortcuts";
 import { displayPath } from "@/lib/utils";
 import { isExternalAgentAllowedInCurrentRegion } from "@/lib/ai-region-policy";
@@ -118,6 +119,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         kbd: [shortcutText("⌘"), "S"],
         ico: "save",
         run: () => saveActive(),
+      },
+      {
+        id: "open-daily",
+        group: "文档",
+        l1: "打开今日日记",
+        l2: "Daily/YYYY-MM-DD.md（无则按模板新建）",
+        kbd: [shortcutText("⌘⇧"), "D"],
+        ico: "sun",
+        run: () => void openDailyNote(),
       },
       {
         id: "open-folder",

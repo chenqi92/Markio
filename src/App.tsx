@@ -12,6 +12,7 @@ import { api, isDesktop, parseError, pickDirectory, pickFile } from "./lib/api";
 import { startSyncScheduler, stopSyncScheduler } from "./lib/syncScheduler";
 import { useCustomThemes } from "./stores/customThemes";
 import { COMMANDS, type CommandId, matchesBinding } from "./lib/shortcuts";
+import { openDailyNote } from "./lib/daily";
 import { useSession } from "./stores/session";
 import { reportDiagnostic } from "./stores/diagnostics";
 import { installNetworkListeners } from "./stores/network";
@@ -637,6 +638,7 @@ export default function App() {
       "app.viewWysiwyg": () => setMode("wysiwyg"),
       "app.quickCapture": () =>
         useUI.getState().openQuickCapture(!useUI.getState().quickCaptureOpen),
+      "app.openDaily": () => void openDailyNote(),
       "app.blockMenu": () => {
         // 把菜单弹在当前光标位置（fall back 到窗口中心）
         const c = selectionCoords();

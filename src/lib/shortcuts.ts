@@ -29,6 +29,7 @@ export type CommandId =
   | "app.viewSplit"
   | "app.viewWysiwyg"
   | "app.quickCapture"
+  | "app.openDaily"
   | "app.blockMenu"
   | "app.escape";
 
@@ -60,6 +61,7 @@ export const COMMANDS: CommandDef[] = [
   // 文档
   { id: "app.save", label: "保存", group: "文档", defaultBinding: "Mod+S" },
   { id: "app.newNote", label: "新建笔记", group: "文档", defaultBinding: "Mod+N" },
+  { id: "app.openDaily", label: "打开今日日记", group: "文档", defaultBinding: "Mod+Shift+D" },
   { id: "app.closeTab", label: "关闭标签", group: "文档", defaultBinding: "Mod+W" },
   { id: "app.openFile", label: "打开单个文件…", group: "文档", defaultBinding: "Mod+O" },
   { id: "app.openFolder", label: "打开文件夹…", group: "文档", defaultBinding: "Mod+Shift+O" },

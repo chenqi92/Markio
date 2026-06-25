@@ -41,6 +41,7 @@ import type { VisualBlockHandle } from "@/lib/visualScheduler";
 import { enhanceWikiLinksLazy, type WikiEnhanceHandle } from "@/lib/wikilinks";
 import { enhanceNoteEmbeds } from "@/lib/noteEmbed";
 import { attachWikilinkHover, type HoverPreviewHandle } from "@/lib/hoverPreview";
+import { renderDataviewBlocks, type DataviewHandle } from "@/lib/dataview";
 import type { OutlineItem } from "@/types";
 import { useSettings } from "@/stores/settings";
 import { useTabs } from "@/stores/tabs";
@@ -421,6 +422,7 @@ export function Preview({
     const handles: number[] = [];
     let wikiHandle: WikiEnhanceHandle | null = null;
     let hoverHandle: HoverPreviewHandle | null = null;
+    let dataviewHandle: DataviewHandle | null = null;
     let calloutHandle: CalloutEnhanceHandle | null = null;
     let chartHandle: VisualBlockHandle | null = null;
     let mathHandle: VisualBlockHandle | null = null;
@@ -470,6 +472,12 @@ export function Preview({
     );
     // wikilink 悬浮预览：附加在内容根上，委托监听已解析的 a.wikilink[data-path]
     hoverHandle = attachWikilinkHover(root);
+    // dataview-lite：```markio-query 块渲染成匹配笔记表格（需活动仓库扫 frontmatter）
+    idle(() => {
+      if (cancelled) return;
+      const wsPath = useWorkspace.getState().activeWorkspace()?.path;
+      dataviewHandle = renderDataviewBlocks(root, wsPath);
+    });
     // 笔记嵌入 ![[note]]：占位 span 由 wiki 增强按需创建（懒加载），所以填充既在
     // 首屏 idle 跑一次，又在滚动时去补填新进视口块里的占位（幂等，只填未填的）。
     const embedSignal = { cancelled: false };
@@ -557,6 +565,7 @@ export function Preview({
       if (embedScrollPending) window.clearTimeout(embedScrollPending);
       wikiHandle?.disconnect();
       hoverHandle?.disconnect();
+      dataviewHandle?.disconnect();
       calloutHandle?.disconnect();
       chartHandle?.disconnect();
       mathHandle?.disconnect();
